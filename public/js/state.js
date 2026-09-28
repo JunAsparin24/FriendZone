@@ -1,0 +1,37 @@
+// Client-side state for the zone you're currently in, plus small shared helpers.
+
+export const S = {
+  zone: null,     // { code, name, owner }
+  me: null,       // your player key
+  players: {},    // key -> public profile (includes online + scene)
+  chat: [],
+  feed: [],
+  race: null,
+};
+
+export const SCENE_LABEL = {
+  lobby: 'in the lobby',
+  world: 'exploring',
+  race: '🏎️ racing',
+  arena: '⚔️ in the arena',
+};
+
+export const me = () => S.players[S.me];
+export const nameOf = (k) => S.players[k]?.name ?? k;
+export const colorOf = (k) => S.players[k]?.color ?? '#999';
+export const fmt = (n) => Number(n).toLocaleString();
+export const xpForLevel = (level) => 100 * (level - 1) ** 2;
+
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
+
+export function toast(text, kind = '') {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = text;
+  document.getElementById('toasts').append(el);
+  setTimeout(() => el.classList.add('out'), 3800);
+  setTimeout(() => el.remove(), 4300);
+}
+
+export const isTyping = () => ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);

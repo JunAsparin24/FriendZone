@@ -1,4 +1,5 @@
 // App shell: zone selection, sign-in, lobby, world HUD, chat and activity modal.
+import { actionHint, touch } from './touch.js';
 import { net } from './net.js';
 import { S, sceneLabel, esc, fmt, me, toast, xpForLevel, colorOf, nameOf, isTyping } from './state.js';
 import { World, EMOTES } from './world.js';
@@ -54,6 +55,8 @@ function forgetZone(code) {
 function show(id) {
   screen = id;
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('hidden', s.id !== id));
+  $('#chatBtn').hidden = id !== 'world';
+  $('.chat').classList.remove('open');
   if (id === 'home') renderHome();
   if (id === 'lobby') renderLobby();
   if (id === 'world') { renderHud(); renderChat(); }
@@ -296,11 +299,11 @@ function renderChat() {
 function showPrompt(spot) {
   const el = $('#hudPrompt');
   el.classList.toggle('hidden', !spot);
-  if (spot) el.innerHTML = `Press <kbd>E</kbd> or click to ${spot.verb ?? 'enter'} <span class="prompt-ico">${iconSvg(spot.id) || spot.emoji}</span> ${esc(spot.name)}`;
+  if (spot) el.innerHTML = `${actionHint()} ${spot.verb ?? 'enter'} <span class="prompt-ico">${iconSvg(spot.id) || spot.emoji}</span> ${esc(spot.name)}`;
   el.onclick = spot ? (spot.action ?? (() => openActivity(spot.id))) : null;
 }
 
-function openActivity(id) {
+export function openActivity(id) {
   const activity = ACTIVITIES[id];
   if (!activity || modal || area) return;
   if (activity.world) world.startActivity(activity.world);
@@ -378,7 +381,17 @@ $('#chatForm').onsubmit = (e) => {
   if (input.value.trim()) net.send('chat', { text: input.value });
   input.value = '';
   input.blur();
+  if (touch.enabled) $('.chat').classList.remove('open'); // back to playing
 };
+
+// phones: chat + emotes open from the 💬 button (the bottom-left corner is the movement thumb's)
+$('#chatBtn').onclick = () => {
+  const open = $('.chat').classList.toggle('open');
+  $('#chatBtn').classList.toggle('on', open);
+  if (open) setTimeout(() => $('#chatInput').focus(), 50);
+};
+$('#emoteBar').addEventListener('click', () => { if (touch.enabled) $('.chat').classList.remove('open'); });
+if (touch.enabled) $('#chatInput').placeholder = 'Say something…';
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {

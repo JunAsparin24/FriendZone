@@ -160,9 +160,9 @@ const ROADS = [
   { name: 'Speedway Road', w: 1, lamps: true, ctrl: [edge(0, -1), P(2410, 1250), P(2380, 800), door('racing')] },
   { name: 'Highland Road', w: 0.9, lamps: true, ctrl: [edge(-0.75, -0.66), P(2000, 1330), P(1760, 1120), P(1600, 900), P(1440, 740), door('boss')] },
   { name: 'Market Street', w: 1, lamps: true, ctrl: [edge(-1, 0.05), door('trading')] },
-  // west out of town: branches off before the Trading Post, curves round its north side (not through
-  // the building), crosses the creek on the bridge and ends at the archery range
-  { name: 'Market Street', w: 1, lamps: true, ctrl: [P(2150, 1598), P(2100, 1380), P(1900, 1330), P(1720, 1440), P(1640, 1545), P(1250, 1520), door('archery')] },
+  // west out of town: forks off the Highland Road (at one of its control points, so it starts right on
+  // it), passes north of the Trading Post, crosses the creek on the bridge and ends at the archery range
+  { name: 'Market Street', w: 1, lamps: true, ctrl: [P(2000, 1330), P(1850, 1365), P(1710, 1450), P(1640, 1545), P(1250, 1520), door('archery')] },
   { name: 'Lakeside Walk', w: 0.8, ctrl: [P(1300, 1528), P(1180, 1780), P(1060, 1990), door('fishing')] },
   { name: 'Maple Lane', w: 0.9, lamps: true, ctrl: [edge(0, 1), P(2410, 1900), door('house')] },
   { name: 'Maple Lane', w: 0.85, ctrl: [P(1640, 2190), P(2050, 2200), P(2420, 2215), P(2850, 2210), P(3280, 2240), P(3560, 2330)] },

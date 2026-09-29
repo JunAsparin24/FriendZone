@@ -25,8 +25,17 @@
     "#ffffff", "#f5f5f5", "#b8bdcc", "#6b7194", "#23263f", "#141418"
   ],
   "eyeColors": [
-    "#1d1b2e", "#4a2e1c", "#7a5230", "#2f9e44", "#12a594", "#3b82f6",
-    "#39c6ff", "#7c6bff", "#e84393", "#e0463c", "#ffc53d", "#8a8fa8"
+    "#1d1b2e", "#2b1d14", "#4a2e1c", "#7a5230", "#ffc53d", "#8a8fa8",
+    "#ffb3b3", "#ff7a7a", "#ff5d73", "#e0463c", "#b3261e", "#7a1414",
+    "#ffd1e8", "#ffa3cf", "#ff6fb5", "#e84393", "#c2185b", "#8a0f45",
+    "#ffd8b0", "#ffb870", "#ff9f43", "#f57c00", "#c75a00", "#8a3d00",
+    "#fff3b0", "#ffe066", "#ffd84d", "#f5b700", "#c99700", "#8a6a00",
+    "#c8f7d8", "#6ee7a0", "#37c871", "#2f9e44", "#1e6e30", "#0f4020",
+    "#b8f5ec", "#5ee6d3", "#2ed8c3", "#12a594", "#0b7268", "#064640",
+    "#cce9ff", "#8fd3ff", "#39c6ff", "#3b82f6", "#3b5bdb", "#1e2f8a",
+    "#e3d9ff", "#b9a6ff", "#7c6bff", "#7048e8", "#5b2a86", "#3a1a5c",
+    "#f5d0ff", "#e57bff", "#cc5de8", "#ae3ec9", "#862e9c", "#561a66",
+    "#f1e0c5", "#d9b38c", "#b08050", "#8b5a2b", "#ffffff", "#b8bdcc"
   ],
   "zoneColors": ["#ff5d73", "#ff9f43", "#ffd84d", "#6ee7a0", "#2ed8c3", "#39c6ff", "#3b5bdb", "#7c6bff", "#e57bff", "#ff6fb5", "#f5f5f5", "#6b7194"],
   "eyeStyles": [
@@ -133,6 +142,7 @@
     { "id": "pet_penguin", "slot": "pet", "name": "Penguin", "rarity": "rare", "price": 1800, "petRoll": true },
     { "id": "pet_panda", "slot": "pet", "name": "Panda", "rarity": "rare", "price": 1800, "petRoll": true },
     { "id": "pet_fox", "slot": "pet", "name": "Fox", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_capybara", "slot": "pet", "name": "Capybara", "rarity": "rare", "price": 1800, "petRoll": true },
     { "id": "pet_giraffe", "slot": "pet", "name": "Giraffe", "rarity": "epic", "price": 3500, "petRoll": true },
     { "id": "pet_axolotl", "slot": "pet", "name": "Axolotl", "rarity": "epic", "price": 3500, "petRoll": true },
     { "id": "pet_unicorn", "slot": "pet", "name": "Unicorn", "rarity": "legendary", "price": 8000, "petRoll": true },

@@ -46,24 +46,31 @@ function instances(geo, mat, list, cast = true) {
 
 // ---- street lamps: an old-fashioned iron post with a curled arm and a hanging lantern -------------
 function lampParts() {
+  // post: base -> fluted post -> collar -> top finial at y 4.0
   const iron = [];
   iron.push({ geo: new THREE.CylinderGeometry(0.34, 0.42, 0.3, 8), matrix: at(0, 0.15, 0) });
-  iron.push({ geo: new THREE.CylinderGeometry(0.22, 0.3, 0.5, 8), matrix: at(0, 0.5, 0) });
-  iron.push({ geo: new THREE.CylinderGeometry(0.09, 0.13, 3.3, 8), matrix: at(0, 2.3, 0) });
-  iron.push({ geo: new THREE.TorusGeometry(0.16, 0.04, 6, 12), matrix: at(0, 1.2, 0, Math.PI / 2) });
-  iron.push({ geo: new THREE.TorusGeometry(0.14, 0.04, 6, 12), matrix: at(0, 3.5, 0, Math.PI / 2) });
-  iron.push({ geo: new THREE.SphereGeometry(0.13, 8, 6), matrix: at(0, 4.0, 0) });
-  // the arm: a quarter circle curling out over the street, plus a scroll underneath
-  iron.push({ geo: new THREE.TorusGeometry(0.55, 0.05, 6, 14, Math.PI / 2), matrix: at(0, 3.45, 0.55, 0, Math.PI / 2, 0) });
-  iron.push({ geo: new THREE.CylinderGeometry(0.04, 0.04, 0.4, 6), matrix: at(0, 3.85, 0.95, Math.PI / 2) });
-  iron.push({ geo: new THREE.TorusGeometry(0.22, 0.035, 6, 12, Math.PI * 1.3), matrix: at(0, 3.25, 0.3, 0, Math.PI / 2, 0) });
-  // the lantern's cap and frame
-  iron.push({ geo: new THREE.ConeGeometry(0.34, 0.3, 6), matrix: at(0, 3.62, 1.15) });
-  iron.push({ geo: new THREE.SphereGeometry(0.06, 6, 4), matrix: at(0, 3.82, 1.15) });
-  iron.push({ geo: new THREE.CylinderGeometry(0.26, 0.2, 0.08, 6), matrix: at(0, 2.98, 1.15) });
-  const glass = [{ geo: new THREE.CylinderGeometry(0.24, 0.18, 0.5, 6), matrix: at(0, 3.23, 1.15) }];
+  iron.push({ geo: new THREE.CylinderGeometry(0.22, 0.3, 0.5, 8), matrix: at(0, 0.55, 0) });
+  iron.push({ geo: new THREE.CylinderGeometry(0.09, 0.13, 3.2, 8), matrix: at(0, 2.4, 0) });
+  iron.push({ geo: new THREE.TorusGeometry(0.15, 0.04, 6, 12), matrix: at(0, 1.2, 0, Math.PI / 2) });
+  iron.push({ geo: new THREE.CylinderGeometry(0.16, 0.12, 0.2, 8), matrix: at(0, 3.9, 0) });
+  iron.push({ geo: new THREE.SphereGeometry(0.12, 8, 6), matrix: at(0, 4.1, 0) });
+  // arm: straight out from the collar to the lantern hook (z 0 -> 1.1 at y 3.85)
+  iron.push({ geo: new THREE.CylinderGeometry(0.05, 0.05, 1.12, 6), matrix: at(0, 3.85, 0.56, Math.PI / 2) });
+  // a curled brace from the post up under the arm (quarter circle from (z 0, y 3.4) to (z 0.45, y 3.85))
+  iron.push({ geo: new THREE.TorusGeometry(0.45, 0.035, 6, 14, Math.PI / 2), matrix: at(0, 3.4, 0.45, 0, Math.PI / 2, 0) });
+  // the hook, then the lantern hanging from it: cap, frame, bottom
+  iron.push({ geo: new THREE.CylinderGeometry(0.03, 0.03, 0.2, 6), matrix: at(0, 3.75, 1.1) });
+  iron.push({ geo: new THREE.ConeGeometry(0.3, 0.26, 6), matrix: at(0, 3.55, 1.1) });
+  iron.push({ geo: new THREE.CylinderGeometry(0.24, 0.2, 0.07, 6), matrix: at(0, 2.96, 1.1) });
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + Math.PI / 6;
+    iron.push({ geo: new THREE.CylinderGeometry(0.018, 0.018, 0.52, 4), matrix: at(Math.sin(a) * 0.21, 3.2, 1.1 + Math.cos(a) * 0.21) });
+  }
+  const glass = [{ geo: new THREE.CylinderGeometry(0.22, 0.18, 0.5, 6), matrix: at(0, 3.2, 1.1) }];
   return { iron: mergeGeo(iron), glass: mergeGeo(glass) };
 }
+const LANTERN_OUT = 1.1 * 20; // how far the lantern hangs out from the post (map px)
+const LANTERN_Y = 3.2;
 
 /** Street lamps. Returns what the day/night cycle needs to light them up. */
 export function buildLamps(scene, lamps) {
@@ -86,7 +93,7 @@ export function buildLamps(scene, lamps) {
   poolGeo.rotateX(-Math.PI / 2);
   const poolMats = lamps.map((l) => {
     const a = l.h ?? 0;
-    const x = l.x + Math.sin(a) * 23, y = l.y + Math.cos(a) * 23;
+    const x = l.x + Math.sin(a) * LANTERN_OUT, y = l.y + Math.cos(a) * LANTERN_OUT;
     const p = p3(x, y);
     return at(p.x, p.y + 0.06, p.z);
   });
@@ -97,10 +104,10 @@ export function buildLamps(scene, lamps) {
   haloMat.depthTest = true;
   const glows = lamps.map((l) => {
     const a = l.h ?? 0;
-    const p = p3(l.x + Math.sin(a) * 23, l.y + Math.cos(a) * 23);
+    const base = p3(l.x, l.y), p = M.to3(l.x + Math.sin(a) * LANTERN_OUT, l.y + Math.cos(a) * LANTERN_OUT);
     const s = new THREE.Sprite(haloMat);
     s.scale.setScalar(1.3);
-    s.position.set(p.x, p.y + 3.2, p.z);
+    s.position.set(p.x, base.y + LANTERN_Y, p.z);
     scene.add(s);
     return s;
   });
@@ -303,41 +310,84 @@ export function buildTown(scene, layout, anim, waterMat) {
   place(lighthouse(anim), M.LANDMARKS.lighthouse);
   place(signpost(), { x: M.CENTER.x + 150, y: M.CENTER.y - 150 }, 0);
 
-  // the creek: a ribbon of water hugging the ground, with little wooden bridges where streets cross it
+  // the creek: water sitting down in its channel, following the slope, with a foamy edge line
   const pts = M.CREEK;
   const pos = [], idx = [];
   pts.forEach((q, i) => {
     const n = pts[Math.min(pts.length - 1, i + 1)], pr = pts[Math.max(0, i - 1)];
     const dx = n.x - pr.x, dy = n.y - pr.y, l = Math.hypot(dx, dy) || 1;
-    for (const s of [-1, 1]) {
-      const x = q.x - (dy / l) * 14 * s, y = q.y + (dx / l) * 14 * s;
-      const p = p3(x, y);
-      pos.push(p.x, p.y + 0.07, p.z);
+    const y = M.creekWaterAt(q.x, q.y);
+    for (const side of [-1, 1]) {
+      const p = M.to3(q.x - (dy / l) * (M.CREEK_WATER + 6) * side, q.y + (dx / l) * (M.CREEK_WATER + 6) * side);
+      pos.push(p.x, y, p.z);
     }
-    if (i < pts.length - 1) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    if (i < pts.length - 1) { const a2 = i * 2; idx.push(a2, a2 + 2, a2 + 1, a2 + 1, a2 + 2, a2 + 3); }
   });
   const creekGeo = new THREE.BufferGeometry();
   creekGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   creekGeo.setIndex(idx);
   creekGeo.computeVertexNormals();
-  const creek = new THREE.Mesh(creekGeo, waterMat);
-  group.add(creek);
-  const plank = toon('#a0703f'), rail = toon('#6b4226');
-  for (const road of M.PATHS) {
-    let lastCross = -99;
-    road.pts.forEach((q, i) => {
-      if (i - lastCross < 6 || !M.nearCreek(q, 12)) return;
-      lastCross = i;
-      const n = road.pts[Math.min(road.pts.length - 1, i + 1)];
-      const ang = Math.atan2(n.x - q.x, n.y - q.y);
-      const b = new THREE.Group();
-      mesh(b, new THREE.BoxGeometry(2.4 * road.w + 0.6, 0.18, 3.4), plank, { p: [0, 0.3, 0] });
-      for (const s of [-1, 1]) {
-        mesh(b, new THREE.BoxGeometry(0.12, 0.1, 3.4), rail, { p: [s * (1.2 * road.w + 0.3), 1.0, 0] });
-        for (const z of [-1.5, 0, 1.5]) mesh(b, new THREE.BoxGeometry(0.12, 0.8, 0.12), rail, { p: [s * (1.2 * road.w + 0.3), 0.65, z] });
+  const creekMat = waterMat.clone();
+  creekMat.uniforms = waterMat.uniforms; // share the animated ripples with the lake
+  creekMat.side = THREE.DoubleSide;
+  group.add(new THREE.Mesh(creekGeo, creekMat));
+  // the spring at the head of the creek: a round pool ringed by mossy boulders
+  {
+    const q0 = pts[0], q1 = pts[1];
+    const up = Math.atan2(q0.x - q1.x, q0.y - q1.y); // pointing away from the flow (map angle)
+    const c = M.to3(q0.x, q0.y);
+    const pool = new THREE.Mesh(new THREE.CircleGeometry((M.CREEK_WATER + 6) / M.PX, 32), creekMat);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(c.x, M.creekWaterAt(q0.x, q0.y), c.z);
+    group.add(pool);
+    const boulder = toon('#9a97ab'), moss = toon('#5b8f4a');
+    for (let k = 0; k < 9; k++) {
+      const a = up + (k / 8 - 0.5) * Math.PI * 1.35;
+      const r = M.CREEK_WATER + 20 + (k % 3) * 6;
+      const x = q0.x + Math.sin(a) * r, y = q0.y + Math.cos(a) * r;
+      const p = p3(x, y), size = 0.7 + ((k * 5) % 4) * 0.22;
+      mesh(group, new THREE.DodecahedronGeometry(size, 0), boulder, { p: [p.x, p.y + size * 0.3, p.z], s: [1.1, 0.75, 1], r: [0, k * 1.3, 0], outline: true });
+      if (k % 2 === 0) mesh(group, new THREE.SphereGeometry(size * 0.55, 10, 6), moss, { p: [p.x, p.y + size * 0.8, p.z], s: [1.2, 0.35, 1.1], cast: false });
+    }
+  }
+  // stepping stones + reeds along the banks
+  const stoneMat = toon('#a4a1b5'), reedMat = toon('#3b7f3a');
+  pts.forEach((q, i) => {
+    if (i % 5) return;
+    const n = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = n.x - q.x, dy = n.y - q.y, l = Math.hypot(dx, dy) || 1;
+    for (const side of [-1, 1]) {
+      const x = q.x - (dy / l) * (M.CREEK_WATER + 18) * side, y = q.y + (dx / l) * (M.CREEK_WATER + 18) * side;
+      const p = p3(x, y);
+      if ((i + side) % 3 === 0) mesh(group, new THREE.DodecahedronGeometry(0.45, 0), stoneMat, { p: [p.x, p.y + 0.1, p.z], s: [1, 0.5, 1] });
+      else for (let k = 0; k < 3; k++) mesh(group, new THREE.CylinderGeometry(0.03, 0.04, 1.3, 5), reedMat, { p: [p.x + (k - 1) * 0.2, p.y + 0.6, p.z + ((k * 7) % 3 - 1) * 0.15], cast: false });
+    }
+  });
+  // bridges: a gently arched plank deck with railings, from bank to bank
+  const plank = toon('#a0703f'), dark = toon('#6b4226'), stone = toon('#b8bdd2');
+  for (const br of M.BRIDGES) {
+    const b = new THREE.Group();
+    const len = br.len / M.PX, wid = br.w / M.PX;
+    const n = 14;
+    for (let k = 0; k < n; k++) {
+      const u = (k + 0.5) / n - 0.5;
+      const lift = Math.cos(u * Math.PI) * 0.35;
+      mesh(b, new THREE.BoxGeometry(wid, 0.16, len / n + 0.02), k % 2 ? plank : toon('#94663a'), { p: [0, lift, u * len], r: [-Math.sin(u * Math.PI) * 0.18, 0, 0] });
+    }
+    for (const side of [-1, 1]) {
+      for (let k = 0; k <= 6; k++) {
+        const u = k / 6 - 0.5, lift = Math.cos(u * Math.PI) * 0.35;
+        mesh(b, new THREE.BoxGeometry(0.16, 1.0, 0.16), dark, { p: [side * (wid / 2 - 0.1), lift + 0.5, u * len * 0.94] });
       }
-      place(b, q, ang);
-    });
+      const railPts = Array.from({ length: 13 }, (_, k) => { const u = k / 12 - 0.5; return new THREE.Vector3(side * (wid / 2 - 0.1), Math.cos(u * Math.PI) * 0.35 + 1.0, u * len * 0.94); });
+      const railGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts), 24, 0.06, 6);
+      mesh(b, railGeo, dark);
+      for (const end of [-1, 1]) mesh(b, new THREE.BoxGeometry(0.5, 1.3, 0.5), stone, { p: [side * (wid / 2 + 0.1), 0.4, end * len / 2], outline: true });
+    }
+    const c = M.to3(br.x, br.y);
+    b.position.set(c.x, br.deck - 0.1, c.z);
+    b.rotation.y = br.a;
+    group.add(b);
   }
   // cottage windows glow in the evening
   const windows = [];

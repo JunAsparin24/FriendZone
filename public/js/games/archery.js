@@ -265,8 +265,9 @@ export function archery(stage) {
   });
 
   // ---- frame ---------------------------------------------------------------------
-  // over the shoulder, far enough back to see your whole character drawing the bow
-  const camPos = new THREE.Vector3(1.6, 2.55, 5.0), camLook = new THREE.Vector3(-1.0, TARGET_Y - 0.9, -DIST);
+  // from the drawing-hand side and a little wider than usual, so you see your character side-on
+  // drawing the bow with the targets beyond
+  const camPos = new THREE.Vector3(2.5, 1.95, 2.4), camLook = new THREE.Vector3(-7, TARGET_Y - 1.3, -DIST);
   const hit = new THREE.Vector3();
   stage.onFrame((dt) => {
     t += dt;
@@ -276,6 +277,8 @@ export function archery(stage) {
     me.char.draw += (goal - me.char.draw) * Math.min(1, dt * (drawing ? 10 : 25));
     me.char.nocked = !flying && !round.done && round.wait <= 0;
     if (round.wait > 0) { round.wait -= dt; if (round.wait <= 0) setupArrow(); }
+    const fov = (window.innerWidth < 700 ? 62 : 50) + 18;
+    if (stage.camera.fov !== fov) { stage.camera.fov = fov; stage.camera.updateProjectionMatrix(); }
     stage.camera.position.copy(camPos);
     stage.camera.lookAt(camLook);
     stage.raycaster.setFromCamera(stage.mouse, stage.camera);
@@ -336,5 +339,6 @@ export function archery(stage) {
     for (const l of leaves) stage.scene?.remove(l.s);
     stage.canvas.style.cursor = '';
     stage.scene?.remove(env.group);
+    stage.resize(); // back to the normal field of view
   };
 }

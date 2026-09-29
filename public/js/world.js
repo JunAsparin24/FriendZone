@@ -21,7 +21,7 @@ const CATALOG_RODS = Object.fromEntries(CATALOG.rods.map((r) => [r.id, r]));
 export const EMOTES = M.EMOTES;
 export const SPOTS = M.SPOTS;
 
-const SPEED = 130;            // map px per second: a relaxed walk
+const SPEED = 150;            // map px per second: a relaxed walk
 const SPRINT = 2.3;           // Shift: a run (about the old walking speed)
 const R = 12;                 // collision radius in map px
 const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown', 'hat_horns']);
@@ -135,7 +135,7 @@ export class World {
       el.innerHTML = `<span class="wl-em">${iconSvg(s.id) || s.emoji}</span>${esc(s.name)}<kbd>E</kbd>`;
       this.labels.append(el);
       const c = M.to3(s.x + s.w / 2, s.kind === 'pond' ? s.y : s.y + s.h / 2);
-      return { spot: s, el, pos: new THREE.Vector3(c.x, (BUILDING_HEIGHT[s.kind] ?? 7) + M.heightAt(s.x + s.w / 2, s.y + s.h / 2), c.z) };
+      return { spot: s, el, pos: new THREE.Vector3(c.x, (BUILDING_HEIGHT[s.kind] ?? 7) * (s.kind === 'pond' ? 1 : s.scale ?? 1) + M.heightAt(s.x + s.w / 2, s.y + s.h / 2), c.z) };
     });
   }
 
@@ -521,6 +521,7 @@ export class World {
     if (SPOTS.some((s) => M.distToRect({ x, y }, solid(s)) < R)) return true;
     if (this.layout.trees.some((t) => t.kind !== 'bush' && Math.hypot(x - t.x, y - t.y) < 9 + R)) return true;
     if (this.layout.lamps.some((l) => Math.hypot(x - l.x, y - l.y) < 6 + R)) return true;
+    if (M.inCreek(x, y)) return true; // the creek is too deep to wade: use a bridge
     const p = { x, y };
     return this.layout.solids.some((o) => (o.rect ? M.distToRect(p, o.rect) < R
       : o.circle ? Math.hypot(x - o.circle.x, y - o.circle.y) < o.circle.r + R
@@ -640,7 +641,7 @@ export class World {
         a.char.setLook(look);
       }
       const p = M.to3(a.x, a.y);
-      a.ground = M.heightAt(a.x, a.y);
+      a.ground = M.groundAt(a.x, a.y);
       a.char.root.position.set(p.x, a.ground + (a.lift ?? 0), p.z);
       a.line?.update(dt, a.char.rodTip?.getWorldPosition(new THREE.Vector3()), 0.5);
       const cur = a.char.root.rotation.y;
@@ -762,7 +763,7 @@ export class World {
 
   updateCamera(dt, me) {
     const p = me ? M.to3(me.x, me.y) : { x: 0, z: 0 };
-    const goal = new THREE.Vector3(p.x, 1.3 + (me ? M.heightAt(me.x, me.y) : 0), p.z);
+    const goal = new THREE.Vector3(p.x, 1.3 + (me ? M.groundAt(me.x, me.y) : 0), p.z);
     if (!this.camReady) { this.camTarget.copy(goal); this.camReady = true; }
     this.camTarget.lerp(goal, 1 - Math.exp(-dt * 9));
     const c = this.camTarget, cp = Math.cos(this.pitch);

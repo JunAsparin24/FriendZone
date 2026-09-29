@@ -1,12 +1,17 @@
 // World layout shared by the 3D renderer, movement/collision and the minimap.
-// Positions are in "map pixels" (the same units the server uses): 4800 x 3200. The town grows out
+// Positions are in "map pixels" (the same units the server uses): 7200 x 4800. The town grows out
 // from the square in the middle: shops and the studio around it, the games in their own districts,
 // a residential lane to the south, a creek running down from the northwest hills into the lake.
-export const W = 4800;
-export const H = 3200;
+export const W = 7200;
+export const H = 4800;
 export const TAU = Math.PI * 2;
 export const CENTER = { x: W / 2, y: H / 2 };
-export const PLAZA_R = 170;
+export const PLAZA_R = 230;
+// The layout below is drawn on a 4800 x 3200 plan and spread out by K; buildings are then made BIG
+// times their plan size (they're modelled at plan size and scaled up, so they keep their looks).
+export const K = 1.5;
+export const BIG = 1.6;
+const P = (x, y) => [x * K, y * K];
 export const FOUNTAIN_R = 46;
 /** Map pixels per 3D world unit. */
 export const PX = 20;
@@ -15,7 +20,7 @@ export const EMOTES = { wave: '👋', laugh: '😂', heart: '❤️', fire: '�
 
 // `face` is the side the door is on (default 's'); buildings turn to face their street.
 // For 'e'/'w' the footprint is already turned (w runs along x, h along y).
-export const SPOTS = [
+const PLAN_SPOTS = [
   { id: 'doodle', emoji: '🎨', name: 'Doodle Studio', kind: 'studio', x: 1990, y: 1080, w: 260, h: 210 },
   { id: 'shop', emoji: '👕', name: 'Style Shop', kind: 'boutique', x: 2620, y: 1070, w: 330, h: 220 },
   { id: 'trading', emoji: '💰', name: 'Trading Post', kind: 'market', x: 1830, y: 1440, w: 190, h: 310, face: 'e' },
@@ -29,6 +34,10 @@ export const SPOTS = [
   { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 2230, y: 2330, w: 380, h: 270, face: 'n' },
   { id: 'pets', emoji: '🐾', name: 'Pet Shop', kind: 'petshop', x: 3230, y: 1720, w: 280, h: 210, face: 'n' },
 ];
+export const SPOTS = PLAN_SPOTS.map((s) => {
+  const cx = (s.x + s.w / 2) * K, cy = (s.y + s.h / 2) * K, w = s.w * BIG, h = s.h * BIG;
+  return { ...s, x: cx - w / 2, y: cy - h / 2, w, h, scale: BIG };
+});
 
 /** The part of a spot you can't walk through (buildings: the lower part; ponds: all of it). */
 export const solidOf = (s) => (s.kind === 'pond' ? { x: s.x, y: s.y - 14, w: s.w, h: s.h + 14 } : { x: s.x, y: s.y + s.h * 0.42, w: s.w, h: s.h * 0.58 });
@@ -59,13 +68,13 @@ export const to3 = (x, y) => ({ x: (x - CENTER.x) / PX, z: (y - CENTER.y) / PX }
 // Hills with flat tops (the Boss Cave sits on the northwest one, dug into its slope). Heights are
 // in 3D world units; everything else in the town stays at ground level.
 export const HILLS = [
-  { x: 1300, y: 640, r: 600, h: 5.5, top: 0.42 },   // the highland: cave + windmill
-  { x: 380, y: 700, r: 330, h: 2.6, top: 0.2 },
-  { x: 4330, y: 520, r: 430, h: 3.6, top: 0.25 },   // lookout hill behind the arena
-  { x: 3950, y: 2760, r: 420, h: 3.0, top: 0.3 },   // orchard hill
-  { x: 1500, y: 2900, r: 300, h: 1.6, top: 0.2 },
-];
-export function heightAt(x, y) {
+  { x: 1300, y: 640, r: 600, h: 6.5, top: 0.42 },   // the highland: cave + windmill
+  { x: 380, y: 700, r: 330, h: 3.0, top: 0.2 },
+  { x: 4330, y: 520, r: 430, h: 4.2, top: 0.25 },   // lookout hill behind the arena
+  { x: 3950, y: 2760, r: 420, h: 3.4, top: 0.3 },   // orchard hill
+  { x: 1500, y: 2900, r: 300, h: 1.8, top: 0.2 },
+].map((h) => ({ ...h, x: h.x * K, y: h.y * K, r: h.r * K }));
+function hillHeight(x, y) {
   let h = 0;
   for (const hl of HILLS) {
     const d = Math.hypot(x - hl.x, y - hl.y) / hl.r;
@@ -95,53 +104,113 @@ function spline(ctrl, step = 22) {
 }
 const door = (id) => { const d = doorOf(SPOTS.find((s) => s.id === id)); return [d.x, d.y]; };
 const C = CENTER;
+const edge = (dx, dy) => [C.x + dx * (PLAZA_R + 20), C.y + dy * (PLAZA_R + 20)]; // a point just off the square
 const ROADS = [
-  { name: 'Main Street', w: 1.1, lamps: true, ctrl: [[C.x + 160, C.y + 20], [2950, 1640], [3420, 1600], door('casino')] },
-  { name: 'Speedway Road', w: 1, lamps: true, ctrl: [[C.x, C.y - 165], [2410, 1250], [2380, 800], door('racing')] },
-  { name: 'Highland Road', w: 0.9, lamps: true, ctrl: [[C.x - 130, C.y - 110], [2000, 1330], [1760, 1120], [1600, 900], [1440, 720], door('boss')] },
-  { name: 'Market Street', w: 1, lamps: true, ctrl: [[C.x - 165, C.y + 10], door('trading'), [1640, 1560], [1250, 1520], door('archery')] },
-  { name: 'Lakeside Walk', w: 0.8, ctrl: [[1300, 1528], [1180, 1780], [1020, 1990], door('fishing')] },
-  { name: 'Maple Lane', w: 0.9, lamps: true, ctrl: [[C.x, C.y + 165], [2410, 1900], door('house')] },
-  { name: 'Maple Lane', w: 0.85, ctrl: [[1640, 2190], [2050, 2200], [2420, 2230], [2850, 2210], [3280, 2240], [3560, 2330]] },
-  { name: 'Stadium Way', w: 0.9, lamps: true, ctrl: [[2950, 1640], [3060, 1260], door('bumper')] },
-  { name: 'Stadium Way', w: 0.85, ctrl: [[3060, 1260], [3420, 1070], door('arena')] },
-  { name: 'Pet Walk', w: 0.7, ctrl: [[3300, 1612], door('pets')] },
-  { name: 'Studio Walk', w: 0.7, ctrl: [door('doodle'), [2190, 1420], [C.x - 110, C.y - 130]] },
-  { name: 'Shop Walk', w: 0.7, ctrl: [door('shop'), [2700, 1400], [C.x + 120, C.y - 125]] },
+  { name: 'Main Street', w: 1.1, lamps: true, ctrl: [edge(1, 0.1), P(2950, 1640), P(3420, 1600), door('casino')] },
+  { name: 'Speedway Road', w: 1, lamps: true, ctrl: [edge(0, -1), P(2410, 1250), P(2380, 800), door('racing')] },
+  { name: 'Highland Road', w: 0.9, lamps: true, ctrl: [edge(-0.75, -0.66), P(2000, 1330), P(1760, 1120), P(1600, 900), P(1440, 740), door('boss')] },
+  { name: 'Market Street', w: 1, lamps: true, ctrl: [edge(-1, 0.05), door('trading'), P(1640, 1560), P(1250, 1520), door('archery')] },
+  { name: 'Lakeside Walk', w: 0.8, ctrl: [P(1300, 1528), P(1180, 1780), P(1060, 1990), door('fishing')] },
+  { name: 'Maple Lane', w: 0.9, lamps: true, ctrl: [edge(0, 1), P(2410, 1900), door('house')] },
+  { name: 'Maple Lane', w: 0.85, ctrl: [P(1640, 2190), P(2050, 2200), P(2420, 2215), P(2850, 2210), P(3280, 2240), P(3560, 2330)] },
+  { name: 'Stadium Way', w: 0.9, lamps: true, ctrl: [P(2950, 1640), P(3060, 1260), door('bumper')] },
+  { name: 'Stadium Way', w: 0.85, ctrl: [P(3060, 1260), P(3420, 1070), door('arena')] },
+  { name: 'Pet Walk', w: 0.7, ctrl: [P(3370, 1618), door('pets')] },
+  { name: 'Studio Walk', w: 0.7, ctrl: [door('doodle'), P(2190, 1420), edge(-0.62, -0.78)] },
+  { name: 'Shop Walk', w: 0.7, ctrl: [door('shop'), P(2700, 1400), edge(0.62, -0.78)] },
 ];
-export const PATHS = ROADS.map((r) => ({ ...r, pts: spline(r.ctrl) }));
+export const PATHS = ROADS.map((r) => ({ ...r, w: r.w * 1.25, pts: spline(r.ctrl, 26) }));
 export const nearPath = (p, margin) => PATHS.some((path) => path.pts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < margin * path.w));
 
-// the creek runs down from the highland into the lake; roads cross it on little bridges
-export const CREEK = spline([[1560, 1000], [1450, 1260], [1480, 1500], [1360, 1760], [1220, 1960], [1130, 2170]], 18);
+// the creek runs down from the highland into the lake, in a channel you can't wade through; streets
+// cross it on bridges
+export const CREEK = spline([P(1560, 1000), P(1450, 1260), P(1480, 1500), P(1360, 1760), P(1220, 1960), P(1150, 2150)], 20);
+export const CREEK_WATER = 30;   // half width of the water (map px)
+const CREEK_BANK = 70;           // where the banks meet the meadow
+export const CREEK_DEPTH = 1.6;  // world units the channel is dug into the ground
 export const nearCreek = (p, margin) => CREEK.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < margin);
+const creekBox = CREEK.reduce((b, q) => ({ x0: Math.min(b.x0, q.x), x1: Math.max(b.x1, q.x), y0: Math.min(b.y0, q.y), y1: Math.max(b.y1, q.y) }), { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
+export function creekDist(x, y) {
+  if (x < creekBox.x0 - CREEK_BANK || x > creekBox.x1 + CREEK_BANK || y < creekBox.y0 - CREEK_BANK || y > creekBox.y1 + CREEK_BANK) return Infinity;
+  let best = Infinity;
+  for (let i = 0; i < CREEK.length - 1; i++) best = Math.min(best, distToSeg({ x, y }, CREEK[i], CREEK[i + 1]));
+  return best;
+}
+const carve = (d) => (d >= CREEK_BANK ? 0 : d <= CREEK_WATER ? 1 : 0.5 * (1 + Math.cos(Math.PI * (d - CREEK_WATER) / (CREEK_BANK - CREEK_WATER))));
+
+// heights on a 20 px grid (hills minus the creek channel), read back with bilinear filtering
+const CELL = 20, GW = Math.ceil(W / CELL) + 1, GH = Math.ceil(H / CELL) + 1;
+const HGRID = new Float32Array(GW * GH);
+for (let j = 0; j < GH; j++) {
+  for (let i = 0; i < GW; i++) {
+    const x = i * CELL, y = j * CELL;
+    HGRID[j * GW + i] = hillHeight(x, y) - CREEK_DEPTH * carve(creekDist(x, y));
+  }
+}
+/** Terrain height (world units) at a map point. */
+export function heightAt(x, y) {
+  const fx = Math.min(GW - 1.001, Math.max(0, x / CELL)), fy = Math.min(GH - 1.001, Math.max(0, y / CELL));
+  const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+  const a = HGRID[j * GW + i], b = HGRID[j * GW + i + 1], c = HGRID[(j + 1) * GW + i], d = HGRID[(j + 1) * GW + i + 1];
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+}
+/** The creek's water level at a point along it. */
+export const creekWaterAt = (x, y) => hillHeight(x, y) - CREEK_DEPTH + 0.6;
+
+/** Where a street crosses the creek there's a bridge: { x, y, a (heading), len, w, deck }. */
+export const BRIDGES = [];
+for (const road of PATHS) {
+  let run = [];
+  const flush = () => {
+    if (run.length) {
+      const m = run[Math.floor(run.length / 2)], n = road.pts[Math.min(road.pts.length - 1, road.pts.indexOf(m) + 1)];
+      const a = Math.atan2(n.x - m.x, n.y - m.y);
+      BRIDGES.push({ x: m.x, y: m.y, a, len: CREEK_BANK * 2 + 40, w: 60 * road.w + 20, deck: hillHeight(m.x, m.y) + 0.25 });
+    }
+    run = [];
+  };
+  for (const q of road.pts) (creekDist(q.x, q.y) < CREEK_WATER + 10 ? run.push(q) : flush());
+  flush();
+}
+const onBridge = (x, y) => BRIDGES.find((b) => {
+  const dx = x - b.x, dy = y - b.y;
+  const along = dx * Math.sin(b.a) + dy * Math.cos(b.a), across = dx * Math.cos(b.a) - dy * Math.sin(b.a);
+  return Math.abs(along) < b.len / 2 && Math.abs(across) < b.w / 2;
+});
+/** Height to stand at: the ground, or a bridge deck. */
+export function groundAt(x, y) {
+  const b = onBridge(x, y);
+  return b ? Math.max(heightAt(x, y), b.deck) : heightAt(x, y);
+}
+/** In the creek's water (and not on a bridge)? */
+export const inCreek = (x, y) => creekDist(x, y) < CREEK_WATER + 6 && !onBridge(x, y);
 
 // ---- town furniture ------------------------------------------------------------------------
 // cottages along Maple Lane (decoration: the real houses are inside the Houses building)
 const COTTAGE_COLORS = ['#ffd6a5', '#bde0fe', '#ffc8dd', '#caffbf', '#fdffb6', '#e0c3fc', '#ffadad', '#a0c4ff'];
 const ROOFS = ['#d6334a', '#3b5bdb', '#2f9e44', '#8b5a2b', '#7048e8', '#e8590c'];
 export const COTTAGES = [
-  [1700, 2030, 's'], [1880, 2040, 's'], [2690, 2050, 's'], [2880, 2040, 's'], [3080, 2060, 's'],
-  [1690, 2320, 'n'], [1890, 2330, 'n'], [2720, 2340, 'n'], [2920, 2330, 'n'], [3130, 2360, 'n'],
-].map(([x, y, face], i) => ({ x, y, w: 130, h: 110, face, color: COTTAGE_COLORS[i % COTTAGE_COLORS.length], roof: ROOFS[(i * 5) % ROOFS.length] }));
+  [1700, 2040, 's'], [1900, 2040, 's'], [2690, 2040, 's'], [2890, 2040, 's'], [3090, 2050, 's'],
+  [1700, 2310, 'n'], [1900, 2310, 'n'], [2720, 2320, 'n'], [2920, 2320, 'n'], [3120, 2340, 'n'],
+].map(([x, y, face], i) => ({ x: x * K, y: y * K, w: 160, h: 135, face, color: COTTAGE_COLORS[i % COTTAGE_COLORS.length], roof: ROOFS[(i * 5) % ROOFS.length] }));
 // market stalls between the square and the trading post
-export const STALLS = [[2060, 1780, 0], [2170, 1840, 0.3], [1720, 1300, 0], [1690, 1820, 3.14]].map(([x, y, r], i) => ({ x, y, r, color: ['#ff5d73', '#39c6ff', '#ffd84d', '#6ee7a0'][i] }));
-export const LANDMARKS = {
-  windmill: { x: 1560, y: 560 },
-  gazebo: { x: 3560, y: 2560 },
-  well: { x: 1500, y: 1650 },
-  lighthouse: { x: 520, y: 2600 },
-};
+export const STALLS = [[2080, 1790, 0], [2200, 1850, 0.3], [1700, 1320, 0], [1700, 1820, 3.14]].map(([x, y, r], i) => ({ x: x * K, y: y * K, r, color: ['#ff5d73', '#39c6ff', '#ffd84d', '#6ee7a0'][i] }));
+export const LANDMARKS = Object.fromEntries(Object.entries({
+  windmill: [1580, 560],
+  gazebo: [3560, 2560],
+  well: [1560, 1680],
+  lighthouse: [470, 2640],
+}).map(([k, [x, y]]) => [k, { x: x * K, y: y * K }]));
 
 /** Is this point clear of the square, buildings, streets, water and props (for scattering things)? */
 export function openGround(p, pad = 10) {
   if (Math.hypot(p.x - CENTER.x, p.y - CENTER.y) < PLAZA_R + 40) return false;
   // (<= so that points inside a footprint count even with no padding)
-  if (SPOTS.some((s) => distToRect(p, { x: s.x - 30, y: s.y - 40, w: s.w + 60, h: s.h + 70 }) <= pad)) return false;
+  if (SPOTS.some((s) => distToRect(p, { x: s.x - 90, y: s.y - 90, w: s.w + 180, h: s.h + 180 }) <= pad)) return false;
   if (COTTAGES.some((c) => distToRect(p, { x: c.x - 70, y: c.y - 60, w: c.w + 140, h: c.h + 120 }) <= pad)) return false;
   if (STALLS.some((s) => Math.hypot(p.x - s.x, p.y - s.y) < 60 + pad)) return false;
   if (Object.values(LANDMARKS).some((l) => Math.hypot(p.x - l.x, p.y - l.y) < 90 + pad)) return false;
-  if (nearCreek(p, 40 + pad)) return false;
+  if (creekDist(p.x, p.y) < CREEK_BANK + pad) return false;
   return !nearPath(p, 38);
 }
 
@@ -165,9 +234,22 @@ export function buildLayout() {
     const [yFront, yBack] = c.face === 's' ? [c.y + c.h + 55, c.y - 30] : [c.y - 55, c.y + c.h + 30];
     fences.push({ kind: 'picket', pts: [{ x: gate - 22, y: yFront }, { x: x0, y: yFront }, { x: x0, y: yBack }, { x: x1, y: yBack }, { x: x1, y: yFront }, { x: gate + 22, y: yFront }] });
   }
-  fences.push({ kind: 'rail', pts: [{ x: 300, y: 1180 }, { x: 300, y: 1760 }, { x: 600, y: 1800 }] }); // archery field
-  fences.push({ kind: 'rail', pts: [{ x: 3560, y: 2760 }, { x: 3700, y: 2980 }, { x: 4200, y: 3040 }, { x: 4330, y: 2820 }] }); // orchard
-  fences.push({ kind: 'rail', pts: spline([[1560, 1060], [1510, 880], [1420, 760]], 60).map((p) => ({ x: p.x + 60, y: p.y + 10 })) }); // highland road edge
+const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
+  fences.push({ kind: 'rail', pts: plan([[330, 1180], [330, 1760], [600, 1800]]) }); // archery field
+  fences.push({ kind: 'rail', pts: plan([[3560, 2760], [3700, 2980], [4200, 3040], [4330, 2820]]) }); // orchard
+  // a rail along the downhill edge of the Highland Road as it climbs, clear of the road itself
+  const hill = HILLS[0], road = PATHS.find((r) => r.name === 'Highland Road');
+  const rail = [];
+  road.pts.forEach((q, i) => {
+    if (i % 3 || i < road.pts.length * 0.35 || i > road.pts.length - 8) return;
+    const n = road.pts[Math.min(road.pts.length - 1, i + 1)];
+    const len = Math.hypot(n.x - q.x, n.y - q.y) || 1;
+    const nx = -(n.y - q.y) / len, ny = (n.x - q.x) / len;
+    const off = 60 * road.w;
+    const a = { x: q.x + nx * off, y: q.y + ny * off }, b = { x: q.x - nx * off, y: q.y - ny * off };
+    rail.push(Math.hypot(a.x - hill.x, a.y - hill.y) > Math.hypot(b.x - hill.x, b.y - hill.y) ? a : b);
+  });
+  fences.push({ kind: 'rail', pts: rail });
   const solids = propSolids(fences);
   const nearFence = (p, m) => fences.some((f) => f.pts.some((q, i) => i < f.pts.length - 1 && distToSeg(p, q, f.pts[i + 1]) < m));
 
@@ -181,9 +263,9 @@ export function buildLayout() {
   const wildness = (x, y) => {
     const edge = Math.min(x, y, W - x, H - y);
     const town = Math.hypot((x - CENTER.x) / 1.4, y - CENTER.y);
-    return Math.min(1, Math.max(0.05, (town - 550) / 900)) * (edge < 300 ? 1.6 : 1) + (heightAt(x, y) > 0.5 ? 0.5 : 0);
+    return Math.min(1, Math.max(0.03, (town - 900) / 1300)) * (edge < 400 ? 1.6 : 1) + (heightAt(x, y) > 0.5 ? 0.5 : 0);
   };
-  for (let i = 0; i < 9000 && trees.length < 330; i++) {
+  for (let i = 0; i < 16000 && trees.length < 560; i++) {
     const x = 60 + rnd() * (W - 120), y = 80 + rnd() * (H - 120);
     if (rnd() > wildness(x, y) * 0.7) continue;
     const t = { x, y, kind: rnd() < (heightAt(x, y) > 1 ? 0.6 : 0.28) ? 'pine' : rnd() < 0.3 ? 'bush' : 'oak', v: Math.floor(rnd() * 3), size: 0 };
@@ -191,7 +273,7 @@ export function buildLayout() {
     if (!clash(t)) trees.push(t);
   }
   for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) { // the orchard
-    const t = { x: 3720 + c * 110 + (r % 2) * 50, y: 2800 + r * 80, kind: 'oak', v: 3, size: 22 };
+    const t = { x: (3720 + c * 110 + (r % 2) * 50) * K, y: (2800 + r * 80) * K, kind: 'oak', v: 3, size: 22 };
     if (!trees.some((o) => Math.hypot(o.x - t.x, o.y - t.y) < 40)) trees.push(t);
   }
   const border = [];
@@ -206,8 +288,8 @@ export function buildLayout() {
 
   // ---- lamps: along the lit streets, well spaced and alternating sides; four at the square's corners
   const lamps = [];
-  const lampOk = (p) => !nearPath(p, 26) && !lamps.some((l) => Math.hypot(l.x - p.x, l.y - p.y) < 230)
-    && !SPOTS.some((s) => distToRect(p, s) < 30) && !nearCreek(p, 30) && Math.hypot(p.x - CENTER.x, p.y - CENTER.y) > PLAZA_R + 20
+  const lampOk = (p) => !nearPath(p, 26) && !lamps.some((l) => Math.hypot(l.x - p.x, l.y - p.y) < 320)
+    && !SPOTS.some((s) => distToRect(p, s) < 40) && creekDist(p.x, p.y) > CREEK_BANK && Math.hypot(p.x - CENTER.x, p.y - CENTER.y) > PLAZA_R + 20
     && !COTTAGES.some((c) => distToRect(p, { x: c.x - 40, y: c.y - 55, w: c.w + 80, h: c.h + 110 }) < 5);
   for (let i = 0; i < 4; i++) {
     const a = ((i + 0.5) / 4) * TAU;
@@ -231,21 +313,21 @@ export function buildLayout() {
   const facing = (b, tx, ty) => Math.atan2(tx - b.x, ty - b.y);
   for (let i = 0; i < 4; i++) { // on the square, between the streets, facing the fountain
     const a = ((i + 0.5) / 4) * TAU;
-    const p = { x: CENTER.x + Math.cos(a) * 118, y: CENTER.y + Math.sin(a) * 118 };
+    const p = { x: CENTER.x + Math.cos(a) * 150, y: CENTER.y + Math.sin(a) * 150 };
     benches.push({ ...p, h: facing(p, CENTER.x, CENTER.y) });
   }
   const g = LANDMARKS.gazebo;
   for (let i = 0; i < 3; i++) { // round the gazebo in the park
     const a = -0.4 + i * 1.3;
-    const p = { x: g.x + Math.cos(a) * 150, y: g.y + Math.sin(a) * 150 };
+    const p = { x: g.x + Math.cos(a) * 170, y: g.y + Math.sin(a) * 170 };
     benches.push({ ...p, h: facing(p, g.x, g.y) });
   }
   const pond = SPOTS.find((s) => s.kind === 'pond');
   benches.push({ x: pond.x + pond.w + 60, y: pond.y + 140, h: -Math.PI / 2 }, { x: pond.x + pond.w + 60, y: pond.y + 240, h: -Math.PI / 2 });
-  benches.push({ x: 1320, y: 820, h: facing({ x: 1320, y: 820 }, 1700, 1400) }); // view from the highland
+  benches.push({ x: 1330 * K, y: 830 * K, h: facing({ x: 1330 * K, y: 830 * K }, 1700 * K, 1400 * K) }); // view from the highland
 
   const archery = SPOTS.find((s) => s.id === 'archery');
-  const targets = [{ x: archery.x - 150, y: archery.y + 60 }, { x: archery.x - 190, y: archery.y + 170 }, { x: archery.x - 150, y: archery.y + 280 }];
+  const targets = [{ x: archery.x - 170, y: archery.y + 90 }, { x: archery.x - 220, y: archery.y + 250 }, { x: archery.x - 170, y: archery.y + 410 }];
   return { trees, border, lamps, benches, targets, fences, solids };
 }
 
@@ -256,7 +338,7 @@ export function distToSeg(p, a, b) {
 }
 
 /** Paint the ground (grass, hills, streets, square, creek, gardens, lake bed) onto a canvas. Used as the 3D ground texture and the minimap. */
-export function renderGround(scale = 0.8) {
+export function renderGround(scale = 0.55) {
   const c = document.createElement('canvas');
   c.width = Math.round(W * scale);
   c.height = Math.round(H * scale);
@@ -311,9 +393,9 @@ export function renderGround(scale = 0.8) {
   // the orchard's rows and the archery field
   ctx.strokeStyle = 'rgba(90,150,60,.35)';
   ctx.lineWidth = 10;
-  for (let r = 0; r < 3; r++) { ctx.beginPath(); ctx.moveTo(3690, 2800 + r * 80); ctx.lineTo(4300, 2800 + r * 80); ctx.stroke(); }
+  for (let r = 0; r < 3; r++) { ctx.beginPath(); ctx.moveTo(3690 * K, (2800 + r * 80) * K); ctx.lineTo(4300 * K, (2800 + r * 80) * K); ctx.stroke(); }
   ctx.fillStyle = 'rgba(160,220,110,.18)';
-  ctx.beginPath(); ctx.roundRect(300, 1180, 330, 580, 60); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(330 * K, 1180 * K, 300 * K, 580 * K, 80); ctx.fill();
 
   // streets
   ctx.lineCap = 'round';
@@ -338,8 +420,8 @@ export function renderGround(scale = 0.8) {
     }
   }
 
-  // the creek: sandy banks, then water
-  for (const [width, color] of [[46, '#d9c38f'], [30, '#3f8fcf'], [18, '#5fb0ea']]) {
+  // the creek: grassy then sandy banks down to the channel bed (the 3D water sits on top)
+  for (const [width, color] of [[CREEK_BANK * 2, 'rgba(70,130,60,.35)'], [CREEK_BANK * 1.4, '#d9c38f'], [CREEK_WATER * 2, '#8f7a52']]) {
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
     ctx.beginPath();
@@ -396,15 +478,15 @@ export function renderGround(scale = 0.8) {
   // lake bed (the 3D water surface sits on top of this)
   const pond = SPOTS.find((s) => s.kind === 'pond');
   ctx.fillStyle = '#d9c38f';
-  ctx.beginPath(); ctx.roundRect(pond.x - 24, pond.y - 24, pond.w + 48, pond.h + 48, 150); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(pond.x - 30, pond.y - 30, pond.w + 60, pond.h + 60, 230); ctx.fill();
   ctx.fillStyle = '#b89d68';
-  ctx.beginPath(); ctx.roundRect(pond.x - 6, pond.y - 6, pond.w + 12, pond.h + 12, 130); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(pond.x - 8, pond.y - 8, pond.w + 16, pond.h + 16, 205); ctx.fill();
   const wg = ctx.createRadialGradient(pond.x + pond.w / 2, pond.y + pond.h / 2, 20, pond.x + pond.w / 2, pond.y + pond.h / 2, pond.w / 1.6);
   wg.addColorStop(0, '#12407a');
   wg.addColorStop(0.7, '#1f5fa8');
   wg.addColorStop(1, '#3f8fcf');
   ctx.fillStyle = wg;
-  ctx.beginPath(); ctx.roundRect(pond.x, pond.y, pond.w, pond.h, 120); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(pond.x, pond.y, pond.w, pond.h, 190); ctx.fill();
 
   // a red carpet out of the casino's door
   const casino = SPOTS.find((s) => s.kind === 'casino');

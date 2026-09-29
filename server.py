@@ -61,7 +61,7 @@ def is_area(scene):
     """Walk-around rooms: the casino, and every member's house ("house:<owner>")."""
     return scene in AREA_SCENES or (isinstance(scene, str) and scene.startswith("house:"))
 POSES = {"fish", "cast", "bite", "reel", "catch", "bench"}
-WORLD_W, WORLD_H = 4800, 3200
+WORLD_W, WORLD_H = 7200, 4800
 START_COINS = 500
 DAILY_BONUS = 300
 DAILY_SECS = 20 * 3600

@@ -40,6 +40,38 @@ const R = 0.42; // head radius
 const OUT = outlineMaterial(0.02);
 const OUT_THIN = outlineMaterial(0.012);
 const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
+const _xAxis = new THREE.Vector3(1, 0, 0), _yAxis = new THREE.Vector3(0, 1, 0);
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3(), _v6 = new THREE.Vector3(), _v7 = new THREE.Vector3();
+const _v8 = new THREE.Vector3(), _m1 = new THREE.Matrix4();
+const BOW_SCALE = 0.72;
+
+/**
+ * Two-bone IK for an arm: turn the shoulder pivot and bend the elbow so the hand lands on `target`
+ * (in the pivot's parent frame), with the elbow rolled towards `pole`. Out of reach -> arm straight.
+ */
+function ikArm(pivot, elbow, target, pole) {
+  const l = 0.19;
+  const reach = _ik1.copy(target).sub(pivot.position).divideScalar(pivot.scale.x);
+  const dist = Math.min(Math.max(reach.length(), 0.05), l * 2 * 0.995);
+  const bend = Math.PI - Math.acos(Math.min(1, Math.max(-1, (2 * l * l - dist * dist) / (2 * l * l))));
+  elbow.rotation.set(-bend, 0, 0);
+  const hand = _ik2.set(0, -l - l * Math.cos(bend), l * Math.sin(bend)).normalize();
+  const n = reach.normalize();
+  const q = _ikq.setFromUnitVectors(hand, n);
+  const e = _ik3.set(0, -1, 0).applyQuaternion(q);
+  const pl = _ik4.copy(pole);
+  e.addScaledVector(n, -e.dot(n));
+  pl.addScaledVector(n, -pl.dot(n));
+  if (e.lengthSq() > 1e-6 && pl.lengthSq() > 1e-6) {
+    const ang = Math.atan2(n.dot(_ik2.crossVectors(e, pl)), e.dot(pl));
+    q.premultiply(_ikq2.setFromAxisAngle(n, ang));
+  }
+  pivot.quaternion.copy(q);
+}
+const _ik1 = new THREE.Vector3(), _ik2 = new THREE.Vector3(), _ik3 = new THREE.Vector3(), _ik4 = new THREE.Vector3();
+const _ikq = new THREE.Quaternion(), _ikq2 = new THREE.Quaternion();
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _q4 = new THREE.Quaternion();
 
 const TOPS = {
   top_tee: { sleeve: 'short' },
@@ -212,10 +244,25 @@ function fringe(head, mat, count = 4, { y = 0.24, spread = 0.44, size = 0.13 } =
 
 /** A hanging curtain of hair around the back and sides (long hair, bobs). */
 function curtain(head, mat, { len = 0.62, flare = 0.1, wrap = 0.35, top = 0 } = {}) {
-  const g = geo(`curtain${len},${flare},${wrap}`, () =>
-    new THREE.CylinderGeometry(R + 0.045, R + 0.045 + flare, len, 36, 4, true, Math.PI / 2 - wrap, Math.PI + wrap * 2));
+  // a lathe that starts up under the hair shell hugging the skull, then falls from the widest point
+  // with a soft flare and tucks under at the ends, so it reads as one piece with the rest of the hair
+  const g = geo(`curtain2${len},${flare},${wrap}`, () => {
+    const pts = [];
+    const r0 = R + 0.05;
+    for (let k = 0; k <= 6; k++) {
+      const a = 0.75 - (k / 6) * 0.75; // angle above the equator
+      pts.push(new THREE.Vector2(Math.cos(a) * r0, Math.sin(a) * r0));
+    }
+    for (let k = 1; k <= 8; k++) {
+      const t = k / 8;
+      pts.push(new THREE.Vector2(r0 + flare * Math.pow(t, 1.6), -len * t));
+    }
+    pts.push(new THREE.Vector2(r0 + flare - 0.035, -len - 0.035));
+    pts.push(new THREE.Vector2(r0 + flare - 0.08, -len - 0.02));
+    return new THREE.LatheGeometry(pts.reverse(), 40, Math.PI / 2 - wrap, Math.PI + wrap * 2);
+  });
   const m = toon(`#${mat.color.getHexString()}`, { side: THREE.DoubleSide });
-  part(head, g, m, { p: [0, top - len / 2, -0.01], s: [1, 1, 0.92], outline: OUT_THIN });
+  part(head, g, m, { p: [0, top, -0.01], s: [1, 1, 0.94], outline: OUT_THIN });
 }
 
 /** A tied tail of hair along a curve of points, with a scrunchie at the root. */
@@ -224,7 +271,7 @@ function tail(head, mat, pts, r0, r1, tie = '#ff5d73') {
   taper(head, v, r0, r1, mat);
   part(head, sphere(r1 * 1.15, 10, 8), mat, { p: v[v.length - 1].toArray(), outline: OUT_THIN });
   const dir = v[1].clone().sub(v[0]);
-  part(head, torus(r0 * 0.95, 0.03, TAU, 8, 20), toon(tie), { p: v[0].toArray(), q: pointTo(dir).multiply(new THREE.Quaternion().setFromAxisAngle(X, Math.PI / 2)), outline: null });
+  part(head, torus(r0 * 0.9, 0.035, TAU, 8, 20), toon(tie), { p: v[0].clone().lerp(v[1], 0.45).toArray(), q: pointTo(dir).multiply(new THREE.Quaternion().setFromAxisAngle(X, Math.PI / 2)), outline: null });
 }
 
 /** Blobs scattered over the scalp, skipping the face (curls, afros). */
@@ -269,7 +316,9 @@ const HAIR = {
   },
   hair_ponytail(head, mat) {
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
-    tail(head, mat, [[0, 0.2, -0.44], [0, 0.12, -0.6], [0, -0.1, -0.66], [0, -0.36, -0.6], [0, -0.55, -0.5]], 0.12, 0.05);
+    // gathered at the back of the head, tied, then falling down the neck
+    part(head, sphere(0.15, 16, 12), mat, { p: [0, 0.16, -0.4], s: [1, 0.9, 0.8], outline: OUT_THIN });
+    tail(head, mat, [[0, 0.16, -0.44], [0, 0.06, -0.52], [0, -0.1, -0.53], [0, -0.3, -0.47], [0, -0.48, -0.38]], 0.14, 0.065);
     fringe(head, mat);
   },
   hair_pigtails(head, mat) {
@@ -282,7 +331,8 @@ const HAIR = {
   hair_twintails(head, mat) {
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
     for (const s of [-1, 1]) {
-      tail(head, mat, [[s * 0.32, 0.3, -0.2], [s * 0.55, 0.28, -0.26], [s * 0.7, 0.05, -0.28], [s * 0.72, -0.35, -0.24], [s * 0.64, -0.75, -0.18], [s * 0.52, -1.05, -0.12]], 0.14, 0.05, '#e84393');
+      part(head, sphere(0.13, 14, 10), mat, { p: [s * 0.3, 0.28, -0.2], outline: OUT_THIN });
+      tail(head, mat, [[s * 0.36, 0.28, -0.22], [s * 0.5, 0.24, -0.26], [s * 0.58, 0.04, -0.26], [s * 0.6, -0.3, -0.22], [s * 0.56, -0.66, -0.16], [s * 0.5, -0.95, -0.1]], 0.13, 0.05, '#e84393');
     }
     fringe(head, mat, 5, { spread: 0.4 });
   },
@@ -328,11 +378,14 @@ const HAIR = {
       for (const s of [1, -1]) {
         if (s < 0 && i === 14) continue;
         const ph = s > 0 ? phi : TAU - phi;
-        const root = onHead(ph, hairline(ph, 0.95, 1.5, 2.2) - 0.2, R + 0.03);
+        const lim = hairline(ph, 0.95, 1.5, 2.2);
+        const edgeTh = Math.min(lim - 0.1, Math.PI / 2 + 0.2);
+        const root = onHead(ph, edgeTh - 0.55, R + 0.01);
+        const edge = onHead(ph, edgeTh, R + 0.05);
         const out = new THREE.Vector3(root.x, 0, root.z).normalize();
-        const len = 0.4 + ((i * 7) % 5) * 0.04;
-        const tip = root.clone().add(out.clone().multiplyScalar(0.08)).add(new THREE.Vector3(0, -len, 0));
-        taper(head, [root, root.clone().lerp(tip, 0.5).add(out.clone().multiplyScalar(0.05)), tip], 0.05, 0.04, mat);
+        const len = 0.3 + ((i * 7) % 5) * 0.04;
+        const tip = edge.clone().add(out.clone().multiplyScalar(0.03)).add(new THREE.Vector3(0, -len, 0));
+        taper(head, [root, edge, edge.clone().lerp(tip, 0.5).add(out.clone().multiplyScalar(0.015)), tip], 0.055, 0.045, mat);
         if (i % 4 === 1) part(head, cyl(0.055, 0.055, 0.05, 10), bead, { p: root.clone().lerp(tip, 0.7).toArray(), outline: null });
       }
     }
@@ -780,9 +833,10 @@ export class Character {
     this.propKind = kind;
     this.propColor = color;
     this.bow = null;
-    const hand = this.rig?.elbows[0];
+    // a right-handed archer holds the bow in the left hand; everything else goes in the right
+    if (this.prop) this.prop.parent?.remove(this.prop);
+    const hand = this.rig?.elbows[kind === 'bow' ? 1 : 0];
     if (!hand) return;
-    if (this.prop) hand.remove(this.prop);
     this.prop = null;
     this.rodTip = null;
     if (!kind) return;
@@ -802,7 +856,8 @@ export class Character {
       const R = 0.62, a = Math.PI * 0.8;
       const frame = new THREE.Group();
       frame.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0)));
-      frame.position.set(0, R, 0);
+      frame.position.set(0, R * BOW_SCALE, 0);
+      frame.scale.setScalar(BOW_SCALE);
       part(frame, torus(R, 0.035, a, 8, 24), toon('#8b5a2b'), { r: [0, 0, -a / 2], outline: OUT_THIN });
       part(frame, cyl(0.045, 0.045, 0.16, 8), toon('#4a2e1c'), { p: [R, 0, 0], outline: null });
       // the string is two pieces meeting at the nock, so it bends back as you draw
@@ -812,7 +867,7 @@ export class Character {
       part(arrow, cone(0.04, 0.12, 6), toon('#c0c6d4'), { p: [1.05, 0, 0], r: [0, 0, -Math.PI / 2], outline: null });
       for (let k = 0; k < 3; k++) part(arrow, box(0.14, 0.004, 0.06), toon('#ff5d73'), { p: [0.08, Math.cos((k / 3) * TAU) * 0.03, Math.sin((k / 3) * TAU) * 0.03], r: [(k / 3) * TAU, 0, 0], outline: null, shadow: false });
       frame.add(arrow);
-      this.bow = { R, a, strings, arrow };
+      this.bow = { R, a, strings, arrow, frame, held: false };
       g.add(frame);
     } else if (kind === 'rod') {
       g.rotation.x = -0.6;
@@ -1155,13 +1210,8 @@ export class Character {
     } else if (this.aiming) {
       arms[0].rotation.set(-1.5, 0, -0.05);
       elbows[0].rotation.set(0, 0, 0);
-      if (this.bow) {
-        // the string hand pulls back towards the cheek as the bow draws
-        const d = this.draw;
-        arms[1].rotation.set(-1.35 - d * 0.2, 0, -0.5 - d * 0.55);
-        elbows[1].rotation.set(-0.4 - d * 1.7, 0, 0);
-        body.rotation.y += d * 0.12;
-      } else {
+      if (this.bow) this.poseBow(body, head, arms, elbows);
+      else {
         arms[1].rotation.set(-1.3, 0, -0.45);
         elbows[1].rotation.set(-0.35, 0, 0);
       }
@@ -1256,11 +1306,54 @@ export class Character {
     if (this.bow) this.updateBow();
   }
 
-  /** Bend the bow string back to the nock and sit the arrow on it. */
+  /**
+   * Archer's stance: side-on to the target with the head turned to look down the arrow. The bow is
+   * held up in front of the chest and the other hand holds the string, drawing it back to the
+   * shoulder as the bow draws. Both arms are placed with a two-bone IK.
+   */
+  poseBow(body, head, arms, elbows) {
+    const d = this.draw, bow = this.bow;
+    const twist = -(1.1 + d * 0.15);
+    body.rotation.y += twist;
+    head.rotation.y -= twist * 0.85;
+    head.rotation.x += 0.05;
+    this.root.updateMatrixWorld(true);
+    // the character's forward and up, in the body's frame
+    const bodyQ = _q1.copy(body.getWorldQuaternion(_q1)).invert();
+    const rootQ = this.root.getWorldQuaternion(_q2);
+    const fwd = _v1.set(0, 0, 1).applyQuaternion(rootQ).applyQuaternion(bodyQ).normalize();
+    const k = arms[0].scale.x;
+    // anchor just in front of the string-side shoulder; the string rests a little further forward
+    const anchor = _v2.copy(arms[0].position).addScaledVector(fwd, 0.12 * k);
+    anchor.y += 0.05 * k;
+    const rest = _v3.copy(anchor).addScaledVector(fwd, 0.21 * k);
+    const depth = (bow.R - bow.R * Math.cos(bow.a / 2)) * BOW_SCALE * k;
+    const grip = _v8.copy(rest).addScaledVector(fwd, depth);
+    ikArm(arms[1], elbows[1], grip, _v6.set(1, -0.6, 0.2));
+    ikArm(arms[0], elbows[0], rest.lerp(anchor, d), _v6.set(-1, 0.2, -0.6));
+    // keep the bow upright and pointing forward, with its grip in the bow hand
+    this.root.updateMatrixWorld(true);
+    const hold = bow.frame.parent;
+    const fwdW = _v4.set(0, 0, 1).applyQuaternion(rootQ);
+    const upW = _v5.set(0, 1, 0).applyQuaternion(rootQ);
+    const want = _q3.setFromRotationMatrix(_m1.makeBasis(fwdW, upW, _v7.crossVectors(fwdW, upW)));
+    bow.frame.quaternion.copy(hold.getWorldQuaternion(_q4).invert().multiply(want));
+    const gripW = hold.localToWorld(_v8.set(0, 0, 0));
+    const scaleW = hold.getWorldScale(_v7).x * BOW_SCALE;
+    bow.frame.position.copy(hold.worldToLocal(gripW.addScaledVector(fwdW, -bow.R * scaleW)));
+    bow.held = true;
+  }
+
+  /** Bend the bow string back to the nock (the drawing hand when held) and sit the arrow on it. */
   updateBow() {
-    const { R, a, strings, arrow } = this.bow;
+    const { R, a, strings, arrow, frame } = this.bow;
     const tipX = R * Math.cos(a / 2), tipY = R * Math.sin(a / 2);
-    const nock = new THREE.Vector3(tipX - this.draw * 0.5, 0, 0);
+    let nock = new THREE.Vector3(tipX - this.draw * 0.5, 0, 0);
+    if (this.bow.held && this.rig) {
+      this.root.updateMatrixWorld(true);
+      nock = frame.worldToLocal(this.rig.elbows[0].localToWorld(new THREE.Vector3(0, -0.17, 0.02)));
+      this.bow.held = false;
+    }
     [[tipX, tipY], [tipX, -tipY]].forEach(([x, y], i) => {
       const from = new THREE.Vector3(x, y, 0);
       const dir = nock.clone().sub(from);
@@ -1270,5 +1363,7 @@ export class Character {
     });
     arrow.visible = this.nocked;
     arrow.position.copy(nock);
+    // the arrow runs from the nock through the grip
+    arrow.quaternion.setFromUnitVectors(_xAxis, _v1.set(R - nock.x, -nock.y, -nock.z).normalize());
   }
 }

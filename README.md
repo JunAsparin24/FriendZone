@@ -50,12 +50,12 @@ For a quick test without a cloud account you can also expose your own machine wi
 
 | | Activity | |
 |---|---|---|
-| 🏎️ | Race Track (3D) | The FriendZone Grand Prix: a real kart race on a long circuit through a tunnel, over a lake bridge and past the city. Drift for mini-turbos, hit boost pads, and grab item boxes for turbos, bananas, oil slicks, bouncy shells, homing rockets, zaps, shields and stars |
+| 🏎️ | Race Track (3D) | The FriendZone Grand Prix: a real kart race on a long circuit through a tunnel, over a lake bridge and past the city, with barrier walls all the way round so you can't leave the road. Drift for mini-turbos, hit boost pads, and grab item boxes for turbos, bananas, oil slicks, bouncy shells, homing rockets, zaps, shields and stars |
 | ⚔️ | Arena (3D) | Blaster brawl inside the colosseum with dashing and power-ups (heart, rapid fire, shield, speed). First to 5 knockouts wins |
 | 🏰 | Dungeon (3D, the Boss Cave) | A co-op climb: every run starts on floor 1. Clear the monsters (bats, slimelets, skeletons, archers, wisps, brutes), then everyone picks one of three upgrades (more damage, split shot, extra lives, shields…) and the group goes deeper. Every 3rd floor is a boss: King Slime, Stone Golem, the Bone Lich (who summons minions) and the Shadow Dragon, getting tougher each lap. Revived friends come back with one heart; if everyone goes down, the run is over and the zone keeps its record floor |
 | 💥 | Bumper Dome (3D) | Bumper cars on a shrinking ice rink: gas, brake and steer, build up speed and boost-ram everyone into the lake. Getting hit stuns you and spins you out. Last car standing wins. Rounds start automatically when 2+ drivers are in |
 | 🎰 | Casino (3D) | Walk around a casino floor with your friends: slot machines, a prize wheel, coin flips, blackjack against the dealer, and a shared roulette table where everyone's chips are on the same spin |
-| 🏹 | Archery Range (3D) | Over-the-shoulder archery: hold to draw the bow back, mind the wind, hit moving targets, beat the zone's best |
+| 🏹 | Archery Range (3D) | Side-on archery: hold to draw the string back with both hands, mind the wind, hit moving targets, beat the zone's best |
 | 🎣 | Fishing | Right at the lake: step onto the dock, cast your line, hook the bite and keep your bar on the fish. Better tracking = rarer fish. Buy better rods for a bigger bar and more luck. Journal, treasure chests and pond records |
 | 🎨 | Doodle Studio | Draw & guess for the whole group: take turns drawing a secret word (pick one, or make up your own) while everyone races to guess it |
 | 💰 | Trading | Send coins to anyone in your zone |
@@ -64,7 +64,7 @@ For a quick test without a cloud account you can also expose your own machine wi
 | 🏠 | Houses | Your own house to walk around in: buy furniture, floors and wallpaper, then decorate (place, move, rotate) right there in the room. Visit friends' houses to walk around inside them together, sit on their sofas and ❤️ them. Your wardrobe lives here too. Furniture is interactive (lamps, TV, jukebox, piano, arcade…), and trophies unlock around the zone |
 | 🗺️ | Exploration | Walk around the shared world, chat bubbles, emotes (keys 1–6), minimap |
 
-The town has a square with a fountain, winding streets, a creek, cottages, market stalls, a windmill on the
+The town has a square with a fountain, winding streets, a spring-fed creek with bridges, cottages, market stalls, a windmill on the
 highland and a lighthouse by the lake. It runs on a shared day and night cycle (the lamps light up after sunset; it can be turned off in ⚙️ settings).
 Plus a daily bonus, levels from XP, and a zone news feed for big moments. Every action has a sound
 effect and there's an upbeat soundtrack that cycles through songs (with battle music for fights), all

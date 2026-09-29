@@ -58,6 +58,41 @@ function locate(x, z, hint = -1) {
 }
 const distToTrack = (x, z) => locate(x, z).dist;
 
+// the barrier walls either side of the road: karts can't get further than this from the centre line
+const WALL = TW / 2 + 1.4;
+const KART_R = 0.9;
+
+/** Push (x, z) back inside the walls. Returns the outward normal if it hit, else null. */
+function wallHit(x, z, hint, r) {
+  const loc = locate(x, z, hint), lim = WALL - r;
+  if (loc.dist <= lim) return null;
+  const t = table[loc.i];
+  const nx = (x - t.x) / (loc.dist || 1), nz = (z - t.z) / (loc.dist || 1);
+  return { x: t.x + nx * lim, z: t.z + nz * lim, nx, nz, t, i: loc.i };
+}
+
+/** A vertical strip following the track `off` to the side, `h` tall, skipping [from, to] fractions. */
+function wallStrip(off, h, skip = []) {
+  const pos = [], uv = [], idx = [];
+  let i = 0, prevOk = false;
+  for (let s = 0; s <= L + 0.001; s += 0.6) {
+    const f = s / L;
+    if (skip.some(([a, b]) => f > a && f < b)) { prevOk = false; continue; }
+    const a = track(s, off);
+    pos.push(a.x, 0, a.z, a.x, h, a.z);
+    uv.push(s / 3, 0, s / 3, 1);
+    if (prevOk) idx.push((i - 1) * 2, (i - 1) * 2 + 1, i * 2, (i - 1) * 2 + 1, i * 2 + 1, i * 2);
+    prevOk = true;
+    i++;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 function ribbon(width, off, step = 0.6, y = 0) {
   const pos = [], uv = [], idx = [];
   let i = 0;
@@ -94,6 +129,16 @@ const curbTex = wrap(canvasTexture(64, 64, (ctx) => {
   ctx.fillRect(0, 0, 64, 64);
   ctx.fillStyle = '#e0463c';
   ctx.fillRect(0, 0, 64, 32);
+}));
+const barrierTex = wrap(canvasTexture(128, 64, (ctx) => {
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 128, 64);
+  ctx.fillStyle = '#e0463c';
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = 'rgba(0,0,0,.18)';
+  ctx.fillRect(0, 0, 128, 6);
+  ctx.fillRect(0, 58, 128, 6);
+  ctx.fillRect(0, 29, 128, 4);
 }));
 const checkerTex = canvasTexture(128, 32, (ctx) => {
   for (let r = 0; r < 2; r++) for (let c = 0; c < 8; c++) {
@@ -246,6 +291,13 @@ function buildTrack() {
     }
   }
   for (const side of [-1, 1]) add(g, ribbon(0.2, side * (TW / 2 + 1.3), 0.6, 1.35), toon('#e0463c'), [0, 0, 0], null, { cast: false });
+
+  // barrier walls all the way round (the bridge has its own railings)
+  const wallMat = new THREE.MeshToonMaterial({ map: barrierTex, side: THREE.DoubleSide, gradientMap: toon('#fff').gradientMap });
+  for (const side of [-1, 1]) {
+    add(g, wallStrip(side * WALL, 1.1, [BRIDGE]), wallMat, [0, 0, 0], null, { cast: false });
+    add(g, ribbon(0.45, side * (WALL + 0.1), 0.6, 1.12), toon('#23263f'), [0, 0, 0], null, { cast: false });
+  }
 
   // the city: tall blocky buildings with lit windows on both sides
   const winTex = canvasTexture(64, 128, (ctx) => {
@@ -706,6 +758,24 @@ export function racing(stage) {
       if (o.flags.includes('S') && me.star <= 0) getHit('star', k);
       else if (me.v > 8) { me.v *= 0.8; sfx('bonk', { power: 0.4 }); }
     }
+    // the walls: slide along them, losing speed the harder you hit
+    const hit = wallHit(me.x, me.z, me.i, KART_R);
+    if (hit) {
+      me.x = hit.x;
+      me.z = hit.z;
+      const fx = Math.sin(me.h) * Math.sign(me.v || 1), fz = Math.cos(me.h) * Math.sign(me.v || 1);
+      const into = fx * hit.nx + fz * hit.nz;
+      if (into > 0) {
+        if (Math.abs(me.v) > 10 && into > 0.35 && now - (me.lastWall ?? 0) > 400) { sfx('bonk', { power: 0.35 }); sparks.puff(me.x + hit.nx, 0.6, me.z + hit.nz, '#ffd27a', 1.2, 0.4); me.lastWall = now; }
+        me.v *= 1 - into * 0.55;
+        // turn the nose back along the wall
+        const fwd = hit.t.dx * fx + hit.t.dz * fz >= 0 ? 1 : -1;
+        const want = Math.atan2(hit.t.dx * fwd - hit.nx * 0.25, hit.t.dz * fwd - hit.nz * 0.25) + (me.v < 0 ? Math.PI : 0);
+        const diff = Math.atan2(Math.sin(want - me.h), Math.cos(want - me.h));
+        me.h += diff * Math.min(1, 0.35 + into * 0.5);
+        me.drift = 0;
+      }
+    }
     // lap counting: cross the line going forward, having been round the far side first
     const prevI = me.i;
     me.i = locate(me.x, me.z, me.i).i;
@@ -782,8 +852,16 @@ export function racing(stage) {
         }
         h.x += h.vx * dt;
         h.z += h.vz * dt;
-        // shells bounce off the grass edge back onto the road
-        if (h.kind === 'shell' && distToTrack(h.x, h.z) > TW / 2 + 3) { h.vx = -h.vx; h.vz = -h.vz; }
+        // shells bounce off the walls; rockets that stray into them blow up
+        const wh = wallHit(h.x, h.z, h.i ?? -1, 0.4);
+        if (wh) {
+          h.i = wh.i;
+          if (h.kind === 'rocket' && !h.target) { removeHazard(id); continue; }
+          h.x = wh.x;
+          h.z = wh.z;
+          const dot = h.vx * wh.nx + h.vz * wh.nz;
+          if (dot > 0) { h.vx -= 2 * dot * wh.nx; h.vz -= 2 * dot * wh.nz; }
+        } else h.i = locate(h.x, h.z, h.i ?? -1).i;
         h.mesh.position.set(h.x, 0, h.z);
         h.mesh.rotation.y = Math.atan2(h.vx, h.vz);
         if (Math.random() < 0.5) sparks.puff(h.x, 0.8, h.z, h.kind === 'rocket' ? '#ffb13b' : '#dfffe6', 0.5, 0.3);

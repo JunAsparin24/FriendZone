@@ -114,11 +114,11 @@ export function buildEnvironment(scene) {
   scene.add(sunGlow);
 
   // ---- ground ------------------------------------------------------------------
-  const groundCanvas = M.renderGround(0.8);
+  const groundCanvas = M.renderGround();
   const groundTex = new THREE.CanvasTexture(groundCanvas);
   groundTex.colorSpace = THREE.SRGBColorSpace;
   groundTex.anisotropy = 8;
-  const groundGeo = new THREE.PlaneGeometry(HALF_W * 2, HALF_H * 2, Math.round(HALF_W * 1.5), Math.round(HALF_H * 1.5));
+  const groundGeo = new THREE.PlaneGeometry(HALF_W * 2, HALF_H * 2, Math.round(HALF_W * 2), Math.round(HALF_H * 2));
   const gp = groundGeo.attributes.position;
   for (let i = 0; i < gp.count; i++) gp.setZ(i, groundAt(gp.getX(i), -gp.getY(i))); // plane z becomes height once it's laid flat
   groundGeo.computeVertexNormals();
@@ -136,7 +136,14 @@ export function buildEnvironment(scene) {
       c.fillRect(r() * 256, r() * 256, 2, 5);
     }
   }, { repeat: [220, 220] });
-  const outer = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), new THREE.MeshLambertMaterial({ map: grassTex }));
+  // the meadow beyond the map: a big sheet with the map cut out of it, so it never covers dips in the
+  // terrain (like the creek's channel)
+  const outerShape = new THREE.Shape([new THREE.Vector2(-800, -800), new THREE.Vector2(800, -800), new THREE.Vector2(800, 800), new THREE.Vector2(-800, 800)]);
+  outerShape.holes.push(new THREE.Path([new THREE.Vector2(-HALF_W, -HALF_H), new THREE.Vector2(-HALF_W, HALF_H), new THREE.Vector2(HALF_W, HALF_H), new THREE.Vector2(HALF_W, -HALF_H)]));
+  const outerGeo = new THREE.ShapeGeometry(outerShape);
+  const ouv = outerGeo.attributes.uv;
+  for (let i = 0; i < ouv.count; i++) ouv.setXY(i, (ouv.getX(i) + 800) / 1600, (ouv.getY(i) + 800) / 1600);
+  const outer = new THREE.Mesh(outerGeo, new THREE.MeshLambertMaterial({ map: grassTex }));
   outer.rotation.x = -Math.PI / 2;
   outer.position.y = -0.02;
   outer.receiveShadow = true;
@@ -238,7 +245,7 @@ export function buildEnvironment(scene) {
     return merge(parts);
   })();
   const tufts = [];
-  for (let i = 0; i < 40000 && tufts.length < 13000; i++) {
+  for (let i = 0; i < 60000 && tufts.length < 17000; i++) {
     const px = 30 + rnd() * (M.W - 60), py = 30 + rnd() * (M.H - 60);
     if (!M.openGround({ x: px, y: py }, 0)) continue;
     const p = pos3(px, py);
@@ -254,7 +261,7 @@ export function buildEnvironment(scene) {
 
   // 3D flowers
   const flowers = [];
-  for (let i = 0; i < 20000 && flowers.length < 1900; i++) {
+  for (let i = 0; i < 30000 && flowers.length < 2200; i++) {
     const px = 40 + rnd() * (M.W - 80), py = 40 + rnd() * (M.H - 80);
     if (!M.openGround({ x: px, y: py }, 0)) continue;
     const p = pos3(px, py);
@@ -268,7 +275,7 @@ export function buildEnvironment(scene) {
   scene.add(instanced(new THREE.CylinderGeometry(0.012, 0.012, 0.28, 4), toon('#3f8f3a'), stems, { cast: false }));
 
   const rocks = [];
-  for (let i = 0; i < 3000 && rocks.length < 300; i++) {
+  for (let i = 0; i < 4000 && rocks.length < 320; i++) {
     const px = 40 + rnd() * (M.W - 80), py = 40 + rnd() * (M.H - 80);
     if (!M.openGround({ x: px, y: py }, 10)) continue;
     const p = pos3(px, py);
@@ -403,7 +410,7 @@ export function buildEnvironment(scene) {
   // ---- the pond --------------------------------------------------------------------
   const pond = M.SPOTS.find((s) => s.kind === 'pond');
   const pa = pos3(pond.x, pond.y), pb = pos3(pond.x + pond.w, pond.y + pond.h);
-  const r = U(95);
+  const r = U(150);
   const shape = new THREE.Shape();
   const [x0, x1, y0, y1] = [pa.x, pb.x, -pb.z, -pa.z];
   shape.moveTo(x0 + r, y0);

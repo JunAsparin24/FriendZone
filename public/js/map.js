@@ -244,27 +244,44 @@ export function buildLayout() {
   const rnd = seeded(42);
   // ---- fences: picket fences round the cottage yards (gate towards the lane), rails by the fields
   const fences = [];
+  const roadClear = (p, pad) => PATHS.every((r) => r.pts.every((q, i) => i === 0 || distToSeg(p, r.pts[i - 1], q) > 31 * r.w + pad));
   for (const c of COTTAGES) {
     const x0 = c.x - 40, x1 = c.x + c.w + 40, gate = c.x + c.w / 2;
-    const [yFront, yBack] = c.face === 's' ? [c.y + c.h + 55, c.y - 30] : [c.y - 55, c.y + c.h + 30];
+    // pull the front of the yard in until the fence stays off the lane
+    const frontAt = (d) => (c.face === 's' ? c.y + c.h + d : c.y - d);
+    let front = 55;
+    while (front > 22 && ![x0, (x0 + gate) / 2, gate, (gate + x1) / 2, x1].every((x) => roadClear({ x, y: frontAt(front) }, 8))) front -= 3;
+    const [yFront, yBack] = [frontAt(front), c.face === 's' ? c.y - 30 : c.y + c.h + 30];
     fences.push({ kind: 'picket', pts: [{ x: gate - 22, y: yFront }, { x: x0, y: yFront }, { x: x0, y: yBack }, { x: x1, y: yBack }, { x: x1, y: yFront }, { x: gate + 22, y: yFront }] });
   }
 const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
   fences.push({ kind: 'rail', pts: plan([[330, 1180], [330, 1760], [600, 1800]]) }); // archery field
   fences.push({ kind: 'rail', pts: plan([[3560, 2760], [3700, 2980], [4200, 3040], [4330, 2820]]) }); // orchard
-  // a rail along the downhill edge of the Highland Road as it climbs, clear of the road itself
+  // a rail along the downhill edge of the Highland Road as it climbs. It stays on ONE side of the
+  // road (picking per post made it zigzag across the road at bends) and breaks wherever it would
+  // come near any street, so it never blocks a path.
   const hill = HILLS[0], road = PATHS.find((r) => r.name === 'Highland Road');
-  const rail = [];
+  const clearOfRoads = (p) => PATHS.every((r) => r.pts.every((q, i) => i === 0 || distToSeg(p, r.pts[i - 1], q) > 31 * r.w + 18));
+  const sides = [];
   road.pts.forEach((q, i) => {
     if (i % 3 || i < road.pts.length * 0.35 || i > road.pts.length - 8) return;
     const n = road.pts[Math.min(road.pts.length - 1, i + 1)];
     const len = Math.hypot(n.x - q.x, n.y - q.y) || 1;
     const nx = -(n.y - q.y) / len, ny = (n.x - q.x) / len;
     const off = 60 * road.w;
-    const a = { x: q.x + nx * off, y: q.y + ny * off }, b = { x: q.x - nx * off, y: q.y - ny * off };
-    rail.push(Math.hypot(a.x - hill.x, a.y - hill.y) > Math.hypot(b.x - hill.x, b.y - hill.y) ? a : b);
+    sides.push([{ x: q.x + nx * off, y: q.y + ny * off }, { x: q.x - nx * off, y: q.y - ny * off }]);
   });
-  fences.push({ kind: 'rail', pts: rail });
+  const downhill = sides.reduce((s, [a, b]) => s + Math.sign(Math.hypot(a.x - hill.x, a.y - hill.y) - Math.hypot(b.x - hill.x, b.y - hill.y)), 0) >= 0 ? 0 : 1;
+  let run = [];
+  const endRun = () => { if (run.length > 1) fences.push({ kind: 'rail', pts: run }); run = []; };
+  for (const pair of sides) {
+    const p = pair[downhill];
+    const prev = run[run.length - 1];
+    const mid = prev && { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
+    if (!clearOfRoads(p) || (mid && !clearOfRoads(mid))) { endRun(); continue; }
+    run.push(p);
+  }
+  endRun();
   const solids = propSolids(fences);
   const nearFence = (p, m) => fences.some((f) => f.pts.some((q, i) => i < f.pts.length - 1 && distToSeg(p, q, f.pts[i + 1]) < m));
 

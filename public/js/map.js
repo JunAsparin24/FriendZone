@@ -21,7 +21,7 @@ export const EMOTES = { wave: '👋', laugh: '😂', heart: '❤️', fire: '�
 // `face` is the side the door is on (default 's'); buildings turn to face their street.
 // For 'e'/'w' the footprint is already turned (w runs along x, h along y).
 const PLAN_SPOTS = [
-  { id: 'doodle', emoji: '🎨', name: 'Doodle Studio', kind: 'studio', x: 1990, y: 1080, w: 260, h: 210 },
+  { id: 'doodle', emoji: '🎨', name: 'Doodle Studio', kind: 'studio', x: 2040, y: 1000, w: 260, h: 210 },
   { id: 'shop', emoji: '👕', name: 'Style Shop', kind: 'boutique', x: 2620, y: 1070, w: 330, h: 220 },
   { id: 'trading', emoji: '💰', name: 'Trading Post', kind: 'market', x: 1830, y: 1440, w: 190, h: 310, face: 'e' },
   { id: 'racing', emoji: '🏎️', name: 'Race Track', kind: 'garage', x: 2160, y: 200, w: 470, h: 250 },
@@ -189,10 +189,25 @@ export const inCreek = (x, y) => creekDist(x, y) < CREEK_WATER + 6 && !onBridge(
 // cottages along Maple Lane (decoration: the real houses are inside the Houses building)
 const COTTAGE_COLORS = ['#ffd6a5', '#bde0fe', '#ffc8dd', '#caffbf', '#fdffb6', '#e0c3fc', '#ffadad', '#a0c4ff'];
 const ROOFS = ['#d6334a', '#3b5bdb', '#2f9e44', '#8b5a2b', '#7048e8', '#e8590c'];
+// door to lane centre (map px): 55 of front garden, then the lane's half width
+const COTTAGE_SETBACK = 88;
+function laneY(x) {
+  const lane = PATHS.find((r) => r.name === 'Maple Lane' && r.ctrl[0][0] === 1640 * K);
+  const pts = lane.pts;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    if ((x - a.x) * (x - b.x) <= 0) return a.y + (b.y - a.y) * ((x - a.x) / ((b.x - a.x) || 1));
+  }
+  return pts[0].y;
+}
 export const COTTAGES = [
   [1700, 2040, 's'], [1900, 2040, 's'], [2690, 2040, 's'], [2890, 2040, 's'], [3090, 2050, 's'],
   [1700, 2310, 'n'], [1900, 2310, 'n'], [2720, 2320, 'n'], [2920, 2320, 'n'], [3120, 2340, 'n'],
-].map(([x, y, face], i) => ({ x: x * K, y: y * K, w: 160, h: 135, face, color: COTTAGE_COLORS[i % COTTAGE_COLORS.length], roof: ROOFS[(i * 5) % ROOFS.length] }));
+].map(([x, , face], i) => {
+  // each cottage sits the same distance back from the lane, so its garden gate and path open onto it
+  const w = 160, h = 135, cx = x * K + w / 2, road = laneY(cx);
+  return { x: x * K, y: face === 's' ? road - COTTAGE_SETBACK - h : road + COTTAGE_SETBACK, w, h, face, color: COTTAGE_COLORS[i % COTTAGE_COLORS.length], roof: ROOFS[(i * 5) % ROOFS.length] };
+});
 // market stalls between the square and the trading post
 export const STALLS = [[2080, 1790, 0], [2200, 1850, 0.3], [1700, 1320, 0], [1700, 1820, 3.14]].map(([x, y, r], i) => ({ x: x * K, y: y * K, r, color: ['#ff5d73', '#39c6ff', '#ffd84d', '#6ee7a0'][i] }));
 export const LANDMARKS = Object.fromEntries(Object.entries({
@@ -263,11 +278,11 @@ const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
   const wildness = (x, y) => {
     const edge = Math.min(x, y, W - x, H - y);
     const town = Math.hypot((x - CENTER.x) / 1.4, y - CENTER.y);
-    return Math.min(1, Math.max(0.03, (town - 900) / 1300)) * (edge < 400 ? 1.6 : 1) + (heightAt(x, y) > 0.5 ? 0.5 : 0);
+    return Math.min(1, Math.max(0.14, (town - 700) / 1100)) * (edge < 400 ? 1.6 : 1) + (heightAt(x, y) > 0.5 ? 0.5 : 0);
   };
-  for (let i = 0; i < 16000 && trees.length < 560; i++) {
+  for (let i = 0; i < 40000 && trees.length < 1300; i++) {
     const x = 60 + rnd() * (W - 120), y = 80 + rnd() * (H - 120);
-    if (rnd() > wildness(x, y) * 0.7) continue;
+    if (rnd() > wildness(x, y) * 0.85) continue;
     const t = { x, y, kind: rnd() < (heightAt(x, y) > 1 ? 0.6 : 0.28) ? 'pine' : rnd() < 0.3 ? 'bush' : 'oak', v: Math.floor(rnd() * 3), size: 0 };
     t.size = t.kind === 'bush' ? 14 + rnd() * 5 : t.kind === 'pine' ? 30 + rnd() * 12 : 24 + rnd() * 12;
     if (!clash(t)) trees.push(t);
@@ -383,7 +398,7 @@ export function renderGround(scale = 0.55) {
     ctx.fillRect(ct.x - 40, ct.face === 's' ? ct.y - 30 : ct.y - 55, ct.w + 80, ct.h + 85);
     ctx.fillStyle = '#d8bd88';
     const px = ct.x + ct.w / 2 - 12;
-    if (ct.face === 's') ctx.fillRect(px, ct.y + ct.h, 24, 70); else ctx.fillRect(px, ct.y - 70, 24, 70);
+    if (ct.face === 's') ctx.fillRect(px, ct.y + ct.h, 24, COTTAGE_SETBACK); else ctx.fillRect(px, ct.y - COTTAGE_SETBACK, 24, COTTAGE_SETBACK);
     for (let k = 0; k < 10; k++) {
       ctx.fillStyle = ['#ff9fb4', '#fff6b0', '#e57bff', '#ffb13b'][k % 4];
       const fx = ct.x - 30 + (k % 5) * 10, fy = ct.face === 's' ? ct.y + ct.h + 20 + Math.floor(k / 5) * 12 : ct.y - 40 + Math.floor(k / 5) * 12;

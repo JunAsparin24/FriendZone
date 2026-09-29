@@ -263,21 +263,38 @@ function buildTrack() {
     g.add(arch);
   });
 
-  // the tunnel: a rocky mountain the track runs straight through, lit inside
+  // the tunnel: a rock roof over the road held up by stone arches, with rocky hills either side
   const rock = toon('#8f8a99'), rockDark = toon('#6d6a85');
-  for (let f = TUNNEL[0]; f <= TUNNEL[1]; f += 0.004) {
+  const roofMat = toon('#7d788f', { side: THREE.DoubleSide });
+  const TSTEP = 0.004, TR = TW / 2 + 1.6;
+  for (let f = TUNNEL[0]; f <= TUNNEL[1] + 1e-6; f += TSTEP) {
     const p = track(L * f);
     const ring = new THREE.Group();
-    add(ring, new THREE.TorusGeometry(TW / 2 + 1.6, 1.2, 6, 14, Math.PI), f === TUNNEL[0] || f + 0.004 > TUNNEL[1] ? rockDark : rock, [0, 0, 0], [0, 0, 0], { outline: f === TUNNEL[0] });
-    const lamp = add(ring, new THREE.SphereGeometry(0.25, 8, 6), basic('#ffd27a'), [0, TW / 2 + 0.6, 0], null, { cast: false });
+    const end = f === TUNNEL[0] || f + TSTEP > TUNNEL[1] + 1e-6;
+    // an arch across the road (the torus lies in the ring's XY plane, so local X runs across the track)
+    add(ring, new THREE.TorusGeometry(TR, end ? 1.3 : 0.9, 6, 16, Math.PI), end ? rockDark : rock, [0, 0, 0], null, { outline: end });
+    // the roof between this arch and the next (half a cylinder along the road)
+    if (f + TSTEP <= TUNNEL[1] + 1e-6) {
+      const roof = new THREE.CylinderGeometry(TR - 0.4, TR - 0.4, L * TSTEP + 0.6, 16, 1, true, Math.PI / 2, Math.PI);
+      add(ring, roof, roofMat, [0, 0, (L * TSTEP) / 2], [Math.PI / 2, 0, 0], { cast: false });
+    }
+    const lamp = add(ring, new THREE.SphereGeometry(0.25, 8, 6), basic('#ffd27a'), [0, TR - 0.9, 0], null, { cast: false });
     lamp.visible = Math.round(f * 1000) % 12 === 0;
     ring.position.set(p.x, 0, p.z);
-    ring.rotation.y = p.heading + Math.PI / 2;
+    ring.rotation.y = p.heading;
     g.add(ring);
   }
   const mid = track(L * (TUNNEL[0] + TUNNEL[1]) / 2);
-  const mountain = add(g, new THREE.IcosahedronGeometry(34, 1), rock, [mid.x + mid.dz * 6, -10, mid.z - mid.dx * 6], null, { outline: false });
-  mountain.scale.set(1.2, 0.7, 1);
+  // rocky hills hugging both sides of the tunnel, kept clear of the road
+  for (let f = TUNNEL[0] - 0.01; f <= TUNNEL[1] + 0.01; f += 0.012) {
+    for (const side of [-1, 1]) {
+      const r = 9 + ((Math.round(f * 1000) * 7) % 5);
+      const q = track(L * f, side * (TR + r * 0.9));
+      if (distToTrack(q.x, q.z) < TR + r * 0.75) continue;
+      const hill = add(g, new THREE.IcosahedronGeometry(r, 1), rock, [q.x, -r * 0.35, q.z], [0, f * 40, 0]);
+      hill.scale.set(1, 0.75, 1);
+    }
+  }
   const light = new THREE.PointLight(0xffd27a, 30, 40, 1.6);
   light.position.set(mid.x, 6, mid.z);
   g.add(light);
@@ -743,8 +760,9 @@ export function racing(stage) {
     const grip = Math.min(1, Math.abs(me.v) / 10) * (me.v < 0 ? -1 : 1);
     if (!control) me.h += 11 * dt;
     else if (me.slide <= 0) {
-      const turn = me.drift ? (me.driftDir * 1.25 + steer * 0.75) : steer;
-      me.h -= turn * (me.drift ? 2.1 : 1.85) * grip * dt;
+      // a drift only tightens the turn a little; steering against it straightens you out
+      const turn = me.drift ? (me.driftDir * 0.5 + steer * 0.6) : steer;
+      me.h -= turn * (me.drift ? 1.95 : 1.85) * grip * dt;
     }
     me.x += Math.sin(me.h) * me.v * dt;
     me.z += Math.cos(me.h) * me.v * dt;
@@ -895,7 +913,7 @@ export function racing(stage) {
       const kg = v.kart.g;
       const zapped = v.flags.includes('Z');
       kg.position.set(v.x, Math.abs(v.v) > 20 ? Math.abs(Math.sin(now / 40 + v.x)) * 0.05 : 0, v.z);
-      kg.rotation.y = v.h + (v.flags.includes('D') ? (k === S.me ? me.driftDir : 1) * -0.35 : 0);
+      kg.rotation.y = v.h + (v.flags.includes('D') ? (k === S.me ? me.driftDir : 1) * -0.16 : 0);
       kg.scale.setScalar(zapped ? 0.6 : 1);
       v.kart.wheels.forEach((w) => { w.rotation.x += dt * v.v * 1.4; });
       const boosting = v.flags.includes('B');

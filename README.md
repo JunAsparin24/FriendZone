@@ -20,24 +20,32 @@ Set `PORT=3000` to change the port. Data is saved to `data/zones.json`.
 
 ## Put it online (play from anywhere, no hosting on your PC)
 
-The game is one small Python program, so any cloud host can run it 24/7 and everyone just opens the
+The game is one small Python program, so a free cloud host can run it and everyone just opens the
 link (e.g. `https://friendzone.onrender.com`). It stays fully multiplayer: every zone, invite code and
-profile lives on that server.
+profile lives on that server. **Total cost: $0**, no credit card needed.
 
-**Render (easiest):**
+**1. Free save database (Upstash, ~2 minutes).** Free servers wipe their files when they sleep, so
+progress is saved in a free Redis database instead.
 
-1. Push this repo to GitHub.
-2. Sign in at [render.com](https://render.com) with GitHub, then **New → Blueprint** and pick the repo.
-   It reads `render.yaml` and sets everything up, including a 1 GB disk so progress is saved.
-3. Wait for the deploy to finish and share the URL. Every `git push` redeploys automatically.
+- Sign up at [upstash.com](https://upstash.com) (GitHub login works) → **Create Database** → any name,
+  pick the region closest to you, Free plan.
+- On the database page, find the **REST API** section and copy `UPSTASH_REDIS_REST_URL` and
+  `UPSTASH_REDIS_REST_TOKEN`.
 
-The blueprint uses Render's *Starter* plan because saved data needs a disk. To try it for free,
-change `plan: starter` to `plan: free` and delete the `disk:` block. It works the same, but free
-servers fall asleep after ~15 minutes idle (the first visit takes ~1 minute to wake it) and **zones are
-wiped whenever it sleeps or redeploys**.
+**2. Free server (Render).**
 
-**Anywhere else:** the `Dockerfile` runs on Railway, Fly.io, a VPS, etc. Mount a volume at `/data`
-so `data/zones.json` survives restarts. The host's `$PORT` is picked up automatically.
+- Push this repo to GitHub.
+- Sign in at [render.com](https://render.com) with GitHub → **New → Blueprint** → pick the repo.
+- It reads `render.yaml` and asks for the two Upstash values: paste them in and click **Apply**.
+- When the deploy finishes, share the `…onrender.com` URL. Every `git push` redeploys automatically.
+
+Free-plan catch: after ~15 minutes with nobody online the server sleeps, and the next visitor waits
+about a minute while it wakes up. Nothing is lost: zones are saved to Upstash every 30 seconds and
+when the server shuts down. (Skip Upstash and the game still works, but zones reset whenever it sleeps.)
+
+**Anywhere else:** the `Dockerfile` runs on Railway, Fly.io, Koyeb, a VPS, etc. Either set the two
+Upstash variables, or mount a volume at `/data` so `data/zones.json` survives restarts. The host's
+`$PORT` is picked up automatically.
 
 For a quick test without a cloud account you can also expose your own machine with a tunnel such as
 `cloudflared tunnel --url http://localhost:8000` (only works while your PC is running the server).

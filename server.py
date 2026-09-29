@@ -25,11 +25,19 @@ import struct
 import sys
 import time
 from pathlib import Path
+import signal
+import urllib.request
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent
 PUBLIC = ROOT / "public"
 DATA_FILE = Path(os.environ.get("FZ_DATA", ROOT / "data" / "zones.json"))
+# Optional free cloud save (Upstash Redis REST). Free hosts wipe local files when they sleep,
+# so when these are set, zones are also kept in Redis and restored on startup.
+REDIS_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "").rstrip("/")
+REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
+REDIS_KEY = "friendzone:zones"
+CLOUD_SAVE_EVERY = 30  # seconds; keeps well inside Upstash's free request allowance
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
 
@@ -262,19 +270,58 @@ def encode(msg):
 # Persistence
 # --------------------------------------------------------------------------
 
+def redis(method, command, body=None):
+    req = urllib.request.Request(f"{REDIS_URL}/{command}", data=body, method=method,
+                                 headers={"Authorization": f"Bearer {REDIS_TOKEN}"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read()).get("result")
+
+
 class Store:
     def __init__(self, path):
         self.path = path
         self.zones = {}
         self.dirty = False
+        self.cloud = bool(REDIS_URL and REDIS_TOKEN)
+        self.cloud_dirty = False
         if path.exists():
             self.zones = json.loads(path.read_text("utf-8")).get("zones", {})
-            for zone in self.zones.values():
-                for player in zone["players"].values():
-                    migrate(player)
+        elif self.cloud:
+            try:
+                blob = redis("GET", f"get/{REDIS_KEY}")
+                if blob:
+                    self.zones = json.loads(gzip.decompress(base64.b64decode(blob))).get("zones", {})
+                print(f"Loaded {len(self.zones)} zones from cloud save")
+            except Exception as e:
+                # Never overwrite a save we couldn't read: stay local-only until restarted.
+                self.cloud = False
+                print("cloud load failed, cloud save disabled:", e)
+        for zone in self.zones.values():
+            for player in zone["players"].values():
+                migrate(player)
 
     def mark(self):
         self.dirty = True
+        self.cloud_dirty = True
+
+    def cloud_snapshot(self):
+        """Serialize on the game thread; returns None when there is nothing new to upload."""
+        if not (self.cloud and self.cloud_dirty):
+            return None
+        self.cloud_dirty = False
+        return base64.b64encode(gzip.compress(json.dumps({"zones": self.zones}, separators=(",", ":")).encode()))
+
+    def cloud_upload(self, blob):
+        try:
+            redis("POST", f"set/{REDIS_KEY}", blob)
+        except Exception as e:
+            self.cloud_dirty = True
+            print("cloud save failed:", e)
+
+    def cloud_save(self):
+        blob = self.cloud_snapshot()
+        if blob:
+            self.cloud_upload(blob)
 
     def save(self):
         if not self.dirty:
@@ -286,12 +333,18 @@ class Store:
         self.dirty = False
 
     async def autosave(self):
+        ticks = 0
         while True:
             await asyncio.sleep(3)
             try:
                 self.save()
             except OSError as e:
                 print("save failed:", e)
+            ticks += 1
+            if ticks % (CLOUD_SAVE_EVERY // 3) == 0:
+                blob = self.cloud_snapshot()
+                if blob:
+                    await asyncio.to_thread(self.cloud_upload, blob)
 
 
 # --------------------------------------------------------------------------
@@ -1974,6 +2027,11 @@ async def main():
     game = Game(store)
     server = await asyncio.start_server(lambda r, w: handle_connection(game, r, w), HOST, PORT)
     saver = asyncio.create_task(store.autosave())
+    if sys.platform != "win32":
+        # Hosts stop the server with SIGTERM (sleep, redeploy): shut down cleanly so we save first.
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, server.close)
+    if store.cloud:
+        print("Cloud save: on (Upstash Redis)")
     print(f"FriendZone is running: http://localhost:{PORT}")
     lan = lan_address()
     if lan:
@@ -1984,6 +2042,7 @@ async def main():
     finally:
         saver.cancel()
         store.save()
+        store.cloud_save()
 
 
 def run():

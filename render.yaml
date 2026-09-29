@@ -1,19 +1,18 @@
-# One-click deploy on Render (https://render.com): New → Blueprint → pick this repo.
-# The persistent disk keeps everyone's zones and progress when the server restarts or redeploys.
+# Free deploy on Render (https://render.com): New → Blueprint → pick this repo.
+# Free servers wipe their files when they sleep, so progress is kept in a free Upstash Redis
+# database instead: paste its REST URL and token when Render asks for them (see the README).
 services:
   - type: web
     name: friendzone
     runtime: python
-    plan: starter            # disks need a paid plan; see the README for the free option
+    plan: free
     buildCommand: echo "No build step needed"
     startCommand: python server.py
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.4
-      - key: FZ_DATA
-        value: /var/data/zones.json
-    disk:
-      name: friendzone-data
-      mountPath: /var/data
-      sizeGB: 1
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

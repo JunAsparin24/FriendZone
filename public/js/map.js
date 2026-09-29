@@ -159,7 +159,10 @@ const ROADS = [
   { name: 'Main Street', w: 1.1, lamps: true, ctrl: [edge(1, 0.1), P(2950, 1640), P(3420, 1600), door('casino')] },
   { name: 'Speedway Road', w: 1, lamps: true, ctrl: [edge(0, -1), P(2410, 1250), P(2380, 800), door('racing')] },
   { name: 'Highland Road', w: 0.9, lamps: true, ctrl: [edge(-0.75, -0.66), P(2000, 1330), P(1760, 1120), P(1600, 900), P(1440, 740), door('boss')] },
-  { name: 'Market Street', w: 1, lamps: true, ctrl: [edge(-1, 0.05), door('trading'), P(1640, 1560), P(1250, 1520), door('archery')] },
+  { name: 'Market Street', w: 1, lamps: true, ctrl: [edge(-1, 0.05), door('trading')] },
+  // west out of town: branches off before the Trading Post, curves round its north side (not through
+  // the building), crosses the creek on the bridge and ends at the archery range
+  { name: 'Market Street', w: 1, lamps: true, ctrl: [P(2150, 1598), P(2100, 1380), P(1900, 1330), P(1720, 1440), P(1640, 1545), P(1250, 1520), door('archery')] },
   { name: 'Lakeside Walk', w: 0.8, ctrl: [P(1300, 1528), P(1180, 1780), P(1060, 1990), door('fishing')] },
   { name: 'Maple Lane', w: 0.9, lamps: true, ctrl: [edge(0, 1), P(2410, 1900), door('house')] },
   { name: 'Maple Lane', w: 0.85, ctrl: [P(1640, 2190), P(2050, 2200), P(2420, 2215), P(2850, 2210), P(3280, 2240), P(3560, 2330)] },
@@ -179,23 +182,25 @@ export const CREEK = spline([P(1560, 1000), P(1450, 1260), P(1480, 1500), P(1360
 export const CREEK_WATER = 30;   // half width of the water (map px) along most of its length
 const CREEK_BANK = 70;           // where the banks meet the meadow
 const BANK_SLOPE = CREEK_BANK - CREEK_WATER;
-export const CREEK_DEPTH = 1.6;  // world units the channel is dug into the ground
 const MOUTH = 320;               // over its last stretch (map px) the creek opens out into the lake
-// Each creek point gets its own water half-width `w` and channel `depth`: towards the mouth the creek
-// widens into a little delta and its water rises to the lake's level, so the two meet flush.
+// The creek runs full, like the lake: its water sits LAKE_LEVEL above the meadow it flows through,
+// held in by low banks (a lip `levee` above the ground at the water's edge). Each point gets its own
+// water half-width `w`, bed `depth` below the water and `levee`; towards the mouth the creek widens
+// into a little delta and the lip sinks below the lake's surface so the two meet as one sheet of water.
+const CREEK_LEVEE = 0.22;
 {
   let s = 0;
   for (let i = CREEK.length - 1; i >= 0; i--) {
     if (i < CREEK.length - 1) s += Math.hypot(CREEK[i + 1].x - CREEK[i].x, CREEK[i + 1].y - CREEK[i].y);
     const t = Math.min(1, Math.max(0, 1 - s / MOUTH)), m = t * t * (3 - 2 * t);
     CREEK[i].w = CREEK_WATER + 48 * m;
-    // water sits 0.6 above the channel bed; at the mouth that's exactly the lake's level
-    CREEK[i].depth = CREEK_DEPTH + (0.6 - LAKE_LEVEL - CREEK_DEPTH) * m;
+    CREEK[i].depth = 1.1 + (0.35 - 1.1) * m;
+    CREEK[i].levee = CREEK_LEVEE + (-0.12 - CREEK_LEVEE) * m ** 4; // the lip holds until right at the lake
   }
 }
 export const nearCreek = (p, margin) => CREEK.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < margin);
 const creekBox = CREEK.reduce((b, q) => ({ x0: Math.min(b.x0, q.x), x1: Math.max(b.x1, q.x), y0: Math.min(b.y0, q.y), y1: Math.max(b.y1, q.y) }), { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
-const CREEK_REACH = CREEK_BANK + 50; // widest the channel gets (at the mouth)
+const CREEK_REACH = CREEK_BANK + 80; // widest the channel and its banks get (at the mouth)
 /** Nearest point on the creek: distance, and the water half-width and depth there. */
 function creekInfo(x, y) {
   if (x < creekBox.x0 - CREEK_REACH || x > creekBox.x1 + CREEK_REACH || y < creekBox.y0 - CREEK_REACH || y > creekBox.y1 + CREEK_REACH) return null;
@@ -206,23 +211,37 @@ function creekInfo(x, y) {
     const d = Math.hypot(x - a.x - dx * t, y - a.y - dy * t);
     if (d < best) { best = d; bi = i; bt = t; }
   }
-  const a = CREEK[bi], b = CREEK[bi + 1];
-  return { d: best, w: a.w + (b.w - a.w) * bt, depth: a.depth + (b.depth - a.depth) * bt };
+  const a = CREEK[bi], b = CREEK[bi + 1], lerp = (k) => a[k] + (b[k] - a[k]) * bt;
+  // `hc`: the meadow's height at the middle of the creek there, so the water stays level across it
+  const hc = hillHeight(a.x + (b.x - a.x) * bt, a.y + (b.y - a.y) * bt);
+  return { d: best, w: lerp('w'), depth: lerp('depth'), levee: lerp('levee'), hc };
 }
 export function creekDist(x, y) {
   return creekInfo(x, y)?.d ?? Infinity;
 }
-/** How much of the channel's depth is dug out at distance d from the middle (1 under the water). */
-const carve = (d, w) => (d >= w + BANK_SLOPE ? 0 : d <= w ? 1 : 0.5 * (1 + Math.cos(Math.PI * (d - w) / BANK_SLOPE)));
+/** Ground height near the creek: a rounded bed under the water rising to the lip of the bank at the
+ *  water's edge, then easing back down (or up) to the surrounding meadow. */
+function creekGround(c, local) {
+  const water = c.hc + LAKE_LEVEL, lip = c.hc + c.levee;
+  if (c.d <= c.w) {
+    const bowl = 0.5 * (1 + Math.cos(Math.PI * c.d / c.w)); // 1 in the middle, 0 at the edge
+    return lip + (water - c.depth - lip) * bowl;
+  }
+  // a flat-topped lip (wider than the 20 px height grid) so the water's edge is always tucked into it
+  const LIP = 24;
+  if (c.d <= c.w + LIP) return Math.max(lip, local);
+  const k = 0.5 * (1 + Math.cos(Math.PI * Math.min(1, (c.d - c.w - LIP) / BANK_SLOPE)));
+  return local + (Math.max(lip, local) - local) * k;
+}
 
-// heights on a 20 px grid (hills minus the creek channel), read back with bilinear filtering
+// heights on a 20 px grid (hills plus the creek's channel and banks), read back with bilinear filtering
 const CELL = 20, GW = Math.ceil(W / CELL) + 1, GH = Math.ceil(H / CELL) + 1;
 const HGRID = new Float32Array(GW * GH);
 for (let j = 0; j < GH; j++) {
   for (let i = 0; i < GW; i++) {
     const x = i * CELL, y = j * CELL;
-    const c = creekInfo(x, y);
-    HGRID[j * GW + i] = hillHeight(x, y) - (c ? c.depth * carve(c.d, c.w) : 0);
+    const c = creekInfo(x, y), local = hillHeight(x, y);
+    HGRID[j * GW + i] = c && c.d < c.w + 24 + BANK_SLOPE ? creekGround(c, local) : local;
   }
 }
 /** Terrain height (world units) at a map point. */
@@ -234,7 +253,7 @@ export function heightAt(x, y) {
 }
 /** The creek's water level at a point along it. */
 export function creekWaterAt(x, y) {
-  return hillHeight(x, y) - (creekInfo(x, y)?.depth ?? CREEK_DEPTH) + 0.6;
+  return (creekInfo(x, y)?.hc ?? hillHeight(x, y)) + LAKE_LEVEL;
 }
 
 /** Where a street crosses the creek there's a bridge: { x, y, a (heading), len, w, deck }. */

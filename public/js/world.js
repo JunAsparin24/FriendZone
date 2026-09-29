@@ -32,7 +32,8 @@ const SPOT_COLORS = {
 };
 /** 0 at night .. 1 in full daylight (for dimming the minimap). */
 const dayLight = () => Math.min(1, Math.max(0, (Math.sin(dayPhase() * Math.PI * 2) + 0.12) / 0.34));
-const solid = (s) => (s.kind === 'pond' ? M.solidOf(s) : { x: s.x, y: s.y, w: s.w, h: s.h });
+// how far a point is from a spot: the lake by its real shoreline, buildings by their footprint
+const spotDist = (s, p) => (s.kind === 'pond' ? Math.max(0, M.lakeDist(p.x, p.y)) : M.distToRect(p, s));
 const BUILDING_HEIGHT = { garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4 };
 
 export class World {
@@ -480,7 +481,7 @@ export class World {
     if (!p) return;
     const px = p.x * M.PX + M.CENTER.x, py = p.z * M.PX + M.CENTER.y;
     const pond = SPOTS.find((s) => s.kind === 'pond');
-    if (M.distToRect({ x: px, y: py }, solid(pond)) === 0) {
+    if (M.inLake(px, py)) {
       if (this.near === pond) { this.hooks.onActivity(pond.id); return; }
       this.pendingSpot = pond;
       this.walkTo(M.doorOf(pond));
@@ -518,7 +519,7 @@ export class World {
 
   blocked(x, y) {
     if (Math.hypot(x - M.CENTER.x, y - M.CENTER.y) < M.FOUNTAIN_R + R + 4) return true;
-    if (SPOTS.some((s) => M.distToRect({ x, y }, solid(s)) < R)) return true;
+    if (SPOTS.some((s) => spotDist(s, { x, y }) < R)) return true;
     if (this.layout.trees.some((t) => t.kind !== 'bush' && Math.hypot(x - t.x, y - t.y) < 9 + R)) return true;
     if (this.layout.lamps.some((l) => Math.hypot(x - l.x, y - l.y) < 6 + R)) return true;
     if (M.inCreek(x, y)) return true; // the creek is too deep to wade: use a bridge
@@ -670,7 +671,7 @@ export class World {
 
     this.sparks.update(dt);
     if (me && !this.fishing && !this.seated) {
-      const near = SPOTS.find((s) => M.distToRect(me, solid(s)) < 44) ?? null;
+      const near = SPOTS.find((s) => spotDist(s, me) < 44) ?? null;
       const bench = near ? null : this.layout.benches.find((b) => Math.hypot(b.x - me.x, b.y - me.y) < 34) ?? null;
       if (near !== this.near || bench !== this.nearBench) {
         this.near = near;

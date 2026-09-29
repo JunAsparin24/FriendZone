@@ -85,16 +85,6 @@ const checkerTex = canvasTexture(128, 96, (ctx) => {
     ctx.fillRect(c * 16, r * 16, 16, 16);
   }
 });
-const tapeTex = canvasTexture(256, 32, (ctx) => {
-  ctx.fillStyle = '#ffd84d';
-  ctx.fillRect(0, 0, 256, 32);
-  ctx.fillStyle = '#1d1b2e';
-  for (let x = -32; x < 256; x += 32) {
-    ctx.beginPath();
-    ctx.moveTo(x, 32); ctx.lineTo(x + 16, 32); ctx.lineTo(x + 32, 0); ctx.lineTo(x + 16, 0);
-    ctx.fill();
-  }
-});
 const arenaWallTex = canvasTexture(512, 256, (ctx) => {
   ctx.fillStyle = '#e6d3ae';
   ctx.fillRect(0, 0, 512, 256);
@@ -234,10 +224,6 @@ export const BUILDERS = {
     }
     // half-cylinder arch: the upper half of a cylinder lying along Z
     add(g, new THREE.CylinderGeometry(2.1, 2.1, 1.4, 28, 1, false, -Math.PI / 2, Math.PI), basic('#0b0614'), { p: [0, 0, d / 2 - 1.2], r: [-Math.PI / 2, 0, 0], s: [1, 1, 1.25], cast: false });
-    for (const s of [-1, 1]) {
-      const tape = add(g, new THREE.BoxGeometry(5, 0.32, 0.06), new THREE.MeshBasicMaterial({ map: tapeTex }), { p: [0, 1.4, d / 2 - 0.7], r: [0, 0, s * 0.28] });
-      tape.castShadow = false;
-    }
     const eyes = [];
     for (const s of [-1, 1]) {
       const eye = add(g, new THREE.SphereGeometry(0.16, 12, 8), basic('#e07bff'), { p: [s * 0.55, 1.15, d / 2 - 1.3], s: [1.3, 0.7, 0.5], cast: false });
@@ -454,6 +440,7 @@ export function buildBuilding(spot, anim, ctx) {
   BUILDERS[spot.kind](g, w, d, anim, ctx);
   const cx = (spot.x + spot.w / 2 - 900) / PX, cz = (spot.y + spot.h / 2 - 600) / PX;
   g.position.set(cx, 0, cz);
+  if (spot.facing === 'north') g.rotation.y = Math.PI; // models are built facing +Z (south)
   g.userData.spot = spot;
   return g;
 }

@@ -18,14 +18,16 @@ export const SPOTS = [
   { id: 'archery', emoji: '🏹', name: 'Archery Range', kind: 'range', x: 90, y: 470, w: 260, h: 180 },
   { id: 'casino', emoji: '🎰', name: 'Casino', kind: 'casino', x: 1450, y: 460, w: 270, h: 200 },
   { id: 'fishing', emoji: '🎣', name: 'Fishing Pond', kind: 'pond', x: 120, y: 830, w: 460, h: 290 },
-  { id: 'trading', emoji: '💰', name: 'Trading Post', kind: 'market', x: 640, y: 980, w: 250, h: 150 },
-  { id: 'shop', emoji: '👕', name: 'Style Shop', kind: 'boutique', x: 990, y: 950, w: 270, h: 180 },
-  { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 1400, y: 880, w: 320, h: 230, soon: true },
+  { id: 'trading', emoji: '💰', name: 'Trading Post', kind: 'market', x: 640, y: 980, w: 250, h: 150, facing: 'north' },
+  { id: 'shop', emoji: '👕', name: 'Style Shop', kind: 'boutique', x: 990, y: 950, w: 270, h: 180, facing: 'north' },
+  { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 1400, y: 880, w: 320, h: 230, soon: true, facing: 'north' },
 ];
 
 /** The part of a spot you can't walk through (buildings: the lower part; ponds: all of it). */
 export const solidOf = (s) => (s.kind === 'pond' ? { x: s.x, y: s.y - 14, w: s.w, h: s.h + 14 } : { x: s.x, y: s.y + s.h * 0.42, w: s.w, h: s.h * 0.58 });
-export const doorOf = (s) => (s.kind === 'pond' ? { x: s.x + s.w / 2, y: s.y - 30 } : { x: s.x + s.w / 2, y: s.y + s.h + 20 });
+// Buildings along the bottom edge face north (toward the plaza) so their paths never reach the edge fence.
+export const doorOf = (s) => (s.kind === 'pond' ? { x: s.x + s.w / 2, y: s.y - 30 }
+  : s.facing === 'north' ? { x: s.x + s.w / 2, y: s.y - 20 } : { x: s.x + s.w / 2, y: s.y + s.h + 20 });
 
 export function distToRect(p, r) {
   const dx = Math.max(r.x - p.x, 0, p.x - (r.x + r.w));

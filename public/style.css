@@ -15,7 +15,9 @@
   --body: 'Rubik', system-ui, sans-serif;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: none; }
+/* everything still scrolls (wheel, touch, drag), there's just no visible scroll bar */
+*::-webkit-scrollbar { display: none; }
 html, body { height: 100%; }
 body {
   margin: 0;
@@ -313,7 +315,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   padding: 24px; width: min(500px, 100%); max-height: calc(100vh - 32px); overflow: auto;
   box-shadow: 0 12px 0 #0006, inset 0 1px 0 #ffffff14; animation: pop .18s ease-out;
 }
-.modal.wide .modal-box { width: min(980px, 100%); padding: 18px 24px; }
+.modal.wide .modal-box { width: min(1120px, 100%); padding: 18px 24px; }
 .modal-close {
   position: absolute; top: 12px; right: 12px; background: var(--bg-2); border: none; color: var(--muted);
   width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 14px; z-index: 2;
@@ -939,3 +941,111 @@ body.no-names .wl-tag { display: none; }
   .house-side { top: auto; height: 45vh; }
   .house-hint { display: none; }
 }
+
+.mouselook-hint {
+  position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 60; pointer-events: none;
+  background: #0d1f4ad9; border: 2px solid var(--line); border-radius: 99px; padding: 5px 14px; font-size: 13px; color: var(--muted);
+}
+
+/* ---------- wardrobe / character creator ---------- */
+.wd2 { display: grid; grid-template-columns: 250px 92px 1fr; gap: 14px; height: min(640px, calc(100vh - 150px)); }
+.wd2-stage {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; border-radius: 18px; min-height: 0;
+  background: radial-gradient(circle at 50% 35%, #5a8fe8, var(--bg) 78%); border: 2px solid var(--line);
+}
+.wd2-title { font-size: 20px; margin: 0; text-align: center; }
+.wd2-preview { position: relative; }
+.wd2-preview .wd-canvas { width: 220px; height: 290px; display: block; }
+.wd2-zoom { position: absolute; right: -4px; top: 4px; display: flex; flex-direction: column; gap: 4px; }
+.wd2-zoom button {
+  width: 32px; height: 32px; border-radius: 10px; border: 2px solid var(--line); background: #0d1f4acc; cursor: pointer; font-size: 15px; padding: 0;
+}
+.wd2-zoom button.on { border-color: var(--accent); background: #1a3d85; }
+.wd2-tools { display: flex; gap: 6px; }
+.wd2-unsaved { min-height: 1em; color: var(--accent); }
+#saveLook.pulse { animation: glow 1.2s ease-in-out infinite; }
+.wd2-rail { display: flex; flex-direction: column; gap: 6px; overflow: auto; padding: 2px; }
+.wd2-rail button {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border-radius: 14px; cursor: pointer;
+  background: var(--bg-2); border: 2px solid transparent; color: var(--muted); font: 700 12px var(--body); transition: transform .1s, border-color .1s;
+}
+.wd2-rail button span { font-size: 22px; line-height: 1; }
+.wd2-rail button:hover { transform: translateX(2px); color: var(--text); }
+.wd2-rail button.on { border-color: var(--accent); color: var(--text); background: linear-gradient(180deg, var(--card-2), var(--card)); box-shadow: 0 0 14px #ffb34744; }
+.wd2-panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
+.wd2-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.wd2-section { margin: 0; font-family: var(--pixel); font-weight: 400; font-size: 22px; color: #ffd27a; }
+.wd2-filters { display: flex; gap: 4px; background: var(--bg-2); border-radius: 99px; padding: 3px; }
+.wd2-filters:empty { display: none; }
+.wd2-filters button { border: 0; background: transparent; color: var(--muted); font: 700 12px var(--body); padding: 5px 12px; border-radius: 99px; cursor: pointer; }
+.wd2-filters button.on { background: var(--accent); color: #1a1330; }
+.wd2 .wd-content { flex: 1; max-height: none; min-height: 0; overflow: auto; gap: 12px; }
+.wd2-card { background: #0d1f4a88; border: 2px solid #3a6fd066; border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.wd2-card .wd-label { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; color: var(--text); }
+.wd2-chip { width: 18px; height: 18px; border-radius: 6px; background: var(--c); border: 2px solid #fff; display: inline-block; }
+.wd2 .tiles { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.wd2 .tile { padding: 18px 6px 9px; border-radius: 16px; }
+.wd2 .tile-art { width: 84px; height: 90px; }
+.wd2 .tile-name { font-size: 13px; }
+.tile-rarity {
+  position: absolute; top: 0; left: 50%; transform: translate(-50%, -1px); font-size: 9px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+  background: var(--r); color: #1a1330; padding: 1px 8px; border-radius: 0 0 8px 8px;
+}
+.tile-lock { position: absolute; top: 6px; right: 7px; font-size: 13px; opacity: .85; }
+.wd2 .choice-tiles { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.wd2 .choice-tiles .tile { padding-top: 8px; }
+@media (max-width: 860px) {
+  .wd2 { grid-template-columns: 1fr; height: auto; }
+  .wd2-stage { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+  .wd2-rail { flex-direction: row; overflow-x: auto; }
+  .wd2-rail button { min-width: 70px; }
+  .wd2 .wd-content { max-height: 55vh; }
+}
+
+/* ---------- pet egg ---------- */
+.egg-stage { position: relative; height: 230px; display: grid; place-items: center; }
+.egg {
+  position: relative; width: 130px; height: 170px; border-radius: 50% 50% 46% 46% / 58% 58% 42% 42%;
+  background: radial-gradient(circle at 35% 30%, #ffffff, #fff1dc 55%, #f2d9b8); box-shadow: inset -10px -14px 0 #0001, 0 10px 0 #0003;
+}
+.egg i { position: absolute; width: 22px; height: 16px; border-radius: 50%; background: #ff8fc7; }
+.egg i:nth-child(1) { left: 26px; top: 50px; } .egg i:nth-child(2) { right: 30px; top: 86px; background: #7dd3ff; } .egg i:nth-child(3) { left: 50px; bottom: 30px; background: #ffd84d; }
+.egg.wobble { animation: egg-wobble .25s ease-in-out infinite; }
+@keyframes egg-wobble { 25% { transform: rotate(-9deg); } 75% { transform: rotate(9deg); } }
+.egg.crack { animation: egg-crack .8s ease-out forwards; }
+@keyframes egg-crack { 40% { transform: scale(1.12, .9); } 100% { transform: scale(1.4); opacity: 0; filter: brightness(2); } }
+.egg-reveal { display: flex; flex-direction: column; align-items: center; gap: 6px; animation: pop .3s ease-out; }
+.egg-reveal .rv-rarity { color: var(--r); font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+.egg-reveal .rv-name { font-family: var(--pixel); font-size: 26px; color: #ffd27a; }
+
+/* ---------- fishing rod shop ---------- */
+.fish-rods {
+  position: absolute; right: 12px; bottom: 64px; width: min(360px, calc(100vw - 24px)); max-height: 60vh; overflow: auto; z-index: 4;
+  background: #0d1f4ae6; border: 2px solid var(--line); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 6px;
+}
+.fish-rods h4 { margin: 0 0 2px; font-family: var(--pixel); font-weight: 400; color: #ffd27a; }
+.fish-rod {
+  display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; text-align: left; padding: 8px 10px; border-radius: 12px;
+  background: var(--bg-2); border: 2px solid transparent; color: var(--text); font: inherit; cursor: pointer;
+}
+.fish-rod.on { border-color: var(--good); }
+.fish-rod:hover:not(:disabled) { border-color: var(--accent); }
+.fish-rod i { width: 8px; height: 30px; border-radius: 4px; background: var(--c); justify-self: center; transform: rotate(20deg); box-shadow: 0 0 0 2px #0004; }
+.fish-rod span { display: flex; flex-direction: column; gap: 1px; }
+.fish-rod small { color: var(--muted); font-size: 11px; }
+.fish-rod em { font-style: normal; font-size: 11px; color: #7ff0b0; }
+.fish-rod strong { font-size: 12px; color: var(--accent); white-space: nowrap; }
+.fish-rod.on strong { color: var(--good); }
+
+/* ---------- kart racing ---------- */
+.race-item {
+  position: absolute; top: 70px; right: 12px; width: 84px; height: 84px; border-radius: 18px;
+  background: #0d1f4ae6; border: 3px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 6px 0 #0003;
+}
+.race-item span { font-size: 44px; line-height: 1; }
+.race-item small { font-size: 10px; color: var(--muted); }
+.race-item.has { border-color: var(--accent); box-shadow: 0 0 20px #ffb34788, 0 6px 0 #0003; }
+.race-item.rolling span { animation: blink .12s infinite; }
+.race-map { position: absolute; right: 12px; bottom: 84px; width: 170px; height: 140px; background: #0d1f4ab3; border: 2px solid var(--line); border-radius: 14px; }
+.race-time { font-size: 13px; color: var(--muted); }

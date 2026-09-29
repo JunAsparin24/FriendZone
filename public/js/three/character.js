@@ -1,6 +1,7 @@
 // 3D chibi characters built from primitives, with every cosmetic from cosmetics.json.
 // The character stands at the origin facing +Z; it is ~1.95 units tall.
 import * as THREE from 'three';
+import { buildPet } from './pets.js';
 import {
   TAU, toon, basic, shiny, outlineMaterial, canvasTexture,
   additive, starTexture, heartTexture, flameTexture, glowTexture,
@@ -10,6 +11,7 @@ export const DEFAULT_LOOK = {
   skin: '#f6c9a0', hairColor: '#2b1d14', topColor: '#39c6ff', bottomColor: '#23263f', shoeColor: '#23263f', eyeColor: '#1d1b2e',
   eyes: 'eyes_round', height: 'height_medium', build: 'build_regular',
   hair: 'hair_short', top: 'top_tee', bottom: 'bottom_pants', hat: 'hat_none', face: 'face_none', back: 'back_none', aura: 'aura_none',
+  pet: 'pet_none',
 };
 
 // Body shapes: leg/torso stretch for height; width, depth and limb thickness for build.
@@ -758,6 +760,8 @@ export class Character {
     this.onLand = null;        // called when a jump lands
     this.propKind = null;      // 'blaster' | 'rod' | null, held in the right hand
     this.aiming = false;       // both arms forward, holding the blaster
+    this.draw = 0;             // how far a bow is drawn (0..1)
+    this.nocked = false;       // an arrow sits on the bow string
     this.setLook(look);
   }
 
@@ -771,9 +775,11 @@ export class Character {
     if (this.propKind) this.setProp(this.propKind);
   }
 
-  /** Put something in the right hand: 'blaster', 'rod' or null. */
-  setProp(kind) {
+  /** Put something in the right hand: 'blaster', 'rod' or null. `color` tints a rod. */
+  setProp(kind, color = this.propColor) {
     this.propKind = kind;
+    this.propColor = color;
+    this.bow = null;
     const hand = this.rig?.elbows[0];
     if (!hand) return;
     if (this.prop) hand.remove(this.prop);
@@ -798,14 +804,21 @@ export class Character {
       frame.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0)));
       frame.position.set(0, R, 0);
       part(frame, torus(R, 0.035, a, 8, 24), toon('#8b5a2b'), { r: [0, 0, -a / 2], outline: OUT_THIN });
-      part(frame, cyl(0.005, 0.005, 2 * R * Math.sin(a / 2), 4), basic('#f4f0ff'), { p: [R * Math.cos(a / 2), 0, 0], outline: null, shadow: false });
       part(frame, cyl(0.045, 0.045, 0.16, 8), toon('#4a2e1c'), { p: [R, 0, 0], outline: null });
+      // the string is two pieces meeting at the nock, so it bends back as you draw
+      const strings = [0, 1].map(() => part(frame, cyl(0.006, 0.006, 1, 4), basic('#f4f0ff'), { outline: null, shadow: false }));
+      const arrow = new THREE.Group();
+      part(arrow, cyl(0.018, 0.018, 1.0, 6), toon('#c9955a'), { p: [0.5, 0, 0], r: [0, 0, Math.PI / 2], outline: null });
+      part(arrow, cone(0.04, 0.12, 6), toon('#c0c6d4'), { p: [1.05, 0, 0], r: [0, 0, -Math.PI / 2], outline: null });
+      for (let k = 0; k < 3; k++) part(arrow, box(0.14, 0.004, 0.06), toon('#ff5d73'), { p: [0.08, Math.cos((k / 3) * TAU) * 0.03, Math.sin((k / 3) * TAU) * 0.03], r: [(k / 3) * TAU, 0, 0], outline: null, shadow: false });
+      frame.add(arrow);
+      this.bow = { R, a, strings, arrow };
       g.add(frame);
     } else if (kind === 'rod') {
       g.rotation.x = -0.6;
       part(g, cyl(0.03, 0.035, 0.34, 8), toon('#c9955a'), { p: [0, 0.05, 0], outline: null });
       part(g, cyl(0.045, 0.045, 0.07, 10), shiny('#c0c6d4'), { p: [0.05, -0.12, 0], r: [0, 0, Math.PI / 2], outline: null });
-      part(g, cyl(0.011, 0.02, 2.2, 6), toon('#3b2a1a'), { p: [0, -1.25, 0], outline: null });
+      part(g, cyl(0.011, 0.02, 2.2, 6), toon(this.propColor ?? '#3b2a1a'), { p: [0, -1.25, 0], outline: null });
       const tip = new THREE.Object3D();
       tip.position.y = -2.35;
       g.add(tip);
@@ -955,7 +968,16 @@ export class Character {
     this.root.add(aura);
     AURAS[L.aura]?.(aura, anim);
 
-    this.rig = { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim, hipY, torsoY: H.torso };
+    // a pet trots along beside you
+    const pet = buildPet(L.pet);
+    if (pet) {
+      pet.group.position.set(0.95, 0, -0.35);
+      pet.group.scale.setScalar(1.25);
+      this.root.add(pet.group);
+      anim.push((t, dt, moving) => pet.tick(t, dt, moving));
+    }
+
+    this.rig = { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim, hipY, torsoY: H.torso, pet: pet?.group ?? null };
     this.state = state;
   }
 
@@ -1133,8 +1155,16 @@ export class Character {
     } else if (this.aiming) {
       arms[0].rotation.set(-1.5, 0, -0.05);
       elbows[0].rotation.set(0, 0, 0);
-      arms[1].rotation.set(-1.3, 0, -0.45);
-      elbows[1].rotation.set(-0.35, 0, 0);
+      if (this.bow) {
+        // the string hand pulls back towards the cheek as the bow draws
+        const d = this.draw;
+        arms[1].rotation.set(-1.35 - d * 0.2, 0, -0.5 - d * 0.55);
+        elbows[1].rotation.set(-0.4 - d * 1.7, 0, 0);
+        body.rotation.y += d * 0.12;
+      } else {
+        arms[1].rotation.set(-1.3, 0, -0.45);
+        elbows[1].rotation.set(-0.35, 0, 0);
+      }
     } else if (this.pose === 'fish') {
       arms.forEach((a, i) => { a.rotation.x = -1.2; a.rotation.z = i ? -0.25 : 0.25; });
       elbows.forEach((e) => { e.rotation.x = -0.45; });
@@ -1223,5 +1253,22 @@ export class Character {
     for (const e of eyes) e.scale.y = blink ? 0.12 : e.userData.sy;
 
     for (const fn of anim) fn(time, dt, walking);
+    if (this.bow) this.updateBow();
+  }
+
+  /** Bend the bow string back to the nock and sit the arrow on it. */
+  updateBow() {
+    const { R, a, strings, arrow } = this.bow;
+    const tipX = R * Math.cos(a / 2), tipY = R * Math.sin(a / 2);
+    const nock = new THREE.Vector3(tipX - this.draw * 0.5, 0, 0);
+    [[tipX, tipY], [tipX, -tipY]].forEach(([x, y], i) => {
+      const from = new THREE.Vector3(x, y, 0);
+      const dir = nock.clone().sub(from);
+      strings[i].position.copy(from).add(nock).multiplyScalar(0.5);
+      strings[i].scale.y = dir.length();
+      strings[i].quaternion.setFromUnitVectors(Y, dir.normalize());
+    });
+    arrow.visible = this.nocked;
+    arrow.position.copy(nock);
   }
 }

@@ -1,10 +1,9 @@
 // 3D building models. Each builder gets the spot and returns a Group centered on the spot's
 // footprint, with its front (door side) facing +Z. `anim` collects per-frame animation callbacks.
 import * as THREE from 'three';
-import { TAU, toon, basic, shiny, outlineMaterial, canvasTexture, emojiTexture, additive, glowTexture } from './materials.js';
+import { TAU, toon, basic, shiny, outlineMaterial, canvasTexture, additive, glowTexture } from './materials.js';
 import { Character } from './character.js';
-import { PX, CENTER } from '../map.js';
-import { iconImage } from '../icons.js';
+import { PX, CENTER, heightAt } from '../map.js';
 
 const faceted = (geo) => { const g = geo.index ? geo.toNonIndexed() : geo; g.computeVertexNormals(); return g; };
 
@@ -169,57 +168,6 @@ function windowPane(g, x, y, z, w = 1.5, h = 1.2, glow = '#9fd6ff') {
   g.add(win);
 }
 
-const EMBLEM_ICON = { '🏎️': 'racing', '👾': 'boss', '⚔️': 'arena', '🏹': 'archery', '💰': 'trading', '👕': 'shop', '🎨': 'doodle', '💥': 'bumper' };
-
-/** Canvas texture of an SVG icon (filled in as soon as the image has loaded). */
-function iconTexture(id) {
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  const img = iconImage(id, 256);
-  const draw = () => { c.getContext('2d').drawImage(img, 0, 0, 256, 256); tex.needsUpdate = true; };
-  if (img.complete && img.naturalWidth) draw();
-  else img.addEventListener('load', draw, { once: true });
-  return tex;
-}
-
-function roundedPlate(size, radius, depth) {
-  const s = new THREE.Shape();
-  const h = size / 2;
-  s.moveTo(-h + radius, -h);
-  s.lineTo(h - radius, -h);
-  s.quadraticCurveTo(h, -h, h, -h + radius);
-  s.lineTo(h, h - radius);
-  s.quadraticCurveTo(h, h, h - radius, h);
-  s.lineTo(-h + radius, h);
-  s.quadraticCurveTo(-h, h, -h, h - radius);
-  s.lineTo(-h, -h + radius);
-  s.quadraticCurveTo(-h, -h, -h + radius, -h);
-  const geo = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false, curveSegments: 6 });
-  geo.translate(0, 0, -depth);
-  return geo;
-}
-
-function emblem(g, emoji, ring, x, y, z, r = 0.9) {
-  const id = EMBLEM_ICON[emoji];
-  if (!id) {
-    const tex = emojiTexture(emoji, 256, ring);
-    const mats = [toon(ring), new THREE.MeshBasicMaterial({ map: tex }), toon(ring)];
-    return add(g, new THREE.CylinderGeometry(r, r, 0.16, 36), mats, { p: [x, y, z], r: [Math.PI / 2, 0, 0], outline: true });
-  }
-  // a glossy badge: dark rounded plate with the icon on the front
-  const badge = new THREE.Group();
-  badge.position.set(x, y, z);
-  add(badge, roundedPlate(r * 2.1, r * 0.55, 0.18), toon('#1a1330'), { p: [0, 0, 0.02], outline: false });
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: iconTexture(id), transparent: true, alphaTest: 0.05 }));
-  face.position.z = 0.03;
-  badge.add(face);
-  g.add(badge);
-  return badge;
-}
-
 function flag(g, x, z, anim) {
   add(g, new THREE.CylinderGeometry(0.07, 0.07, 4.2, 8), toon('#5b5f73'), { p: [x, 2.1, z] });
   const geo = new THREE.PlaneGeometry(1.4, 1, 8, 4);
@@ -315,7 +263,6 @@ export const BUILDERS = {
       add(g, new THREE.CylinderGeometry(0.28, 0.24, 0.5, 14), toon('#e8e2f4'), { p: [x, 0.25, d / 2 + 0.9], outline: true });
       add(g, new THREE.CylinderGeometry(0.26, 0.26, 0.04, 14), toon(c), { p: [x, 0.5, d / 2 + 0.9] });
     }
-    emblem(g, '🎨', '#ff9f43', 0, h + 1.2, d / 2 + 0.35, 0.85);
   },
 
   dome(g, w, d, anim) {
@@ -356,7 +303,6 @@ export const BUILDERS = {
     // entrance arch + neon sign
     add(g, new THREE.BoxGeometry(2.4, 2.6, 0.5), toon('#3b5bdb'), { p: [0, 1.3, r + 0.25], outline: true });
     add(g, new THREE.BoxGeometry(1.6, 2.1, 0.55), basic('#0e1535'), { p: [0, 1.05, r + 0.27] });
-    emblem(g, '💥', '#3b6fd0', 0, 3.3, r + 0.55, 0.8);
   },
 
   garage(g, w, d, anim) {
@@ -368,7 +314,6 @@ export const BUILDERS = {
     add(g, new THREE.BoxGeometry(gw, 3.3, 0.24), new THREE.MeshToonMaterial({ map: tiled(rollerTex, 1, 1), gradientMap: toon('#fff').gradientMap }), { p: [0, 1.65, d / 2 + 0.08] });
     windowPane(g, -w * 0.36, 2.6, d / 2 + 0.06);
     windowPane(g, w * 0.36, 2.6, d / 2 + 0.06);
-    emblem(g, '🏎️', '#e0463c', 0, h + 1.2, d / 2 + 0.2, 0.85);
     flag(g, -w / 2 - 1.2, d / 2 + 0.8, anim);
     flag(g, w / 2 + 1.2, d / 2 + 0.8, anim);
     for (const [x, z, y] of [[w / 2 - 1, d / 2 + 1.2, 0.25], [w / 2 - 1, d / 2 + 1.2, 0.72], [w / 2 - 2.1, d / 2 + 1.4, 0.25]]) {
@@ -410,7 +355,6 @@ export const BUILDERS = {
       const blink = t % 5 < 0.14;
       eyes.forEach(({ eye, glow }) => { eye.visible = !blink; glow.material.opacity = 0.4 + pulse * 0.5; });
     });
-    emblem(g, '👾', '#7c6bff', 0, 6.4, 0.4, 0.8);
   },
 
   colosseum(g, w, d, anim) {
@@ -453,7 +397,6 @@ export const BUILDERS = {
       const bx = Math.cos(ang) * rx * 1.01, bz = Math.sin(ang) * rz * 1.01;
       add(g, new THREE.PlaneGeometry(0.9, 2), toon('#d6334a', { side: THREE.DoubleSide }), { p: [bx, h - 1.3, bz], r: [0, Math.atan2(bx / rx / rx, bz / rz / rz), 0] });
     }
-    emblem(g, '⚔️', '#c9772a', 0, h + 1, rz + 0.2, 0.9);
   },
 
   range(g, w, d) {
@@ -463,7 +406,6 @@ export const BUILDERS = {
     door(g, 0, d / 2 + 0.08);
     windowPane(g, -w * 0.3, 2.3, d / 2 + 0.06);
     windowPane(g, w * 0.3, 2.3, d / 2 + 0.06);
-    emblem(g, '🏹', '#2f7f5e', 0, h + 1.1, d / 2 + 0.3, 0.8);
     for (const [x, z] of [[-w / 2 + 0.8, d / 2 + 1.1], [w / 2 - 0.8, d / 2 + 1.1]]) {
       add(g, new THREE.CylinderGeometry(0.5, 0.55, 0.9, 12), toon('#e8c96a'), { p: [x, 0.45, z], outline: true });
     }
@@ -533,7 +475,6 @@ export const BUILDERS = {
       add(g, new THREE.CylinderGeometry(0.55, 0.55, 1.3, 16), mapped(plankTex, '#8b5a2b', 2, 0.5), { p: [s * (w / 2 + 0.6), 0.65, d / 2 - 0.8], outline: true });
       add(g, new THREE.TorusGeometry(0.56, 0.05, 6, 20), toon('#4a2e1c'), { p: [s * (w / 2 + 0.6), 0.95, d / 2 - 0.8], r: [Math.PI / 2, 0, 0] });
     }
-    emblem(g, '💰', '#c9a227', 0, 4.9, 0.6, 0.8);
   },
 
   boutique(g, w, d, anim) {
@@ -559,7 +500,37 @@ export const BUILDERS = {
       anim.push((t, dt) => c.update(dt, t + i * 3, false));
     });
     door(g, w * 0.3, d / 2 + 0.08, 1.6, 2.8, '#e57bff');
-    emblem(g, '👕', '#e57bff', 0, h + 1.1, d / 2 + 0.3, 0.8);
+  },
+
+  petshop(g, w, d, anim) {
+    const h = 4.0;
+    walls(g, w, h, d, '#fff1c9');
+    gable(g, w, d, 2.4, h, '#ff8fc7');
+    // a big round shop window with a pet bed and toys, a striped awning and a doghouse out front
+    const wx = -w * 0.2;
+    add(g, new THREE.CylinderGeometry(1.25, 1.25, 0.2, 32), toon('#ffffff'), { p: [wx, 2.2, d / 2 + 0.05], r: [Math.PI / 2, 0, 0], outline: true });
+    add(g, new THREE.CylinderGeometry(1.05, 1.05, 0.22, 32), toon('#bde9f5', { emissive: '#ffd27a', emissiveIntensity: 0.25 }), { p: [wx, 2.2, d / 2 + 0.07], r: [Math.PI / 2, 0, 0], cast: false });
+    add(g, new THREE.PlaneGeometry(w * 0.9, 1.3), new THREE.MeshToonMaterial({ map: tiled(awningTex('#ff8fc7', '#ffffff'), 3, 1), side: THREE.DoubleSide, gradientMap: toon('#fff').gradientMap }), { p: [0, 3.7, d / 2 + 0.7], r: [-0.8, 0, 0] });
+    door(g, w * 0.28, d / 2 + 0.08, 1.4, 2.5, '#ff8fc7');
+    const dh = new THREE.Group();
+    add(dh, new THREE.BoxGeometry(1.4, 1.1, 1.4), toon('#e0463c'), { p: [0, 0.55, 0], outline: true });
+    const roof = new THREE.Shape();
+    roof.moveTo(-0.95, 0); roof.lineTo(0.95, 0); roof.lineTo(0, 0.8); roof.closePath();
+    const rg = new THREE.ExtrudeGeometry(roof, { depth: 1.6, bevelEnabled: false });
+    rg.translate(0, 0, -0.8);
+    add(dh, rg, toon('#8b5a2b'), { p: [0, 1.1, 0], outline: true });
+    add(dh, new THREE.CircleGeometry(0.38, 16), toon('#2a1a12'), { p: [0, 0.5, 0.71], cast: false });
+    dh.position.set(-w / 2 - 1.2, 0, d / 2 - 0.5);
+    dh.rotation.y = 0.5;
+    g.add(dh);
+    // a paw print sign that gently swings
+    const sign = new THREE.Group();
+    sign.position.set(0, h + 1.2, d / 2 + 0.25);
+    g.add(sign);
+    add(sign, new THREE.CylinderGeometry(0.85, 0.85, 0.15, 28), toon('#ffffff'), { r: [Math.PI / 2, 0, 0], outline: true });
+    add(sign, new THREE.SphereGeometry(0.28, 12, 10), toon('#ff8fc7'), { p: [0, -0.12, 0.1], s: [1.2, 1, 0.4] });
+    [[-0.32, 0.18], [-0.12, 0.34], [0.12, 0.34], [0.32, 0.18]].forEach(([x, y]) => add(sign, new THREE.SphereGeometry(0.11, 10, 8), toon('#ff8fc7'), { p: [x, y, 0.1], s: [1, 1.2, 0.4] }));
+    anim.push((t) => { sign.rotation.z = Math.sin(t * 1.5) * 0.06; });
   },
 
   houses(g, w, d, anim, ctx) {
@@ -609,11 +580,13 @@ export const BUILDERS = {
 /** Build a building for a map spot; returns a Group placed in the world. */
 export function buildBuilding(spot, anim, ctx) {
   const g = new THREE.Group();
-  const w = spot.w / PX, d = spot.h / PX;
+  // buildings are modelled with the door on +Z; ones facing east/west have their footprint turned
+  const side = spot.face === 'e' || spot.face === 'w';
+  const w = (side ? spot.h : spot.w) / PX, d = (side ? spot.w : spot.h) / PX;
   BUILDERS[spot.kind](g, w, d, anim, ctx);
   const cx = (spot.x + spot.w / 2 - CENTER.x) / PX, cz = (spot.y + spot.h / 2 - CENTER.y) / PX;
-  g.position.set(cx, 0, cz);
-  if (spot.face === 'n') g.rotation.y = Math.PI; // door on the north side
+  g.position.set(cx, heightAt(spot.x + spot.w / 2, spot.y + spot.h / 2), cz);
+  g.rotation.y = { n: Math.PI, e: Math.PI / 2, w: -Math.PI / 2 }[spot.face] ?? 0;
   g.userData.spot = spot;
   return g;
 }

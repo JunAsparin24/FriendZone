@@ -53,22 +53,23 @@ PIN_RE = re.compile(r"^\d{4,6}$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 MAX_MEMBERS = 50
 
-SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "bumper", "archery"}
-AREA_SCENES = {"casino"}  # 3D rooms you walk around in; positions are relayed to everyone inside
+SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "bumper", "archery", "shop", "petshop"}
+AREA_SCENES = {"casino", "shop", "petshop"}  # 3D rooms you walk around in; positions are relayed to everyone inside
 
 
 def is_area(scene):
     """Walk-around rooms: the casino, and every member's house ("house:<owner>")."""
     return scene in AREA_SCENES or (isinstance(scene, str) and scene.startswith("house:"))
 POSES = {"fish", "cast", "bite", "reel", "catch", "bench"}
-WORLD_W, WORLD_H = 3600, 2400
+WORLD_W, WORLD_H = 4800, 3200
 START_COINS = 500
 DAILY_BONUS = 300
 DAILY_SECS = 20 * 3600
 
 RACE_LAPS = 3
-RACE_LEN = 210  # steps for the whole race (70 per lap)
-RACE_TIMEOUT = 100
+RACE_TIMEOUT = 300          # seconds before a race is called
+RACE_MIN_LAP = 20           # nobody can really lap the Grand Prix faster than this
+RACE_ITEMS = {"turbo", "banana", "oil", "shell", "rocket", "zap", "shield", "star"}
 RACE_PRIZES = [(150, 40), (80, 25), (50, 15)]  # (coins, xp) by place
 RACE_PRIZE_REST = (25, 10)
 RACE_PRIZE_SOLO = (40, 15)
@@ -83,7 +84,7 @@ ARENA_SPAWNS = [(70, 70), (830, 70), (70, 530), (830, 530), (450, 60), (450, 540
 # when everyone is down, and the zone remembers the highest floor reached. The server runs the
 # monsters and bosses; clients dodge and report their own hits, like the arena.
 BOSS_W, BOSS_H = 900, 600
-BOSS_TICK = 0.1
+BOSS_TICK = 0.05         # 20 updates a second, so monsters move smoothly
 BOSS_PLAYER_HP = 5
 BOSS_IFRAMES = 0.9       # seconds of invulnerability after taking a hit
 BOSS_REVIVE_R = 60       # stand this close to a downed friend to revive them
@@ -213,14 +214,15 @@ HOUSE_MAX_ITEMS = 80
 CATALOG = json.loads((PUBLIC / "cosmetics.json").read_text("utf-8"))
 ITEMS = {item["id"]: item for item in CATALOG["items"]}
 FISH = CATALOG["fish"]
+RODS = {r["id"]: r for r in CATALOG["rods"]}
 FURN = {f["id"]: f for f in CATALOG["furniture"]}
 FLOORS = {f["id"]: f for f in CATALOG["floors"]}
 WALLS = {f["id"]: f for f in CATALOG["walls"]}
-LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura")
+LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura", "pet")
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
                "shoeColor": "clothColors", "eyeColor": "eyeColors"}
 LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds"}
-LOOK_EXTRAS = {"bottom": "bottom_pants", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
+LOOK_EXTRAS = {"pet": "pet_none", "bottom": "bottom_pants", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
                "height": "height_medium", "build": "build_regular"}
 STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBest", "jackpots", "bossKills", "houseLikes",
              "doodleWins", "bumperWins", "dungeonBest")
@@ -430,6 +432,8 @@ def migrate(p):
         p["look"].setdefault(field, value)
     p.setdefault("owned", [])
     p.setdefault("fishdex", {})
+    p.setdefault("rods", ["rod_twig"])
+    p.setdefault("rod", "rod_twig")
     p.setdefault("furni", {f["id"]: 1 for f in CATALOG["furniture"] if f.get("starter")})
     p.setdefault("house", default_house())
     give_closet(p)
@@ -510,7 +514,7 @@ def public(p, client):
     return {
         "key": p["name"].lower(), "name": p["name"], "color": p["color"],
         "coins": p["coins"], "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
-        "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"],
+        "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "rods": p["rods"], "rod": p["rod"],
         "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"])},
         "dailyAt": p.get("lastDaily", 0) + DAILY_SECS,
         "online": client is not None, "scene": client.scene if client else None,
@@ -580,8 +584,8 @@ class Room:
 PRE_AUTH = {"create", "join", "resume"}
 IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "gift",
-    "look", "buy", "crate", "bj_deal", "bj_hit", "bj_stand", "bj_double",
-    "race_join", "race_leave", "race_start", "race_step", "arena_move", "arena_shoot", "arena_hit",
+    "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
+    "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "area_move", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "bumper_move", "bumper_out", "roulette_bet", "roulette_clear", "roulette_sync",
@@ -804,6 +808,24 @@ class Game:
         self.grant(c, item, "crate")
         self.push_player(c.room, c.key)
 
+    def on_pet_egg(self, c, m):
+        """Hatch a pet egg: a random pet you don't have yet (rarer ones are rarer)."""
+        p, price = c.player, CATALOG["petEgg"]["price"]
+        if p["coins"] < price:
+            raise GameError(f"A pet egg costs {price} coins.")
+        if not c.ready("pet_egg", 1.5):
+            raise GameError("Hang on, the last egg is still hatching!")
+        pool = [i for i in CATALOG["items"] if i.get("petRoll") and i["id"] not in p["owned"]]
+        if not pool:
+            raise GameError("You've already got every pet!")
+        weights = {r: w for r, w in CATALOG["petEgg"]["weights"].items() if any(i["rarity"] == r for i in pool)}
+        rarity = random.choices(list(weights), weights=list(weights.values()))[0]
+        item = random.choice([i for i in pool if i["rarity"] == rarity])
+        p["coins"] -= price
+        c.ws.send({"t": "pet_hatched", "id": item["id"]})
+        self.grant(c, item, "egg")
+        self.push_player(c.room, c.key)
+
     # ---- scenes & the world ----------------------------------------------
 
     def on_scene(self, c, m):
@@ -907,7 +929,8 @@ class Game:
         """Sent when the reeling minigame is won. `q` is how well the player tracked the fish."""
         if not c.ready("fish", 2.5):
             raise GameError("Easy there, the fish need a moment.")
-        q = num(m.get("q", 0), 0, 1)
+        # a luckier rod counts as a better catch when choosing which fish bit
+        q = num(m.get("q", 0), 0, 1) + RODS.get(c.player["rod"], {}).get("luck", 0)
         weights = [f["weight"] * math.exp(f["bias"] * (q - 0.5)) for f in FISH]
         fish = random.choices(FISH, weights=weights)[0]
         lo, hi = fish["size"]
@@ -923,6 +946,23 @@ class Game:
                    "first": first, "record": record and not first})
         if fish["rarity"] in ("rare", "epic", "legendary"):
             self.post_feed(c.room, f"🎣 {c.player['name']} caught a {fish['rarity']} {fish['name']} ({size} in)!")
+
+    def on_rod(self, c, m):
+        """Buy a fishing rod, or pick one you own."""
+        rod = RODS.get(str(m.get("id", "")))
+        p = c.player
+        if not rod:
+            raise GameError("Unknown rod.")
+        if rod["id"] not in p["rods"]:
+            if p["coins"] < rod["price"]:
+                raise GameError(f"The {rod['name']} costs {rod['price']:,} coins.")
+            p["coins"] -= rod["price"]
+            p["rods"].append(rod["id"])
+            if rod["price"] >= 6000:
+                self.post_feed(c.room, f"🎣 {p['name']} bought the {rod['name']}!")
+        p["rod"] = rod["id"]
+        self.store.mark()
+        self.push_player(c.room, c.key)
 
     def on_archery(self, c, m):
         if not c.ready("archery", 4):
@@ -1093,9 +1133,14 @@ class Game:
 
     # ---- racing ------------------------------------------------------------
 
+    # Kart racing: every driver simulates their own kart (so steering feels instant) and streams its
+    # position; the server runs the countdown, relays karts and items, and records the finish.
+
     def race_view(self, room):
         r = room.race
-        return {"state": r["state"], "racers": r["racers"], "order": r["order"], "len": RACE_LEN, "laps": RACE_LAPS}
+        return {"state": r["state"], "racers": r["racers"], "order": r["order"], "laps": RACE_LAPS,
+                "since": round(time.monotonic() - r.get("goAt", time.monotonic()), 2) if r["state"] == "running" else 0,
+                "times": r.get("times", {}), "grid": r.get("grid", list(r["racers"]))}
 
     def race_sync(self, room):
         room.broadcast({"t": "race", "race": self.race_view(room)})
@@ -1118,7 +1163,6 @@ class Game:
         if c.key not in r["racers"]:
             return
         del r["racers"][c.key]
-        r["last"].pop(c.key, None)
         if not r["racers"]:
             r.update(id=r["id"] + 1, state="idle", order=[])
         elif r["state"] == "running" and all(k in r["order"] for k in r["racers"]):
@@ -1130,7 +1174,8 @@ class Game:
         room, r = c.room, c.room.race
         if c.key not in r["racers"] or r["state"] != "waiting":
             return
-        r.update(id=r["id"] + 1, state="countdown", order=[], last={}, field=len(r["racers"]))
+        r.update(id=r["id"] + 1, state="countdown", order=[], field=len(r["racers"]), times={},
+                 grid=list(r["racers"]))
         for k in r["racers"]:
             r["racers"][k] = 0
         self.race_sync(room)
@@ -1140,7 +1185,7 @@ class Game:
         r = room.race
         if r["id"] != rid or r["state"] != "countdown":
             return
-        r["state"] = "running"
+        r["state"], r["goAt"] = "running", time.monotonic()
         self.race_sync(room)
         asyncio.get_running_loop().call_later(RACE_TIMEOUT, self.race_finish, room, rid)
 
@@ -1150,7 +1195,7 @@ class Game:
             return
         r["state"] = "done"
         self.race_sync(room)
-        asyncio.get_running_loop().call_later(5, self.race_reset, room, rid)
+        asyncio.get_running_loop().call_later(6, self.race_reset, room, rid)
 
     def race_reset(self, room, rid):
         r = room.race
@@ -1161,21 +1206,43 @@ class Game:
             r["racers"][k] = 0
         self.race_sync(room)
 
-    def on_race_step(self, c, m):
+    def on_race_pos(self, c, m):
+        """Your kart: position, heading, speed, race progress (laps, fractional) and status flags."""
+        room, r = c.room, c.room.race
+        if r["state"] not in ("countdown", "running") or c.key not in r["racers"]:
+            return
+        progress = num(m.get("p", 0), -1, RACE_LAPS + 0.5)
+        r["racers"][c.key] = round(progress, 4)
+        room.broadcast({"t": "race_kp", "k": c.key, "x": round(num(m["x"], -500, 500), 2), "z": round(num(m["z"], -500, 500), 2),
+                        "h": round(num(m.get("h", 0), -1e4, 1e4), 3), "v": round(num(m.get("v", 0), -60, 80), 1),
+                        "p": r["racers"][c.key], "f": str(m.get("f", ""))[:12]}, scene="race", exclude=c)
+
+    def on_race_item(self, c, m):
+        """Somebody used an item: everyone sees it (hazards, projectiles, zaps)."""
+        room, r = c.room, c.room.race
+        kind = m.get("kind")
+        if r["state"] != "running" or c.key not in r["racers"] or kind not in RACE_ITEMS or not c.ready("race_item", 0.3):
+            return
+        room.broadcast({"t": "race_item", "k": c.key, "kind": kind, "id": str(m.get("id", ""))[:24],
+                        "x": round(num(m.get("x", 0), -500, 500), 2), "z": round(num(m.get("z", 0), -500, 500), 2),
+                        "h": round(num(m.get("h", 0), -1e4, 1e4), 3), "target": str(m.get("target", ""))[:20]}, scene="race")
+
+    def on_race_hit(self, c, m):
+        """Your kart got hit by (or drove over) something: take it off everyone's track."""
+        room, r = c.room, c.room.race
+        if r["state"] != "running" or c.key not in r["racers"]:
+            return
+        room.broadcast({"t": "race_hit", "k": c.key, "id": str(m.get("id", ""))[:24], "by": str(m.get("by", ""))[:20]}, scene="race")
+
+    def on_race_done(self, c, m):
         room, r = c.room, c.room.race
         if r["state"] != "running" or c.key not in r["racers"] or c.key in r["order"]:
             return
-        side = m.get("side")
-        now = time.monotonic()
-        last = r["last"].get(c.key)
-        if side not in ("L", "R") or (last and (last[0] == side or now - last[1] < 0.045)):
-            return
-        r["last"][c.key] = (side, now)
-        progress = r["racers"][c.key] = r["racers"][c.key] + 1
-        room.broadcast({"t": "race_p", "k": c.key, "p": progress}, scene="race")
-        if progress < RACE_LEN:
-            return
+        elapsed = time.monotonic() - r["goAt"]
+        if r["racers"][c.key] < RACE_LAPS - 0.05 or elapsed < RACE_MIN_LAP * RACE_LAPS:
+            return  # not actually finished (or impossibly fast)
         r["order"].append(c.key)
+        r["times"][c.key] = round(elapsed, 2)
         place = len(r["order"])
         if r["field"] == 1:
             coins, xp = RACE_PRIZE_SOLO
@@ -1183,7 +1250,7 @@ class Game:
             coins, xp = RACE_PRIZES[place - 1] if place <= len(RACE_PRIZES) else RACE_PRIZE_REST
         if place == 1 and r["field"] > 1:
             self.reward(c, coins=coins, xp=xp, raceWins=1, wins=1)
-            self.post_feed(room, f"🏁 {c.player['name']} won the race!")
+            self.post_feed(room, f"🏁 {c.player['name']} won the Grand Prix in {elapsed:.1f}s!")
         else:
             self.reward(c, coins=coins, xp=xp)
         self.race_sync(room)

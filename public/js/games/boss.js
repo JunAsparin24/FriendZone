@@ -75,7 +75,8 @@ function buildCave() {
   const g = new THREE.Group();
   const floorMat = new THREE.MeshToonMaterial({ map: floorTex('slime') });
   add(g, new THREE.PlaneGeometry(W / K, H / K), floorMat, { r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
-  add(g, new THREE.PlaneGeometry(160, 160), toon('#120c1c'), { p: [0, -0.03, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
+  const outerMat = new THREE.MeshBasicMaterial({ color: '#120c1c' });
+  add(g, new THREE.PlaneGeometry(900, 900), outerMat, { p: [0, -0.03, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
   const rockMat = toon('#4a4560');
   let seed = 3;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
@@ -111,7 +112,7 @@ function buildCave() {
     g.add(l);
     return l;
   });
-  return { group: g, floorMat, crystalMat, glowMat, lights };
+  return { group: g, floorMat, crystalMat, glowMat, lights, outerMat };
 }
 
 function theme(id) {
@@ -525,7 +526,7 @@ export function boss(stage) {
     if (mobs.has(id)) return;
     const m = buildMob(kind);
     stage.scene.add(m.g);
-    mobs.set(id, { id, kind, x, y, tx: x, ty: y, hp, max, r: MOB_R[kind] ?? 16, model: m, hurtAt: 0, bornAt: performance.now(), windUntil: 0 });
+    mobs.set(id, { id, kind, x, y, tx: x, ty: y, vx: 0, vy: 0, seenAt: performance.now(), hp, max, r: MOB_R[kind] ?? 16, model: m, hurtAt: 0, bornAt: performance.now(), windUntil: 0 });
   }
   function removeMob(id, pop = true) {
     const m = mobs.get(id);
@@ -559,7 +560,10 @@ export function boss(stage) {
 
   function setTheme(id) {
     th = theme(id);
+    // the sky, the fog and the ground beyond the walls all share one color, so the cave has no visible edge
     stage.scene.fog.color.set(th.fog);
+    stage.scene.background = new THREE.Color(th.fog);
+    env.outerMat.color.set(th.fog);
   }
 
   function renderMeter() {
@@ -848,7 +852,11 @@ export function boss(stage) {
       if (boss && m.hp !== undefined) { boss.tx = m.x; boss.ty = m.y; boss.hp = m.hp; boss.max = m.max; }
       for (const [id, [x, y]] of Object.entries(m.m ?? {})) {
         const mob = mobs.get(Number(id));
-        if (mob) { mob.tx = x; mob.ty = y; }
+        if (!mob) continue;
+        const now = performance.now(), gap = Math.max(0.03, (now - (mob.seenAt ?? now - 50)) / 1000);
+        mob.vx = mob.vx * 0.4 + ((x - mob.tx) / gap) * 0.6;
+        mob.vy = mob.vy * 0.4 + ((y - mob.ty) / gap) * 0.6;
+        mob.tx = x; mob.ty = y; mob.seenAt = now;
       }
       for (const [k, f] of fighters) f.rev = m.rev?.[k] ?? 0;
     },
@@ -1077,11 +1085,13 @@ export function boss(stage) {
     }
 
     // monsters
-    const ml = 1 - Math.exp(-dt * 10);
+    const ml = 1 - Math.exp(-dt * 12);
     for (const mob of mobs.values()) {
       const px = mob.x, py = mob.y;
-      mob.x += (mob.tx - mob.x) * ml;
-      mob.y += (mob.ty - mob.y) * ml;
+      // where it should be by now: the last update, carried forward at its speed (for a short while)
+      const ahead = Math.min(0.12, (now - mob.seenAt) / 1000);
+      mob.x += (mob.tx + mob.vx * ahead - mob.x) * ml;
+      mob.y += (mob.ty + mob.vy * ahead - mob.y) * ml;
       const moving = Math.abs(mob.x - px) + Math.abs(mob.y - py) > 0.15;
       const [X, Z] = to3(mob.x, mob.y);
       const g = mob.model.g;

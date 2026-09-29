@@ -13,6 +13,7 @@ import { house } from './games/house.js';
 import { doodle } from './games/doodle.js';
 import { bumper } from './games/bumper.js';
 import { casinoArea } from './areas/casino.js';
+import { styleShopArea, petShopArea } from './areas/store.js';
 import { wardrobe } from './wardrobe.js';
 
 export const ACTIVITIES = {
@@ -26,7 +27,8 @@ export const ACTIVITIES = {
   journal: { icon: 'fishing', emoji: '📖', name: 'Fish Journal', wide: true, mount: fishJournal },
   doodle: { icon: 'doodle', emoji: '🎨', name: 'Doodle', scene: 'doodle', wide: true, mount: doodle },
   trading: { icon: 'trading', emoji: '💰', name: 'Trading', mount: trading },
-  shop: { icon: 'shop', emoji: '👕', name: 'Style Shop', wide: true, mount: (body) => wardrobe(body, { mode: 'shop' }) },
+  shop: { icon: 'shop', emoji: '👕', name: 'Style Shop', place: 'Style Shop', scene: 'shop', area: styleShopArea },
+  pets: { icon: 'shop', emoji: '🐾', name: 'Pet Shop', place: 'Pet Shop', scene: 'petshop', area: petShopArea },
   wardrobe: { icon: 'wardrobe', emoji: '🪞', name: 'Wardrobe', wide: true, mount: (body) => wardrobe(body) },
   house: { icon: 'house', emoji: '🏠', name: 'Houses', place: 'Houses', scene: 'house', area: house },
 };

@@ -42,6 +42,7 @@
     { "id": "build_broad", "name": "Broad" }, { "id": "build_round", "name": "Round" }
   ],
   "crate": { "price": 400, "weights": { "common": 55, "rare": 30, "epic": 12, "legendary": 3 } },
+  "petEgg": { "price": 600, "weights": { "common": 58, "rare": 28, "epic": 11, "legendary": 3 } },
   "items": [
     { "id": "hair_short", "slot": "hair", "name": "Short", "rarity": "common", "free": true },
     { "id": "hair_spiky", "slot": "hair", "name": "Spiky", "rarity": "common", "free": true },
@@ -120,7 +121,22 @@
     { "id": "aura_fire", "slot": "aura", "name": "Inferno", "rarity": "epic", "unlock": { "stat": "elims", "min": 50, "hint": "Get 50 arena eliminations" } },
     { "id": "aura_rainbow", "slot": "aura", "name": "Prism", "rarity": "legendary", "crate": true },
     { "id": "aura_koi", "slot": "aura", "name": "Koi Spirit", "rarity": "legendary", "unlock": { "stat": "koi", "min": 1, "hint": "Catch a Golden Koi" } },
-    { "id": "aura_shadow", "slot": "aura", "name": "Shadow Flame", "rarity": "legendary", "drop": "Shadow Dragon" }
+    { "id": "aura_shadow", "slot": "aura", "name": "Shadow Flame", "rarity": "legendary", "drop": "Shadow Dragon" },
+
+    { "id": "pet_none", "slot": "pet", "name": "No Pet", "rarity": "common", "free": true },
+    { "id": "pet_puppy", "slot": "pet", "name": "Puppy", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_kitten", "slot": "pet", "name": "Kitten", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_bunny", "slot": "pet", "name": "Bunny", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_duck", "slot": "pet", "name": "Duckling", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_hamster", "slot": "pet", "name": "Hamster", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_frog", "slot": "pet", "name": "Froggy", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_penguin", "slot": "pet", "name": "Penguin", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_panda", "slot": "pet", "name": "Panda", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_fox", "slot": "pet", "name": "Fox", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_giraffe", "slot": "pet", "name": "Giraffe", "rarity": "epic", "price": 3500, "petRoll": true },
+    { "id": "pet_axolotl", "slot": "pet", "name": "Axolotl", "rarity": "epic", "price": 3500, "petRoll": true },
+    { "id": "pet_unicorn", "slot": "pet", "name": "Unicorn", "rarity": "legendary", "price": 8000, "petRoll": true },
+    { "id": "pet_dragon", "slot": "pet", "name": "Baby Dragon", "rarity": "legendary", "price": 8000, "petRoll": true }
   ],
   "furniture": [
     { "id": "closet", "name": "Wardrobe", "emoji": "🪞", "w": 1, "d": 1, "max": 1, "starter": true, "action": "wardrobe", "use": "swap" },
@@ -168,6 +184,14 @@
     { "id": "wall_stripes", "name": "Candy Stripes", "price": 150 },
     { "id": "wall_brick", "name": "Brick", "price": 300 },
     { "id": "wall_stars", "name": "Starry Night", "price": 500 }
+  ],
+  "rods": [
+    { "id": "rod_twig", "name": "Twig Rod", "price": 0, "bar": 0, "luck": 0, "color": "#8b5a2b", "desc": "Where every angler starts." },
+    { "id": "rod_bamboo", "name": "Bamboo Rod", "price": 600, "bar": 14, "luck": 0.05, "color": "#c9b458", "desc": "A little easier to keep the fish on the bar." },
+    { "id": "rod_fiber", "name": "Fiberglass Rod", "price": 1500, "bar": 26, "luck": 0.08, "color": "#39c6ff", "desc": "A much bigger catch bar." },
+    { "id": "rod_clover", "name": "Lucky Clover Rod", "price": 3000, "bar": 8, "luck": 0.3, "color": "#37c871", "desc": "Rare fish just seem to like it." },
+    { "id": "rod_pro", "name": "Pro Angler Rod", "price": 6000, "bar": 36, "luck": 0.22, "color": "#e0463c", "desc": "Big bar and good luck." },
+    { "id": "rod_golden", "name": "Golden Rod", "price": 12000, "bar": 46, "luck": 0.45, "color": "#ffc53d", "desc": "The best of everything. Shiny, too." }
   ],
   "fish": [
     { "name": "Old Boot", "emoji": "🥾", "rarity": "junk", "coins": 3, "weight": 15, "bias": -4, "size": [1, 3] },

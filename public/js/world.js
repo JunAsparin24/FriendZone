@@ -13,23 +13,27 @@ import { settings, onSettings, pixelRatio } from './settings.js';
 import { iconSvg, iconImage } from './icons.js';
 import { Fishing, Line } from './games/fishing.js';
 import { Sparks } from './three/fx.js';
+import { registerLook, mouseLooking } from './mouselook.js';
+import { CATALOG } from './catalog.js';
+
+const CATALOG_RODS = Object.fromEntries(CATALOG.rods.map((r) => [r.id, r]));
 
 export const EMOTES = M.EMOTES;
 export const SPOTS = M.SPOTS;
 
-const SPEED = 300;            // map px per second (the map is big!)
-const SPRINT = 1.6;           // speed multiplier while holding Shift
+const SPEED = 130;            // map px per second: a relaxed walk
+const SPRINT = 2.3;           // Shift: a run (about the old walking speed)
 const R = 12;                 // collision radius in map px
 const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown', 'hat_horns']);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const SPOT_COLORS = {
   racing: '#ff5d73', doodle: '#e57bff', boss: '#7c6bff', bumper: '#39c6ff', arena: '#ff9f43', archery: '#37c871',
-  casino: '#ffd84d', fishing: '#3b82f6', trading: '#ffc53d', shop: '#ff6fb5', house: '#2ed8c3',
+  casino: '#ffd84d', fishing: '#3b82f6', trading: '#ffc53d', shop: '#ff6fb5', house: '#2ed8c3', pets: '#ff8fc7',
 };
 /** 0 at night .. 1 in full daylight (for dimming the minimap). */
 const dayLight = () => Math.min(1, Math.max(0, (Math.sin(dayPhase() * Math.PI * 2) + 0.12) / 0.34));
 const solid = (s) => (s.kind === 'pond' ? M.solidOf(s) : { x: s.x, y: s.y, w: s.w, h: s.h });
-const BUILDING_HEIGHT = { garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4 };
+const BUILDING_HEIGHT = { garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4 };
 
 export class World {
   constructor(canvas, hooks) {
@@ -42,8 +46,8 @@ export class World {
       if (!this.minimap.classList.contains('big')) return this.toggleMap(true);
       // on the big map, click somewhere to walk there
       const r = this.minimap.getBoundingClientRect();
-      this.target = { x: ((e.clientX - r.left) / r.width) * M.W, y: ((e.clientY - r.top) / r.height) * M.H };
       this.pendingSpot = null;
+      this.walkTo({ x: ((e.clientX - r.left) / r.width) * M.W, y: ((e.clientY - r.top) / r.height) * M.H });
       this.toggleMap(false);
     });
     this.layout = M.buildLayout();
@@ -111,6 +115,15 @@ export class World {
     this.dustIndex = 0;
     this.sparks = new Sparks(this.scene, 120);
 
+    registerLook({
+      canvas: this.canvas,
+      active: () => this.running && !this.hidden && !this.paused && !this.fishing,
+      look: (dx, dy) => {
+        this.yaw -= dx * 0.0035 * settings.camSens;
+        this.pitch = clamp(this.pitch + dy * 0.0025 * settings.camSens * (settings.invertY ? -1 : 1), 0.28, 1.35);
+      },
+    });
+
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.camTarget = new THREE.Vector3();
@@ -122,7 +135,7 @@ export class World {
       el.innerHTML = `<span class="wl-em">${iconSvg(s.id) || s.emoji}</span>${esc(s.name)}<kbd>E</kbd>`;
       this.labels.append(el);
       const c = M.to3(s.x + s.w / 2, s.kind === 'pond' ? s.y : s.y + s.h / 2);
-      return { spot: s, el, pos: new THREE.Vector3(c.x, BUILDING_HEIGHT[s.kind] ?? 7, c.z) };
+      return { spot: s, el, pos: new THREE.Vector3(c.x, (BUILDING_HEIGHT[s.kind] ?? 7) + M.heightAt(s.x + s.w / 2, s.y + s.h / 2), c.z) };
     });
   }
 
@@ -251,7 +264,7 @@ export class World {
       a.line?.show(false);
       return;
     }
-    a.char.setProp(a.pose ? 'rod' : null);
+    a.char.setProp(a.pose ? 'rod' : null, CATALOG_RODS[S.players[k]?.rod]?.color);
     a.char.setPose(a.pose ? 'fish' : 'idle');
     a.lift = a.pose ? 0.49 : 0;
     if (a.pose && m.bx != null && ['cast', 'bite', 'reel'].includes(a.pose)) {
@@ -436,6 +449,11 @@ export class World {
     this.drag = null;
     if (d?.fishing) { this.fishing?.release(); return; }
     if (!d || d.moved || d.button !== 0 || this.paused || !this.actors.has(S.me)) return;
+    if (mouseLooking()) {
+      if (this.near) this.hooks.onActivity(this.near.id);
+      else if (this.nearBench) this.sit(this.nearBench);
+      return;
+    }
     this.clickAt(e.clientX, e.clientY);
   };
   onWheel = (e) => {
@@ -454,21 +472,22 @@ export class World {
     if (spot) {
       if (this.near === spot) { this.hooks.onActivity(spot.id); return; }
       this.pendingSpot = spot;
-      this.target = M.doorOf(spot);
+      this.walkTo(M.doorOf(spot));
       return;
     }
-    const p = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(this.groundPlane, p)) return;
+    // clicks land on the terrain (hills included)
+    const p = this.raycaster.intersectObject(this.env.ground, false)[0]?.point;
+    if (!p) return;
     const px = p.x * M.PX + M.CENTER.x, py = p.z * M.PX + M.CENTER.y;
     const pond = SPOTS.find((s) => s.kind === 'pond');
     if (M.distToRect({ x: px, y: py }, solid(pond)) === 0) {
       if (this.near === pond) { this.hooks.onActivity(pond.id); return; }
       this.pendingSpot = pond;
-      this.target = M.doorOf(pond);
+      this.walkTo(M.doorOf(pond));
       return;
     }
     this.pendingSpot = null;
-    this.target = { x: clamp(px, 30, M.W - 30), y: clamp(py, 30, M.H - 30) };
+    this.walkTo({ x: clamp(px, 30, M.W - 30), y: clamp(py, 30, M.H - 30) });
   }
 
   /** Pixel ratio + shadows for the chosen graphics quality. */
@@ -501,7 +520,92 @@ export class World {
     if (Math.hypot(x - M.CENTER.x, y - M.CENTER.y) < M.FOUNTAIN_R + R + 4) return true;
     if (SPOTS.some((s) => M.distToRect({ x, y }, solid(s)) < R)) return true;
     if (this.layout.trees.some((t) => t.kind !== 'bush' && Math.hypot(x - t.x, y - t.y) < 9 + R)) return true;
-    return this.layout.lamps.some((l) => Math.hypot(x - l.x, y - l.y) < 5 + R);
+    if (this.layout.lamps.some((l) => Math.hypot(x - l.x, y - l.y) < 6 + R)) return true;
+    const p = { x, y };
+    return this.layout.solids.some((o) => (o.rect ? M.distToRect(p, o.rect) < R
+      : o.circle ? Math.hypot(x - o.circle.x, y - o.circle.y) < o.circle.r + R
+        : M.distToSeg(p, o.seg[0], o.seg[1]) < 3 + R));
+  }
+
+  // ---- click-to-walk routes: A* over a coarse grid of walkable cells, then trimmed so you walk in
+  // straight lines wherever nothing is in the way
+
+  walkGrid() {
+    if (this.grid) return this.grid;
+    const CELL = 30, cols = Math.ceil(M.W / CELL), rows = Math.ceil(M.H / CELL);
+    const open = new Uint8Array(cols * rows);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) open[j * cols + i] = this.blocked((i + 0.5) * CELL, (j + 0.5) * CELL) ? 0 : 1;
+    this.grid = { CELL, cols, rows, open };
+    return this.grid;
+  }
+
+  clearLine(a, b) {
+    const d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.ceil(d / 10);
+    for (let k = 1; k <= n; k++) if (this.blocked(a.x + ((b.x - a.x) * k) / n, a.y + ((b.y - a.y) * k) / n)) return false;
+    return true;
+  }
+
+  /** Walk to a spot on the map, going round whatever is in the way. */
+  walkTo(goal) {
+    const me = this.actors.get(S.me);
+    if (!me) return;
+    this.route = null;
+    if (this.clearLine(me, goal)) { this.target = goal; return; }
+    const { CELL, cols, rows, open } = this.walkGrid();
+    const cellOf = (p) => [clamp(Math.floor(p.x / CELL), 0, cols - 1), clamp(Math.floor(p.y / CELL), 0, rows - 1)];
+    const [si, sj] = cellOf(me);
+    let [gi, gj] = cellOf(goal);
+    if (!open[gj * cols + gi]) { // aiming at something solid: head for the nearest open cell
+      let best = null;
+      for (let r = 1; r < 8 && !best; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+        const i = gi + di, j = gj + dj;
+        if (i >= 0 && j >= 0 && i < cols && j < rows && open[j * cols + i] && !best) best = [i, j];
+      }
+      if (!best) { this.target = goal; return; }
+      [gi, gj] = best;
+      goal = { x: (gi + 0.5) * CELL, y: (gj + 0.5) * CELL };
+    }
+    const start = sj * cols + si, end = gj * cols + gi;
+    const g = new Float32Array(cols * rows).fill(Infinity), from = new Int32Array(cols * rows).fill(-1);
+    const heap = [[0, start]];
+    g[start] = 0;
+    const h = (c) => Math.hypot((c % cols) - gi, Math.floor(c / cols) - gj);
+    let found = false;
+    for (let steps = 0; heap.length && steps < 40000; steps++) {
+      // (a small binary heap would be faster; the grid is small enough for a sorted pick)
+      let bi = 0;
+      for (let k = 1; k < heap.length; k++) if (heap[k][0] < heap[bi][0]) bi = k;
+      const [, c] = heap[bi];
+      heap[bi] = heap[heap.length - 1];
+      heap.pop();
+      if (c === end) { found = true; break; }
+      const ci = c % cols, cj = Math.floor(c / cols);
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const i = ci + di, j = cj + dj;
+        if (i < 0 || j < 0 || i >= cols || j >= rows) continue;
+        const n = j * cols + i;
+        if (!open[n] && n !== end) continue;
+        if (di && dj && (!open[cj * cols + i] || !open[j * cols + ci])) continue; // no cutting corners
+        const cost = g[c] + (di && dj ? 1.414 : 1);
+        if (cost < g[n]) { g[n] = cost; from[n] = c; heap.push([cost + h(n), n]); }
+      }
+    }
+    if (!found) { this.target = goal; return; }
+    const cells = [];
+    for (let c = end; c !== -1 && c !== start; c = from[c]) cells.unshift({ x: ((c % cols) + 0.5) * CELL, y: (Math.floor(c / cols) + 0.5) * CELL });
+    cells[cells.length - 1] = goal;
+    // keep only the corners you actually need
+    const route = [];
+    let at = { x: me.x, y: me.y };
+    for (let k = 0; k < cells.length; k++) {
+      const next = cells[k + 1];
+      if (next && this.clearLine(at, next)) continue;
+      route.push(cells[k]);
+      at = cells[k];
+    }
+    this.target = route.shift() ?? goal;
+    this.route = route;
   }
 
   moveBy(me, dx, dy) {
@@ -528,7 +632,7 @@ export class World {
         if (a.moving) a.heading = Math.atan2(ox, oy);
         // stride follows how fast they actually move, so feet don't slide
         const v = dt > 0 ? (Math.hypot(ox, oy) * lerp) / dt / SPEED : 0;
-        a.speed += (1.25 * Math.min(SPRINT, Math.max(0.55, v)) - a.speed) * Math.min(1, dt * 6);
+        a.speed += ((v > 1.5 ? 2.0 : Math.max(0.6, Math.min(1.2, v))) - a.speed) * Math.min(1, dt * 6);
       }
       const look = S.players[a.k]?.look;
       if (look && look !== a.lookRef) {
@@ -536,7 +640,8 @@ export class World {
         a.char.setLook(look);
       }
       const p = M.to3(a.x, a.y);
-      a.char.root.position.set(p.x, a.lift ?? 0, p.z);
+      a.ground = M.heightAt(a.x, a.y);
+      a.char.root.position.set(p.x, a.ground + (a.lift ?? 0), p.z);
       a.line?.update(dt, a.char.rodTip?.getWorldPosition(new THREE.Vector3()), 0.5);
       const cur = a.char.root.rotation.y;
       const diff = Math.atan2(Math.sin(a.heading - cur), Math.cos(a.heading - cur));
@@ -547,7 +652,7 @@ export class World {
       if (a.moving && a.dustT <= 0) {
         a.dustT = 0.13;
         const s = this.dust[this.dustIndex++ % this.dust.length];
-        s.position.set(p.x - Math.sin(a.heading) * 0.3, 0.15, p.z - Math.cos(a.heading) * 0.3);
+        s.position.set(p.x - Math.sin(a.heading) * 0.3, a.ground + 0.15, p.z - Math.cos(a.heading) * 0.3);
         s.userData.life = 0.6;
         s.visible = true;
       }
@@ -581,14 +686,15 @@ export class World {
     if (this.near) {
       const d = M.doorOf(this.near), p = M.to3(d.x, d.y);
       this.doorRing.visible = true;
-      this.doorRing.position.set(p.x, 0.06, p.z);
+      this.doorRing.position.set(p.x, M.heightAt(d.x, d.y) + 0.06, p.z);
       this.doorRing.material.opacity = 0.55 + Math.sin(t * 5) * 0.3;
       this.doorRing.scale.setScalar(1 + Math.sin(t * 5) * 0.06);
     } else this.doorRing.visible = false;
     if (this.target) {
-      const p = M.to3(this.target.x, this.target.y);
+      const goal = this.route?.length ? this.route[this.route.length - 1] : this.target;
+      const p = M.to3(goal.x, goal.y);
       this.targetRing.visible = true;
-      this.targetRing.position.set(p.x, 0.06, p.z);
+      this.targetRing.position.set(p.x, M.heightAt(goal.x, goal.y) + 0.06, p.z);
       this.targetRing.scale.setScalar(1 + Math.sin(t * 8) * 0.12);
     } else this.targetRing.visible = false;
 
@@ -626,21 +732,21 @@ export class World {
       const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
       dx = rx * ix + fx * -iy;
       dy = rz * ix + fz * -iy;
-      this.target = this.pendingSpot = null;
+      this.target = this.pendingSpot = this.route = null;
     } else if (this.target && !this.paused) {
       const vx = this.target.x - me.x, vy = this.target.y - me.y;
       const d = Math.hypot(vx, vy);
-      if (d < 6) this.target = null;
+      if (d < (this.route?.length ? 18 : 6)) this.target = this.route?.shift() ?? null;
       else { dx = vx / d; dy = vy / d; }
     }
     const len = Math.hypot(dx, dy);
     const sprint = this.keys.has('shift') && !this.paused ? SPRINT : 1;
-    me.speed = 1.25 * sprint;
+    me.speed = sprint > 1 ? 2.0 : 1.0;
     me.moving = false;
     if (len) {
       const bx = me.x, by = me.y;
       this.moveBy(me, (dx / len) * SPEED * sprint * dt, (dy / len) * SPEED * sprint * dt);
-      if (Math.abs(me.x - bx) + Math.abs(me.y - by) < 0.01) this.target = null;
+      if (Math.abs(me.x - bx) + Math.abs(me.y - by) < 0.01) this.target = this.route = null;
       else {
         me.moving = true;
         me.heading = Math.atan2(me.x - bx, me.y - by);
@@ -656,7 +762,7 @@ export class World {
 
   updateCamera(dt, me) {
     const p = me ? M.to3(me.x, me.y) : { x: 0, z: 0 };
-    const goal = new THREE.Vector3(p.x, 1.3, p.z);
+    const goal = new THREE.Vector3(p.x, 1.3 + (me ? M.heightAt(me.x, me.y) : 0), p.z);
     if (!this.camReady) { this.camTarget.copy(goal); this.camReady = true; }
     this.camTarget.lerp(goal, 1 - Math.exp(-dt * 9));
     const c = this.camTarget, cp = Math.cos(this.pitch);
@@ -704,7 +810,7 @@ export class World {
     for (const a of this.actors.values()) {
       const p = S.players[a.k];
       const tall = TALL_HATS.has(p?.look?.hat) ? 0.45 : 0;
-      v.set(a.char.root.position.x, 2.2 + tall + a.char.rig.body.position.y + a.char.rig.head.position.y - 1.52, a.char.root.position.z);
+      v.set(a.char.root.position.x, a.char.root.position.y - (a.lift ?? 0) + 2.2 + tall + a.char.rig.body.position.y + a.char.rig.head.position.y - 1.52, a.char.root.position.z);
       const s = this.project(v, w, h);
       const el = a.el.wrap;
       if (!s.visible) { el.style.display = 'none'; continue; }

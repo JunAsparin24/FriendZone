@@ -6,7 +6,6 @@ import { additive, glowTexture, TAU } from './materials.js';
 import { settings } from '../settings.js';
 
 export const DAY_MS = 20 * 60 * 1000;
-const NIGHT_LAMPS = 6; // real point lights, moved to the lamps nearest the camera
 
 /** 0..1 through the day: 0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight. */
 export const dayPhase = (now = Date.now()) => (settings.dayNight === false ? 0.22 : ((now / DAY_MS) + 0.1) % 1);
@@ -29,7 +28,7 @@ const NIGHT = { top: C('#050a1f'), mid: C('#0d1a44'), bottom: C('#1e2d5c'), fog:
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 export class DayNight {
-  /** env: { sky, sunGlow, lanternMat, lampGlows, lamps } from the environment; hemi + sun lights from the world. */
+  /** env: { sky, sunGlow, lit (street lamps), windows } from the environment; hemi + sun lights from the world. */
   constructor(scene, env, hemi, sun) {
     Object.assign(this, { scene, env, hemi, sun });
     this.tmp = { top: new THREE.Color(), mid: new THREE.Color(), bottom: new THREE.Color(), fog: new THREE.Color(), hemiSky: new THREE.Color(), hemiGround: new THREE.Color() };
@@ -53,13 +52,6 @@ export class DayNight {
     g.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
     this.stars = new THREE.Points(g, new THREE.PointsMaterial({ color: '#ffffff', size: 2.2, sizeAttenuation: false, transparent: true, depthWrite: false, fog: false }));
     scene.add(this.stars);
-    // a few warm lights that follow you around at night, sitting on the nearest lamps
-    this.lampLights = Array.from({ length: NIGHT_LAMPS }, () => {
-      const l = new THREE.PointLight(0xffc870, 0, 16, 1.4);
-      scene.add(l);
-      return l;
-    });
-    this.lastPick = 0;
   }
 
   update(center, now = Date.now()) {
@@ -100,18 +92,14 @@ export class DayNight {
     this.stars.material.opacity = 1 - smooth(-0.25, 0.05, elev);
     this.stars.visible = this.stars.material.opacity > 0.01;
 
-    // lamps glow at dusk and light the ground at night
+    // every lamp glows the same at night: a lit lantern, a soft halo and a pool of light on the ground
+    // (no real lights, so nothing changes with where you stand or look)
     const lampOn = 1 - smooth(-0.05, 0.2, elev);
-    this.env.lanternMat.emissiveIntensity = 0.5 + lampOn * 2.2;
-    for (const s of this.env.lampGlows) s.material.opacity = 0.2 + lampOn * 0.7;
-    if (lampOn > 0.02 && performance.now() - this.lastPick > 400) {
-      this.lastPick = performance.now();
-      const near = this.env.lamps
-        .map((p) => [p, (p.x - center.x) ** 2 + (p.z - center.z) ** 2])
-        .sort((a, b) => a[1] - b[1]).slice(0, NIGHT_LAMPS);
-      this.lampLights.forEach((l, i) => { const p = near[i]?.[0]; if (p) l.position.set(p.x, 3.2, p.z); });
-    }
-    for (const l of this.lampLights) l.intensity = lampOn * 14;
+    const lit = this.env.lit;
+    lit.lanternMat.emissiveIntensity = 0.5 + lampOn * 1.6;
+    lit.haloMat.opacity = 0.05 + lampOn * 0.3;
+    lit.poolMat.opacity = lampOn * 0.55;
+    for (const m of this.env.windows) m.emissiveIntensity = lampOn * 0.9;
     return { phase, day, night: lampOn };
   }
 }

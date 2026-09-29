@@ -20,6 +20,8 @@ export const SCENE_LABEL = {
   casino: '🎰 at the casino',
   doodle: '🎨 doodling',
   bumper: '💥 bumper brawling',
+  shop: '👕 shopping',
+  petshop: '🐾 at the pet shop',
 };
 
 export const me = () => S.players[S.me];

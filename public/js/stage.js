@@ -2,6 +2,7 @@
 // boss cave, bumper dome and archery range. There is one shared renderer; each area builds its
 // scene into the stage and gets helpers for characters, name tags, input, cameras and prompts.
 import * as THREE from 'three';
+import { registerLook, mouseLooking } from './mouselook.js';
 import { net } from './net.js';
 import { S, esc, isTyping } from './state.js';
 import { Character } from './three/character.js';
@@ -55,6 +56,15 @@ class Stage {
     this.renderer = r;
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 600);
     this.raycaster = new THREE.Raycaster();
+    registerLook({
+      canvas: this.canvas,
+      active: () => !!this.active && !!this.orbit && !this.orbit.fixed && !document.querySelector('#modal:not(.hidden)'),
+      look: (dx, dy) => {
+        const o = this.orbit;
+        o.yaw -= dx * 0.0035 * settings.camSens;
+        o.pitch = clamp(o.pitch + dy * 0.0025 * settings.camSens * (settings.invertY ? -1 : 1), o.minPitch ?? 0.25, o.maxPitch ?? 1.3);
+      },
+    });
     onSettings((s, changed) => {
       if ('quality' in changed) { r.setPixelRatio(pixelRatio()); this.resize(); }
     });
@@ -104,6 +114,7 @@ class Stage {
       const d = this.drag;
       this.drag = null;
       this.pointerDown = false;
+      if (mouseLooking()) { if (d && !d.moved && d.button === 0) this.near?.use(); return; } // cursor hidden: click uses what's nearby
       this.onPointer?.('up', e, d);
       if (d && !d.moved && d.button === 0) this.clickInteract();
     });
@@ -425,9 +436,9 @@ class Stage {
         else { dx = vx / d; dz = vz / d; }
       }
       const len = Math.hypot(dx, dz);
-      const run = k.has('shift') ? 1.6 : 1;
+      const run = k.has('shift') ? 1.9 : 0.7;
       me.moving = false;
-      me.speed = 1.25 * run;
+      me.speed = run > 1 ? 1.9 : 0.85;
       if (len) {
         const step = speed * run * dt;
         const nx = me.x + (dx / len) * step, nz = me.z + (dz / len) * step;

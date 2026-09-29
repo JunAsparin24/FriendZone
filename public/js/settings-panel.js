@@ -26,7 +26,7 @@ const TOGGLES = {
 const CONTROLS = [
   ['Move', 'WASD / arrows, or click the ground'], ['Run', 'Hold Shift'], ['Turn camera', 'Drag, or Q / R'],
   ['Zoom', 'Scroll wheel'], ['Enter a building', 'E or click it'], ['Chat', 'Enter'], ['Emotes', '1 – 6'],
-  ['Close a window', 'Esc'],
+  ['Close a window', 'Esc'], ['Mouse look (hide cursor)', 'Tap Ctrl'], ['Big map', 'M'],
 ];
 
 let el = null;

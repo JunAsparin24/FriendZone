@@ -469,7 +469,7 @@ net.on('feed', (m) => {
 });
 
 net.on('race', (m) => { S.race = m.race; });
-net.on('race_p', (m) => { if (S.race && m.k in S.race.racers) S.race.racers[m.k] = m.p; });
+net.on('race_kp', (m) => { if (S.race && m.k in S.race.racers) S.race.racers[m.k] = m.p; });
 
 net.on('kicked', (m) => {
   session = null;

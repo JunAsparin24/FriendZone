@@ -12,7 +12,10 @@ import { sfx } from '../sfx.js';
 import { $, TAU, clamp, listen, hiDpiCanvas, confetti } from './util.js';
 
 const TRACK = { x: 22, y: 18, w: 46, h: 300 };
-const BAR_H = 96;             // bigger than it used to be: easier to keep the fish inside
+const BASE_BAR = 64;          // the catch bar with a basic rod; better rods make it taller
+const RODS = Object.fromEntries(CATALOG.rods.map((r) => [r.id, r]));
+const myRod = () => RODS[me().rod] ?? CATALOG.rods[0];
+const barHeight = () => BASE_BAR + (myRod().bar ?? 0);
 const WATER_Y = 0.1;
 const HINTS = {
   idle: '<b>Hold</b> click or <kbd>Space</kbd> to charge your cast, <b>release</b> to throw.',
@@ -100,14 +103,19 @@ export class Fishing {
     this.cast = null;
     this.buildHud();
     this.setState('idle');
-    this.actor.char.setProp('rod');
+    this.actor.char.setProp('rod', myRod().color);
     this.actor.char.setPose('fish');
     this.actor.lift = 0.49;
     sfx('enter');
     net.send('pose', { pose: 'fish' });
     this.off = listen({
       fish_result: (m) => this.onResult(m),
-      player: (m) => { if (m.p.key === S.me) this.renderJournalBtn(); },
+      player: (m) => {
+        if (m.p.key !== S.me) return;
+        this.renderJournalBtn();
+        this.renderRods();
+        this.actor.char.setProp('rod', myRod().color);
+      },
       error: (m) => {
         if (m.for !== 'fish') return;
         m.handled = true;
@@ -128,7 +136,8 @@ export class Fishing {
       <div class="fish-power hidden"><i></i></div>
       <div class="fish-reel hidden"><canvas></canvas></div>
       <div class="fish-result hidden"></div>
-      <div class="fish-actions"><button class="btn small" data-journal></button><button class="btn small" data-stop>← Stop fishing</button></div>`;
+      <div class="fish-rods hidden"></div>
+      <div class="fish-actions"><button class="btn small" data-rods>🎣 Rods</button><button class="btn small" data-journal></button><button class="btn small" data-stop>← Stop fishing</button></div>`;
     document.getElementById('world').append(el);
     this.el = el;
     this.ctx = hiDpiCanvas($(el, 'canvas'), TRACK.w + 90, TRACK.h + 70);
@@ -137,7 +146,30 @@ export class Fishing {
     // the result card and HUD buttons should not count as a "press" for casting
     el.addEventListener('pointerdown', (e) => e.stopPropagation());
     $(el, '.fish-result').onclick = () => this.reset();
+    $(el, '[data-rods]').onclick = () => { const r = $(el, '.fish-rods'); r.classList.toggle('hidden'); this.renderRods(); };
+    $(el, '.fish-rods').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-rod]');
+      if (!b) return;
+      const rod = RODS[b.dataset.rod];
+      if (!me().rods?.includes(rod.id) && this.confirmRod !== rod.id) { this.confirmRod = rod.id; this.renderRods(); return; }
+      this.confirmRod = null;
+      net.send('rod', { id: rod.id });
+      sfx(me().rods?.includes(rod.id) ? 'swap' : 'buy');
+    });
     this.renderJournalBtn();
+  }
+
+  renderRods() {
+    const box = $(this.el, '.fish-rods');
+    if (box.classList.contains('hidden')) return;
+    const p = me();
+    box.innerHTML = `<h4>🎣 Rod shop</h4>${CATALOG.rods.map((r) => {
+      const own = p.rods?.includes(r.id), using = p.rod === r.id;
+      const label = using ? 'Using' : own ? 'Use' : this.confirmRod === r.id ? `Buy for ${r.price.toLocaleString()}?` : `🪙 ${r.price.toLocaleString()}`;
+      return `<button class="fish-rod ${using ? 'on' : ''} ${own ? '' : 'locked'}" data-rod="${r.id}" ${using ? 'disabled' : ''}>
+        <i style="--c:${r.color}"></i><span><b>${esc(r.name)}</b><small>${esc(r.desc)}</small>
+        <em>Bar +${r.bar} · Luck +${Math.round(r.luck * 100)}%</em></span><strong>${label}</strong></button>`;
+    }).join('')}`;
   }
 
   renderJournalBtn() {
@@ -204,8 +236,8 @@ export class Fishing {
   }
 
   startReeling() {
-    // a bit gentler than before: calmer fish, fewer darts
-    const difficulty = 0.25 + Math.random() * 0.5;
+    // livelier fish than before: they dart more and wander faster
+    const difficulty = 0.4 + Math.random() * 0.55;
     this.game = {
       d: difficulty, bar: 40, vel: 0, fish: TRACK.h / 2, target: TRACK.h / 2, retarget: 0.6,
       progress: 0.3, on: 0, total: 0, onBar: true,
@@ -250,7 +282,7 @@ export class Fishing {
       this.timer -= dt;
       if (Math.random() < dt * 0.6) this.line.ripple(b.x, b.z, 0.4);
       if (this.timer <= 0) {
-        this.timer = 1.4; // the bite window is a little longer now
+        this.timer = 1.0; // be quick!
         this.setState('bite');
         sfx('bite');
         this.bite(true);
@@ -278,7 +310,8 @@ export class Fishing {
 
   updateReel(dt, now) {
     const g = this.game;
-    g.vel += (this.holding ? 1000 : -760) * dt;
+    const BAR_H = barHeight();
+    g.vel += (this.holding ? 1050 : -820) * dt;
     if (this.holding) sfx('reel');
     g.vel = clamp(g.vel, -420, 420);
     g.bar += g.vel * dt;
@@ -286,7 +319,7 @@ export class Fishing {
     if (g.bar > TRACK.h - BAR_H) { g.bar = TRACK.h - BAR_H; g.vel = -Math.abs(g.vel) * 0.2; }
     g.retarget -= dt;
     if (g.retarget <= 0) {
-      const dart = Math.random() < g.d * 0.22;
+      const dart = Math.random() < g.d * 0.32;
       g.target = dart ? clamp(g.fish + (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 80), 12, TRACK.h - 12) : 12 + Math.random() * (TRACK.h - 24);
       g.retarget = dart ? 0.35 : 0.6 + Math.random() * (1.8 - g.d);
     }
@@ -297,7 +330,7 @@ export class Fishing {
     g.onBar = on;
     g.total += dt;
     if (on) g.on += dt;
-    g.progress += on ? 0.36 * dt : -(0.12 + g.d * 0.08) * dt;
+    g.progress += on ? 0.3 * dt : -(0.17 + g.d * 0.12) * dt;
     const t = g.treasure;
     if (t && !t.got) {
       if (!t.shown && g.total > t.at) { t.shown = true; t.y = 30 + Math.random() * (TRACK.h - 60); }
@@ -324,7 +357,7 @@ export class Fishing {
   }
 
   drawReel(now) {
-    const ctx = this.ctx, g = this.game, T = TRACK;
+    const ctx = this.ctx, g = this.game, T = TRACK, BAR_H = barHeight();
     if (!g) return;
     ctx.clearRect(0, 0, T.w + 90, T.h + 70);
     ctx.save();

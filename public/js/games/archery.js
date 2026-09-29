@@ -265,11 +265,16 @@ export function archery(stage) {
   });
 
   // ---- frame ---------------------------------------------------------------------
-  const camPos = new THREE.Vector3(1.5, 2.9, 3.1), camLook = new THREE.Vector3(-0.4, TARGET_Y, -DIST);
+  // over the shoulder, far enough back to see your whole character drawing the bow
+  const camPos = new THREE.Vector3(1.6, 2.55, 5.0), camLook = new THREE.Vector3(-1.0, TARGET_Y - 0.9, -DIST);
   const hit = new THREE.Vector3();
   stage.onFrame((dt) => {
     t += dt;
     if (drawing) drawT += dt;
+    // the bow bends as you hold, and snaps back when you let go
+    const goal = drawing ? Math.min(1, drawT / 0.8) : 0;
+    me.char.draw += (goal - me.char.draw) * Math.min(1, dt * (drawing ? 10 : 25));
+    me.char.nocked = !flying && !round.done && round.wait <= 0;
     if (round.wait > 0) { round.wait -= dt; if (round.wait <= 0) setupArrow(); }
     stage.camera.position.copy(camPos);
     stage.camera.lookAt(camLook);

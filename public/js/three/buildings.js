@@ -433,9 +433,14 @@ export const BUILDERS = {
     }
     // half-cylinder arch: the upper half of a cylinder lying along Z
     add(g, new THREE.CylinderGeometry(2.1, 2.1, 1.4, 28, 1, false, -Math.PI / 2, Math.PI), basic('#0b0614'), { p: [0, 0, d / 2 - 1.2], r: [-Math.PI / 2, 0, 0], s: [1, 1, 1.25], cast: false });
+    // torches either side of the (now open) entrance
     for (const s of [-1, 1]) {
-      const tape = add(g, new THREE.BoxGeometry(5, 0.32, 0.06), new THREE.MeshBasicMaterial({ map: tapeTex }), { p: [0, 1.4, d / 2 - 0.7], r: [0, 0, s * 0.28] });
-      tape.castShadow = false;
+      add(g, new THREE.CylinderGeometry(0.08, 0.1, 1.6, 8), toon('#4a2e1c'), { p: [s * 2.6, 0.8, d / 2 - 0.4], outline: true });
+      const flame = new THREE.Sprite(additive(glowTexture, 0xff9a3a, 0.9));
+      flame.scale.setScalar(0.9);
+      flame.position.set(s * 2.6, 1.75, d / 2 - 0.4);
+      g.add(flame);
+      anim.push((t) => { flame.scale.setScalar(0.8 + Math.sin(t * 11 + s) * 0.08 + Math.sin(t * 7) * 0.06); });
     }
     const eyes = [];
     for (const s of [-1, 1]) {
@@ -797,8 +802,10 @@ export function buildBuilding(spot, anim, ctx) {
   const k = spot.scale ?? 1;
   const w = (side ? spot.h : spot.w) / PX / k, d = (side ? spot.w : spot.h) / PX / k;
   BUILDERS[spot.kind](g, w, d, anim, ctx);
-  const cx = (spot.x + spot.w / 2 - 900) / PX, cz = (spot.y + spot.h / 2 - 600) / PX;
-  g.position.set(cx, 0, cz);
+  g.scale.setScalar(k);
+  const cx = (spot.x + spot.w / 2 - CENTER.x) / PX, cz = (spot.y + spot.h / 2 - CENTER.y) / PX;
+  g.position.set(cx, heightAt(spot.x + spot.w / 2, spot.y + spot.h / 2), cz);
+  g.rotation.y = { n: Math.PI, e: Math.PI / 2, w: -Math.PI / 2 }[spot.face] ?? 0;
   g.userData.spot = spot;
   return g;
 }

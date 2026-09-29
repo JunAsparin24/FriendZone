@@ -181,23 +181,11 @@ export function buildEnvironment(scene) {
   const fenceMat = toon('#9c6a3c');
   const posts = [], rails = [];
   const fx = HALF_W - 0.6, fz = HALF_H - 0.6;
-  // leave the north fence open behind the Boss Cave so it doesn't cut across the cave hill
-  const cave = M.SPOTS.find((s) => s.kind === 'cave');
-  const gap = { from: U(cave.x - 900) - 3, to: U(cave.x + cave.w - 900) + 3 };
-  const inGap = (x) => x > gap.from && x < gap.to;
-  for (let x = -fx; x <= fx + 0.01; x += 2.5) {
-    posts.push({ x, z: fz });
-    if (!inGap(x)) posts.push({ x, z: -fz });
-  }
-  posts.push({ x: gap.from, z: -fz }, { x: gap.to, z: -fz });
+  for (let x = -fx; x <= fx + 0.01; x += 2.5) { posts.push({ x, z: -fz }, { x, z: fz }); }
   for (let z = -fz + 2.5; z < fz; z += 2.5) { posts.push({ x: -fx, z }, { x: fx, z }); }
   scene.add(instanced(new THREE.BoxGeometry(0.22, 1.3, 0.22), fenceMat, posts.map((p) => ({ ...p, y: 0.65, s: 1 }))));
-  const northLeft = gap.from + fx, northRight = fx - gap.to;
   for (const y of [0.55, 1.0]) {
-    for (const [x, z, w, d] of [
-      [-fx + northLeft / 2, -fz, northLeft, 0.1], [gap.to + northRight / 2, -fz, northRight, 0.1],
-      [0, fz, fx * 2, 0.1], [-fx, 0, 0.1, fz * 2], [fx, 0, 0.1, fz * 2],
-    ]) {
+    for (const [x, z, w, d] of [[0, -fz, fx * 2, 0.1], [0, fz, fx * 2, 0.1], [-fx, 0, 0.1, fz * 2], [fx, 0, 0.1, fz * 2]]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), fenceMat);
       rail.position.set(x, y, z);
       rail.castShadow = true;

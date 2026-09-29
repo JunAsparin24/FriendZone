@@ -18,21 +18,38 @@ export const PX = 20;
 
 export const EMOTES = { wave: '👋', laugh: '😂', heart: '❤️', fire: '🔥', gg: 'GG', wow: '😮' };
 
-export const SPOTS = [
-  { id: 'racing', emoji: '🏎️', name: 'Race Track', kind: 'garage', x: 110, y: 90, w: 380, h: 200 },
-  { id: 'boss', emoji: '👾', name: 'Boss Cave', kind: 'cave', x: 770, y: 40, w: 260, h: 190, soon: true },
-  { id: 'arena', emoji: '⚔️', name: 'Arena', kind: 'colosseum', x: 1300, y: 70, w: 380, h: 230 },
-  { id: 'archery', emoji: '🏹', name: 'Archery Range', kind: 'range', x: 90, y: 470, w: 260, h: 180 },
-  { id: 'casino', emoji: '🎰', name: 'Casino', kind: 'casino', x: 1450, y: 460, w: 270, h: 200 },
-  { id: 'fishing', emoji: '🎣', name: 'Fishing Pond', kind: 'pond', x: 120, y: 830, w: 460, h: 290 },
-  { id: 'trading', emoji: '💰', name: 'Trading Post', kind: 'market', x: 640, y: 980, w: 250, h: 150 },
-  { id: 'shop', emoji: '👕', name: 'Style Shop', kind: 'boutique', x: 990, y: 950, w: 270, h: 180 },
-  { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 1400, y: 880, w: 320, h: 230, soon: true },
+// `face` is the side the door is on (default 's'); buildings turn to face their street.
+// For 'e'/'w' the footprint is already turned (w runs along x, h along y).
+const PLAN_SPOTS = [
+  { id: 'doodle', emoji: '🎨', name: 'Doodle Studio', kind: 'studio', x: 2040, y: 1000, w: 260, h: 210 },
+  { id: 'shop', emoji: '👕', name: 'Style Shop', kind: 'boutique', x: 2620, y: 1070, w: 330, h: 220 },
+  { id: 'trading', emoji: '💰', name: 'Trading Post', kind: 'market', x: 1830, y: 1440, w: 190, h: 310, face: 'e' },
+  { id: 'racing', emoji: '🏎️', name: 'Race Track', kind: 'garage', x: 2160, y: 200, w: 470, h: 250 },
+  { id: 'boss', emoji: '👾', name: 'Boss Cave', kind: 'cave', x: 1140, y: 390, w: 320, h: 230 },
+  { id: 'bumper', emoji: '💥', name: 'Bumper Dome', kind: 'dome', x: 3000, y: 640, w: 260, h: 210 },
+  { id: 'arena', emoji: '⚔️', name: 'Arena', kind: 'colosseum', x: 3480, y: 420, w: 470, h: 290 },
+  { id: 'casino', emoji: '🎰', name: 'Casino', kind: 'casino', x: 3920, y: 1400, w: 250, h: 340, face: 'w' },
+  { id: 'archery', emoji: '🏹', name: 'Archery Range', kind: 'range', x: 640, y: 1310, w: 220, h: 320, face: 'e' },
+  { id: 'fishing', emoji: '🎣', name: 'Fishing Pond', kind: 'pond', x: 560, y: 2140, w: 640, h: 380 },
+  { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 2230, y: 2330, w: 380, h: 270, face: 'n' },
+  { id: 'pets', emoji: '🐾', name: 'Pet Shop', kind: 'petshop', x: 3230, y: 1720, w: 280, h: 210, face: 'n' },
 ];
+export const SPOTS = PLAN_SPOTS.map((s) => {
+  const cx = (s.x + s.w / 2) * K, cy = (s.y + s.h / 2) * K, w = s.w * BIG, h = s.h * BIG;
+  return { ...s, x: cx - w / 2, y: cy - h / 2, w, h, scale: BIG };
+});
 
 /** The part of a spot you can't walk through (buildings: the lower part; ponds: all of it). */
 export const solidOf = (s) => (s.kind === 'pond' ? { x: s.x, y: s.y - 14, w: s.w, h: s.h + 14 } : { x: s.x, y: s.y + s.h * 0.42, w: s.w, h: s.h * 0.58 });
-export const doorOf = (s) => (s.kind === 'pond' ? { x: s.x + s.w / 2, y: s.y - 30 } : { x: s.x + s.w / 2, y: s.y + s.h + 20 });
+export function doorOf(s) {
+  if (s.kind === 'pond') return { x: s.x + s.w / 2, y: s.y - 30 };
+  if (s.face === 'n') return { x: s.x + s.w / 2, y: s.y - 20 };
+  if (s.face === 'e') return { x: s.x + s.w + 20, y: s.y + s.h / 2 };
+  if (s.face === 'w') return { x: s.x - 20, y: s.y + s.h / 2 };
+  return { x: s.x + s.w / 2, y: s.y + s.h + 20 };
+}
+/** Unit vector pointing out of the door. */
+export const doorDir = (s) => ({ n: [0, -1], e: [1, 0], w: [-1, 0] }[s.kind === 'pond' ? 'n' : s.face] ?? [0, 1]);
 
 export function distToRect(p, r) {
   const dx = Math.max(r.x - p.x, 0, p.x - (r.x + r.w));

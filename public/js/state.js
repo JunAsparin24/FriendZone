@@ -15,7 +15,7 @@ export const SCENE_LABEL = {
   world: 'exploring',
   race: '🏎️ racing',
   arena: '⚔️ in the arena',
-  boss: '👾 fighting a boss',
+  boss: '🏰 in the dungeon',
   house: '🏠 at the houses',
   casino: '🎰 at the casino',
   doodle: '🎨 doodling',
@@ -24,6 +24,10 @@ export const SCENE_LABEL = {
 
 export const me = () => S.players[S.me];
 export const nameOf = (k) => S.players[k]?.name ?? k;
+/** Where someone is, for the online lists ("house:<owner>" means inside that member's house). */
+export const sceneLabel = (scene, who) => (scene?.startsWith('house:')
+  ? (scene.slice(6) === who ? '🏠 at home' : `🏠 at ${nameOf(scene.slice(6))}'s house`)
+  : SCENE_LABEL[scene]);
 export const colorOf = (k) => S.players[k]?.color ?? '#999';
 export const fmt = (n) => Number(n).toLocaleString();
 export const xpForLevel = (level) => 100 * (level - 1) ** 2;

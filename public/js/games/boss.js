@@ -1,12 +1,13 @@
-// Boss Cave (3D): everyone who walks in fights the same boss together. The server runs the boss and
-// its attack patterns; each player dodges and reports their own hits (like the arena).
+// Boss Cave (3D): a co-op dungeon climb. Every run starts on floor 1; clear the monsters, everyone picks
+// an upgrade, and the group goes deeper. Every 3rd floor is a boss. The server runs the monsters, the
+// bosses and the run; each player dodges and reports their own hits (like the arena).
 // WASD move · mouse aim · click shoot · Space/Shift dash (invulnerable mid-dash).
 // Game logic runs in cave pixels (900 x 600, like the server); 20 px = 1 world unit.
 import * as THREE from 'three';
 import { net } from '../net.js';
 import { S, esc, nameOf, colorOf, fmt } from '../state.js';
 import { ITEMS, CATALOG } from '../catalog.js';
-import { toon, basic, canvasTexture, outlineMaterial, additive, glowTexture, TAU } from '../three/materials.js';
+import { toon, basic, canvasTexture, outlineMaterial, additive, glowTexture, flameTexture, TAU } from '../three/materials.js';
 import { Sparks, FloatText, orb, groundRing, groundDisc } from '../three/fx.js';
 import { sfx, ambient } from '../sfx.js';
 import { listen, confetti } from './util.js';
@@ -18,9 +19,12 @@ const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 const THEMES = {
   slime: { floor: ['#3d7050', '#1b3a2a'], crystal: '#8dff9a', rock: '#3f6b4c', orb: '#3fcf5a', fog: '#10261a' },
   golem: { floor: ['#66637e', '#302e45'], crystal: '#ffb45a', rock: '#6d6a85', orb: '#ff8c2e', fog: '#1a1826' },
+  lich: { floor: ['#34485a', '#0e1820'], crystal: '#7dffd0', rock: '#3b4a58', orb: '#5dffb0', fog: '#081418' },
   dragon: { floor: ['#4a2b66', '#170b26'], crystal: '#c77dff', rock: '#4b2d66', orb: '#d23cff', fog: '#140820' },
 };
-const BOSS_EMOJI = { slime: '🟢', golem: '🗿', dragon: '🐉' };
+const BOSS_EMOJI = { slime: '🟢', golem: '🗿', lich: '💀', dragon: '🐉' };
+const UPGRADE_EMOJI = { dmg: '💥', rate: '⚡', multi: '🔱', speed: '👟', heart: '❤️', heal: '🩹', crit: '🍀', pierce: '🏹', dash: '💨', shield: '🫧', regen: '🍗', revive: '🌀', big: '🔵' };
+const UPGRADE_NAME = { dmg: 'Power Shot', rate: 'Rapid Fire', multi: 'Split Shot', speed: 'Swift Boots', heart: 'Extra Life', heal: 'Full Heal', crit: 'Lucky Shots', pierce: 'Piercing Rounds', dash: 'Quick Dash', shield: 'Bubble Shield', regen: 'Second Breakfast', revive: 'Second Wind', big: 'Big Bullets' };
 const to3 = (x, y) => [(x - W / 2) / K, (y - H / 2) / K];
 const OUT = outlineMaterial(0.05);
 
@@ -255,7 +259,202 @@ function buildDragon(r) {
   };
 }
 
-const BUILD = { slime: buildSlime, golem: buildGolem, dragon: buildDragon };
+function buildLich(r) {
+  const g = new THREE.Group();
+  const robe = new THREE.MeshToonMaterial({ color: '#3a2a5c' });
+  const bone = toon('#f1ead8');
+  const glowGreen = basic('#8dff9a');
+  const body = new THREE.Group();
+  g.add(body);
+  add(body, new THREE.ConeGeometry(r * 0.75, r * 1.9, 20, 1, true), toon('#3a2a5c', { side: THREE.DoubleSide }), { p: [0, r * 1.15, 0] });
+  add(body, new THREE.SphereGeometry(r * 0.5, 18, 14), robe, { p: [0, r * 1.75, 0], s: [1.1, 0.8, 1] });
+  const skull = add(body, new THREE.SphereGeometry(r * 0.38, 20, 16), bone, { p: [0, r * 2.25, r * 0.05], s: [1, 1.08, 1] });
+  add(skull, new THREE.BoxGeometry(r * 0.4, r * 0.18, r * 0.3), bone, { p: [0, -r * 0.3, r * 0.1] });
+  for (const s of [-1, 1]) {
+    add(skull, new THREE.SphereGeometry(r * 0.1, 10, 8), basic('#120a1c'), { p: [s * r * 0.14, r * 0.02, r * 0.32], outline: false });
+    add(skull, new THREE.SphereGeometry(r * 0.05, 8, 6), glowGreen, { p: [s * r * 0.14, r * 0.02, r * 0.38], outline: false });
+  }
+  // the hood is open at the front so the skull shows
+  const hood = add(body, new THREE.SphereGeometry(r * 0.5, 18, 12, Math.PI / 2 + 0.95, TAU - 1.9, 0, 2.1), robe, { p: [0, r * 2.3, -r * 0.08], s: [1, 1.1, 1.05] });
+  hood.material.side = THREE.DoubleSide;
+  for (const s of [-1, 1]) add(body, new THREE.ConeGeometry(r * 0.08, r * 0.4, 6), toon('#ffc53d'), { p: [s * r * 0.3, r * 2.8, 0], r: [0, 0, -s * 0.3] });
+  // staff with a floating soul gem
+  const staff = new THREE.Group();
+  staff.position.set(r * 0.75, r * 1.2, r * 0.3);
+  body.add(staff);
+  add(staff, new THREE.CylinderGeometry(r * 0.05, r * 0.06, r * 2.4, 8), toon('#6b4a2b'), { p: [0, r * 0.4, 0] });
+  const gem = add(staff, new THREE.OctahedronGeometry(r * 0.2), glowGreen, { p: [0, r * 1.8, 0], outline: false });
+  const gemGlow = new THREE.Sprite(additive(glowTexture, 0x8dff9a, 0.8));
+  gemGlow.scale.setScalar(r * 1.4);
+  gem.add(gemGlow);
+  const hands = [-1, 1].map((s) => add(body, new THREE.SphereGeometry(r * 0.12, 10, 8), bone, { p: [s * r * 0.7, r * 1.3, r * 0.3] }));
+  return {
+    g, mats: [robe],
+    tick(t, o) {
+      body.position.y = r * 0.25 + Math.sin(t * 2) * r * 0.12; // it floats
+      gem.rotation.y = t * 2;
+      gemGlow.material.opacity = o.charging ? 1 : 0.55 + Math.sin(t * 4) * 0.2;
+      glowGreen.color.set(o.enraged ? '#ff5dac' : '#8dff9a');
+      gemGlow.material.color.set(o.enraged ? 0xff5dac : 0x8dff9a);
+      hands[0].position.y = r * (1.3 + (o.charging ? 0.8 : Math.sin(t * 3) * 0.08));
+      staff.rotation.z = o.charging ? -0.3 : Math.sin(t * 1.5) * 0.08;
+    },
+  };
+}
+
+const BUILD = { slime: buildSlime, golem: buildGolem, dragon: buildDragon, lich: buildLich };
+
+// ---------------------------------------------------------------------------
+// monsters (feet at the origin, facing +Z)
+// ---------------------------------------------------------------------------
+
+const MOB_R = { bat: 14, slimelet: 16, skeleton: 15, archer: 15, wisp: 16, brute: 24 };
+const MOB_NAME = { bat: 'Bat', slimelet: 'Slimelet', skeleton: 'Skeleton', archer: 'Skeleton Archer', wisp: 'Wisp', brute: 'Brute' };
+
+function skeletonBody(g, hood) {
+  const bone = toon('#f1ead8');
+  const legs = [-1, 1].map((s) => {
+    const leg = new THREE.Group();
+    leg.position.set(s * 0.14, 0.55, 0);
+    add(leg, new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6), bone, { p: [0, -0.26, 0] });
+    g.add(leg);
+    return leg;
+  });
+  add(g, new THREE.BoxGeometry(0.4, 0.45, 0.22), hood ? toon('#3b3a58') : bone, { p: [0, 0.82, 0] });
+  if (!hood) for (let i = 0; i < 3; i++) add(g, new THREE.BoxGeometry(0.42, 0.04, 0.24), toon('#c9c1ad'), { p: [0, 0.72 + i * 0.1, 0], outline: false });
+  const skull = add(g, new THREE.SphereGeometry(0.22, 14, 12), bone, { p: [0, 1.22, 0] });
+  for (const s of [-1, 1]) add(skull, new THREE.SphereGeometry(0.06, 8, 6), basic('#1a0f14'), { p: [s * 0.08, 0.02, 0.18], outline: false });
+  if (hood) add(g, new THREE.ConeGeometry(0.3, 0.55, 12), toon('#3b3a58'), { p: [0, 1.35, -0.04] });
+  const arms = [-1, 1].map((s) => {
+    const arm = new THREE.Group();
+    arm.position.set(s * 0.26, 1.0, 0);
+    add(arm, new THREE.CylinderGeometry(0.045, 0.045, 0.45, 6), bone, { p: [0, -0.22, 0] });
+    g.add(arm);
+    return arm;
+  });
+  return { legs, arms };
+}
+
+function buildMob(kind) {
+  const g = new THREE.Group();
+  const mats = [];
+  let tick = () => {};
+  if (kind === 'bat') {
+    const body = new THREE.Group();
+    body.position.y = 1.3;
+    g.add(body);
+    const fur = new THREE.MeshToonMaterial({ color: '#6a4494' });
+    mats.push(fur);
+    add(body, new THREE.SphereGeometry(0.4, 14, 12), fur);
+    for (const s of [-1, 1]) {
+      add(body, new THREE.ConeGeometry(0.08, 0.2, 6), fur, { p: [s * 0.14, 0.3, 0], r: [0, 0, -s * 0.3] });
+      add(body, new THREE.SphereGeometry(0.06, 8, 6), basic('#ff3b50'), { p: [s * 0.1, 0.06, 0.26], outline: false });
+    }
+    const wingShape = new THREE.Shape();
+    wingShape.moveTo(0, 0); wingShape.lineTo(1.0, 0.35); wingShape.lineTo(0.88, -0.07); wingShape.lineTo(0.64, 0.03);
+    wingShape.lineTo(0.46, -0.17); wingShape.lineTo(0.26, -0.03); wingShape.closePath();
+    const wingGeo = new THREE.ShapeGeometry(wingShape);
+    const wings = [-1, 1].map((s) => {
+      const w = new THREE.Group();
+      w.position.set(s * 0.2, 0.05, 0);
+      add(w, wingGeo, toon('#51307a', { side: THREE.DoubleSide }), { s: [s, 1, 1], r: [Math.PI / 2, 0, 0], outline: false });
+      body.add(w);
+      return w;
+    });
+    tick = (t) => {
+      wings.forEach((w, i) => { w.rotation.z = (i ? -1 : 1) * Math.sin(t * 16) * 0.7; });
+      body.position.y = 1.3 + Math.sin(t * 5) * 0.12;
+    };
+  } else if (kind === 'slimelet') {
+    const mat = new THREE.MeshToonMaterial({ color: '#7be08a', transparent: true, opacity: 0.92 });
+    mats.push(mat);
+    const body = new THREE.Group();
+    g.add(body);
+    add(body, new THREE.SphereGeometry(0.42, 18, 14), mat, { p: [0, 0.36, 0], s: [1.1, 0.85, 1.1] });
+    eyes(body, 0.45, 0.35, 0.14, 0.09);
+    tick = (t, o) => {
+      const hop = Math.max(0, Math.sin(t * 5.7));
+      body.position.y = hop * 0.45;
+      body.scale.set(1 + (1 - hop) * 0.12, 1 - (1 - hop) * 0.12, 1 + (1 - hop) * 0.12);
+    };
+  } else if (kind === 'skeleton' || kind === 'archer') {
+    const hood = kind === 'archer';
+    const { legs, arms } = skeletonBody(g, hood);
+    if (hood) {
+      const bow = add(arms[1], new THREE.TorusGeometry(0.35, 0.025, 6, 16, Math.PI), toon('#8b5a2b'), { p: [0, -0.45, 0.1], r: [0, Math.PI / 2, Math.PI / 2], outline: false });
+      bow.castShadow = false;
+    } else {
+      add(arms[1], new THREE.BoxGeometry(0.06, 0.55, 0.02), shinyBlade, { p: [0, -0.6, 0.1], r: [0.3, 0, 0], outline: false });
+    }
+    tick = (t, o) => {
+      const w = o.moving ? Math.sin(t * 9) : 0;
+      legs[0].rotation.x = w * 0.5;
+      legs[1].rotation.x = -w * 0.5;
+      arms[0].rotation.x = -w * 0.4;
+      arms[1].rotation.x = hood ? -1.3 : -0.6 + w * 0.3;
+    };
+  } else if (kind === 'wisp') {
+    const core = new THREE.Group();
+    core.position.y = 1.3;
+    g.add(core);
+    const mat = new THREE.MeshBasicMaterial({ color: '#7dfcff' });
+    mats.push(mat);
+    add(core, new THREE.SphereGeometry(0.26, 14, 12), mat, { outline: false });
+    const glow = new THREE.Sprite(additive(glowTexture, 0x7dfcff, 0.8));
+    glow.scale.setScalar(1.6);
+    core.add(glow);
+    const flame = new THREE.Sprite(additive(flameTexture, 0x9ffcff, 0.8));
+    flame.scale.set(0.6, 0.9, 1);
+    flame.position.y = 0.3;
+    core.add(flame);
+    tick = (t) => {
+      core.position.y = 1.3 + Math.sin(t * 3) * 0.2;
+      glow.material.opacity = 0.6 + Math.sin(t * 6) * 0.2;
+      flame.scale.y = 0.8 + Math.sin(t * 11) * 0.15;
+    };
+  } else { // brute
+    const skin = new THREE.MeshToonMaterial({ color: '#6c9a4a' });
+    mats.push(skin);
+    const legs = [-1, 1].map((s) => {
+      const leg = new THREE.Group();
+      leg.position.set(s * 0.3, 0.6, 0);
+      add(leg, new THREE.BoxGeometry(0.32, 0.6, 0.34), toon('#5a3a22'), { p: [0, -0.3, 0] });
+      g.add(leg);
+      return leg;
+    });
+    add(g, new THREE.SphereGeometry(0.6, 18, 14), skin, { p: [0, 1.1, 0], s: [1.15, 1, 0.9] });
+    add(g, new THREE.BoxGeometry(0.9, 0.2, 0.7), toon('#5a3a22'), { p: [0, 0.72, 0], outline: false });
+    const head = add(g, new THREE.SphereGeometry(0.32, 14, 12), skin, { p: [0, 1.75, 0.12] });
+    for (const s of [-1, 1]) {
+      add(head, new THREE.ConeGeometry(0.07, 0.25, 8), toon('#f4ecd8'), { p: [s * 0.22, 0.2, 0], r: [0, 0, -s * 0.6] });
+      add(head, new THREE.SphereGeometry(0.05, 8, 6), basic('#ffd84d'), { p: [s * 0.11, 0.05, 0.28], outline: false });
+      add(head, new THREE.ConeGeometry(0.035, 0.1, 6), toon('#ffffff'), { p: [s * 0.09, -0.15, 0.26], outline: false });
+    }
+    const club = new THREE.Group();
+    club.position.set(0.7, 1.35, 0);
+    g.add(club);
+    add(club, new THREE.CylinderGeometry(0.1, 0.18, 0.95, 8), toon('#8b5a2b'), { p: [0, -0.25, 0.3], r: [1.1, 0, 0] });
+    tick = (t, o) => {
+      const w = o.moving ? Math.sin(t * 5) : 0;
+      legs[0].rotation.x = w * 0.35;
+      legs[1].rotation.x = -w * 0.35;
+      club.rotation.x = o.windup ? -1.6 : Math.sin(t * 2) * 0.15;
+    };
+  }
+  // tiny health bar that shows up once the monster is hurt
+  const bar = new THREE.Group();
+  bar.position.y = kind === 'brute' ? 2.4 : kind === 'bat' || kind === 'wisp' ? 2.0 : 1.75;
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.12), new THREE.MeshBasicMaterial({ color: '#1a1330', depthTest: false, transparent: true }));
+  const fill = new THREE.Mesh(new THREE.PlaneGeometry(0.86, 0.08), new THREE.MeshBasicMaterial({ color: '#ff5d73', depthTest: false, transparent: true }));
+  fill.position.z = 0.001;
+  back.renderOrder = fill.renderOrder = 5;
+  bar.add(back, fill);
+  bar.visible = false;
+  g.add(bar);
+  g.traverse((o) => { if (o.isMesh && o !== back && o !== fill) o.castShadow = true; });
+  return { g, mats, tick, bar, fill };
+}
+const shinyBlade = basic('#c9d2e0');
 
 // ---------------------------------------------------------------------------
 
@@ -265,23 +464,29 @@ export function boss(stage) {
   stage.scene.add(env.group);
   const orbit = stage.useOrbit({ yaw: 0, pitch: 1.0, dist: 25, minDist: 15, maxDist: 34, height: 0 });
   orbit.fixed = true;
-  const sparks = new Sparks(stage.scene, 300);
+  const sparks = new Sparks(stage.scene, 400);
   const texts = new FloatText(stage.scene);
   const cave = ambient('cave');
   cave.set(0.8);
   stage.hud.innerHTML = `
+    <div class="hud-panel dg-floor"></div>
     <div class="hud-panel boss-bar hidden"><div class="bb-name"></div><div class="bb-track"><i class="lag"></i><i class="hp"></i><b></b></div></div>
     <div class="hud-panel arena-scores boss-meter"></div>
-    <div class="hud-panel arena-bottom"><div class="meter"><i></i><span>DASH</span></div></div>
-    <p class="hud-panel arena-help">Team up! WASD move · mouse aim · click/hold shoot · <kbd>Space</kbd>/<kbd>Shift</kbd> dash (can't be hit mid-dash) · dodge the red zones · stand by a downed friend to revive them</p>`;
-  const barEl = stage.hud.querySelector('.boss-bar'), meterEl = stage.hud.querySelector('.boss-meter'), dashEl = stage.hud.querySelector('.meter');
+    <div class="hud-panel arena-bottom"><div class="meter"><i></i><span>DASH</span></div><div class="dg-ups"></div></div>
+    <div class="hud-panel dg-panel hidden"></div>
+    <p class="hud-panel arena-help">WASD move · mouse aim · click/hold shoot · <kbd>Space</kbd>/<kbd>Shift</kbd> dash (can't be hit mid-dash) · stand by a downed friend to revive them</p>`;
+  const $h = (sel) => stage.hud.querySelector(sel);
+  const barEl = $h('.boss-bar'), meterEl = $h('.boss-meter'), dashEl = $h('.meter'), floorEl = $h('.dg-floor');
+  const panelEl = $h('.dg-panel'), upsEl = $h('.dg-ups');
   stage.canvas.style.cursor = 'crosshair';
 
   const fighters = new Map();
-  let boss = null, model = null, th = THEMES.slime, maxHp = 5, kills = 0;
+  const mobs = new Map();
+  let boss = null, model = null, th = THEMES.slime;
+  let run = { state: 'lobby', floor: 0, best: 0, endsAt: 0, choices: null, picked: new Set(), last: null, results: null };
   let bullets = [], shots = [], zones = [], lanes = [], rocks = [], timers = [], dmgBy = {};
   let firing = false, lastShot = 0, lastSend = 0, safeUntil = 0, aim = { x: W / 2, y: H / 2 };
-  let dash = { t: 0, cd: 0, dx: 0, dy: 0 }, lagHp = 0;
+  let dash = { t: 0, cd: 0, dx: 0, dy: 0 }, lagHp = 0, panelKey = '';
   const reticle = groundRing(0.35, 0.55, '#ffffff', 0.85);
   stage.scene.add(reticle);
   const bossShadow = groundDisc(1, '#000000', 0.35);
@@ -294,6 +499,13 @@ export function boss(stage) {
     if (!hop || now < hop.t0 || now > hop.t1) return 0;
     return Math.sin(((now - hop.t0) / (hop.t1 - hop.t0)) * Math.PI) * 130;
   };
+  const up = (k = S.me) => fighters.get(k)?.up ?? {};
+  const moveSpeed = () => MOVE_SPEED * (1 + 0.15 * (up().speed ?? 0));
+  const shotGap = () => 230 * Math.pow(0.8, up().rate ?? 0);
+  const dashCooldown = () => DASH_COOLDOWN * Math.pow(0.7, up().dash ?? 0);
+  const bulletR = (k) => 5 * (1 + 0.5 * (up(k).big ?? 0));
+  /** Floors come in bands of three, each themed after the boss waiting at the end of it. */
+  const bandTheme = (floor) => ['slime', 'golem', 'lich', 'dragon'][Math.floor(Math.max(0, floor - 1) / 3) % 4];
 
   function addFighter(k, f) {
     const p = stage.person(k);
@@ -304,9 +516,29 @@ export function boss(stage) {
   function removeFighter(k) {
     const f = fighters.get(k);
     if (f?.ring) stage.scene.remove(f.ring, f.revArc);
+    if (f?.bubble) stage.scene.remove(f.bubble);
     fighters.delete(k);
     stage.removePerson(k);
   }
+
+  function addMob([id, kind, x, y, hp, max]) {
+    if (mobs.has(id)) return;
+    const m = buildMob(kind);
+    stage.scene.add(m.g);
+    mobs.set(id, { id, kind, x, y, tx: x, ty: y, hp, max, r: MOB_R[kind] ?? 16, model: m, hurtAt: 0, bornAt: performance.now(), windUntil: 0 });
+  }
+  function removeMob(id, pop = true) {
+    const m = mobs.get(id);
+    if (!m) return;
+    stage.scene?.remove(m.model.g);
+    mobs.delete(id);
+    if (pop) {
+      burstAt(m.x, m.y, m.kind === 'wisp' ? '#7dfcff' : m.kind === 'slimelet' ? '#7be08a' : '#f1ead8', 16, 1, 6);
+      const [X, Z] = to3(m.x, m.y);
+      sparks.puff(X, 1, Z, '#ffffff', 1.4, 0.4);
+    }
+  }
+  function clearMobs() { for (const id of [...mobs.keys()]) removeMob(id, false); }
 
   function clearAttacks() {
     for (const list of [zones, lanes, shots, rocks]) for (const o of list) stage.scene?.remove(o.mesh);
@@ -316,25 +548,80 @@ export function boss(stage) {
   function setBoss(b) {
     if (model) stage.scene.remove(model.g);
     model = null;
-    clearAttacks();
     boss = b ? { ...b, tx: b.x, ty: b.y, hurtAt: 0, spawnAt: performance.now(), deadAt: 0, hop: null, chargeUntil: 0 } : null;
     lagHp = b?.hp ?? 0;
-    dmgBy = {};
     if (boss) {
-      th = theme(boss.id);
       model = (BUILD[boss.id] ?? buildSlime)(boss.r / K);
       model.g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
       stage.scene.add(model.g);
-      stage.scene.fog.color.set(th.fog);
     }
-    renderMeter();
+  }
+
+  function setTheme(id) {
+    th = theme(id);
+    stage.scene.fog.color.set(th.fog);
   }
 
   function renderMeter() {
     meterEl.innerHTML = [...fighters.keys()].map((k) => [k, dmgBy[k] ?? 0]).sort((a, b) => b[1] - a[1])
-      .map(([k, d]) => `<span style="--c:${colorOf(k)}"><i class="dot"></i>${esc(nameOf(k))} <b>${fmt(d)}</b></span>`).join('')
-      + `<span class="muted">Bosses beaten: <b>${kills}</b></span>`;
+      .map(([k, d]) => `<span style="--c:${colorOf(k)}"><i class="dot"></i>${esc(nameOf(k))} <b>${fmt(d)}</b></span>`).join('');
   }
+  function renderFloor() {
+    const inRun = run.state !== 'lobby' && run.state !== 'over';
+    floorEl.innerHTML = inRun
+      ? `<b>🏰 Floor ${run.floor}</b>${run.floor % 3 === 0 ? ' · <span class="dg-bossfloor">BOSS</span>' : ` · boss on ${Math.ceil(run.floor / 3) * 3}`}<span class="muted"> · record ${run.best}</span>`
+      : `<b>🏰 The Dungeon</b><span class="muted"> · record floor ${run.best}</span>`;
+    const u = up();
+    upsEl.innerHTML = Object.entries(u).map(([id, n]) => `<span title="${esc(UPGRADE_NAME[id] ?? id)}">${UPGRADE_EMOJI[id] ?? '⭐'}${n > 1 ? `<b>${n}</b>` : ''}</span>`).join('');
+  }
+
+  // ---- the lobby / upgrade picker / run summary card -----------------------------
+  function renderPanel() {
+    const now = performance.now();
+    const left = Math.max(0, Math.ceil((run.endsAt - now) / 1000));
+    let html = '';
+    if (run.state === 'lobby') {
+      const here = [...fighters.keys()];
+      html = `<h3>🏰 The Dungeon</h3>
+        <p>Start on <b>floor 1</b> and climb as high as your group can. Clear the monsters on each floor, then everyone picks an upgrade. Every 3rd floor is a boss!</p>
+        <p class="muted small">Downed friends can be revived (they come back with 1 heart). If everyone goes down, the run is over.</p>
+        <p>Zone record: <b>floor ${run.best}</b>${run.last ? ` · last run reached floor ${run.last.floor}` : ''}</p>
+        <div class="dg-here">${here.map((k) => `<span style="--c:${colorOf(k)}"><i class="dot"></i>${esc(nameOf(k))}</span>`).join('')}</div>
+        <button class="btn primary" data-start>⚔️ Start run${here.length > 1 ? ` (${here.length} players)` : ''}</button>`;
+    } else if (run.state === 'pick') {
+      const total = fighters.size, done = run.picked.size;
+      if (run.choices) {
+        html = `<h3>✨ Floor ${run.floor} cleared!</h3><p class="muted">Pick an upgrade · ${left}s</p>
+          <div class="dg-cards">${run.choices.map((c) => `<button class="dg-card" data-pick="${esc(c.id)}">
+            <span class="dg-emoji">${c.emoji}</span><b>${esc(c.name)}</b><span>${esc(c.desc)}</span>${c.lvl ? `<em>Level ${c.lvl} → ${c.lvl + 1}</em>` : '<em>New!</em>'}
+          </button>`).join('')}</div>`;
+      } else {
+        html = `<h3>✨ Floor ${run.floor} cleared!</h3><p>Waiting for the others to pick… (${done}/${total})</p><p class="muted">Next floor in ${left}s</p>`;
+      }
+    } else if (run.state === 'over') {
+      const mine = run.results?.[S.me];
+      html = `<h3>💀 The run is over</h3>
+        <p>Your group reached <b>floor ${run.last?.floor ?? run.floor}</b>.${run.record ? ' <b class="dg-record">New zone record!</b>' : ''}</p>
+        ${mine ? `<p>You: +${fmt(mine.coins)} 🪙 · +${mine.xp} XP · ${fmt(mine.dmg)} damage</p>` : ''}
+        <p class="muted small">Back at the entrance in ${left}s…</p>`;
+    }
+    const key = html;
+    if (key !== panelKey) {
+      panelKey = key;
+      panelEl.innerHTML = html;
+    }
+    panelEl.classList.toggle('hidden', !html);
+  }
+  panelEl.addEventListener('click', (e) => {
+    if (e.target.closest('[data-start]')) { net.send('boss_start'); sfx('click'); }
+    const pick = e.target.closest('[data-pick]');
+    if (pick && run.choices) {
+      net.send('boss_pick', { id: pick.dataset.pick });
+      run.choices = null;
+      sfx('powerup');
+      renderPanel();
+    }
+  });
 
   // ---- input -------------------------------------------------------------------
   stage.onPointer = (type) => {
@@ -359,16 +646,16 @@ export function boss(stage) {
     const mine = fighters.get(S.me);
     if (!mine || mine.hp <= 0 || dash.cd > 0) return;
     const dir = inputDir() ?? { dx: Math.cos(mine.a ?? 0), dy: Math.sin(mine.a ?? 0) };
-    dash = { t: DASH_TIME, cd: DASH_COOLDOWN, ...dir };
+    dash = { t: DASH_TIME, cd: dashCooldown(), ...dir };
     burstAt(mine.x, mine.y, '#ffffff', 10, 0.5);
     sfx('dash');
   }
 
-  /** You got caught by something: tell the server (it applies i-frames and HP). */
+  /** You got caught by something: tell the server (it applies i-frames, shields and HP). */
   function hurt() {
     const mine = fighters.get(S.me);
     const now = performance.now();
-    if (!mine || mine.hp <= 0 || now < safeUntil || dash.t > 0 || boss?.st !== 'fight') return;
+    if (!mine || mine.hp <= 0 || now < safeUntil || dash.t > 0 || run.state !== 'fight') return;
     safeUntil = now + 900;
     net.send('boss_hurt');
   }
@@ -377,14 +664,30 @@ export function boss(stage) {
     return mine && mine.hp > 0 && Math.hypot(mine.x - x, mine.y - y) < r + PR * 0.4;
   };
 
+  function fireBullets(owner, x, y, a, n) {
+    const spread = 0.13;
+    for (let i = 0; i < n; i++) {
+      const aa = a + (i - (n - 1) / 2) * spread;
+      const r = bulletR(owner);
+      const mesh = orb(colorOf(owner), 0.14 * (r / 5), 4);
+      stage.scene.add(mesh);
+      bullets.push({ owner, x, y, vx: Math.cos(aa) * BULLET_SPEED, vy: Math.sin(aa) * BULLET_SPEED, life: BULLET_LIFE, mesh, r, hit: new Set(), pierce: !!up(owner).pierce });
+    }
+  }
+  function enemyShot(x, y, a, sp, color = th.orb, size = 0.3) {
+    const mesh = orb(color, size, 3.2);
+    stage.scene.add(mesh);
+    shots.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: size * 33, life: 4.5, mesh });
+  }
+
   // ---- attacks -----------------------------------------------------------------
-  function zone(x, y, r, start, fire, rock = false) {
+  function zone(x, y, r, start, fire, { rock = false, color = '#ff3b50' } = {}) {
     const [X, Z] = to3(x, y);
     const g = new THREE.Group();
     g.position.set(X, 0.04, Z);
-    const outline = groundRing(r / K - 0.08, r / K, '#ff5d73', 0.9);
-    const fill = groundDisc(r / K, '#ff3b50', 0.28);
-    const grow = groundDisc(r / K, '#ff3b50', 0.4);
+    const outline = groundRing(r / K - 0.08, r / K, color === '#ff3b50' ? '#ff5d73' : color, 0.9);
+    const fill = groundDisc(r / K, color, 0.28);
+    const grow = groundDisc(r / K, color, 0.4);
     g.add(outline, fill, grow);
     stage.scene.add(g);
     zones.push({ x, y, r, start, fire, mesh: g, grow });
@@ -398,22 +701,25 @@ export function boss(stage) {
   }
 
   function onAttack(m) {
-    if (!boss) return;
     const now = performance.now();
     const fire = now + m.d * 1000;
-    if (m.kind === 'slam' || m.kind === 'rocks') {
-      sfx('warn');
-      for (const [x, y] of m.c) zone(x, y, m.r, now, fire, m.kind === 'rocks');
-      boss.chargeUntil = fire;
+    if (m.kind === 'slam' || m.kind === 'rocks' || m.kind === 'curse') {
+      sfx('warn', { vol: m.mob ? 0.5 : 1 });
+      const color = m.kind === 'curse' ? '#a45bff' : '#ff3b50';
+      for (const [x, y] of m.c) zone(x, y, m.r, now, fire, { rock: m.kind === 'rocks', color });
+      if (m.mob) { const mob = mobs.get(m.mob); if (mob) mob.windUntil = fire; } else if (boss) boss.chargeUntil = fire;
       later(fire, () => {
-        sfx('slam', { vol: m.kind === 'rocks' ? 0.75 : 1 });
-        stage.shake(m.kind === 'rocks' ? 0.5 : 0.8);
+        sfx('slam', { vol: m.mob ? 0.55 : m.kind === 'slam' ? 1 : 0.75 });
+        stage.shake(m.mob ? 0.3 : m.kind === 'slam' ? 0.8 : 0.5);
         for (const [x, y] of m.c) {
-          burstAt(x, y, m.kind === 'rocks' ? '#b8b2cf' : th.crystal, 18, 0.3, 7);
+          burstAt(x, y, m.kind === 'rocks' ? '#b8b2cf' : m.kind === 'curse' ? '#c77dff' : th.crystal, 18, 0.3, 7);
           if (meInside(x, y, m.r)) hurt();
         }
       });
-    } else if (m.kind === 'volley' || m.kind === 'spiral') {
+      return;
+    }
+    if (!boss) return;
+    if (m.kind === 'volley' || m.kind === 'spiral') {
       boss.chargeUntil = fire;
       if (m.kind === 'spiral') sfx('charge');
       for (let w = 0; w < m.waves; w++) {
@@ -422,12 +728,26 @@ export function boss(stage) {
           sfx('volley', { vol: m.kind === 'spiral' ? 0.6 : 1 });
           for (let i = 0; i < m.n; i++) {
             const a = m.off + w * m.rot + (i * TAU) / m.n;
-            const mesh = orb(th.orb, 0.3, 3.2);
-            stage.scene.add(mesh);
-            shots.push({ x: boss.x + Math.cos(a) * boss.r * 0.6, y: boss.y + Math.sin(a) * boss.r * 0.6, vx: Math.cos(a) * m.sp, vy: Math.sin(a) * m.sp, r: 10, life: 4.5, mesh });
+            enemyShot(boss.x + Math.cos(a) * boss.r * 0.6, boss.y + Math.sin(a) * boss.r * 0.6, a, m.sp);
           }
         });
       }
+    } else if (m.kind === 'summon') {
+      boss.chargeUntil = fire;
+      sfx('cast');
+      const [X, Z] = to3(m.x, m.y);
+      for (let i = 0; i < 3; i++) setTimeout(() => sparks.burst(X, 1.5, Z, th.crystal, { n: 20, speed: 5, up: 4 }), i * 250);
+      stage.banner(`🪄 ${esc(boss.name)} summons minions!`, 1400);
+    } else if (m.kind === 'blink') {
+      boss.chargeUntil = fire;
+      sfx('whoosh');
+      later(fire, () => {
+        if (!boss) return;
+        burstAt(boss.x, boss.y, th.crystal, 26, 1.5, 6);
+        boss.x = boss.tx = m.tx;
+        boss.y = boss.ty = m.ty;
+        burstAt(m.tx, m.ty, th.crystal, 26, 1.5, 6);
+      });
     } else if (m.kind === 'charge') {
       sfx('charge_boss');
       const [x0, z0] = to3(m.x, m.y), [x1, z1] = to3(m.tx, m.ty);
@@ -454,30 +774,70 @@ export function boss(stage) {
     }
   }
 
+  function damageText(x, y, h, m) {
+    const mine = m.k === S.me;
+    if (!mine && !m.crit) return;
+    const [X, Z] = to3(x, y);
+    texts.add(m.crit ? `CRIT ${m.d}!` : `${m.d}`, X + (Math.random() - 0.5) * 1.5, h, Z, m.crit ? '#ffd84d' : mine ? '#ffffff' : colorOf(m.k), m.crit ? 1.1 : 0.8);
+  }
+
   // ---- network ------------------------------------------------------------------
+  function applyView(m) {
+    const now = performance.now();
+    const was = run.state, wasFloor = run.floor;
+    run.state = m.state;
+    run.floor = m.floor;
+    run.best = m.best;
+    run.endsAt = now + (m.left ?? 0) * 1000;
+    run.choices = m.choices ?? null;
+    run.picked = new Set(m.picked ?? []);
+    run.last = m.last;
+    for (const k of [...fighters.keys()]) if (!(k in m.fighters)) removeFighter(k);
+    for (const [k, f] of Object.entries(m.fighters)) {
+      const cur = fighters.get(k);
+      if (!cur) { addFighter(k, f); continue; }
+      Object.assign(cur, { hp: f.hp, max: f.max, up: f.up, shield: f.shield });
+      if (m.spawn || k !== S.me) Object.assign(cur, { tx: f.x, ty: f.y });
+      if (m.spawn && k === S.me) Object.assign(cur, { x: f.x, y: f.y });
+    }
+    clearMobs();
+    (m.mobs ?? []).forEach(addMob);
+    if (m.spawn || !m.boss || m.boss.id !== boss?.id) {
+      clearAttacks();
+      setBoss(m.boss);
+    } else Object.assign(boss, { hp: m.boss.hp, max: m.boss.max, st: m.boss.st, enraged: m.boss.enraged });
+    setTheme(m.boss?.id ?? (run.floor ? bandTheme(run.floor) : 'slime'));
+    if (m.spawn) {
+      safeUntil = now + 1500;
+      if (run.floor === 1) { dmgBy = {}; run.results = null; run.record = false; }
+      if (m.boss) {
+        sfx('roar');
+        stage.shake(0.6);
+        stage.banner(`<div class="big">${BOSS_EMOJI[m.boss.id] ?? '👾'} Floor ${run.floor}: ${esc(m.boss.name)}!</div>${m.boss.tier ? `Tier ${m.boss.tier + 1} · ` : ''}Get ready…`, 2600);
+      } else {
+        sfx('enter');
+        stage.banner(`<div class="big">🏰 Floor ${run.floor}</div>Clear out the monsters!`, 2200);
+      }
+    } else if (was !== run.state || wasFloor !== run.floor) {
+      if (run.state === 'fight' && m.boss) stage.banner(`<div class="big">${BOSS_EMOJI[m.boss.id] ?? '👾'} ${esc(m.boss.name)}</div>A fight is underway on floor ${run.floor}. Jump in!`);
+      else if (run.state === 'fight') stage.banner(`<div class="big">🏰 Floor ${run.floor}</div>A run is underway. Jump in!`);
+    }
+    panelKey = '';
+    renderPanel();
+    renderMeter();
+    renderFloor();
+  }
+
   const off = listen({
-    boss: (m) => {
-      for (const k of [...fighters.keys()]) removeFighter(k);
-      Object.entries(m.fighters).forEach(([k, f]) => addFighter(k, f));
-      maxHp = m.hp;
-      kills = m.kills;
-      setBoss(m.boss);
-      safeUntil = performance.now() + 1500;
-      if (!m.boss) stage.banner('The cave is quiet… a boss is on its way!');
-      else if (m.boss.st === 'fight') stage.banner(`<div class="big">${BOSS_EMOJI[m.boss.id] ?? '👾'} ${esc(m.boss.name)}</div>A fight is underway. Jump in!`);
-    },
-    boss_spawn: (m) => {
-      kills = m.kills;
-      setBoss(m.boss);
-      sfx('roar');
-      stage.shake(0.6);
-      const tier = m.boss.tier ? ` <span class="muted">(Tier ${m.boss.tier + 1})</span>` : '';
-      stage.banner(`<div class="big">${BOSS_EMOJI[m.boss.id] ?? '👾'} ${esc(m.boss.name)} appears!</div>Get ready…${tier}`, 3000);
-    },
+    boss: applyView,
     boss_phase: (m) => {
-      if (!boss) return;
-      if (m.st === 'fight') { boss.st = 'fight'; stage.banner('<div class="big">FIGHT!</div>', 1200); sfx('go'); }
-      if (m.st === 'enraged') {
+      if (m.st === 'fight') {
+        run.state = 'fight';
+        if (boss) { boss.st = 'fight'; stage.banner('<div class="big">FIGHT!</div>', 1200); }
+        sfx('go');
+        renderPanel();
+      }
+      if (m.st === 'enraged' && boss) {
         boss.enraged = true;
         sfx('enrage');
         stage.shake(0.8);
@@ -485,9 +845,12 @@ export function boss(stage) {
       }
     },
     boss_s: (m) => {
-      if (!boss) return;
-      boss.tx = m.x; boss.ty = m.y; boss.hp = m.hp; boss.max = m.max;
-      for (const [k, f] of fighters) f.rev = m.rev[k] ?? 0;
+      if (boss && m.hp !== undefined) { boss.tx = m.x; boss.ty = m.y; boss.hp = m.hp; boss.max = m.max; }
+      for (const [id, [x, y]] of Object.entries(m.m ?? {})) {
+        const mob = mobs.get(Number(id));
+        if (mob) { mob.tx = x; mob.ty = y; }
+      }
+      for (const [k, f] of fighters) f.rev = m.rev?.[k] ?? 0;
     },
     boss_atk: onAttack,
     boss_dmg: (m) => {
@@ -496,18 +859,45 @@ export function boss(stage) {
       boss.hurtAt = performance.now();
       dmgBy[m.k] = (dmgBy[m.k] ?? 0) + m.d;
       renderMeter();
-      const mine = m.k === S.me;
-      const [X, Z] = to3(boss.x, boss.y);
-      if (mine || m.crit) texts.add(m.crit ? `CRIT ${m.d}!` : `${m.d}`, X + (Math.random() - 0.5) * 2, (boss.r / K) * 2.2 + airHeight() / K, Z, m.crit ? '#ffd84d' : mine ? '#ffffff' : colorOf(m.k), m.crit ? 1.2 : 0.9);
-      sfx('bosshit', { vol: mine ? 1 : 0.35, crit: m.crit && mine });
+      damageText(boss.x, boss.y, (boss.r / K) * 2.2 + airHeight() / K, m);
+      sfx('bosshit', { vol: m.k === S.me ? 1 : 0.35, crit: m.crit && m.k === S.me });
     },
-    boss_add: (m) => { addFighter(m.k, m); renderMeter(); },
-    boss_del: (m) => { removeFighter(m.k); renderMeter(); },
+    mob_add: (m) => {
+      m.mobs.forEach(addMob);
+      if (m.near) for (const [, , x, y] of m.mobs) burstAt(x, y, th.crystal, 14, 0.5, 4);
+      else sfx('spawn', { vol: 0.4 });
+    },
+    mob_dmg: (m) => {
+      const mob = mobs.get(m.id);
+      if (!mob) return;
+      mob.hp = m.hp;
+      mob.hurtAt = performance.now();
+      dmgBy[m.k] = (dmgBy[m.k] ?? 0) + m.d;
+      renderMeter();
+      damageText(mob.x, mob.y, 2, m);
+      if (m.k === S.me) sfx('hit', { vol: 0.5 });
+    },
+    mob_die: (m) => {
+      const mob = mobs.get(m.id);
+      if (m.k) {
+        dmgBy[m.k] = (dmgBy[m.k] ?? 0) + (m.d ?? 0);
+        renderMeter();
+        if (mob) damageText(mob.x, mob.y, 2, m);
+        sfx('ko', { vol: m.k === S.me ? 0.6 : 0.25 });
+      }
+      removeMob(m.id);
+    },
+    mob_shot: (m) => {
+      for (const s of m.s) {
+        for (let i = 0; i < s.n; i++) enemyShot(s.x, s.y, s.a + (i * TAU) / s.n, s.sp, s.n > 1 ? '#7dfcff' : '#f1ead8', 0.22);
+      }
+      sfx('arrow', { vol: 0.35 });
+    },
+    boss_add: (m) => { addFighter(m.k, m); renderMeter(); if (run.state === 'lobby') { panelKey = ''; renderPanel(); } },
+    boss_del: (m) => { removeFighter(m.k); renderMeter(); if (run.state === 'lobby') { panelKey = ''; renderPanel(); } },
     boss_pos: (m) => { const f = fighters.get(m.k); if (f) { f.tx = m.x; f.ty = m.y; f.a = m.a; } },
     boss_shot: (m) => {
-      const mesh = orb(colorOf(m.k), 0.14, 4);
-      stage.scene.add(mesh);
-      bullets.push({ owner: m.k, x: m.x, y: m.y, vx: Math.cos(m.a) * BULLET_SPEED, vy: Math.sin(m.a) * BULLET_SPEED, life: BULLET_LIFE, mesh });
+      fireBullets(m.k, m.x, m.y, m.a, m.n ?? 1);
       sfx('shoot_far');
     },
     boss_hp: (m) => {
@@ -518,22 +908,36 @@ export function boss(stage) {
       burstAt(f.x, f.y, '#ffffff', 10, 1.2);
       if (m.k === S.me) { stage.shake(0.5); sfx('hurt'); } else sfx('hit', { vol: 0.4 });
     },
+    boss_shield: (m) => {
+      const f = fighters.get(m.k);
+      if (!f) return;
+      f.shield = false;
+      f.hurt = performance.now();
+      burstAt(f.x, f.y, '#9fe8ff', 24, 1.2, 6);
+      sfx('shield', { vol: m.k === S.me ? 1 : 0.4 });
+      if (m.k === S.me) stage.banner('🫧 Your shield blocked a hit!', 1400);
+    },
     boss_down: (m) => {
       const f = fighters.get(m.k);
       if (!f) return;
       f.hp = 0;
       burstAt(f.x, f.y, colorOf(m.k), 26, 1);
-      if (m.k === S.me) { sfx('down'); stage.banner('💫 You\'re down! A friend can revive you, or you\'ll get up in 10s.', 3500); }
-      else { sfx('down', { vol: 0.5 }); stage.banner(`💫 ${esc(nameOf(m.k))} is down! Stand next to them to revive.`, 2400); }
+      const alone = [...fighters.values()].every((o) => o.hp <= 0);
+      if (m.k === S.me) {
+        sfx('down');
+        const wind = up().revive && !f.windUsed;
+        if (!alone) stage.banner(`💫 You're down! ${wind ? 'Second Wind will pick you up in 4s…' : 'A friend can revive you (you\'ll come back with 1 heart).'}`, 3500);
+      } else { sfx('down', { vol: 0.5 }); stage.banner(`💫 ${esc(nameOf(m.k))} is down! Stand next to them to revive.`, 2400); }
     },
     boss_up: (m) => {
       const f = fighters.get(m.k);
       if (!f) return;
       f.hp = m.hp;
       f.rev = 0;
+      if (m.wind) f.windUsed = true;
       burstAt(f.x, f.y, '#9fe8ff', 18, 1);
       sfx('revive', { vol: m.k === S.me ? 1 : 0.5 });
-      if (m.k === S.me) safeUntil = performance.now() + 1200;
+      if (m.k === S.me) { safeUntil = performance.now() + 1200; if (m.wind) stage.banner('🌀 Second Wind! Back on your feet.', 1600); }
     },
     boss_dead: (m) => {
       if (!boss) return;
@@ -541,7 +945,6 @@ export function boss(stage) {
       boss.hp = 0;
       boss.deadAt = performance.now();
       clearAttacks();
-      kills += 1;
       sfx('bossdie');
       stage.shake(1.4);
       const bx = boss.x, by = boss.y;
@@ -551,10 +954,29 @@ export function boss(stage) {
       const loot = (mine?.loot ?? []).map((id) => ITEMS[id]?.name ?? FURN[id]?.name).filter(Boolean);
       stage.banner(`<div class="big">🏆 ${esc(m.name)} defeated!</div>
         ${m.mvp ? `MVP: <b>${esc(nameOf(m.mvp))}</b><br>` : ''}
-        ${mine ? `You: +${fmt(mine.coins)} 🪙 · +${mine.xp} XP · ${fmt(mine.dmg)} damage` : ''}
-        ${loot.length ? `<br>✨ Loot: <b>${loot.map(esc).join(', ')}</b>` : ''}
-        <br><span class="muted small">The next boss arrives soon…</span>`, 7500);
-      renderMeter();
+        ${mine ? `You: +${fmt(mine.coins)} 🪙 · +${mine.xp} XP` : ''}
+        ${loot.length ? `<br>✨ Loot: <b>${loot.map(esc).join(', ')}</b>` : ''}`, 4000);
+    },
+    boss_clear: (m) => {
+      sfx('cheer');
+      clearAttacks();
+      for (const b of bullets) stage.scene.remove(b.mesh);
+      bullets = [];
+    },
+    boss_picked: (m) => {
+      const f = fighters.get(m.k);
+      if (f) Object.assign(f, { hp: m.f.hp, max: m.f.max, up: m.f.up, shield: m.f.shield });
+      run.picked.add(m.k);
+      if (m.k === S.me) run.choices = null;
+      else { const [X, Z] = f ? to3(f.x, f.y) : [0, 0]; texts.add(`${UPGRADE_EMOJI[m.id] ?? '⭐'} ${UPGRADE_NAME[m.id] ?? ''}`, X, 3, Z, colorOf(m.k), 0.8); }
+      renderFloor();
+    },
+    boss_wipe: (m) => {
+      run.results = m.results;
+      run.record = m.record;
+      clearAttacks();
+      sfx(m.record ? 'win' : 'lose');
+      if (m.record) setTimeout(() => confetti(stage.hud, { count: 200 }), 300);
     },
   });
 
@@ -579,8 +1001,8 @@ export function boss(stage) {
         const [X, Z] = to3(mine.x, mine.y);
         sparks.puff(X, 0.9, Z, colorOf(S.me), 1.2, 0.3);
       } else if (dir) {
-        vx = dir.dx * MOVE_SPEED;
-        vy = dir.dy * MOVE_SPEED;
+        vx = dir.dx * moveSpeed();
+        vy = dir.dy * moveSpeed();
       }
       mine.moving = !!(vx || vy);
       if (mine.moving) {
@@ -592,15 +1014,14 @@ export function boss(stage) {
         lastSend = now;
         net.send('boss_move', { x: mine.x, y: mine.y, a: mine.a });
       }
-      if (firing && now - lastShot > 230 && boss?.st === 'fight') {
+      if (firing && now - lastShot > shotGap() && run.state === 'fight') {
         lastShot = now;
         const x = mine.x + Math.cos(mine.a) * 26, y = mine.y + Math.sin(mine.a) * 26;
-        const mesh = orb(colorOf(S.me), 0.14, 4);
-        stage.scene.add(mesh);
-        bullets.push({ owner: S.me, x, y, vx: Math.cos(mine.a) * BULLET_SPEED, vy: Math.sin(mine.a) * BULLET_SPEED, life: BULLET_LIFE, mesh });
+        const n = 1 + (up().multi ?? 0);
+        fireBullets(S.me, x, y, mine.a, n);
         burstAt(x, y, '#fff6b0', 5, 1.1);
         sfx('shoot');
-        net.send('boss_shoot', { x, y, a: mine.a });
+        net.send('boss_shoot', { x, y, a: mine.a, n });
       }
     }
 
@@ -622,7 +1043,18 @@ export function boss(stage) {
       p.char.aiming = f.hp > 0;
       const blink = f.hurt && now - f.hurt < 250 && Math.floor(now / 50) % 2;
       p.visible = !blink;
-      p.sub.textContent = f.hp > 0 ? '❤'.repeat(Math.max(0, f.hp)) + '♡'.repeat(Math.max(0, maxHp - f.hp)) : (k === S.me ? '💫 down' : '💫 REVIVE ME');
+      const max = f.max ?? 5;
+      p.sub.textContent = f.hp > 0 ? `${f.shield ? '🫧' : ''}${'❤'.repeat(Math.max(0, f.hp))}${'♡'.repeat(Math.max(0, max - f.hp))}` : (k === S.me ? '💫 down' : '💫 REVIVE ME');
+      // shield bubble
+      if (f.shield && f.hp > 0) {
+        if (!f.bubble) {
+          f.bubble = new THREE.Mesh(new THREE.SphereGeometry(1.2, 20, 14), new THREE.MeshBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.18, depthWrite: false }));
+          stage.scene.add(f.bubble);
+        }
+        f.bubble.visible = true;
+        f.bubble.position.set(x, 1, z);
+        f.bubble.scale.setScalar(1 + Math.sin(t * 3) * 0.04);
+      } else if (f.bubble) f.bubble.visible = false;
       if (f.hp <= 0) {
         if (!f.ring) {
           f.ring = groundRing(REVIVE_R / K - 0.12, REVIVE_R / K, '#9fe8ff', 0.6);
@@ -642,6 +1074,37 @@ export function boss(stage) {
       } else if (f.ring) {
         f.ring.visible = f.revArc.visible = false;
       }
+    }
+
+    // monsters
+    const ml = 1 - Math.exp(-dt * 10);
+    for (const mob of mobs.values()) {
+      const px = mob.x, py = mob.y;
+      mob.x += (mob.tx - mob.x) * ml;
+      mob.y += (mob.ty - mob.y) * ml;
+      const moving = Math.abs(mob.x - px) + Math.abs(mob.y - py) > 0.15;
+      const [X, Z] = to3(mob.x, mob.y);
+      const g = mob.model.g;
+      const grow = Math.min(1, (now - mob.bornAt) / 350);
+      g.position.set(X, 0, Z);
+      g.scale.setScalar(grow * (mob.r / 16));
+      if (mine) {
+        const [mx, mz] = to3(mine.x, mine.y);
+        const want = Math.atan2(mx - X, mz - Z), cur = g.rotation.y;
+        g.rotation.y = cur + Math.atan2(Math.sin(want - cur), Math.cos(want - cur)) * Math.min(1, dt * 8);
+      }
+      mob.model.tick(t + mob.id, { moving, windup: now < mob.windUntil });
+      const flash = now - mob.hurtAt < 90;
+      for (const m of mob.model.mats) m.emissive?.setScalar(flash ? 0.5 : 0);
+      if (mob.hp < mob.max) {
+        mob.model.bar.visible = true;
+        mob.model.bar.quaternion.copy(stage.camera.quaternion);
+        mob.model.bar.quaternion.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -g.rotation.y, 0)));
+        const k = Math.max(0.001, mob.hp / mob.max);
+        mob.model.fill.scale.x = k;
+        mob.model.fill.position.x = -0.43 * (1 - k);
+      }
+      if (run.state === 'fight' && grow >= 1 && meInside(mob.x, mob.y, mob.r * 0.8)) hurt();
     }
 
     if (boss && model) {
@@ -673,7 +1136,7 @@ export function boss(stage) {
       bossShadow.visible = model.g.visible;
       bossShadow.position.set(X, 0.03, Z);
       bossShadow.scale.setScalar(Math.max(0.1, (boss.r / K) * 1.1 * (1 - lift / 400)));
-      if (boss.enraged && boss.st === 'fight' && Math.random() < 0.3) sparks.puff(X + (Math.random() - 0.5) * 3, Math.random() * 4 + lift / K, Z + (Math.random() - 0.5) * 3, boss.id === 'dragon' ? '#c77dff' : '#ff5d5d', 0.8, 0.5);
+      if (boss.enraged && boss.st === 'fight' && Math.random() < 0.3) sparks.puff(X + (Math.random() - 0.5) * 3, Math.random() * 4 + lift / K, Z + (Math.random() - 0.5) * 3, th.crystal, 0.8, 0.5);
       barEl.classList.toggle('hidden', boss.st === 'dead');
       barEl.querySelector('.bb-name').textContent = `${boss.name}${boss.tier ? ` ${'★'.repeat(Math.min(5, boss.tier))}` : ''}${boss.enraged ? ' · ENRAGED' : ''}`;
       barEl.querySelector('.hp').style.width = `${Math.max(0, boss.hp / boss.max) * 100}%`;
@@ -692,10 +1155,20 @@ export function boss(stage) {
       const [X, Z] = to3(b.x, b.y);
       b.mesh.position.set(X, 1.1, Z);
       let dead = b.life <= 0 || b.x < 10 || b.x > W - 10 || b.y < 10 || b.y > H - 10;
-      if (!dead && boss && boss.st === 'fight' && airHeight(now) < 60 && Math.hypot(boss.x - b.x, boss.y - b.y) < boss.r * 0.95) {
-        dead = true;
+      if (!dead && run.state === 'fight') {
+        for (const mob of mobs.values()) {
+          if (b.hit.has(mob.id) || Math.hypot(mob.x - b.x, mob.y - b.y) >= mob.r + b.r) continue;
+          b.hit.add(mob.id);
+          sparks.burst(X, 1.1, Z, colorOf(b.owner), { n: 6, speed: 3 });
+          if (b.owner === S.me) net.send('boss_hit', { id: mob.id });
+          if (!b.pierce) { dead = true; break; }
+        }
+      }
+      if (!dead && boss && boss.st === 'fight' && !b.hit.has('boss') && airHeight(now) < 60 && Math.hypot(boss.x - b.x, boss.y - b.y) < boss.r * 0.95 + b.r - 5) {
+        b.hit.add('boss');
         sparks.burst(X, 1.3, Z, colorOf(b.owner), { n: 7, speed: 3 });
         if (b.owner === S.me) net.send('boss_hit');
+        if (!b.pierce) dead = true;
       }
       if (dead) stage.scene.remove(b.mesh);
       return !dead;
@@ -745,8 +1218,9 @@ export function boss(stage) {
     }
     sparks.update(dt);
     texts.update(dt);
-    const ready = 1 - dash.cd / DASH_COOLDOWN;
-    dashEl.querySelector('i').style.width = `${ready * 100}%`;
+    if (run.state === 'pick' || run.state === 'over') renderPanel();
+    const ready = 1 - dash.cd / dashCooldown();
+    dashEl.querySelector('i').style.width = `${Math.min(1, ready) * 100}%`;
     dashEl.classList.toggle('ready', ready >= 1);
   });
 
@@ -754,7 +1228,9 @@ export function boss(stage) {
     off();
     cave.stop();
     clearAttacks();
+    clearMobs();
     for (const b of bullets) stage.scene?.remove(b.mesh);
+    for (const f of fighters.values()) if (f.bubble) stage.scene?.remove(f.bubble);
     if (model) stage.scene?.remove(model.g);
     stage.canvas.style.cursor = '';
     stage.scene?.remove(env.group);

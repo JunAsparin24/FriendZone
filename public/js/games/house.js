@@ -1,25 +1,28 @@
-// Houses: every member gets a room to decorate with furniture they buy or win around the zone,
-// and can visit (and ❤️) everyone else's. Furniture is clickable: lamps switch, the jukebox plays…
+// Houses (3D): every member has a house you can walk around in. Decorate it with furniture you buy
+// or win around the zone, then visit (and ❤️) everyone else's. Visiting puts you inside their
+// house, together with anyone else who's there. Furniture is usable: lamps switch, the jukebox
+// plays, chairs and sofas are for sitting…
 import * as THREE from 'three';
 import { net } from '../net.js';
-import { S, esc, fmt, me, nameOf, toast, isTyping } from '../state.js';
+import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
-import { Character } from '../three/character.js';
-import { basic } from '../three/materials.js';
+import { toon, basic } from '../three/materials.js';
 import { buildFurniture, floorTexture, wallTexture, SWATCH } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
-import { settings, onSettings, pixelRatio } from '../settings.js';
 import { iconSvg } from '../icons.js';
-import { $, listen, loop } from './util.js';
 
-const N = 8;          // room size in tiles (HOUSE_SIZE on the server)
-const WALL_H = 3.2;
-const WALL_Y = 1.75;  // height of wall decorations
+const N = 10;         // room size in tiles (HOUSE_SIZE on the server)
+const T = 1.6;        // world units per tile, so furniture is people-sized
+const WALL_H = 3.2;   // in tiles
+const WALL_Y = 1.75;  // height of wall decorations (tiles)
+const DOOR = { x0: N / 2 - 1, x1: N / 2 + 1, h: 2.2 }; // the front door, in tiles
 const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 const kindOf = (id) => FURN[id]?.kind ?? 'floor';
 const owned = (id) => me().furni?.[id] ?? 0;
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
+// where you sit on things (in tiles above the floor)
+const SEATS = { chair: 0.5, armchair: 0.42, sofa: 0.42, beanbag: 0.3, bed: 0.55 };
 
 /** Footprint cells of a placed item, keyed by layer so rugs can sit under furniture. */
 function cellsOf(it) {
@@ -45,73 +48,86 @@ function fits(it) {
   const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
   return it.x >= 0 && it.y >= 0 && it.x + w <= N && it.y + d <= N;
 }
+const footprint = (it) => { const f = FURN[it.id]; return it.r % 2 ? [f.d, f.w] : [f.w, f.d]; };
 
 // ---------------------------------------------------------------------------
-// One renderer shared by every visit (browsers limit how many WebGL contexts a page may have).
+// the room: floor, four walls (a doorway in the front one) and a garden outside
 // ---------------------------------------------------------------------------
 
-let R = null;
-
-function setupRenderer() {
-  if (R) return R;
-  const canvas = document.createElement('canvas');
-  canvas.className = 'house-canvas';
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(pixelRatio());
-  onSettings((s, changed) => { if ('quality' in changed) renderer.setPixelRatio(pixelRatio()); });
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#1a3d85');
-  const camera = new THREE.PerspectiveCamera(32, 16 / 10, 0.1, 100);
-  scene.add(new THREE.HemisphereLight(0xfff4e6, 0x6a5a8a, 1.35));
-  const sun = new THREE.DirectionalLight(0xfff0d4, 1.6);
-  sun.position.set(12, 14, 9);
-  sun.target.position.set(4, 0, 4);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 40 });
-  sun.shadow.bias = -0.0005;
-  scene.add(sun, sun.target);
-
-  // the room shell: a floor slab plus back (-z) and left (-x) walls, like a diorama
-  const room = new THREE.Group();
+function buildRoom() {
+  const g = new THREE.Group();
+  g.scale.setScalar(T);
   const floorMat = new THREE.MeshToonMaterial({ color: '#ffffff' });
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(N, N), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(N / 2, 0, N / 2);
   floor.receiveShadow = true;
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(N + 0.3, 0.4, N + 0.3), new THREE.MeshToonMaterial({ color: '#6b4a2b' }));
-  slab.position.set(N / 2 - 0.15, -0.201, N / 2 - 0.15);
-  const wallMat = new THREE.MeshToonMaterial({ color: '#ffffff' });
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(N, WALL_H), wallMat);
-  back.position.set(N / 2, WALL_H / 2, 0);
-  back.receiveShadow = true;
-  const left = new THREE.Mesh(new THREE.PlaneGeometry(N, WALL_H), wallMat);
-  left.rotation.y = Math.PI / 2;
-  left.position.set(0, WALL_H / 2, N / 2);
-  left.receiveShadow = true;
-  const trim = new THREE.MeshToonMaterial({ color: '#f4f0ff' });
-  const shell = new THREE.MeshToonMaterial({ color: '#8b6a4a' });
-  const parts = [
-    // (the shell sits just behind the wallpaper planes so they don't z-fight)
-    [new THREE.BoxGeometry(N + 0.3, WALL_H + 0.4, 0.3), shell, [N / 2 - 0.15, WALL_H / 2 - 0.2, -0.17]],
-    [new THREE.BoxGeometry(0.3, WALL_H + 0.4, N), shell, [-0.17, WALL_H / 2 - 0.2, N / 2]],
-    [new THREE.BoxGeometry(N, 0.16, 0.06), trim, [N / 2, 0.08, 0.03]],
-    [new THREE.BoxGeometry(0.06, 0.16, N), trim, [0.03, 0.08, N / 2]],
-    [new THREE.BoxGeometry(N + 0.3, 0.12, 0.34), trim, [N / 2 - 0.15, WALL_H + 0.06, -0.13]],
-    [new THREE.BoxGeometry(0.34, 0.12, N), trim, [-0.13, WALL_H + 0.06, N / 2]],
-  ];
-  room.add(floor, slab, back, left);
-  for (const [g, m, p] of parts) {
-    const mesh = new THREE.Mesh(g, m);
-    mesh.position.set(...p);
-    mesh.receiveShadow = true;
-    room.add(mesh);
+  g.add(floor);
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(N + 0.6, 0.4, N + 0.6), toon('#6b4a2b'));
+  slab.position.set(N / 2, -0.201, N / 2);
+  g.add(slab);
+  const wallMat = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide });
+  const outside = toon('#e8d6b8');
+  const trim = toon('#f4f0ff');
+  const wall = (w, h, x, y, z, ry) => {
+    const grp = new THREE.Group();
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
+    face.receiveShadow = true;
+    const shell = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.25), outside);
+    shell.position.z = -0.14;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, 0.06), trim);
+    base.position.set(0, -h / 2 + 0.08, 0.03);
+    grp.add(face, shell, base);
+    grp.position.set(x, y, z);
+    grp.rotation.y = ry;
+    g.add(grp);
+    return { grp, face };
+  };
+  const walls = {
+    back: wall(N, WALL_H, N / 2, WALL_H / 2, 0, 0),
+    left: wall(N, WALL_H, 0, WALL_H / 2, N / 2, Math.PI / 2),
+    right: wall(N, WALL_H, N, WALL_H / 2, N / 2, -Math.PI / 2),
+  };
+  // the front wall is three pieces around the doorway
+  const front = new THREE.Group();
+  const lw = DOOR.x0, rw = N - DOOR.x1;
+  const fl = wall(lw, WALL_H, lw / 2, WALL_H / 2, N, Math.PI);
+  const fr = wall(rw, WALL_H, DOOR.x1 + rw / 2, WALL_H / 2, N, Math.PI);
+  const ft = wall(DOOR.x1 - DOOR.x0, WALL_H - DOOR.h, N / 2, DOOR.h + (WALL_H - DOOR.h) / 2, N, Math.PI);
+  for (const p of [fl, ft, fr]) front.add(p.grp);
+  g.add(front);
+  const doorFrame = toon('#8b5a2b');
+  for (const x of [DOOR.x0, DOOR.x1]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, DOOR.h, 0.34), doorFrame);
+    post.position.set(x, DOOR.h / 2, N);
+    front.add(post);
   }
-  scene.add(room);
-
+  const mat = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), toon('#b3203a'));
+  mat.rotation.x = -Math.PI / 2;
+  mat.position.set(N / 2, 0.01, N - 0.45);
+  g.add(mat);
+  walls.front = { grp: front };
+  // outside: a lawn with a path to the door, so the doorway never looks into a void
+  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), toon('#5fae55'));
+  lawn.rotation.x = -Math.PI / 2;
+  lawn.position.set(N / 2, -0.4, N / 2);
+  lawn.receiveShadow = true;
+  g.add(lawn);
+  const path = new THREE.Mesh(new THREE.PlaneGeometry(2, 6), toon('#d8bd88'));
+  path.rotation.x = -Math.PI / 2;
+  path.position.set(N / 2, -0.39, N + 3.2);
+  g.add(path);
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2, r = 11 + (i % 3) * 2.5;
+    const tree = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 1.4, 8), toon('#7a4a28'));
+    trunk.position.y = 0.3;
+    const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(1 + (i % 2) * 0.3, 1), toon(i % 3 ? '#3f9a4a' : '#57b35a'));
+    leaves.position.y = 1.6;
+    tree.add(trunk, leaves);
+    tree.position.set(N / 2 + Math.cos(a) * r, -0.4, N / 2 + Math.sin(a) * r);
+    g.add(tree);
+  }
   // editing helpers
   const gridPts = [];
   for (let i = 0; i <= N; i++) gridPts.push(i, 0.015, 0, i, 0.015, N, 0, 0.015, i, N, 0.015, i);
@@ -119,45 +135,50 @@ function setupRenderer() {
   gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridPts, 3));
   const grid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35 }));
   grid.visible = false;
-  scene.add(grid);
+  g.add(grid);
   const marker = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), basic('#6ee7a0', { transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }));
   marker.visible = false;
-  scene.add(marker);
-
+  g.add(marker);
   const items = new THREE.Group();
-  const people = new THREE.Group();
-  scene.add(items, people);
-  R = { canvas, renderer, scene, camera, floor, floorMat, wallMat, back, left, grid, marker, items, people, sun };
-  return R;
+  g.add(items);
+  g.traverse((o) => { if (o.isMesh && o !== floor && o !== lawn) o.castShadow = true; });
+  return { group: g, floor, floorMat, wallMat, walls, grid, marker, items };
 }
 
 // ---------------------------------------------------------------------------
 
-export function house(body) {
-  const r = setupRenderer();
-  body.innerHTML = `
-    <div class="house-head"><h2 class="house-title">🏠 Houses</h2><div class="house-actions"></div></div>
-    <div class="house-main">
-      <div class="house-view"><div class="house-hint"></div></div>
-      <div class="house-side">
-        <div class="tabs house-tabs"></div>
-        <div class="house-panel"></div>
-      </div>
-    </div>`;
-  const view = $(body, '.house-view'), hint = $(body, '.house-hint'), panel = $(body, '.house-panel');
-  const tabsEl = $(body, '.house-tabs'), actions = $(body, '.house-actions'), title = $(body, '.house-title');
-  view.prepend(r.canvas);
+export function house(stage) {
+  const W = N * T;
+  const sun = stage.lights({ background: '#9fd4ff', sky: 0xfff4e6, ground: 0x6a5a8a, hemi: 1.35, sun: 1.7, box: 16 });
+  sun.position.set(W / 2 + 6, 40, W / 2 + 12); // high overhead so the walls don't shade the floor
+  sun.target.position.set(W / 2, 0, W / 2);
+  const room = buildRoom();
+  stage.scene.add(room.group);
 
-  let viewKey = S.me, home = null, edit = false, placing = null, selected = -1, tab = 'visit';
-  let confirmBuy = null, saveTimer = 0, echoes = 0, ghost = null, drag = null;
-  let entries = [];              // built items: { group, use, A, it, bounce }
-  const walkers = [];            // characters wandering around the room
-  let yaw = 0.78, pitch = 0.64, dist = 15.5;
+  const solids = [];
+  const walker = stage.walker({
+    spawn: { x: W / 2, z: W - 1.2 }, speed: 5, solids,
+    bounds: { minX: 0.1, maxX: W - 0.1, minZ: 0.1, maxZ: W - 0.1 },
+    orbit: { yaw: 0, pitch: 0.72, dist: 11, minDist: 5, maxDist: 20 },
+  });
+  const walkPointer = stage.onPointer;
+  const orbit = stage.orbit;
 
+  stage.hud.innerHTML = `
+    <div class="hud-panel house-bar"><div class="house-title"></div><div class="house-actions"></div></div>
+    <div class="hud-panel house-side hidden"><div class="tabs house-tabs"></div><div class="house-panel"></div></div>
+    <p class="hud-panel arena-help house-hint"></p>`;
+  const $h = (sel) => stage.hud.querySelector(sel);
+  const titleEl = $h('.house-title'), actions = $h('.house-actions'), side = $h('.house-side');
+  const tabsEl = $h('.house-tabs'), panel = $h('.house-panel'), hint = $h('.house-hint');
+
+  let viewKey = null, home = null, edit = false, placing = null, selected = -1, tab = 'visit', sideOpen = false;
+  let confirmBuy = null, saveTimer = 0, echoes = 0, ghost = null, seated = null;
+  let entries = [];           // built items: { group, use, A, it, bounce, inter }
   const mine = () => viewKey === S.me;
-  const payload = () => ({ floor: home.floor, wall: home.wall, items: home.items.map(({ id, x, y, r: rot }) => ({ id, x, y, r: rot })) });
+  const payload = () => ({ floor: home.floor, wall: home.wall, items: home.items.map(({ id, x, y, r }) => ({ id, x, y, r })) });
 
-  // ---- scene building ----------------------------------------------------------
+  // ---- building the furniture ------------------------------------------------------
 
   function placeGroup(g, it) {
     const f = FURN[it.id];
@@ -166,132 +187,107 @@ export function house(body) {
       else { g.position.set(0, WALL_Y, it.y + f.w / 2); g.rotation.y = Math.PI / 2; }
       return;
     }
-    const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
+    const [w, d] = footprint(it);
     g.position.set(it.x + w / 2, 0, it.y + d / 2);
     g.rotation.y = it.r * (Math.PI / 2);
   }
 
-  function clearGroup(g) {
-    while (g.children.length) g.remove(g.children[0]);
-  }
-
   function rebuildItems() {
-    clearGroup(r.items);
+    while (room.items.children.length) room.items.remove(room.items.children[0]);
+    stage.interactables = stage.interactables.filter((i) => !i.house);
+    solids.length = 0;
     entries = home.items.map((it, index) => {
       const built = buildFurniture(it.id);
       built.group.userData.index = index;
       placeGroup(built.group, it);
       built.group.visible = !(placing && placing.from === index);
-      r.items.add(built.group);
-      return { ...built, it, bounce: 1 };
+      room.items.add(built.group);
+      const entry = { ...built, it, bounce: 1 };
+      const kind = kindOf(it.id);
+      const [w, d] = footprint(it);
+      const cx = kind === 'wall' ? (it.r % 2 ? 0.6 : it.x + FURN[it.id].w / 2) : it.x + w / 2;
+      const cz = kind === 'wall' ? (it.r % 2 ? it.y + FURN[it.id].w / 2 : 0.6) : it.y + d / 2;
+      if (kind === 'floor') solids.push({ x: cx * T, z: cz * T, w: w * T - 0.15, d: d * T - 0.15 });
+      const f = FURN[it.id];
+      const seat = SEATS[it.id] != null;
+      entry.inter = stage.interactable({
+        x: cx * T, z: cz * T, r: Math.max(w, d) * T * 0.5 + 1.1, obj: built.group,
+        label: seat ? `sit on the ${f.name.toLowerCase()}` : f.action === 'wardrobe' ? 'open your wardrobe' : `use the ${f.name.toLowerCase()}`,
+        use: () => { if (!edit) useItem(entry); },
+      });
+      entry.inter.house = true;
+      return entry;
     });
-    // keep the lights count sane: only the first few lamps really light the room
+    // keep the light count sane: only the first few lamps really light the room
     let lights = 0;
-    r.items.traverse((o) => { if (o.isPointLight) o.castShadow = false; if (o.isPointLight && ++lights > 4) o.intensity = 0; });
-    r.floorMat.map = floorTexture(home.floor);
-    r.floorMat.map.repeat.set(N / 2, N / 2);
-    r.floorMat.needsUpdate = true;
+    room.items.traverse((o) => {
+      if (o.isPointLight) { o.castShadow = false; if (++lights > 4) o.intensity = 0; else o.distance *= T; }
+      if (o.isMesh && !o.userData.outline) o.castShadow = true;
+    });
+    room.floorMat.map = floorTexture(home.floor);
+    room.floorMat.map.repeat.set(N / 2, N / 2);
+    room.floorMat.needsUpdate = true;
     const wt = wallTexture(home.wall);
     wt.repeat.set(N / 2, WALL_H / 2);
-    r.wallMat.map = wt;
-    r.wallMat.needsUpdate = true;
-    for (const w of walkers) w.path = [];
+    room.wallMat.map = wt;
+    room.wallMat.needsUpdate = true;
     renderSelection();
   }
 
-  function blockedCells() {
-    const set = new Set();
-    home.items.forEach((it) => { if (kindOf(it.id) === 'floor') cellsOf(it).forEach((c) => set.add(c.slice(6))); });
-    return set;
-  }
+  // ---- sitting ------------------------------------------------------------------------
 
-  function setupWalkers() {
-    clearGroup(r.people);
-    walkers.length = 0;
-    const keys = [viewKey, ...(mine() ? [] : [S.me])];
-    const blocked = blockedCells();
-    const free = [];
-    for (let x = 0; x < N; x++) for (let y = 2; y < N; y++) if (!blocked.has(`${x}:${y}`)) free.push([x, y]);
-    keys.forEach((k, i) => {
-      const char = new Character(S.players[k]?.look);
-      char.root.scale.setScalar(0.62);
-      char.root.traverse((o) => { o.castShadow = true; });
-      const [x, y] = free[Math.floor(Math.random() * free.length)] ?? [4, 6];
-      char.root.position.set(x + 0.5, 0, y + 0.5);
-      char.root.rotation.y = Math.random() * Math.PI - Math.PI / 2;
-      char.onStep = () => sfx('step', { vol: 0.15, surface: home.floor === 'floor_carpet' || home.floor === 'floor_grass' ? 'grass' : 'stone' });
-      r.people.add(char.root);
-      walkers.push({ key: k, char, path: [], wait: 1 + i + Math.random() * 2 });
-    });
+  function sit(entry) {
+    const it = entry.it;
+    const [w, d] = footprint(it);
+    const p = walker.me;
+    seated = entry;
+    p.x = (it.x + w / 2) * T;
+    p.z = (it.y + d / 2) * T;
+    p.y = SEATS[it.id] * T - 0.42;
+    p.heading = it.r * (Math.PI / 2);
+    p.char.setPose('sit');
+    sfx('squish');
   }
-
-  /** Breadth-first path over free tiles (furniture blocks, rugs don't). */
-  function pathTo(from, to, blocked) {
-    const key = (p) => `${p[0]}:${p[1]}`;
-    const prev = new Map([[key(from), null]]);
-    const queue = [from];
-    while (queue.length) {
-      const cur = queue.shift();
-      if (cur[0] === to[0] && cur[1] === to[1]) {
-        const out = [];
-        for (let p = cur; p; p = prev.get(key(p))) out.unshift(p);
-        return out.slice(1);
-      }
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const n = [cur[0] + dx, cur[1] + dy];
-        if (n[0] < 0 || n[1] < 0 || n[0] >= N || n[1] >= N || prev.has(key(n)) || blocked.has(key(n))) continue;
-        prev.set(key(n), cur);
-        queue.push(n);
+  function standUp() {
+    if (!seated) return;
+    const it = seated.it;
+    const [w, d] = footprint(it);
+    const p = walker.me;
+    // step off in front of the seat (or wherever there's room)
+    const fx = Math.sin(it.r * (Math.PI / 2)), fz = Math.cos(it.r * (Math.PI / 2));
+    const tries = [[fx, fz], [-fx, -fz], [fz, -fx], [-fz, fx]];
+    for (const [dx, dz] of tries) {
+      const x = (it.x + w / 2 + dx * (w / 2 + 0.6)) * T, z = (it.y + d / 2 + dz * (d / 2 + 0.6)) * T;
+      if (x > 0.5 && z > 0.5 && x < W - 0.5 && z < W - 0.5 && !solids.some((s) => Math.abs(x - s.x) < s.w / 2 + 0.4 && Math.abs(z - s.z) < s.d / 2 + 0.4)) {
+        p.x = x; p.z = z; break;
       }
     }
-    return null;
+    p.y = 0;
+    p.char.setPose('idle');
+    seated = null;
   }
 
-  function updateWalkers(dt, t) {
-    if (!home) return;
-    let blocked = null;
-    for (const w of walkers) {
-      const root = w.char.root;
-      let moving = false;
-      if (w.path.length) {
-        const [tx, ty] = w.path[0];
-        const dx = tx + 0.5 - root.position.x, dz = ty + 0.5 - root.position.z;
-        const d = Math.hypot(dx, dz);
-        const step = 1.5 * dt;
-        if (d <= step) {
-          root.position.set(tx + 0.5, 0, ty + 0.5);
-          w.path.shift();
-          if (!w.path.length) w.wait = 2 + Math.random() * 4;
-        } else {
-          root.position.x += (dx / d) * step;
-          root.position.z += (dz / d) * step;
-          moving = true;
-          const goal = Math.atan2(dx, dz), cur = root.rotation.y;
-          root.rotation.y = cur + Math.atan2(Math.sin(goal - cur), Math.cos(goal - cur)) * Math.min(1, dt * 10);
-        }
-      } else if ((w.wait -= dt) <= 0) {
-        blocked ||= blockedCells();
-        const from = [Math.floor(root.position.x), Math.floor(root.position.z)];
-        const free = [];
-        for (let x = 0; x < N; x++) for (let y = 0; y < N; y++) if (!blocked.has(`${x}:${y}`)) free.push([x, y]);
-        const to = free[Math.floor(Math.random() * free.length)];
-        w.path = (to && pathTo(from, to, blocked)) ?? [];
-        w.wait = 1.5 + Math.random() * 3;
-        if (!w.path.length && Math.random() < 0.3) w.char.emote(['wave', 'heart', 'laugh'][Math.floor(Math.random() * 3)]);
-      }
-      w.char.update(dt, t, moving, 0.9);
+  function useItem(entry) {
+    entry.bounce = 0;
+    const f = FURN[entry.it.id];
+    if (SEATS[entry.it.id] != null) { sit(entry); return; }
+    entry.use?.();
+    if (f?.use) sfx(f.use);
+    if (f?.action === 'wardrobe') {
+      if (mine()) setTimeout(() => window.dispatchEvent(new CustomEvent('fz:open', { detail: 'wardrobe' })), 250);
+      else toast(`That's ${nameOf(viewKey)}'s wardrobe. Use the one in your own house!`);
     }
   }
 
-  // ---- ghost (furniture being placed) --------------------------------------------
+  // ---- placing furniture -----------------------------------------------------------
 
   const ghostOk = basic('#6ee7a0', { transparent: true, opacity: 0.55, depthWrite: false });
   const ghostBad = basic('#ff5d73', { transparent: true, opacity: 0.55, depthWrite: false });
 
   function buildGhost() {
-    if (ghost) r.scene.remove(ghost);
+    if (ghost) room.group.remove(ghost);
     ghost = null;
-    if (!placing) { r.marker.visible = false; return; }
+    if (!placing) { room.marker.visible = false; return; }
     ghost = buildFurniture(placing.id).group;
     ghost.traverse((o) => {
       if (o.isMesh) {
@@ -301,25 +297,25 @@ export function house(body) {
       if (o.isLight || o.isSprite) o.visible = false;
     });
     ghost.visible = false;
-    r.scene.add(ghost);
+    room.group.add(ghost);
   }
 
   function updateGhost() {
     if (!ghost || !placing || placing.x < 0) {
       if (ghost) ghost.visible = false;
-      r.marker.visible = false;
+      room.marker.visible = false;
       return;
     }
     const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r };
     const taken = new Set();
     home.items.forEach((o, i) => { if (i !== placing.from) cellsOf(o).forEach((c) => taken.add(c)); });
-    placing.valid = fits(it) && !cellsOf(it).some((c) => taken.has(c));
+    placing.valid = fits(it) && !cellsOf(it).some((c) => taken.has(c)) && !blocksDoor(it);
     const mat = placing.valid ? ghostOk : ghostBad;
     ghost.traverse((o) => { if (o.isMesh && !o.userData.outline) o.material = mat; });
     ghost.visible = true;
     placeGroup(ghost, it);
     const f = FURN[placing.id];
-    const m = r.marker;
+    const m = room.marker;
     m.material.color.set(placing.valid ? '#6ee7a0' : '#ff5d73');
     m.visible = true;
     if (kindOf(placing.id) === 'wall') {
@@ -327,11 +323,36 @@ export function house(body) {
       if (it.r % 2 === 0) { m.rotation.set(0, 0, 0); m.position.set(it.x + f.w / 2, WALL_Y, 0.02); }
       else { m.rotation.set(0, Math.PI / 2, 0); m.position.set(0.02, WALL_Y, it.y + f.w / 2); }
     } else {
-      const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
+      const [w, d] = footprint(it);
       m.rotation.set(-Math.PI / 2, 0, 0);
       m.scale.set(w, d, 1);
       m.position.set(it.x + w / 2, 0.02, it.y + d / 2);
     }
+  }
+
+  /** Keep a clear spot inside the front door so nobody gets walled in. */
+  function blocksDoor(it) {
+    if (kindOf(it.id) !== 'floor') return false;
+    const [w, d] = footprint(it);
+    return it.x < DOOR.x1 && it.x + w > DOOR.x0 && it.y + d > N - 1;
+  }
+
+  function aimPlacement() {
+    const f = FURN[placing.id];
+    stage.raycaster.setFromCamera(stage.mouse, stage.camera);
+    if (kindOf(placing.id) === 'wall') {
+      const h = stage.raycaster.intersectObjects([room.walls.back.face, room.walls.left.face])[0];
+      if (!h) { placing.x = -1; return; }
+      const local = room.group.worldToLocal(h.point.clone());
+      if (h.object === room.walls.back.face) { placing.r = 0; placing.y = 0; placing.x = Math.max(0, Math.min(N - f.w, Math.round(local.x - f.w / 2))); }
+      else { placing.r = 1; placing.x = 0; placing.y = Math.max(0, Math.min(N - f.w, Math.round(local.z - f.w / 2))); }
+      return;
+    }
+    const p = stage.pointerOnPlane(0);
+    if (!p) { placing.x = -1; return; }
+    const [w, d] = footprint(placing);
+    placing.x = Math.max(0, Math.min(N - w, Math.round(p.x / T - w / 2)));
+    placing.y = Math.max(0, Math.min(N - d, Math.round(p.z / T - d / 2)));
   }
 
   function startPlacing(id, from = -1) {
@@ -360,7 +381,7 @@ export function house(body) {
     placing = null;
     buildGhost();
     commit('place');
-    entries[selected] && (entries[selected].bounce = 0);
+    if (entries[selected]) entries[selected].bounce = 0;
   }
 
   function rotate() {
@@ -374,7 +395,7 @@ export function house(body) {
     const next = { ...it, r: (it.r + 1) % 4 };
     const taken = new Set();
     home.items.forEach((o, i) => { if (i !== selected) cellsOf(o).forEach((c) => taken.add(c)); });
-    if (!fits(next) || cellsOf(next).some((c) => taken.has(c))) { sfx('error'); toast('No room to turn it there.', 'error'); return; }
+    if (!fits(next) || cellsOf(next).some((c) => taken.has(c)) || blocksDoor(next)) { sfx('error'); toast('No room to turn it there.', 'error'); return; }
     home.items[selected] = next;
     commit('rotate');
   }
@@ -389,6 +410,7 @@ export function house(body) {
   /** Apply a local change: rebuild, save (debounced) and refresh the side panel. */
   function commit(sound) {
     if (sound) sfx(sound);
+    if (seated) standUp();
     rebuildItems();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -399,6 +421,10 @@ export function house(body) {
     renderAll();
   }
 
+  const SELECT_OUT = new THREE.MeshBasicMaterial({ color: '#ffd84d', side: THREE.BackSide });
+  SELECT_OUT.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += normalize(normal) * 0.045;');
+  };
   function renderSelection() {
     entries.forEach((e, i) => {
       e.group.traverse((o) => {
@@ -408,138 +434,72 @@ export function house(body) {
       });
     });
   }
-  const SELECT_OUT = new THREE.MeshBasicMaterial({ color: '#ffd84d', side: THREE.BackSide });
-  SELECT_OUT.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += normalize(normal) * 0.045;');
-  };
 
-  // ---- picking -------------------------------------------------------------------
-
-  const ray = new THREE.Raycaster();
-  function pointerRay(e) {
-    const rect = r.canvas.getBoundingClientRect();
-    ray.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), r.camera);
-  }
   function pickItem() {
-    const hit = ray.intersectObjects(r.items.children, true).find((h) => h.object.visible && !h.object.userData.outline && !h.object.isSprite);
+    const hit = stage.pick(room.items.children).find((h) => h.object.visible && !h.object.userData.outline && !h.object.isSprite);
     for (let o = hit?.object; o; o = o.parent) if (o.userData.index != null) return o.userData.index;
     return -1;
   }
-  function aimPlacement() {
-    const f = FURN[placing.id];
-    if (kindOf(placing.id) === 'wall') {
-      const hits = ray.intersectObjects([r.back, r.left]);
-      const h = hits[0];
-      if (!h) { placing.x = -1; return; }
-      if (h.object === r.back) { placing.r = 0; placing.y = 0; placing.x = Math.max(0, Math.min(N - f.w, Math.round(h.point.x - f.w / 2))); }
-      else { placing.r = 1; placing.x = 0; placing.y = Math.max(0, Math.min(N - f.w, Math.round(h.point.z - f.w / 2))); }
-      return;
-    }
-    const p = new THREE.Vector3();
-    if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) { placing.x = -1; return; }
-    const [w, d] = placing.r % 2 ? [f.d, f.w] : [f.w, f.d];
-    placing.x = Math.max(0, Math.min(N - w, Math.round(p.x - w / 2)));
-    placing.y = Math.max(0, Math.min(N - d, Math.round(p.z - d / 2)));
-  }
 
-  function onPointerDown(e) {
-    drag = { x: e.clientX, y: e.clientY, moved: false, button: e.button };
-    try { r.canvas.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
-  }
-  function onPointerMove(e) {
-    if (!home) return;
-    if (drag) {
-      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (!drag.moved && Math.hypot(dx, dy) > 5) drag.moved = true;
-      if (drag.moved) {
-        yaw = Math.max(0.1, Math.min(1.47, yaw - dx * 0.006 * settings.camSens));
-        pitch = Math.max(0.35, Math.min(1.15, pitch + dy * 0.004 * settings.camSens * (settings.invertY ? -1 : 1)));
-        drag.x = e.clientX;
-        drag.y = e.clientY;
-      }
-    }
-    pointerRay(e);
-    if (placing) {
-      aimPlacement();
-      updateGhost();
-    } else {
-      const idx = pickItem();
-      r.canvas.style.cursor = idx >= 0 && (edit || entries[idx]?.use || FURN[entries[idx]?.it.id]?.use) ? 'pointer' : 'grab';
-    }
-  }
-  function onPointerUp(e) {
-    const d = drag;
-    drag = null;
-    if (!d || d.moved || !home) return;
-    pointerRay(e);
+  // ---- input -------------------------------------------------------------------------
+
+  stage.onPointer = (type, e, d) => {
+    if (!edit) { walkPointer?.(type, e, d); return; }
+    if (!home || !mine()) return;
+    if (type === 'move' && placing) { aimPlacement(); updateGhost(); }
+    if (type !== 'up' || !d || d.moved) return;
     if (d.button === 2) { rotate(); return; }
     if (placing) { aimPlacement(); updateGhost(); place(); return; }
     const idx = pickItem();
-    if (edit && mine()) {
-      selected = idx === selected ? -1 : idx;
-      if (idx >= 0) { sfx('pickup', { vol: 0.5 }); entries[idx].bounce = 0; }
-      renderSelection();
-      renderAll();
-      return;
-    }
-    if (idx >= 0) useItem(entries[idx]);
-  }
-  function onWheel(e) {
-    e.preventDefault();
-    dist = Math.max(9, Math.min(24, dist * (1 + e.deltaY * 0.001 * settings.zoomSens)));
-  }
-
-  function useItem(entry) {
-    entry.bounce = 0;
-    entry.use?.();
-    const f = FURN[entry.it.id];
-    if (f?.use) sfx(f.use);
-    if (f?.action === 'wardrobe') {
-      if (mine()) setTimeout(() => window.dispatchEvent(new CustomEvent('fz:open', { detail: 'wardrobe' })), 250);
-      else toast(`That's ${nameOf(viewKey)}'s wardrobe. Use the one in your own house!`);
-    }
-  }
-
-  const onKey = (e) => {
-    if (isTyping() || !home) return;
-    const k = e.key.toLowerCase();
-    if (k === 'escape' && (placing || selected >= 0)) {
-      e.stopPropagation();
-      if (placing) stopPlacing(); else { selected = -1; renderSelection(); renderAll(); }
-    } else if (k === 'r' && mine() && edit) rotate();
-    else if ((k === 'delete' || k === 'backspace') && mine() && edit && selected >= 0) { e.preventDefault(); storeSelected(); }
+    selected = idx === selected ? -1 : idx;
+    if (idx >= 0) { sfx('pickup', { vol: 0.5 }); entries[idx].bounce = 0; }
+    renderSelection();
+    renderAll();
   };
+  stage.onKey = (e, down) => {
+    if (!down) return;
+    const k = e.key.toLowerCase();
+    if (seated && ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) standUp();
+    if (edit && mine()) {
+      if (k === 'r') { stage.keys.delete('r'); if (!e.repeat) rotate(); } // R turns furniture instead of the camera
+      else if ((k === 'delete' || k === 'backspace') && selected >= 0) { e.preventDefault(); storeSelected(); }
+    }
+  };
+  // Escape cancels placing/selection before it would close the house
+  const onEscape = (e) => {
+    if (e.key !== 'Escape' || !(placing || selected >= 0 || sideOpen)) return;
+    e.stopPropagation();
+    if (placing) stopPlacing();
+    else if (selected >= 0) { selected = -1; renderSelection(); renderAll(); }
+    else { sideOpen = false; if (edit) setEdit(false); renderAll(); }
+  };
+  window.addEventListener('keydown', onEscape, true);
 
-  r.canvas.addEventListener('pointerdown', onPointerDown);
-  r.canvas.addEventListener('pointermove', onPointerMove);
-  r.canvas.addEventListener('pointerup', onPointerUp);
-  r.canvas.addEventListener('wheel', onWheel, { passive: false });
-  const noMenu = (e) => e.preventDefault();
-  r.canvas.addEventListener('contextmenu', noMenu);
-  window.addEventListener('keydown', onKey, true); // capture: Escape cancels placing before it closes the panel
-
-  // ---- side panel -------------------------------------------------------------------
+  // ---- HUD ------------------------------------------------------------------------------
 
   function renderAll() {
     renderHeader();
-    renderTabs();
-    renderPanel();
+    side.classList.toggle('hidden', !sideOpen);
+    if (sideOpen) { renderTabs(); renderPanel(); }
     hint.innerHTML = !home ? 'Knocking on the door…'
-      : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point at either wall' : ''}`
-        : edit && mine() ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
-          : 'Click furniture to use it! Drag to look around, scroll to zoom.';
+      : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point at the back or left wall' : ''}`
+        : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
+          : 'Walk around with <kbd>WASD</kbd> · <kbd>E</kbd> uses furniture (sit on chairs!) · head to the front door to leave';
   }
 
   function renderHeader() {
     const p = S.players[viewKey];
-    title.innerHTML = `${iconSvg('house')} ${mine() ? 'My House' : `${esc(p?.name ?? '?')}'s House`}`;
+    const name = mine() ? 'My House' : `${esc(p?.name ?? '?')}'s House`;
+    titleEl.innerHTML = `${iconSvg('house')} ${name}`;
+    stage.title.innerHTML = `${iconSvg('house')} ${name}`;
     const likes = home?.likes ?? [];
     const liked = likes.includes(S.me);
     actions.innerHTML = [
       `<span class="pill">❤️ ${likes.length}</span>`,
       !mine() ? `<button class="btn small ${liked ? '' : 'primary'}" data-like ${liked ? 'disabled' : ''}>${liked ? '❤️ Liked' : '🤍 Like'}</button>` : '',
-      mine() ? '<button class="btn small" data-wardrobe>🪞 Wardrobe</button>' : '',
-      mine() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : '✏️ Decorate'}</button>` : '<button class="btn small" data-home>🏡 My house</button>',
+      mine() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : '✏️ Decorate'}</button>` : '',
+      `<button class="btn small ${sideOpen && tab === 'visit' ? 'primary' : ''}" data-visits>🏘️ Visit</button>`,
+      !mine() ? '<button class="btn small" data-home>🏡 My house</button>' : '',
     ].join('');
   }
 
@@ -550,6 +510,7 @@ export function house(body) {
   }
 
   function renderPanel() {
+    if (!sideOpen) return;
     if (tab === 'visit') return renderVisit();
     if (tab === 'items') return renderItems();
     if (tab === 'shop') return renderShop();
@@ -558,12 +519,13 @@ export function house(body) {
 
   function renderVisit() {
     const list = Object.values(S.players).sort((a, b) => (b.key === S.me) - (a.key === S.me) || (b.house?.likes ?? 0) - (a.house?.likes ?? 0) || a.name.localeCompare(b.name));
+    const here = (k) => Object.values(S.players).filter((p) => p.online && p.scene === `house:${k}`).length;
     panel.innerHTML = `<div class="visit-list">${list.map((p) => `
       <button class="visit-row ${p.key === viewKey ? 'on' : ''}" data-visit="${esc(p.key)}">
         <span class="vav"></span>
         <span class="vname"><b>${esc(p.name)}${p.key === S.me ? ' <small>(you)</small>' : ''}</b>
-          <small>🛋️ ${p.house?.n ?? 0} · ❤️ ${p.house?.likes ?? 0}${p.online ? ' · <span class="win">online</span>' : ''}</small></span>
-        <span class="vgo">${p.key === viewKey ? 'Here' : 'Visit →'}</span>
+          <small>🛋️ ${p.house?.n ?? 0} · ❤️ ${p.house?.likes ?? 0}${here(p.key) ? ` · <span class="win">${here(p.key)} inside</span>` : ''}</small></span>
+        <span class="vgo">${p.key === viewKey ? 'Here' : 'Go →'}</span>
       </button>`).join('')}</div>`;
     panel.querySelectorAll('[data-visit]').forEach((el) => portraitInto(el.querySelector('.vav'), S.players[el.dataset.visit]?.look, 40, 40, { zoom: 'head' }));
   }
@@ -579,7 +541,7 @@ export function house(body) {
       ${sel ? `<div class="sel-box"><span class="sel-em">${FURN[sel.id].emoji}</span><b>${esc(FURN[sel.id].name)}</b>
         <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''}>⟳ Rotate</button>
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div></div>` : ''}
-      <p class="muted small">${edit ? 'Pick something to place it:' : 'Press ✏️ Decorate to move things around.'}</p>
+      <p class="muted small">Pick something to place it:</p>
       <div class="furni-grid">${ownedList.map((f) => {
         const left = owned(f.id) - placedCount(f.id);
         return `<button class="furni ${left ? '' : 'used'}" data-place="${f.id}" ${left ? '' : 'disabled'} title="${esc(f.name)}">
@@ -622,26 +584,27 @@ export function house(body) {
       <div class="wd-label">Wallpaper</div><div class="style-grid">${pick(CATALOG.walls, 'wall')}</div>`;
   }
 
-  body.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-wardrobe]');
+  stage.hud.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style]');
     if (!t) return;
     const ds = t.dataset;
-    if (ds.wardrobe != null) {
-      window.dispatchEvent(new CustomEvent('fz:open', { detail: 'wardrobe' }));
-    } else if (ds.tab) {
+    if (ds.tab) {
       tab = ds.tab;
       confirmBuy = null;
       if (tab !== 'visit' && mine() && !edit) setEdit(true);
+      renderAll();
+    } else if (ds.visits != null) {
+      sideOpen = !(sideOpen && tab === 'visit');
+      tab = 'visit';
       renderAll();
     } else if (ds.visit) {
       if (ds.visit !== viewKey) visit(ds.visit);
     } else if (ds.like != null) {
       net.send('house_like', { k: viewKey });
       sfx('like');
-      walkers[0]?.char.emote('heart');
+      walker.me.char.emote('heart');
     } else if (ds.edit != null) {
       setEdit(!edit);
-      if (edit) tab = 'items';
       renderAll();
     } else if (ds.home != null) {
       visit(S.me);
@@ -665,11 +628,18 @@ export function house(body) {
   });
 
   function setEdit(on) {
-    edit = on;
-    r.grid.visible = on;
-    if (!on) { if (placing) stopPlacing(); selected = -1; renderSelection(); }
+    edit = on && mine();
+    room.grid.visible = edit;
+    if (edit) { sideOpen = true; if (tab === 'visit') tab = 'items'; if (seated) standUp(); }
+    else {
+      if (placing) stopPlacing();
+      selected = -1;
+      renderSelection();
+      if (tab !== 'visit') sideOpen = false;
+    }
   }
 
+  /** Walk into someone's house (your own included). */
   function visit(k) {
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -677,25 +647,31 @@ export function house(body) {
       if (home && mine()) net.send('house_save', payload());
     }
     if (placing) stopPlacing();
+    if (seated) standUp();
     setEdit(false);
     viewKey = k;
     home = null;
     selected = -1;
     echoes = 0;
-    tab = 'visit';
-    clearGroup(r.items);
-    clearGroup(r.people);
-    walkers.length = 0;
+    while (room.items.children.length) room.items.remove(room.items.children[0]);
+    stage.interactables = stage.interactables.filter((i) => !i.house);
+    solids.length = 0;
+    Object.assign(walker.me, { x: W / 2, z: W - 1.2, heading: Math.PI });
+    net.send('scene', { scene: `house:${k}` });
     net.send('house_get', { k });
     sfx('knock');
+    if (k !== S.me) stage.banner(`<div class="big">🏠 ${esc(nameOf(k))}'s House</div>Make yourself at home!`, 2200);
     renderAll();
   }
 
+  // leave through the front door
+  stage.interactable({ x: W / 2, z: W - 0.6, r: 1.6, label: 'go back outside', use: () => stage.onExit?.() });
+
   // ---- network ------------------------------------------------------------------------
 
-  const off = listen({
-    house: (m) => {
-      if (m.k !== viewKey) { if (tab === 'visit') renderVisit(); return; }
+  const off = [
+    net.on('house', (m) => {
+      if (m.k !== viewKey) { if (sideOpen && tab === 'visit') renderVisit(); return; }
       if (m.k === S.me && home) {
         if (echoes > 0) echoes -= 1;
         if (echoes > 0 || saveTimer) { home.likes = m.house.likes; renderHeader(); return; }
@@ -705,47 +681,50 @@ export function house(body) {
       const newLikes = home && m.house.likes.length > home.likes.length;
       if (same) home.likes = m.house.likes;
       else {
+        if (seated) standUp();
         home = { ...m.house, items: m.house.items.map((it) => ({ ...it })) };
         rebuildItems();
+        if (!fresh && !mine()) sfx('pop', { vol: 0.4 }); // the owner is redecorating while you watch
       }
-      if (fresh) setupWalkers();
-      if (newLikes) { walkers[0]?.char.emote('heart'); if (m.k === S.me) sfx('like'); }
+      if (newLikes) { stage.people.get(m.k)?.char.emote('heart'); if (m.k === S.me) sfx('like'); }
       renderAll();
-    },
-    house_bought: (m) => {
+    }),
+    net.on('house_bought', (m) => {
       sfx('buy');
       const item = FURN[m.id] ?? [...CATALOG.floors, ...CATALOG.walls].find((d) => d.id === m.id);
       toast(`🛒 Bought ${item?.name ?? 'it'}!${FURN[m.id] ? ' Find it in 🛋️ Items.' : ' Pick it in 🎨 Style.'}`);
-    },
-    player: (m) => {
+    }),
+    net.on('player', (m) => {
+      if (!sideOpen) return;
       if (tab === 'visit') renderVisit();
       else if (m.p.key === S.me) renderPanel();
-    },
-    error: (m) => {
+    }),
+    net.on('error', (m) => {
       if (m.for === 'house_buy') { confirmBuy = null; renderPanel(); }
-    },
-  });
+    }),
+  ];
 
-  // ---- render loop ----------------------------------------------------------------------
+  // ---- per frame --------------------------------------------------------------------
 
-  const resize = () => {
-    const w = view.clientWidth, h = Math.round(w * 0.62);
-    if (!w) return;
-    r.renderer.setSize(w, h, false);
-    r.canvas.style.height = `${h}px`;
-    r.camera.aspect = w / h;
-    r.camera.updateProjectionMatrix();
-  };
-  const ro = new ResizeObserver(resize);
-  ro.observe(view);
-  resize();
-
-  const center = new THREE.Vector3(N / 2, 0.8, N / 2);
-  const stop = loop((dt, now) => {
+  const center = new THREE.Vector3(W / 2, 0, W / 2);
+  stage.onFrame((dt, now) => {
     const t = now / 1000;
-    const cp = Math.cos(pitch);
-    r.camera.position.set(center.x + Math.sin(yaw) * cp * dist, center.y + Math.sin(pitch) * dist, center.z + Math.cos(yaw) * cp * dist);
-    r.camera.lookAt(center);
+    const p = walker.me;
+    if (seated) {
+      // hold the seat (the walker can't move us out of the furniture)
+      const it = seated.it;
+      const [w, d] = footprint(it);
+      p.x = (it.x + w / 2) * T;
+      p.z = (it.y + d / 2) * T;
+      p.heading = it.r * (Math.PI / 2);
+      p.moving = false;
+    }
+    if (edit) {
+      // decorating: pull the camera up for an overview of the whole room
+      orbit.target.copy(center);
+      orbit.dist += (19 - orbit.dist) * Math.min(1, dt * 4);
+      orbit.pitch += (0.95 - orbit.pitch) * Math.min(1, dt * 4);
+    } else if (orbit.dist > 15) orbit.dist += (11 - orbit.dist) * Math.min(1, dt * 3);
     for (const e of entries) {
       e.A.anim = e.A.anim.filter((fn) => !fn(t, dt));
       if (e.bounce < 1) {
@@ -755,28 +734,22 @@ export function house(body) {
       }
     }
     if (ghost?.visible) ghost.position.y = (kindOf(placing.id) === 'wall' ? WALL_Y : 0) + Math.sin(t * 6) * 0.03;
-    updateWalkers(dt, t);
-    r.renderer.render(r.scene, r.camera);
+    // hide the walls between the camera and the room
+    const c = stage.camera.position;
+    room.walls.front.grp.visible = c.z < W - 0.2;
+    room.walls.back.grp.visible = c.z > 0.2;
+    room.walls.left.grp.visible = c.x > 0.2;
+    room.walls.right.grp.visible = c.x < W - 0.2;
   });
 
   visit(S.me);
+  renderAll();
   return () => {
-    stop();
-    off();
-    ro.disconnect();
+    walker.stop();
+    off.forEach((f) => f());
+    window.removeEventListener('keydown', onEscape, true);
     if (saveTimer && home && mine()) net.send('house_save', payload()); // flush a pending save
     clearTimeout(saveTimer);
-    window.removeEventListener('keydown', onKey, true);
-    r.canvas.removeEventListener('pointerdown', onPointerDown);
-    r.canvas.removeEventListener('pointermove', onPointerMove);
-    r.canvas.removeEventListener('pointerup', onPointerUp);
-    r.canvas.removeEventListener('wheel', onWheel);
-    r.canvas.removeEventListener('contextmenu', noMenu);
-    if (ghost) r.scene.remove(ghost);
-    r.marker.visible = false;
-    r.grid.visible = false;
-    clearGroup(r.items);
-    clearGroup(r.people);
-    r.canvas.remove();
+    stage.scene?.remove(room.group);
   };
 }

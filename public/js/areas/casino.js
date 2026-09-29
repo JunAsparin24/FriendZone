@@ -1,6 +1,6 @@
 // The casino floor: walk around with everyone else in the casino and step up to a machine to play.
-// Slots line the left wall, the prize wheel hangs on the right, the coin-flip table is by the door
-// and the shared roulette table (with a real spinning 3D wheel) sits in the middle.
+// Slots line the left wall, the prize wheel hangs on the right, the coin-flip and blackjack tables are
+// by the door and the shared roulette table (with a real spinning 3D wheel) sits in the middle.
 import * as THREE from 'three';
 import { net } from '../net.js';
 import { toon, shiny, basic, canvasTexture, additive, glowTexture, outlineMaterial, TAU } from '../three/materials.js';
@@ -259,6 +259,26 @@ function buildRoom() {
   anim.push((t) => { coin.rotation.z = t * 3; coin.position.y = 2.1 + Math.sin(t * 2) * 0.15; });
   machines.push({ game: 'coinflip', obj: ct, x: 8, z: 5.5, r: 2.4, label: 'flip a coin', icon: 'trading', solid: { x: 8, z: 5.5, r: 1.2 } });
 
+  // the blackjack table: a half-moon of green felt with the dealer behind it
+  const bjt = new THREE.Group();
+  const halfMoon = (r, h) => new THREE.CylinderGeometry(r, r, h, 40, 1, false, -Math.PI / 2, Math.PI); // round side towards the players
+  add(bjt, halfMoon(2.1, 0.85), toon('#5a3a1c'), { p: [0, 0.43, 0], outline: true });
+  add(bjt, halfMoon(2.2, 0.1), trim, { p: [0, 0.9, 0] });
+  add(bjt, halfMoon(2.0, 0.04), toon('#1f7a47'), { p: [0, 0.97, 0] });
+  add(bjt, new THREE.BoxGeometry(4.4, 0.95, 0.4), toon('#3a2410'), { p: [0, 0.47, -0.1] });
+  // a dealt hand, a shoe and chip stacks on the felt
+  const cardMat = toon('#fffdf6'), backMat = toon('#b3203a');
+  [[-0.9, 0.9, 0.2], [-0.5, 1.0, -0.15], [0.6, 1.1, 0.1], [1.0, 0.95, -0.2], [0.1, 0.45, 0.05], [0.4, 0.45, -0.1]].forEach(([x, z, r], i) => {
+    add(bjt, new THREE.BoxGeometry(0.32, 0.015, 0.45), i === 5 ? backMat : cardMat, { p: [x, 1.0, z], r: [0, r, 0], cast: false });
+  });
+  add(bjt, new THREE.BoxGeometry(0.5, 0.3, 0.7), toon('#23263f'), { p: [1.5, 1.1, 0.2], r: [0, -0.4, 0] });
+  ['#e0463c', '#39c6ff', '#1d1b2e', '#6ee7a0'].forEach((c, i) => {
+    for (let k = 0; k < 3 + i; k++) add(bjt, new THREE.CylinderGeometry(0.13, 0.13, 0.05, 16), toon(c), { p: [-1.4 + i * 0.28, 1.02 + k * 0.05, 0.25], cast: false });
+  });
+  bjt.position.set(-6, 0, 4.2);
+  g.add(bjt);
+  machines.push({ game: 'blackjack', obj: bjt, x: -6, z: 6.4, r: 2.2, label: 'play blackjack', icon: 'casino', solid: { x: -6, z: 5, w: 4.4, d: 2 } });
+
   // the roulette table
   const rt = new THREE.Group();
   add(rt, new THREE.BoxGeometry(6.4, 0.9, 3.4), toon('#5a3a1c'), { p: [0, 0.45, 0], outline: true });
@@ -310,7 +330,10 @@ function buildRoom() {
   const barkeep = new Character({ skin: '#8d5524', hairColor: '#e8e8e8', topColor: '#ffffff', bottomColor: '#23263f', hair: 'hair_curly', top: 'top_suit', hat: 'hat_none', face: 'face_mustache', back: 'back_none', aura: 'aura_none' });
   barkeep.root.position.set(8.5, 0, -RD / 2 + 0.6);
   g.add(barkeep.root);
-  anim.push((t, dt) => { dealer.update(dt, t, false); barkeep.update(dt, t + 2, false); });
+  const cardDealer = new Character({ skin: '#f6c9a0', hairColor: '#e84393', topColor: '#23263f', bottomColor: '#23263f', hair: 'hair_bob', top: 'top_suit', eyes: 'eyes_lashes' });
+  cardDealer.root.position.set(-6, 0, 3.6);
+  g.add(cardDealer.root);
+  anim.push((t, dt) => { dealer.update(dt, t, false); barkeep.update(dt, t + 2, false); cardDealer.update(dt, t + 4, false); });
 
   const solids = [
     ...machines.map((m) => m.solid),
@@ -318,6 +341,7 @@ function buildRoom() {
     ...[[-7, -RD / 2 + 0.6], [7, -RD / 2 + 0.6], [-7, RD / 2 - 0.6], [7, RD / 2 - 0.6]].map(([x, z]) => ({ x, z, r: 0.5 })),
     ...[[-12.5, 9.5], [12.5, 9.5], [-12.5, -9.5]].map(([x, z]) => ({ x, z, r: 0.6 })),
     { x: 0, z: -6.8, r: 0.6 },
+    { x: -6, z: 3.6, r: 0.6 },
   ];
   return { group: g, walls, machines, solids, anim, wheel, ball, glows };
 }

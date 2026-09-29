@@ -568,6 +568,16 @@ export const FURNITURE = {
     }
     return { use: () => floatEmoji(g, A, '🐉', 1.5, 2) };
   },
+  trophy_lich(g, A) {
+    pedestal(g);
+    const robe = toon('#3a2a5c'), bone = toon('#f1ead8');
+    add(g, cone(0.22, 0.5, 10), robe, { p: [0, 0.83, 0] });
+    add(g, sph(0.13, 16, 12), bone, { p: [0, 1.14, 0], s: [1, 1.05, 1] });
+    for (const s of [-1, 1]) add(g, sph(0.035, 8, 6), basic('#8dff9a'), { p: [s * 0.05, 1.15, 0.11], outline: false });
+    add(g, cyl(0.012, 0.012, 0.6, 6), toon('#6b4a2b'), { p: [0.2, 0.9, 0.05], outline: false });
+    add(g, sph(0.05, 10, 8), basic('#8dff9a'), { p: [0.2, 1.22, 0.05], outline: false });
+    return { use: () => floatEmoji(g, A, '💀', 1.5, 3) };
+  },
 };
 
 /** Build a piece of furniture. Returns { group, use, anim }. */

@@ -48,9 +48,10 @@ export function renderPortrait(look, w, h, { zoom = 'body', yaw = 0.45, pose = '
   size(w, h);
   persp.aspect = w / h;
   if (zoom === 'head') {
+    const dy = char.rig.head.position.y - 1.52; // tiny and tall characters keep their face in frame
     persp.fov = 24;
-    persp.position.set(0, 1.62, 3.4);
-    persp.lookAt(0, 1.55, 0);
+    persp.position.set(0, 1.62 + dy, 3.4);
+    persp.lookAt(0, 1.55 + dy, 0);
   } else {
     persp.fov = 24;
     const dist = Math.max(5.4, 5.4 / Math.min(1, persp.aspect * 1.25));

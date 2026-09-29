@@ -14,6 +14,7 @@ export const DEFAULTS = {
   quality: 'high',  // 'low' | 'medium' | 'high'
   shake: true,      // screen shake in the action games
   names: true,      // name tags over players in the world
+  dayNight: true,   // the world goes through day and night (off: always daytime)
   nowPlaying: true, // pop up the song name when the music changes
 };
 

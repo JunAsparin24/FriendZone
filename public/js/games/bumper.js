@@ -1,6 +1,7 @@
 // Bumper Brawl (3D): bumper cars on a shrinking ice rink in the middle of a lake. Knock everyone
 // else into the water, be the last one standing. Each player simulates their own car (so bumps
-// feel instant) and the server runs the rounds. WASD/arrows drive, Space/Shift boosts.
+// feel instant) and the server runs the rounds. W/S = gas and brake/reverse, A/D steer, Space/Shift boosts.
+// Cars build up speed and slide on the ice; getting hit stuns you, spins you and knocks you away.
 // Game logic runs in rink pixels (900 x 600, centre 450,300); 20 px = 1 world unit.
 import * as THREE from 'three';
 import { net } from '../net.js';
@@ -13,8 +14,10 @@ import { listen, confetti } from './util.js';
 const CX = 450, CY = 300, K = 20;
 const R0 = 270, R1 = 95;              // rink radius (px) at the start / at the end of the shrink
 const CAR = 26;                        // car radius (px)
-const ACCEL = 820, MAX_SPEED = 360, FRICTION = 0.85, BOUNCE = 1.9;
-const BOOST = 560, BOOST_CD = 1.6, BOOST_T = 0.25;
+const ACCEL = 300, BRAKE = 650, REVERSE = 220, MAX_SPEED = 330, MAX_REV = 150;
+const STEER = 3.1;                     // rad/s at speed
+const GRIP = 4.5, STUN_GRIP = 0.5;     // how fast sideways sliding dies out (ice!)
+const BOOST = 440, BOOST_CD = 1.6, BOOST_T = 0.3;
 const to3 = (x, y) => [(x - CX) / K, (y - CY) / K];
 const OUT = outlineMaterial(0.04);
 
@@ -143,7 +146,7 @@ export function bumper(stage) {
     <div class="hud-panel bumper-status"></div>
     <div class="hud-panel arena-bottom"><div class="meter"><i></i><span>BOOST</span></div></div>
     <div class="bumper-count hidden"></div>
-    <p class="hud-panel arena-help">Drive with <kbd>WASD</kbd>/arrows · <kbd>Space</kbd>/<kbd>Shift</kbd> to boost-ram · knock everyone off the ice before it melts. Last car standing wins 120 🪙!</p>`;
+    <p class="hud-panel arena-help"><kbd>W</kbd> gas · <kbd>S</kbd> brake/reverse · <kbd>A</kbd>/<kbd>D</kbd> steer · <kbd>Space</kbd>/<kbd>Shift</kbd> boost-ram · knock everyone off the ice before it melts. Last car standing wins 120 🪙!</p>`;
   const winsEl = stage.hud.querySelector('.bumper-wins'), statusEl = stage.hud.querySelector('.bumper-status');
   const meterEl = stage.hud.querySelector('.meter'), countEl = stage.hud.querySelector('.bumper-count');
 
@@ -164,7 +167,7 @@ export function bumper(stage) {
       p.char.pose = 'sit';
       p.smooth = false;
       p.labelLift = 0.6;
-      cars.set(k, { x: CX, y: CY, vx: 0, vy: 0, tx: CX, ty: CY, fall: 0, dash: false, face: 0, mesh, p });
+      cars.set(k, { x: CX, y: CY, vx: 0, vy: 0, tx: CX, ty: CY, fall: 0, dash: false, face: 0, th: null, spin: 0, stun: 0, mesh, p });
     }
     return cars.get(k);
   };
@@ -183,7 +186,7 @@ export function bumper(stage) {
       .map((k) => `<span style="--c:${colorOf(k)}"><i class="dot"></i>${esc(nameOf(k))} <b>${wins[k] ?? 0}</b>🏆</span>`).join('');
   }
   function place(k, x, y) {
-    Object.assign(car(k), { x, y, tx: x, ty: y, vx: 0, vy: 0, fall: 0 });
+    Object.assign(car(k), { x, y, tx: x, ty: y, vx: 0, vy: 0, fall: 0, spin: 0, stun: 0, face: Math.atan2(CX - x, CY - y) });
   }
   const burstAt = (x, y, color, n = 14, speed = 5, h = 0.8) => { const [X, Z] = to3(x, y); sparks.burst(X, h, Z, color, { n, speed }); };
 
@@ -192,22 +195,17 @@ export function bumper(stage) {
     const k = e.key.toLowerCase();
     if (down && (k === ' ' || k === 'shift') && !e.repeat) boost();
   };
-  function inputDir() {
+  /** { gas: -1..1, steer: -1 (left) .. 1 (right) } */
+  function controls() {
     const keys = stage.keys;
-    let dx = 0, dy = 0;
-    if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
-    if (keys.has('d') || keys.has('arrowright')) dx += 1;
-    if (keys.has('w') || keys.has('arrowup')) dy -= 1;
-    if (keys.has('s') || keys.has('arrowdown')) dy += 1;
-    const len = Math.hypot(dx, dy);
-    return len ? { dx: dx / len, dy: dy / len } : null;
+    const gas = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0);
+    const steer = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
+    return { gas, steer };
   }
   function boost() {
-    if (!(playing() || practicing()) || boostCd > 0) return;
-    const sp = Math.hypot(me.vx, me.vy);
-    const dir = inputDir() ?? (sp > 20 ? { dx: me.vx / sp, dy: me.vy / sp } : { dx: Math.sin(me.face), dy: Math.cos(me.face) });
-    me.vx += dir.dx * BOOST;
-    me.vy += dir.dy * BOOST;
+    if (!(playing() || practicing()) || boostCd > 0 || me.stun > 0.15) return;
+    me.vx += Math.sin(me.face) * BOOST;
+    me.vy += Math.cos(me.face) * BOOST;
     boostCd = BOOST_CD;
     boostT = BOOST_T;
     sfx('boost');
@@ -250,6 +248,7 @@ export function bumper(stage) {
       const c = car(m.k);
       if (c.fall) return;
       c.tx = m.x; c.ty = m.y; c.vx = m.vx; c.vy = m.vy; c.dash = m.d;
+      if (typeof m.h === 'number') c.th = m.h;
     },
     bumper_out: (m) => {
       alive.delete(m.k);
@@ -279,14 +278,30 @@ export function bumper(stage) {
     boostT = Math.max(0, boostT - dt);
     const R = radius(now);
     if (me && (playing() || practicing())) {
-      const dir = inputDir();
-      if (dir) { me.vx += dir.dx * ACCEL * dt; me.vy += dir.dy * ACCEL * dt; }
-      const sp = Math.hypot(me.vx, me.vy);
+      // car-style driving: speed builds along the car's heading, sideways motion slides out on the ice
+      const { gas, steer } = controls();
+      me.stun = Math.max(0, me.stun - dt);
+      const stunned = me.stun > 0;
+      const fx = Math.sin(me.face), fy = Math.cos(me.face);
+      let fwd = me.vx * fx + me.vy * fy;
+      let lx = me.vx - fx * fwd, ly = me.vy - fy * fwd;
+      if (!stunned) {
+        if (gas > 0) fwd += ACCEL * dt;
+        else if (gas < 0) fwd -= (fwd > 20 ? BRAKE : REVERSE) * dt;
+        const turn = STEER * (0.3 + 0.7 * Math.min(1, Math.abs(fwd) / 140)) * (fwd < -10 ? -1 : 1);
+        me.face -= steer * turn * dt;
+      }
+      fwd *= Math.exp(-(gas && !stunned ? 0.25 : 1.1) * dt);
       const cap = boostT > 0 ? MAX_SPEED + BOOST : MAX_SPEED;
-      if (sp > cap) { me.vx *= cap / sp; me.vy *= cap / sp; }
-      const f = Math.exp(-FRICTION * dt);
-      me.vx *= f;
-      me.vy *= f;
+      if (fwd > cap) fwd += (cap - fwd) * Math.min(1, dt * 4); // boosts wear off smoothly
+      if (fwd < -MAX_REV) fwd = -MAX_REV;
+      const slide = Math.exp(-(stunned ? STUN_GRIP : GRIP) * dt);
+      lx *= slide;
+      ly *= slide;
+      me.vx = fx * fwd + lx;
+      me.vy = fy * fwd + ly;
+      me.face += me.spin * dt;
+      me.spin *= Math.exp(-2.5 * dt);
       me.x += me.vx * dt;
       me.y += me.vy * dt;
       // bumping into other cars: each client resolves its own side of the collision
@@ -299,16 +314,21 @@ export function bumper(stage) {
         me.y += ny * (CAR * 2 - d) * 0.5;
         const rel = (me.vx - o.vx) * nx + (me.vy - o.vy) * ny;
         if (rel < 0) {
-          const j = (-BOUNCE * rel) / 2 * (o.dash ? 1.5 : 1) + 50;
+          // n points from them to me: how hard *they* drove into me counts extra, so getting rammed sends you flying
+          const theirs = Math.max(0, o.vx * nx + o.vy * ny);
+          const j = (-rel * 1.15 + theirs * 0.9 + 70) * (o.dash ? 1.6 : 1);
           me.vx += nx * j;
           me.vy += ny * j;
-          const power = Math.min(1, -rel / 500);
+          const power = Math.min(1, j / 650);
+          me.stun = Math.max(me.stun, 0.25 + power * 0.6);
+          const side = Math.sign(Math.sin(me.face) * ny - Math.cos(me.face) * nx) || 1;
+          me.spin += side * (2 + power * 9);
           sfx('bonk', { power });
-          burstAt(me.x - nx * CAR, me.y - ny * CAR, '#fff6b0', 8 + Math.round(power * 10), 3 + power * 5, 0.9);
-          if (power > 0.35) {
-            stage.shake(0.35 * power);
+          burstAt(me.x - nx * CAR, me.y - ny * CAR, '#fff6b0', 10 + Math.round(power * 16), 3 + power * 7, 0.9);
+          stage.shake(0.15 + 0.5 * power);
+          if (power > 0.25) {
             const [X, Z] = to3(me.x - nx * CAR, me.y - ny * CAR);
-            texts.add('BONK!', X, 2.5, Z, '#ffd84d', 0.7 + power * 0.4);
+            texts.add(power > 0.7 ? 'KA-BOOM!' : 'BONK!', X, 2.5, Z, power > 0.7 ? '#ff5d73' : '#ffd84d', 0.7 + power * 0.6);
           }
           lastHit = { k, at: now };
         }
@@ -319,7 +339,7 @@ export function bumper(stage) {
       }
       if (now - lastSend > 50) {
         lastSend = now;
-        net.send('bumper_move', { x: me.x, y: me.y, vx: me.vx, vy: me.vy, d: boostT > 0 });
+        net.send('bumper_move', { x: me.x, y: me.y, vx: me.vx, vy: me.vy, d: boostT > 0, h: me.face });
       }
     }
 
@@ -337,11 +357,15 @@ export function bumper(stage) {
       const [X, Z] = to3(c.x, c.y);
       const sink = c.fall ? Math.min(1, c.fall / 0.7) : 0;
       const sp = Math.hypot(c.vx, c.vy);
-      if (sp > 30) c.face += Math.atan2(Math.sin(Math.atan2(c.vx, c.vy) - c.face), Math.cos(Math.atan2(c.vx, c.vy) - c.face)) * Math.min(1, dt * 8);
+      if (k !== S.me) {
+        const goal = c.th ?? (sp > 30 ? Math.atan2(c.vx, c.vy) : c.face);
+        c.face += Math.atan2(Math.sin(goal - c.face), Math.cos(goal - c.face)) * Math.min(1, dt * 12);
+      }
       const y = 0.5 - sink * 2.5;
       c.mesh.visible = !hidden && c.fall < 1.2;
       c.mesh.position.set(X, y, Z);
-      c.mesh.rotation.set(sink * 0.8, c.face, Math.sin(now / 120 + X) * 0.03 * Math.min(1, sp / 200));
+      const wobble = k === S.me ? me.stun * 0.25 : 0;
+      c.mesh.rotation.set(sink * 0.8 + Math.sin(now / 45) * wobble, c.face, Math.sin(now / 120 + X) * 0.03 * Math.min(1, sp / 200) + Math.cos(now / 38) * wobble);
       c.p.x = X;
       c.p.y = y + 0.35;
       c.p.z = Z;

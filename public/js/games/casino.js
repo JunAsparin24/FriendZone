@@ -1,5 +1,5 @@
-// Casino games: slots with real spinning reels, a prize wheel, a 3D coin flip and the shared
-// roulette table. Inside the casino each machine opens just its own game (options.game).
+// Casino games: slots with real spinning reels, a prize wheel, a 3D coin flip, blackjack against the
+// house dealer and the shared roulette table. Inside the casino each machine opens just its own game (options.game).
 import { net } from '../net.js';
 import { roulette } from './roulette.js';
 import { iconSvg } from '../icons.js';
@@ -13,12 +13,20 @@ const WHEEL = [0, 1.5, 0, 2, 0, 0.5, 0, 2, 0, 1.5, 0, 0.5, 0, 2, 0, 5]; // must 
 const WHEEL_COLORS = { 0: '#2b2f4a', 0.5: '#6b7194', 1.5: '#39c6ff', 2: '#6ee7a0', 5: '#ffc53d' };
 const rand = () => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
 
-const TITLES = { slots: 'Lucky Slots', wheel: 'Prize Wheel', coinflip: 'Coin Flip', roulette: 'Roulette' };
+const TITLES = { slots: 'Lucky Slots', wheel: 'Prize Wheel', coinflip: 'Coin Flip', blackjack: 'Blackjack', roulette: 'Roulette' };
+const BJ_RESULTS = {
+  blackjack: ['🃏 BLACKJACK! Pays 3 to 2', 'win'], win: ['You win!', 'win'], dealer_bust: ['Dealer busts, you win!', 'win'],
+  push: ['Push: your bet comes back.', ''], lose: ['Dealer wins.', 'lose'], bust: ['Bust! Over 21.', 'lose'], dealer_bj: ['Dealer has blackjack.', 'lose'],
+};
+const RED = new Set(['♥', '♦']);
+const cardHtml = ([rank, suit], i) => (rank === '?'
+  ? `<div class="bj-card back" style="--i:${i}"></div>`
+  : `<div class="bj-card ${RED.has(suit) ? 'red' : ''}" style="--i:${i}"><b>${rank}</b><i>${suit}</i><span>${suit}</span></div>`);
 
 export function casino(body, { game = null } = {}) {
   body.innerHTML = `
     <h2>${iconSvg(game === 'roulette' ? 'roulette' : 'casino')} ${game ? TITLES[game] : 'Casino'}</h2>
-    <div class="tabs ${game ? 'hidden' : ''}"><button class="on" data-tab="slots">🎰 Slots</button><button data-tab="wheel">🎡 Wheel</button><button data-tab="coinflip">🪙 Coin flip</button><button data-tab="roulette">🎡 Roulette</button></div>
+    <div class="tabs ${game ? 'hidden' : ''}"><button class="on" data-tab="slots">🎰 Slots</button><button data-tab="wheel">🎡 Wheel</button><button data-tab="coinflip">🪙 Coin flip</button><button data-tab="blackjack">🃏 Blackjack</button><button data-tab="roulette">🎡 Roulette</button></div>
     <div class="bet-row">
       <label>Bet <input type="number" min="1" value="50" class="bet"></label>
       <div class="chips"><button data-b="10">10</button><button data-b="50">50</button><button data-b="100">100</button><button data-b="half">½</button><button data-b="max">Max</button></div>
@@ -42,6 +50,19 @@ export function casino(body, { game = null } = {}) {
         <div class="coin-stage"><div class="coin3d"><div class="face heads">👑</div><div class="face tails">🦅</div></div></div>
         <div class="row center"><button class="btn" data-pick="heads">👑 Heads</button><button class="btn" data-pick="tails">🦅 Tails</button></div>
         <p class="muted small center">Double or nothing.</p>
+      </div>
+      <div data-pane="blackjack" class="hidden">
+        <div class="bj-table">
+          <div class="bj-row"><div class="bj-label">Dealer <em class="bj-dv"></em></div><div class="bj-hand bj-dealer"></div></div>
+          <div class="bj-row"><div class="bj-label">You <em class="bj-pv"></em></div><div class="bj-hand bj-player"></div></div>
+        </div>
+        <div class="row center bj-actions">
+          <button class="btn primary" id="bjDeal">Deal</button>
+          <button class="btn hidden" id="bjHit">Hit</button>
+          <button class="btn hidden" id="bjStand">Stand</button>
+          <button class="btn hidden" id="bjDouble">Double</button>
+        </div>
+        <p class="muted small center">Get closer to 21 than the dealer without going over. Dealer stands on 17. Blackjack pays 3 to 2.</p>
       </div>
       <div data-pane="roulette" class="hidden"></div>
     </div>
@@ -190,6 +211,58 @@ export function casino(body, { game = null } = {}) {
   // ---- coin ----
   body.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => play('coinflip', { pick: b.dataset.pick })));
 
+  // ---- blackjack ----
+  const bj = { shownP: 0, shownD: 0, lenD: 0, hole: false, done: true };
+  const bjEl = (sel) => $(body, sel);
+  function renderHand(el, cards, shown) {
+    // only newly dealt cards animate in
+    el.innerHTML = cards.map((c, i) => cardHtml(c, Math.max(0, i - shown))).join('');
+    el.querySelectorAll('.bj-card').forEach((c, i) => c.classList.toggle('fresh', i >= shown));
+  }
+  function renderBj(m) {
+    const newP = m.player.length - bj.shownP, newD = m.dealer.filter((c) => c[0] !== '?').length - bj.shownD;
+    renderHand(bjEl('.bj-player'), m.player, bj.shownP);
+    renderHand(bjEl('.bj-dealer'), m.dealer, bj.hole && m.done ? 1 : bj.lenD); // the hole card flips over at the end
+    bj.lenD = m.dealer.length;
+    bj.hole = !m.done;
+    if (newP + newD > 0) for (let i = 0; i < Math.min(4, newP + newD); i++) later(() => sfx('place'), i * 140);
+    bj.shownP = m.player.length;
+    bj.shownD = m.dealer.filter((c) => c[0] !== '?').length;
+    bjEl('.bj-pv').textContent = m.pv;
+    bjEl('.bj-dv').textContent = m.done ? m.dv : `${m.dv} + ?`;
+    bj.done = m.done;
+    bjEl('#bjDeal').classList.toggle('hidden', !m.done);
+    bjEl('#bjHit').classList.toggle('hidden', m.done);
+    bjEl('#bjStand').classList.toggle('hidden', m.done);
+    bjEl('#bjDouble').classList.toggle('hidden', m.done || !m.canDouble);
+    $(body, '.bet-row').classList.toggle('locked', !m.done);
+    if (m.done) {
+      const [text, cls] = BJ_RESULTS[m.result] ?? ['', ''];
+      later(() => {
+        busy = false;
+        result.textContent = `${text}${m.payout > m.bet ? ` +${fmt(m.payout - m.bet)} 🪙` : m.payout === m.bet ? '' : ` −${fmt(m.bet)} 🪙`}`;
+        result.className = `result big-result ${cls}`;
+        if (cls === 'win') { confetti(stage, { count: m.result === 'blackjack' ? 140 : 60 }); sfx(m.result === 'blackjack' ? 'jackpot' : 'coins', { n: 6 }); }
+        else if (cls === 'lose') sfx('wah');
+        else sfx('pop');
+        showBalance();
+      }, 450);
+    }
+  }
+  bjEl('#bjDeal').onclick = () => {
+    if (busy) return;
+    busy = true;
+    result.textContent = '';
+    bj.shownP = bj.shownD = bj.lenD = 0;
+    bj.hole = false;
+    bjEl('.bj-player').innerHTML = bjEl('.bj-dealer').innerHTML = '';
+    net.send('bj_deal', { bet: Number(betInput.value) });
+    sfx('flip');
+  };
+  bjEl('#bjHit').onclick = () => net.send('bj_hit');
+  bjEl('#bjStand').onclick = () => net.send('bj_stand');
+  bjEl('#bjDouble').onclick = () => net.send('bj_double');
+
   const off = listen({
     gamble_result: (m) => {
       if (m.game === 'slots') {
@@ -219,6 +292,7 @@ export function casino(body, { game = null } = {}) {
       }
     },
     error: (m) => {
+      if (m.for?.startsWith('bj_')) { m.handled = true; busy = false; sfx('error'); result.textContent = m.msg; result.className = 'result big-result lose'; return; }
       if (m.for !== 'gamble') return;
       m.handled = true;
       clearInterval(reelTicks);
@@ -228,6 +302,7 @@ export function casino(body, { game = null } = {}) {
       result.textContent = m.msg;
       result.className = 'result big-result lose';
     },
+    bj: renderBj,
     player: (m) => { if (m.p.key === me().key) showBalance(); },
   });
   showTab(game ?? 'slots');

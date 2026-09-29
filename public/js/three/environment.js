@@ -346,6 +346,7 @@ export function buildEnvironment(scene) {
   // lamps
   const lampPost = toon('#2b2f4a');
   const lanternMat = toon('#fff1b8', { emissive: '#ffd27a', emissiveIntensity: 0.9 });
+  const lampGlows = [], lamps = [];
   for (const l of layout.lamps) {
     const p = pos3(l.x, l.y);
     const lamp = new THREE.Group();
@@ -364,6 +365,8 @@ export function buildEnvironment(scene) {
     glow.scale.setScalar(1.8);
     glow.position.y = 3.35;
     lamp.add(glow);
+    lampGlows.push(glow);
+    lamps.push({ x: p.x, z: p.z });
     lamp.position.set(p.x, 0, p.z);
     scene.add(lamp);
   }
@@ -549,5 +552,5 @@ export function buildEnvironment(scene) {
     }
   }
 
-  return { update, groundCanvas, buildings, ground, redrawText };
+  return { update, groundCanvas, buildings, ground, redrawText, sky, sunGlow, lanternMat, lampGlows, lamps };
 }

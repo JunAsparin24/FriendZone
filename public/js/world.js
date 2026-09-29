@@ -6,6 +6,7 @@ import { S, isTyping, esc } from './state.js';
 import * as M from './map.js';
 import { Character } from './three/character.js';
 import { buildEnvironment } from './three/environment.js';
+import { DayNight, timeOfDay, dayPhase } from './three/daynight.js';
 import { puffTexture, basic } from './three/materials.js';
 import { sfx, ambient } from './sfx.js';
 import { settings, onSettings, pixelRatio } from './settings.js';
@@ -21,6 +22,12 @@ const SPRINT = 1.6;           // speed multiplier while holding Shift
 const R = 12;                 // collision radius in map px
 const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown', 'hat_horns']);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const SPOT_COLORS = {
+  racing: '#ff5d73', doodle: '#e57bff', boss: '#7c6bff', bumper: '#39c6ff', arena: '#ff9f43', archery: '#37c871',
+  casino: '#ffd84d', fishing: '#3b82f6', trading: '#ffc53d', shop: '#ff6fb5', house: '#2ed8c3',
+};
+/** 0 at night .. 1 in full daylight (for dimming the minimap). */
+const dayLight = () => Math.min(1, Math.max(0, (Math.sin(dayPhase() * Math.PI * 2) + 0.12) / 0.34));
 const solid = (s) => (s.kind === 'pond' ? M.solidOf(s) : { x: s.x, y: s.y, w: s.w, h: s.h });
 const BUILDING_HEIGHT = { garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4 };
 
@@ -30,6 +37,15 @@ export class World {
     this.hooks = hooks;
     this.labels = document.getElementById('worldLabels');
     this.minimap = document.getElementById('minimap');
+    this.clockEl = document.getElementById('hudClock');
+    this.minimap.addEventListener('click', (e) => {
+      if (!this.minimap.classList.contains('big')) return this.toggleMap(true);
+      // on the big map, click somewhere to walk there
+      const r = this.minimap.getBoundingClientRect();
+      this.target = { x: ((e.clientX - r.left) / r.width) * M.W, y: ((e.clientY - r.top) / r.height) * M.H };
+      this.pendingSpot = null;
+      this.toggleMap(false);
+    });
     this.layout = M.buildLayout();
     this.actors = new Map();
     this.keys = new Set();
@@ -59,7 +75,8 @@ export class World {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1100);
 
-    this.scene.add(new THREE.HemisphereLight(0xdcefff, 0x6d8f55, 1.25));
+    this.hemi = new THREE.HemisphereLight(0xdcefff, 0x6d8f55, 1.25);
+    this.scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xfff0d4, 2.4);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -72,6 +89,7 @@ export class World {
     onSettings((s, changed) => { if ('quality' in changed) this.applyQuality(); });
 
     this.env = buildEnvironment(this.scene);
+    this.dayNight = new DayNight(this.scene, this.env, this.hemi, this.sun);
     document.fonts?.ready.then(() => this.env.redrawText());
 
     this.doorRing = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.45, 48), basic('#ffd84d', { transparent: true, opacity: 0.8, depthWrite: false }));
@@ -377,6 +395,8 @@ export class World {
       this.hooks.onActivity(this.near.id);
       return;
     }
+    if (key === 'm' && !e.repeat) { this.toggleMap(); return; }
+    if (key === 'escape' && this.minimap.classList.contains('big')) { this.toggleMap(false); return; }
     const emoteIndex = '123456'.indexOf(key);
     if (emoteIndex >= 0 && !e.repeat) {
       this.emote(Object.keys(EMOTES)[emoteIndex]);
@@ -642,8 +662,13 @@ export class World {
     const c = this.camTarget, cp = Math.cos(this.pitch);
     this.camera.position.set(c.x + Math.sin(this.yaw) * cp * this.dist, c.y + Math.sin(this.pitch) * this.dist, c.z + Math.cos(this.yaw) * cp * this.dist);
     this.camera.lookAt(c);
-    this.sun.position.set(c.x + 26, 48, c.z + 34);
-    this.sun.target.position.set(c.x, 0, c.z);
+    const dn = this.dayNight.update(c);
+    if (this.clockEl && performance.now() - (this.clockAt ?? 0) > 1000) {
+      this.clockAt = performance.now();
+      const tod = timeOfDay(dn.phase);
+      this.clockEl.textContent = `${tod.icon} ${tod.clock}`;
+      this.clockEl.classList.toggle('night', tod.night);
+    }
   }
 
   // ---- rendering ------------------------------------------------------------------
@@ -679,7 +704,7 @@ export class World {
     for (const a of this.actors.values()) {
       const p = S.players[a.k];
       const tall = TALL_HATS.has(p?.look?.hat) ? 0.45 : 0;
-      v.set(a.char.root.position.x, 2.2 + tall + a.char.rig.body.position.y, a.char.root.position.z);
+      v.set(a.char.root.position.x, 2.2 + tall + a.char.rig.body.position.y + a.char.rig.head.position.y - 1.52, a.char.root.position.z);
       const s = this.project(v, w, h);
       const el = a.el.wrap;
       if (!s.visible) { el.style.display = 'none'; continue; }
@@ -708,43 +733,75 @@ export class World {
   drawMinimap() {
     const mm = this.minimap;
     if (!mm || !this.env || mm.offsetParent === null) return;
+    const big = mm.classList.contains('big');
     const w = mm.clientWidth, h = mm.clientHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
-    if (mm.width !== w * dpr) { mm.width = w * dpr; mm.height = h * dpr; }
+    if (mm.width !== Math.round(w * dpr) || mm.height !== Math.round(h * dpr)) { mm.width = Math.round(w * dpr); mm.height = Math.round(h * dpr); }
     const ctx = mm.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.drawImage(this.env.groundCanvas, 0, 0, w, h);
     const sx = w / M.W, sy = h / M.H;
-    ctx.fillStyle = 'rgba(13,31,74,.18)';
+    const night = this.dayNight ? 1 - dayLight(this.dayNight) : 0;
+    ctx.fillStyle = `rgba(13,31,74,${0.12 + night * 0.35})`;
     ctx.fillRect(0, 0, w, h);
-    ctx.font = '12px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    // buildings: a soft footprint, then a round badge with the activity's icon
+    const badge = big ? 34 : 22;
     for (const s of SPOTS) {
-      const img = iconImage(s.id, 64);
+      const color = SPOT_COLORS[s.id] ?? '#ffffff';
+      if (s.kind !== 'pond') {
+        ctx.fillStyle = 'rgba(20,16,40,.35)';
+        ctx.beginPath(); ctx.roundRect(s.x * sx, s.y * sy, s.w * sx, s.h * sy, 3); ctx.fill();
+      }
       const x = (s.x + s.w / 2) * sx, y = (s.y + s.h / 2) * sy;
-      if (img.complete && img.naturalWidth) ctx.drawImage(img, x - 9, y - 9, 18, 18);
-      else ctx.fillText(s.emoji, x, y);
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.beginPath(); ctx.arc(x, y + 1.5, badge / 2 + 1, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(x, y, badge / 2 + 1, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(x, y, badge / 2 - 1, 0, Math.PI * 2); ctx.fill();
+      const img = iconImage(s.id, 64);
+      const ic = badge * 0.78;
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, x - ic / 2, y - ic / 2, ic, ic);
+      else { ctx.font = `${Math.round(badge * 0.6)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s.emoji, x, y + 1); }
+      if (big) {
+        ctx.font = '700 13px Rubik, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = 'rgba(13,31,74,.9)';
+        ctx.strokeText(s.name, x, y + badge / 2 + 4);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(s.name, x, y + badge / 2 + 4);
+      }
     }
     const me = this.actors.get(S.me);
     if (me) {
-      ctx.fillStyle = 'rgba(255,255,255,.2)';
+      ctx.fillStyle = 'rgba(255,255,255,.22)';
       ctx.beginPath();
       ctx.moveTo(me.x * sx, me.y * sy);
       const f = Math.atan2(-Math.cos(this.yaw), -Math.sin(this.yaw));
-      ctx.arc(me.x * sx, me.y * sy, 34, f - 0.55, f + 0.55);
+      ctx.arc(me.x * sx, me.y * sy, big ? 70 : 34, f - 0.55, f + 0.55);
       ctx.fill();
     }
     for (const a of this.actors.values()) {
       if (a === me) continue;
-      ctx.fillStyle = S.players[a.k]?.color ?? '#fff';
+      const p = S.players[a.k];
+      ctx.fillStyle = p?.color ?? '#fff';
       ctx.strokeStyle = '#0d1f4a';
       ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(a.x * sx, a.y * sy, 3.8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(a.x * sx, a.y * sy, big ? 6 : 3.8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (big && p) {
+        ctx.font = '700 11px Rubik, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(p.name, a.x * sx, a.y * sy - 8);
+      }
     }
     if (me) {
       ctx.save();
       ctx.translate(me.x * sx, me.y * sy);
       ctx.rotate(Math.PI - me.heading);
+      if (big) ctx.scale(1.6, 1.6);
       ctx.fillStyle = '#fff';
       ctx.strokeStyle = '#0d1f4a';
       ctx.lineWidth = 2;
@@ -752,5 +809,11 @@ export class World {
       ctx.fill(); ctx.stroke();
       ctx.restore();
     }
+  }
+
+  /** Click the minimap (or press M) to open the big map; click a place on it to walk there. */
+  toggleMap(open = !this.minimap.classList.contains('big')) {
+    this.minimap.classList.toggle('big', open);
+    sfx(open ? 'open' : 'close');
   }
 }

@@ -288,7 +288,7 @@ class Stage {
       const pl = S.players[p.k];
       const r = p.char.root;
       const tall = TALL_HATS.has(pl?.look?.hat) ? 0.45 : 0;
-      v.set(r.position.x, r.position.y + (2.2 + tall + p.labelLift) * r.scale.y + p.char.rig.body.position.y, r.position.z);
+      v.set(r.position.x, r.position.y + (2.2 + tall + p.labelLift + p.char.rig.head.position.y - 1.52) * r.scale.y + p.char.rig.body.position.y, r.position.z);
       const s = v.clone().project(this.camera);
       if (!p.visible || s.z > 1 || s.z < -1) { p.el.style.display = 'none'; continue; }
       p.el.style.display = '';

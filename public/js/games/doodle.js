@@ -231,7 +231,10 @@ export function doodle(body) {
       </div>`;
     } else if (st === 'choosing') {
       html = view.drawer === S.me
-        ? `<div class="dd-card"><h3>Your turn to draw! Pick a word:</h3><div class="dd-choices">${(view.choices ?? []).map((w, i) => `<button class="btn" data-pick="${i}">${esc(w)}</button>`).join('')}</div></div>`
+        ? `<div class="dd-card"><h3>Your turn to draw! Pick a word:</h3><div class="dd-choices">${(view.choices ?? []).map((w, i) => `<button class="btn" data-pick="${i}">${esc(w)}</button>`).join('')}</div>
+            <p class="muted small">…or make up your own:</p>
+            <form class="dd-custom" autocomplete="off"><input name="word" maxlength="24" placeholder="Your own word" autocomplete="off"><button class="btn primary">Draw it</button></form>
+            <p class="error dd-custom-err"></p></div>`
         : `<div class="dd-card"><div class="dd-av-big" data-k="${esc(view.drawer)}"></div><h3>${esc(nameOf(view.drawer))} is choosing a word…</h3><p class="muted">Get ready to guess!</p></div>`;
     } else if (st === 'reveal') {
       const got = Object.entries(view.guessed ?? {});
@@ -243,8 +246,13 @@ export function doodle(body) {
         <ol class="dd-podium">${r.map((k, i) => `<li class="p${i}"><span>${['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`}</span><b style="color:${colorOf(k)}">${esc(nameOf(k))}</b><em>${fmt(view.scores[k] ?? 0)}</em></li>`).join('')}</ol>
         <p class="muted small">A new game can start in a moment.</p></div>`;
     }
+    // keep a half-typed custom word when the overlay re-renders (someone joins, etc.)
+    const typing = overlay.querySelector('.dd-custom input');
+    const draftWord = typing?.value ?? '', hadFocus = typing && document.activeElement === typing;
     overlay.innerHTML = html;
     overlay.classList.toggle('hidden', !html);
+    const custom = overlay.querySelector('.dd-custom input');
+    if (custom) { custom.value = draftWord; if (hadFocus) custom.focus(); }
     overlay.querySelectorAll('.dd-av-big[data-k]').forEach((el) => portraitInto(el, S.players[el.dataset.k]?.look, 90, 90, { zoom: 'head' }));
   }
 
@@ -314,6 +322,13 @@ export function doodle(body) {
     doodle_close: (m) => { log(`🔥 <b>${esc(m.text)}</b> is so close!`, 'close'); sfx('close'); },
     player: () => { if (view) renderPlayers(); },
     error: (m) => {
+      if (m.for === 'doodle_pick') {
+        m.handled = true;
+        const el = overlay.querySelector('.dd-custom-err');
+        if (el) el.textContent = m.msg;
+        sfx('error');
+        return;
+      }
       if (m.for !== 'doodle_start') return;
       m.handled = true;
       log(esc(m.msg), 'sys');
@@ -325,6 +340,13 @@ export function doodle(body) {
     if (e.target.closest('[data-start]')) net.send('doodle_start');
     const pick = e.target.closest('[data-pick]');
     if (pick) net.send('doodle_pick', { i: Number(pick.dataset.pick) });
+  });
+  overlay.addEventListener('submit', (e) => {
+    const form = e.target.closest('.dd-custom');
+    if (!form) return;
+    e.preventDefault();
+    const word = form.word.value.trim();
+    if (word) net.send('doodle_pick', { word });
   });
 
   paper();

@@ -1,6 +1,6 @@
 // App shell: zone selection, sign-in, lobby, world HUD, chat and activity modal.
 import { net } from './net.js';
-import { S, SCENE_LABEL, esc, fmt, me, toast, xpForLevel, colorOf, nameOf, isTyping } from './state.js';
+import { S, sceneLabel, esc, fmt, me, toast, xpForLevel, colorOf, nameOf, isTyping } from './state.js';
 import { World, EMOTES } from './world.js';
 import { ACTIVITIES } from './activities.js';
 import { portraitInto } from './avatar.js';
@@ -16,7 +16,7 @@ import { stage } from './stage.js';
 const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 
 const $ = (sel) => document.querySelector(sel);
-const COLORS = CATALOG.clothColors;
+const COLORS = CATALOG.zoneColors;
 const SAVED_KEY = 'friendzone.zones';
 
 let screen = 'home';
@@ -167,7 +167,7 @@ function renderLobby() {
     <li class="${p.online ? 'on' : 'off'} ${p.key === (viewing ?? S.me) ? 'sel' : ''}" data-k="${esc(p.key)}">
       <span class="mav" style="--c:${p.color}"></span>
       <span class="nm"><span>${esc(p.name)}${p.key === S.me ? ' <small>(you)</small>' : ''}${p.key === S.zone.owner ? ' 👑' : ''}</span>
-        <small class="where">${p.online ? `● ${SCENE_LABEL[p.scene] ?? 'online'}` : 'offline'}</small></span>
+        <small class="where">${p.online ? `● ${sceneLabel(p.scene, p.key) ?? 'online'}` : 'offline'}</small></span>
       <span class="lv">Lv ${p.level}</span>
     </li>`).join('');
   $('#memberList').querySelectorAll('[data-k]').forEach((li) =>
@@ -275,7 +275,7 @@ function renderHud() {
     <span class="muted zone-tag">${esc(S.zone.name)}</span>`;
   const online = Object.values(S.players).filter((x) => x.online);
   $('#hudOnline').innerHTML = `<h3>ONLINE: ${online.length}</h3>` + online.map((x) =>
-    `<div class="ho" data-k="${esc(x.key)}"><span class="hav"></span>${esc(x.name)}<small>${SCENE_LABEL[x.scene] ?? ''}</small></div>`).join('');
+    `<div class="ho" data-k="${esc(x.key)}"><span class="hav"></span>${esc(x.name)}<small>${sceneLabel(x.scene, x.key) ?? ''}</small></div>`).join('');
   $('#hudOnline').querySelectorAll('[data-k]').forEach((el) =>
     portraitInto(el.querySelector('.hav'), S.players[el.dataset.k].look, 26, 26, { zoom: 'head' }));
 }

@@ -21,6 +21,7 @@ const TOGGLES = {
   invertY: 'Invert camera up/down',
   shake: 'Screen shake',
   names: 'Name tags in the world',
+  dayNight: 'Day and night cycle',
 };
 const CONTROLS = [
   ['Move', 'WASD / arrows, or click the ground'], ['Run', 'Hold Shift'], ['Turn camera', 'Drag, or Q / R'],
@@ -61,7 +62,7 @@ function render() {
           <div class="set-row"><span>Quality</span><div class="seg">${['low', 'medium', 'high'].map((q) =>
             `<button data-quality="${q}" class="${settings.quality === q ? 'on' : ''}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div></div>
           <p class="muted small">Lower quality turns off shadows and renders fewer pixels. Try it if the game feels slow.</p>
-          ${toggle('shake')}${toggle('names')}
+          ${toggle('shake')}${toggle('names')}${toggle('dayNight')}
         </section>
       </div>
       <details class="keys"><summary>⌨️ Controls cheat sheet</summary>

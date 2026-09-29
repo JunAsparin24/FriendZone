@@ -7,8 +7,31 @@ import {
 } from './materials.js';
 
 export const DEFAULT_LOOK = {
-  skin: '#f6c9a0', hairColor: '#2b1d14', topColor: '#39c6ff', bottomColor: '#23263f',
-  hair: 'hair_short', top: 'top_tee', hat: 'hat_none', face: 'face_none', back: 'back_none', aura: 'aura_none',
+  skin: '#f6c9a0', hairColor: '#2b1d14', topColor: '#39c6ff', bottomColor: '#23263f', shoeColor: '#23263f', eyeColor: '#1d1b2e',
+  eyes: 'eyes_round', height: 'height_medium', build: 'build_regular',
+  hair: 'hair_short', top: 'top_tee', bottom: 'bottom_pants', hat: 'hat_none', face: 'face_none', back: 'back_none', aura: 'aura_none',
+};
+
+// Body shapes: leg/torso stretch for height; width, depth and limb thickness for build.
+const HEIGHTS = {
+  height_tiny: { leg: 0.62, torso: 0.84 },
+  height_short: { leg: 0.8, torso: 0.92 },
+  height_medium: { leg: 1, torso: 1 },
+  height_tall: { leg: 1.22, torso: 1.08 },
+};
+const BUILDS = {
+  build_slim: { w: 0.86, d: 0.9, limb: 0.88 },
+  build_regular: { w: 1, d: 1, limb: 1 },
+  build_broad: { w: 1.2, d: 1.08, limb: 1.14 },
+  build_round: { w: 1.32, d: 1.5, limb: 1.08 },
+};
+const BOTTOMS = {
+  bottom_pants: { legs: 'pants' },
+  bottom_shorts: { legs: 'shorts' },
+  bottom_skirt: { legs: 'skin', socks: true, skirt: { len: 0.34, flare: 0.4 } },
+  bottom_cuffed: { legs: 'pants', cuffs: true },
+  bottom_cargo: { legs: 'pants', baggy: 1.12, pockets: true },
+  bottom_tutu: { legs: 'pants', skirt: { len: 0.2, flare: 0.4, frill: true } },
 };
 
 const R = 0.42; // head radius
@@ -29,7 +52,6 @@ const TOPS = {
 };
 const COVERING_HATS = new Set(['hat_cap', 'hat_beanie', 'hat_cowboy', 'hat_bucket', 'hat_tophat', 'hat_viking',
   'hat_wizard', 'hat_helmet', 'hat_robin', 'hat_party', 'hat_crown']);
-const TALL_HAIR = new Set(['hair_spiky', 'hair_mohawk', 'hair_bun', 'hair_afro']);
 
 // ---------------------------------------------------------------------------
 // geometry cache + helpers
@@ -137,21 +159,94 @@ function rainbowRing(radius) {
 // hair
 // ---------------------------------------------------------------------------
 
-function hairCap(head, mat, { len = 1.35, tilt = -0.35, opacityMat = null } = {}) {
-  return part(head, dome(R + 0.035, len), opacityMat ?? mat, { r: [tilt, 0, 0], outline: opacityMat ? null : OUT });
+/** How far down from the crown (radians) the hairline sits in direction phi (0 = front). */
+function hairline(phi, front, side, back) {
+  const c = Math.cos(phi);
+  return c >= 0 ? side + (front - side) * Math.pow(c, 1.4) : side + (back - side) * Math.pow(-c, 0.35);
 }
-function fringe(head, mat, count = 4) {
+
+/** A hair shell hugging the head down to a hairline: high over the forehead, low at the nape. */
+function shellGeo(front, side, back, r) {
+  return geo(`shell${front},${side},${back},${r}`, () => {
+    const U = 56, V = 18, pos = [], nor = [], idx = [];
+    for (let i = 0; i <= U; i++) {
+      const phi = (i / U) * TAU;
+      const lim = hairline(phi, front, side, back);
+      for (let j = 0; j <= V; j++) {
+        const th = (j / V) * lim;
+        const n = [Math.sin(th) * Math.sin(phi), Math.cos(th), Math.sin(th) * Math.cos(phi)];
+        pos.push(n[0] * r, n[1] * r, n[2] * r);
+        nor.push(...n);
+      }
+    }
+    for (let i = 0; i < U; i++) {
+      for (let j = 0; j < V; j++) {
+        const a = i * (V + 1) + j, b = (i + 1) * (V + 1) + j;
+        idx.push(a, a + 1, b, b, a + 1, b + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setIndex(idx);
+    return g;
+  });
+}
+
+function shell(head, mat, { front = 0.95, side = 1.45, back = 2.25, lift = 0.035, outline = OUT } = {}) {
+  return part(head, shellGeo(front, side, back + 0.18, R + lift), mat, { outline });
+}
+
+/** Point at angle phi (0 = front) and theta (down from the crown) on a sphere of radius r. */
+const onHead = (phi, th, r = R) => new THREE.Vector3(Math.sin(th) * Math.sin(phi), Math.cos(th), Math.sin(th) * Math.cos(phi)).multiplyScalar(r);
+
+function fringe(head, mat, count = 4, { y = 0.24, spread = 0.44, size = 0.13 } = {}) {
   for (let i = 0; i < count; i++) {
-    const x = -0.22 + (i * 0.44) / (count - 1);
-    const p = onFace(x, 0.24, -0.02);
-    part(head, sphere(0.13, 16, 12), mat, { p: [p.x, p.y, p.z], s: [1.15, 0.55, 0.6], q: faceTo(p), outline: OUT_THIN });
+    const x = -spread / 2 + (i * spread) / (count - 1);
+    const p = onFace(x, y - Math.abs(x) * 0.15, -0.02);
+    part(head, sphere(size, 16, 12), mat, { p: [p.x, p.y, p.z], s: [1.15, 0.55, 0.6], q: faceTo(p), outline: OUT_THIN });
   }
 }
 
+/** A hanging curtain of hair around the back and sides (long hair, bobs). */
+function curtain(head, mat, { len = 0.62, flare = 0.1, wrap = 0.35, top = 0 } = {}) {
+  const g = geo(`curtain${len},${flare},${wrap}`, () =>
+    new THREE.CylinderGeometry(R + 0.045, R + 0.045 + flare, len, 36, 4, true, Math.PI / 2 - wrap, Math.PI + wrap * 2));
+  const m = toon(`#${mat.color.getHexString()}`, { side: THREE.DoubleSide });
+  part(head, g, m, { p: [0, top - len / 2, -0.01], s: [1, 1, 0.92], outline: OUT_THIN });
+}
+
+/** A tied tail of hair along a curve of points, with a scrunchie at the root. */
+function tail(head, mat, pts, r0, r1, tie = '#ff5d73') {
+  const v = pts.map((p) => new THREE.Vector3(...p));
+  taper(head, v, r0, r1, mat);
+  part(head, sphere(r1 * 1.15, 10, 8), mat, { p: v[v.length - 1].toArray(), outline: OUT_THIN });
+  const dir = v[1].clone().sub(v[0]);
+  part(head, torus(r0 * 0.95, 0.03, TAU, 8, 20), toon(tie), { p: v[0].toArray(), q: pointTo(dir).multiply(new THREE.Quaternion().setFromAxisAngle(X, Math.PI / 2)), outline: null });
+}
+
+/** Blobs scattered over the scalp, skipping the face (curls, afros). */
+function blobs(head, mat, { dist, size, step, front = 1.0, side = 1.55, back = 2.2, outline = null }) {
+  for (let th = 0.15; th < 2.4; th += step) {
+    const ring = Math.max(1, Math.round((TAU * Math.sin(th)) / step));
+    for (let k = 0; k < ring; k++) {
+      const phi = (k / ring) * TAU + th * 1.7;
+      if (th > hairline(phi, front, side, back)) continue;
+      part(head, sphere(size, 12, 10), mat, { p: onHead(phi, th, dist).toArray(), outline });
+    }
+  }
+}
+
+const bigEyes = (style) => style === 'eyes_sparkle';
+
+function mix(a, b, k) {
+  return `#${new THREE.Color(a).lerp(new THREE.Color(b), k).getHexString()}`;
+}
+
 const HAIR = {
-  hair_short(head, mat) { hairCap(head, mat); fringe(head, mat); },
+  hair_short(head, mat) { shell(head, mat, { front: 0.9, side: 1.4, back: 2.15 }); fringe(head, mat); },
   hair_spiky(head, mat) {
-    hairCap(head, mat);
+    shell(head, mat, { front: 0.9, side: 1.4, back: 2.1 });
     const dirs = [[0, 1, 0.15], [0.5, 0.85, 0.15], [-0.5, 0.85, 0.15], [0.35, 0.75, -0.5], [-0.35, 0.75, -0.5], [0, 0.65, -0.75],
       [0.78, 0.55, -0.2], [-0.78, 0.55, -0.2], [0.22, 0.85, 0.5], [-0.26, 0.85, 0.45]];
     for (const d of dirs) {
@@ -161,52 +256,151 @@ const HAIR = {
     fringe(head, mat);
   },
   hair_long(head, mat) {
-    hairCap(head, mat, { len: 1.5 });
-    part(head, capsule(0.34, 0.34), mat, { p: [0, -0.3, -0.2], s: [1.05, 1, 0.5] });
-    for (const s of [-1, 1]) part(head, capsule(0.1, 0.36), mat, { p: [s * 0.36, -0.22, 0.02], r: [0, 0, s * 0.08] });
-    fringe(head, mat);
+    shell(head, mat, { front: 0.95, side: 1.5, back: 2.4 });
+    curtain(head, mat, { len: 0.66, flare: 0.1, wrap: 0.32 });
+    fringe(head, mat, 5, { spread: 0.36 });
+  },
+  hair_bob(head, mat) {
+    shell(head, mat, { front: 0.85, side: 1.5, back: 2.3 });
+    curtain(head, mat, { len: 0.34, flare: 0.07, wrap: 0.5 });
+    fringe(head, mat, 5, { y: 0.21, spread: 0.46, size: 0.12 });
   },
   hair_ponytail(head, mat) {
-    hairCap(head, mat);
-    part(head, sphere(0.065), toon('#ff5d73'), { p: [0, 0.08, -0.45] });
-    part(head, capsule(0.11, 0.34), mat, { p: [0, -0.2, -0.55], r: [0.35, 0, 0] });
+    shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
+    tail(head, mat, [[0, 0.2, -0.44], [0, 0.12, -0.6], [0, -0.1, -0.66], [0, -0.36, -0.6], [0, -0.55, -0.5]], 0.12, 0.05);
+    fringe(head, mat);
+  },
+  hair_pigtails(head, mat) {
+    shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
+    for (const s of [-1, 1]) {
+      tail(head, mat, [[s * 0.4, 0.04, -0.2], [s * 0.55, -0.1, -0.2], [s * 0.6, -0.32, -0.16], [s * 0.54, -0.5, -0.1]], 0.1, 0.045, '#ffd84d');
+    }
+    fringe(head, mat);
+  },
+  hair_twintails(head, mat) {
+    shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
+    for (const s of [-1, 1]) {
+      tail(head, mat, [[s * 0.32, 0.3, -0.2], [s * 0.55, 0.28, -0.26], [s * 0.7, 0.05, -0.28], [s * 0.72, -0.35, -0.24], [s * 0.64, -0.75, -0.18], [s * 0.52, -1.05, -0.12]], 0.14, 0.05, '#e84393');
+    }
+    fringe(head, mat, 5, { spread: 0.4 });
+  },
+  hair_braid(head, mat) {
+    shell(head, mat, { front: 0.95, side: 1.5, back: 2.35 });
+    for (let i = 0; i < 8; i++) {
+      const r = 0.1 - i * 0.006;
+      part(head, sphere(r, 12, 10), mat, { p: [(i % 2 ? 0.035 : -0.035), -0.12 - i * 0.12, -0.47 + i * 0.012], s: [1, 1.2, 0.9], r: [0, 0, i % 2 ? 0.4 : -0.4], outline: OUT_THIN });
+    }
+    part(head, torus(0.05, 0.022, TAU, 8, 16), toon('#6ee7a0'), { p: [0, -1.0, -0.39], r: [Math.PI / 2, 0, 0], outline: null });
+    part(head, sphere(0.06, 10, 8), mat, { p: [0, -1.07, -0.38], s: [1, 1.4, 1], outline: OUT_THIN });
     fringe(head, mat);
   },
   hair_bun(head, mat) {
-    hairCap(head, mat);
+    shell(head, mat, { front: 0.95, side: 1.45, back: 2.2 });
     part(head, sphere(0.18), mat, { p: [0, 0.4, -0.18] });
+    part(head, torus(0.13, 0.03, TAU, 8, 20), toon('#ff5d73'), { p: [0, 0.3, -0.15], r: [Math.PI / 2 + 0.35, 0, 0], outline: null });
     fringe(head, mat, 3);
   },
+  hair_spacebuns(head, mat) {
+    shell(head, mat, { front: 0.95, side: 1.45, back: 2.25 });
+    for (const s of [-1, 1]) part(head, sphere(0.15), mat, { p: [s * 0.27, 0.35, -0.06] });
+    fringe(head, mat, 4);
+  },
+  hair_topknot(head, mat) {
+    shell(head, mat, { front: 0.8, side: 1.35, back: 2.1 });
+    part(head, sphere(0.12), mat, { p: [0, R + 0.1, -0.06], s: [1, 0.85, 1] });
+    part(head, cyl(0.06, 0.08, 0.06, 12), toon('#e0463c'), { p: [0, R + 0.01, -0.05], outline: null });
+  },
   hair_curly(head, mat) {
-    hairCap(head, mat, { len: 1.3 });
-    for (let th = 0.2; th < 1.75; th += 0.3) {
-      for (let ph = 0; ph < TAU; ph += 0.55 / Math.max(0.35, Math.sin(th))) {
-        const v = new THREE.Vector3(Math.sin(th) * Math.sin(ph), Math.cos(th), Math.sin(th) * Math.cos(ph));
-        if (v.z > 0.45 && v.y < 0.72) continue;
-        part(head, sphere(0.12, 12, 10), mat, { p: v.multiplyScalar(R + 0.03).toArray(), outline: null });
-      }
-    }
+    shell(head, mat, { front: 1.0, side: 1.55, back: 2.2, lift: 0.02 });
+    blobs(head, mat, { dist: R + 0.04, size: 0.12, step: 0.3, front: 0.95 });
   },
   hair_afro(head, mat) {
-    const g = geo('afro', () => new THREE.SphereGeometry(0.64, 32, 24, Math.PI / 2 + 0.85, TAU - 1.7));
-    part(head, g, toon(mat.color.getStyle(), { side: THREE.DoubleSide }), { p: [0, 0.14, -0.06] });
-    for (let i = 0; i < 5; i++) {
-      const p = onFace(-0.26 + i * 0.13, 0.27, 0.02);
-      part(head, sphere(0.1, 12, 10), mat, { p: p.toArray(), outline: null });
-    }
+    shell(head, mat, { front: 1.0, side: 1.6, back: 2.25, lift: 0.02 });
+    blobs(head, mat, { dist: R + 0.13, size: 0.19, step: 0.36, front: 0.9, side: 1.55, back: 2.1, outline: OUT_THIN });
   },
-  hair_mohawk(head, mat) {
-    hairCap(head, mat, { opacityMat: toon(mat.color.getStyle(), { transparent: true, opacity: 0.35 }) });
+  hair_locs(head, mat) {
+    shell(head, mat, { front: 0.95, side: 1.5, back: 2.2 });
+    const bead = toon('#ffc53d');
+    for (let i = 0; i < 15; i++) {
+      const phi = Math.PI / 2 + 0.25 + (i / 14) * (Math.PI - 0.5);
+      for (const s of [1, -1]) {
+        if (s < 0 && i === 14) continue;
+        const ph = s > 0 ? phi : TAU - phi;
+        const root = onHead(ph, hairline(ph, 0.95, 1.5, 2.2) - 0.2, R + 0.03);
+        const out = new THREE.Vector3(root.x, 0, root.z).normalize();
+        const len = 0.4 + ((i * 7) % 5) * 0.04;
+        const tip = root.clone().add(out.clone().multiplyScalar(0.08)).add(new THREE.Vector3(0, -len, 0));
+        taper(head, [root, root.clone().lerp(tip, 0.5).add(out.clone().multiplyScalar(0.05)), tip], 0.05, 0.04, mat);
+        if (i % 4 === 1) part(head, cyl(0.055, 0.055, 0.05, 10), bead, { p: root.clone().lerp(tip, 0.7).toArray(), outline: null });
+      }
+    }
+    fringe(head, mat, 3, { spread: 0.3 });
+  },
+  hair_swoop(head, mat) {
+    shell(head, mat, { front: 0.9, side: 1.4, back: 2.15 });
+    const p = onFace(-0.05, 0.27, 0.02);
+    part(head, sphere(0.2, 20, 14), mat, { p: p.toArray(), q: faceTo(p).multiply(new THREE.Quaternion().setFromAxisAngle(Z, 0.35)), s: [1.7, 0.6, 0.55], outline: OUT_THIN });
+    const q = onFace(0.2, 0.2, 0.0);
+    part(head, sphere(0.13, 16, 12), mat, { p: q.toArray(), q: faceTo(q).multiply(new THREE.Quaternion().setFromAxisAngle(Z, 0.7)), s: [1.4, 0.55, 0.55], outline: OUT_THIN });
+  },
+  hair_emo(head, mat) {
+    shell(head, mat, { front: 0.9, side: 1.5, back: 2.3 });
+    const p = onFace(0.08, 0.12, 0.03);
+    part(head, sphere(0.2, 20, 14), mat, { p: p.toArray(), q: faceTo(p).multiply(new THREE.Quaternion().setFromAxisAngle(Z, -0.5)), s: [0.8, 1.35, 0.4], outline: OUT_THIN });
+    const q = onFace(-0.15, 0.24, 0);
+    part(head, sphere(0.14, 16, 12), mat, { p: q.toArray(), q: faceTo(q).multiply(new THREE.Quaternion().setFromAxisAngle(Z, -0.4)), s: [1.4, 0.55, 0.55], outline: OUT_THIN });
+    curtain(head, mat, { len: 0.3, flare: 0.04, wrap: 0.2 });
+  },
+  hair_quiff(head, mat) {
+    shell(head, mat, { front: 1.0, side: 1.35, back: 2.1 });
+    part(head, sphere(0.22, 20, 14), mat, { p: [0, 0.36, 0.2], s: [1.25, 0.85, 1.15], r: [-0.4, 0, 0], outline: OUT_THIN });
+    part(head, sphere(0.15, 16, 12), mat, { p: [0.02, 0.5, 0.26], s: [1.1, 0.7, 1], r: [-0.7, 0, 0.1], outline: OUT_THIN });
+  },
+  hair_messy(head, mat) {
+    shell(head, mat, { front: 0.9, side: 1.45, back: 2.2 });
+    const tufts = [[0, 1, 0], [0.4, 0.9, 0.2], [-0.45, 0.85, 0.1], [0.3, 0.8, -0.5], [-0.3, 0.75, -0.55], [0.1, 0.55, -0.85],
+      [0.8, 0.4, -0.3], [-0.8, 0.35, -0.3], [0.55, 0.7, 0.45], [-0.5, 0.75, 0.45], [0.05, 0.75, 0.62]];
+    tufts.forEach((d, i) => {
+      const v = new THREE.Vector3(...d).normalize();
+      const bend = new THREE.Vector3(Math.sin(i * 2.3), 0.2, Math.cos(i * 1.7)).multiplyScalar(0.35);
+      part(head, cone(0.1, 0.24 + (i % 3) * 0.05, 8), mat, { p: v.clone().multiplyScalar(R + 0.08).toArray(), q: pointTo(v.clone().add(bend)), outline: OUT_THIN });
+    });
+    fringe(head, mat, 4, { size: 0.12 });
+  },
+  hair_mohawk(head, mat, L) {
+    shell(head, toon(mix(L.hairColor, L.skin, 0.55)), { front: 1.0, side: 1.5, back: 2.25, lift: 0.006, outline: null });
     for (let i = 0; i < 7; i++) {
       const a = -0.9 + i * 0.36;
       const v = new THREE.Vector3(0, Math.cos(a), -Math.sin(a));
       part(head, cone(0.12, 0.42, 4), mat, { p: v.clone().multiplyScalar(R + 0.12).toArray(), q: pointTo(v), s: [0.45, 1, 1], outline: OUT_THIN });
     }
   },
-  hair_none(head, mat) {
-    hairCap(head, mat, { len: 1.4, opacityMat: toon(mat.color.getStyle(), { transparent: true, opacity: 0.3 }) });
+  hair_none(head, mat, L) {
+    shell(head, toon(mix(L.hairColor, L.skin, 0.5)), { front: 0.95, side: 1.5, back: 2.25, lift: 0.006, outline: null });
+  },
+  hair_flame(head, mat, L, anim) {
+    shell(head, mat, { front: 0.9, side: 1.45, back: 2.2 });
+    fringe(head, mat);
+    const hot = toon(mix(L.hairColor, '#ffd84d', 0.35), { emissive: L.hairColor, emissiveIntensity: 0.5 });
+    const core = [];
+    for (let i = 0; i < 7; i++) {
+      const v = onHead(i * 0.9, 0.2 + (i % 3) * 0.25, 1).normalize();
+      core.push(part(head, cone(0.12, 0.45, 8), hot, { p: v.clone().multiplyScalar(R + 0.14).toArray(), q: pointTo(v.clone().add(new THREE.Vector3(0, 1.2, 0))), outline: OUT_THIN }));
+    }
+    const tintHex = new THREE.Color(L.hairColor).lerp(new THREE.Color('#ffb13b'), 0.5).getHex();
+    const flames = sprites(head, additive(flameTexture, tintHex, 0.9), 10, 0.3);
+    anim.push((t) => {
+      core.forEach((c, i) => { c.scale.y = 1 + Math.sin(t * 9 + i * 1.9) * 0.18; });
+      flames.forEach((s, i) => {
+        const p = (t * 1.1 + i / 10) % 1;
+        const a = i * 2.4;
+        s.position.set(Math.cos(a) * 0.3 * (1 - p), R + 0.1 + p * 0.7, Math.sin(a) * 0.3 * (1 - p) - 0.05);
+        s.scale.set(0.3 * (1 - p), 0.45 * (1 - p), 1);
+      });
+    });
   },
 };
+const TALL_HAIR = new Set(['hair_spiky', 'hair_mohawk', 'hair_bun', 'hair_afro', 'hair_quiff', 'hair_spacebuns', 'hair_topknot', 'hair_messy', 'hair_flame']);
 
 // ---------------------------------------------------------------------------
 // hats (in head space; top of the head is y = R)
@@ -628,39 +822,64 @@ export class Character {
 
   build(L) {
     const top = TOPS[L.top] ?? TOPS.top_tee;
+    const bottom = BOTTOMS[L.bottom] ?? BOTTOMS.bottom_pants;
     const anim = [];
     const state = { disposables: [] };
     const skin = toon(L.skin);
     const topColor = top.color ?? L.topColor;
     const topMat = top.metal ? shiny(topColor, { metalness: 0.75, roughness: 0.3 }) : toon(topColor);
     const pants = toon(L.bottomColor);
-    const shoe = toon('#2a2438');
+    const shoe = toon(L.shoeColor);
+
+    // body shape: legs and torso stretch with height; build widens the torso and limbs
+    const H = HEIGHTS[L.height] ?? HEIGHTS.height_medium;
+    const B = BUILDS[L.build] ?? BUILDS.build_regular;
+    const hipY = 0.46 * H.leg;
+    const up = (y) => hipY + (y - 0.46) * H.torso; // a height on the default body, moved onto this one
+    const kl = H.leg, kb = B.limb;
 
     const body = new THREE.Group();
     this.root.add(body);
 
     // legs: hip -> knee -> shoe, so steps can lift and bend
     const sole = toon('#f4f0ff');
+    const upperMat = bottom.legs === 'skin' ? skin : pants;
+    const lowerMat = bottom.legs === 'pants' ? pants : skin;
     const knees = [];
     const legs = [-1, 1].map((s) => {
       const pivot = new THREE.Group();
-      pivot.position.set(s * 0.12, 0.46, 0);
-      part(pivot, capsule(0.1, 0.1), pants, { p: [0, -0.1, 0] });
+      pivot.position.set(s * 0.12 * B.w, hipY, 0);
+      part(pivot, capsule(0.1, 0.1), upperMat, { p: [0, -0.1 * kl, 0], s: [kb * (bottom.baggy ?? 1), kl, kb * (bottom.baggy ?? 1)] });
+      if (bottom.legs === 'shorts') part(pivot, cyl(0.115 * kb, 0.12 * kb, 0.06, 14), toon(tint(L.bottomColor, 0.85)), { p: [0, -0.19 * kl, 0], outline: null });
+      if (bottom.pockets) part(pivot, box(0.05, 0.12, 0.14), toon(tint(L.bottomColor, 0.82)), { p: [s * 0.1 * kb, -0.1 * kl, 0], outline: OUT_THIN });
       const knee = new THREE.Group();
-      knee.position.y = -0.2;
-      part(knee, capsule(0.09, 0.08), pants, { p: [0, -0.08, 0] });
-      part(knee, sphere(0.12, 18, 12), shoe, { p: [0, -0.2, 0.045], s: [0.95, 0.6, 1.4] });
-      part(knee, sphere(0.12, 18, 8), sole, { p: [0, -0.235, 0.045], s: [0.98, 0.22, 1.42], outline: null });
-      part(knee, sphere(0.05, 10, 8), sole, { p: [0, -0.17, 0.17], s: [1.4, 0.6, 0.5], outline: null, shadow: false });
+      knee.position.y = -0.2 * kl;
+      part(knee, capsule(0.09, 0.08), lowerMat, { p: [0, -0.08 * kl, 0], s: [kb * (bottom.baggy ?? 1), kl, kb * (bottom.baggy ?? 1)] });
+      if (bottom.cuffs) part(knee, cyl(0.1 * kb, 0.105 * kb, 0.06, 14), toon(tint(L.bottomColor, 1.25)), { p: [0, -0.14 * kl, 0], outline: OUT_THIN });
+      if (bottom.socks) part(knee, cyl(0.093 * kb, 0.093 * kb, 0.08, 14), toon('#f4f0ff'), { p: [0, -0.14 * kl, 0], outline: null });
+      const fy = 0.26 * (1 - kl); // shoes keep their size and stay on the ground at any leg length
+      part(knee, sphere(0.12, 18, 12), shoe, { p: [0, -0.2 + fy, 0.045], s: [0.95, 0.6, 1.4] });
+      part(knee, sphere(0.12, 18, 8), sole, { p: [0, -0.235 + fy, 0.045], s: [0.98, 0.22, 1.42], outline: null });
+      part(knee, sphere(0.05, 10, 8), sole, { p: [0, -0.17 + fy, 0.17], s: [1.4, 0.6, 0.5], outline: null, shadow: false });
       pivot.add(knee);
       knees.push(knee);
       body.add(pivot);
       return pivot;
     });
-    part(body, sphere(0.25), pants, { p: [0, 0.54, 0], s: [1, 0.6, 0.82] });
+    part(body, sphere(0.25), pants, { p: [0, up(0.54), 0], s: [B.w, 0.6, 0.82 * B.d] });
+    if (bottom.skirt) {
+      const k = bottom.skirt;
+      const skirt = new THREE.Group();
+      skirt.position.y = up(0.52);
+      body.add(skirt);
+      part(skirt, cyl(0.27 * B.w, k.flare * B.w, k.len, 28, true), toon(L.bottomColor, { side: THREE.DoubleSide }), { p: [0, -k.len / 2 + 0.04, 0], s: [1, 1, 0.85 * B.d], outline: OUT_THIN });
+      if (k.frill) part(skirt, cyl(k.flare * B.w * 0.96, k.flare * B.w * 1.2, 0.08, 28, true), toon(tint(L.bottomColor, 1.35), { side: THREE.DoubleSide }), { p: [0, -k.len + 0.06, 0], s: [1, 1, 0.85 * B.d], outline: null });
+      anim.push((t, dt, moving) => { skirt.rotation.x = moving ? Math.sin(t * 9) * 0.04 : 0; });
+    }
 
     const torso = new THREE.Group();
-    torso.position.y = 0.83;
+    torso.position.y = up(0.83);
+    torso.scale.set(B.w, H.torso, B.d);
     body.add(torso);
     if (top.robe) {
       part(torso, cyl(0.26, 0.42, 0.98, 28), topMat, { p: [0, -0.14, 0], s: [1, 1, 0.85] });
@@ -672,15 +891,16 @@ export class Character {
     }
     this.decorateTop(torso, L, top, topColor);
 
-    part(body, cyl(0.09, 0.1, 0.16), skin, { p: [0, 1.2, 0], outline: null });
+    part(body, cyl(0.09, 0.1, 0.16), skin, { p: [0, up(1.2), 0], s: [0.9 + B.w * 0.1, 1, 0.9 + B.w * 0.1], outline: null });
 
     // arms: shoulder -> elbow -> hand
     const armMat = top.sleeve === 'long' ? topMat : skin;
     const elbows = [];
     const arms = [-1, 1].map((s) => {
       const pivot = new THREE.Group();
-      pivot.position.set(s * 0.33, 1.1, 0);
+      pivot.position.set(s * (0.33 + 0.26 * (B.w - 1)), up(1.1), 0);
       pivot.rotation.z = s * 0.1;
+      pivot.scale.setScalar(kb);
       part(pivot, capsule(0.08, 0.07), armMat, { p: [0, -0.09, 0] });
       if (top.sleeve === 'short') part(pivot, capsule(0.1, 0.06), topMat, { p: [0, -0.05, 0] });
       if (top.metal) part(pivot, dome(0.15), topMat, { p: [0, 0.01, 0], s: [1, 0.8, 1] });
@@ -697,23 +917,13 @@ export class Character {
     });
 
     const head = new THREE.Group();
-    head.position.y = 1.52;
+    head.position.y = up(1.52);
     body.add(head);
     part(head, sphere(R, 36, 28), skin);
     for (const s of [-1, 1]) part(head, sphere(0.085, 14, 10), toon(tint(L.skin, 0.93)), { p: [s * 0.41, -0.02, -0.02], s: [0.6, 1, 0.9], outline: OUT_THIN });
 
     const hideEyes = L.face === 'face_sunglasses' || L.hat === 'hat_helmet';
-    const eyes = [];
-    if (!hideEyes) {
-      for (const s of [-1, 1]) {
-        const p = onFace(s * EYE_X, EYE_Y, -0.012);
-        const eye = part(head, sphere(0.064, 18, 14), basic('#1d1b2e'), { p: p.toArray(), q: faceTo(p), s: [0.85, 1.3, 0.5], outline: null, shadow: false });
-        part(eye, sphere(0.022, 10, 8), basic('#ffffff'), { p: [0.022, 0.024, 0.05], outline: null, shadow: false });
-        eyes.push(eye);
-        const bp = onFace(s * EYE_X, 0.16, 0.005);
-        part(head, capsule(0.016, 0.08), toon(tint(L.hairColor, 0.8)), { p: bp.toArray(), r: [0, 0, Math.PI / 2 + s * 0.15], outline: null, shadow: false });
-      }
-    }
+    const eyes = hideEyes ? [] : this.buildEyes(head, L);
     for (const s of [-1, 1]) {
       const p = onFace(s * 0.25, -0.09, 0.004);
       part(head, circle(0.065), basic('#ff7b9c', { transparent: true, opacity: 0.45, depthWrite: false }), { p: p.toArray(), q: faceTo(p), outline: null, shadow: false });
@@ -731,13 +941,13 @@ export class Character {
 
     const hairMat = toon(L.hairColor);
     const hair = COVERING_HATS.has(L.hat) && TALL_HAIR.has(L.hair) ? 'hair_short' : L.hair;
-    (HAIR[hair] ?? HAIR.hair_short)(head, hairMat);
+    (HAIR[hair] ?? HAIR.hair_short)(head, hairMat, L, anim);
     FACES[L.face]?.(head);
     HATS[L.hat]?.(head, L, anim);
     head.traverse((o) => { if (o.userData.spin) anim.push((t) => { o.rotation.y = t * 2; }); });
 
     const back = new THREE.Group();
-    back.position.set(0, 0.92, -0.2);
+    back.position.set(0, up(0.92), -0.2 * B.d);
     body.add(back);
     BACKS[L.back]?.(back, anim, state);
 
@@ -745,8 +955,47 @@ export class Character {
     this.root.add(aura);
     AURAS[L.aura]?.(aura, anim);
 
-    this.rig = { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim };
+    this.rig = { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim, hipY, torsoY: H.torso };
     this.state = state;
+  }
+
+  buildEyes(head, L) {
+    const style = L.eyes ?? 'eyes_round';
+    const iris = L.eyeColor ?? DEFAULT_LOOK.eyeColor;
+    const dark = basic('#15131f');
+    const white = basic('#ffffff');
+    const eyes = [];
+    for (const s of [-1, 1]) {
+      const p = onFace(s * EYE_X, EYE_Y, -0.012);
+      const q = faceTo(p);
+      if (style === 'eyes_happy') {
+        const ph = onFace(s * EYE_X, EYE_Y - 0.02, 0.003);
+        part(head, torus(0.05, 0.016, Math.PI, 6, 16), dark, { p: ph.toArray(), q: faceTo(ph), outline: null, shadow: false });
+      } else {
+        const big = style === 'eyes_sparkle';
+        const sy = style === 'eyes_sleepy' ? 0.8 : 1.3;
+        const eye = part(head, sphere(big ? 0.074 : 0.064, 18, 14), basic(iris), { p: p.toArray(), q, s: [0.85, sy, 0.5], outline: null, shadow: false });
+        eye.userData.sy = sy;
+        if (iris !== DEFAULT_LOOK.eyeColor) part(eye, sphere(big ? 0.04 : 0.034, 12, 10), dark, { p: [0, -0.004, 0.045], outline: null, shadow: false });
+        part(eye, sphere(big ? 0.026 : 0.022, 10, 8), white, { p: [0.022, 0.024, 0.06], outline: null, shadow: false });
+        if (big) part(eye, sphere(0.013, 8, 6), white, { p: [-0.024, -0.026, 0.06], outline: null, shadow: false });
+        eyes.push(eye);
+        if (style === 'eyes_sleepy') {
+          const lp = onFace(s * EYE_X, EYE_Y + 0.045, 0.006);
+          part(head, capsule(0.014, 0.1), dark, { p: lp.toArray(), r: [0, 0, Math.PI / 2 - s * 0.08], outline: null, shadow: false });
+        }
+        if (style === 'eyes_lashes') {
+          for (let i = 0; i < 2; i++) {
+            const lp = onFace(s * (EYE_X + 0.05 + i * 0.022), EYE_Y + 0.07 - i * 0.03, 0.006);
+            part(head, capsule(0.009, 0.045), dark, { p: lp.toArray(), r: [0, 0, -s * (0.7 + i * 0.4)], outline: null, shadow: false });
+          }
+        }
+      }
+      const tilt = style === 'eyes_sleepy' ? 0.02 : style === 'eyes_sparkle' ? 0.25 : 0.15;
+      const bp = onFace(s * EYE_X, bigEyes(style) ? 0.18 : 0.16, 0.005);
+      part(head, capsule(0.016, 0.08), toon(tint(L.hairColor, 0.8)), { p: bp.toArray(), r: [0, 0, Math.PI / 2 + s * tilt], outline: null, shadow: false });
+    }
+    return eyes;
   }
 
   decorateTop(torso, L, top, color) {
@@ -856,11 +1105,11 @@ export class Character {
     elbows[1].rotation.set(-(0.18 * iw + (0.35 + run * 0.9 + Math.max(0, -s) * 0.35) * w), 0, 0);
 
     // keep the planted foot on the ground as the legs spread, plus a little bounce
-    const drop = 0.46 * (1 - Math.cos(Math.abs(s) * legA));
+    const drop = this.rig.hipY * (1 - Math.cos(Math.abs(s) * legA));
     body.position.set(Math.sin(time * 0.7) * 0.015 * iw, -drop + (0.5 + 0.5 * Math.cos(2 * ph)) * (0.03 + run * 0.04) * w, 0);
     body.rotation.set((0.07 + run * 0.12) * w, s * 0.09 * w, -s * 0.035 * w + Math.sin(time * 0.7) * 0.02 * iw);
     body.scale.set(1, 1, 1);
-    torso.scale.y = 1 + breathe * 0.014 * iw;
+    torso.scale.y = this.rig.torsoY * (1 + breathe * 0.014 * iw);
     head.rotation.set(
       -body.rotation.x * 0.6 + Math.sin(2 * ph) * 0.035 * w + Math.sin(time * 0.6) * 0.03 * iw,
       -body.rotation.y * 0.9 + look.yaw,
@@ -971,7 +1220,7 @@ export class Character {
     this.blinkAt -= dt;
     const blink = this.blinkAt < 0.12 && this.blinkAt > 0;
     if (this.blinkAt <= 0) this.blinkAt = 2 + Math.random() * 4;
-    for (const e of eyes) e.scale.y = blink ? 0.12 : 1.3;
+    for (const e of eyes) e.scale.y = blink ? 0.12 : e.userData.sy;
 
     for (const fn of anim) fn(time, dt, walking);
   }

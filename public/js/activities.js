@@ -28,5 +28,5 @@ export const ACTIVITIES = {
   trading: { icon: 'trading', emoji: '💰', name: 'Trading', mount: trading },
   shop: { icon: 'shop', emoji: '👕', name: 'Style Shop', wide: true, mount: (body) => wardrobe(body, { mode: 'shop' }) },
   wardrobe: { icon: 'wardrobe', emoji: '🪞', name: 'Wardrobe', wide: true, mount: (body) => wardrobe(body) },
-  house: { icon: 'house', emoji: '🏠', name: 'Houses', scene: 'house', wide: true, mount: house },
+  house: { icon: 'house', emoji: '🏠', name: 'Houses', place: 'Houses', scene: 'house', area: house },
 };

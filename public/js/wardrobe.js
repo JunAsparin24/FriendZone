@@ -8,8 +8,10 @@ import { sfx } from './sfx.js';
 
 const TABS = [
   { id: 'body', label: '🧍 Body' },
+  { id: 'eyes', label: '👀 Eyes' },
   { id: 'hair', label: '💇 Hair' },
   { id: 'top', label: '👕 Top' },
+  { id: 'bottom', label: '👖 Bottom' },
   { id: 'hat', label: '🎩 Hat' },
   { id: 'face', label: '🕶️ Face' },
   { id: 'back', label: '🪽 Back' },
@@ -17,6 +19,9 @@ const TABS = [
   { id: 'crates', label: '🎁 Crates' },
 ];
 const HEAD_SLOTS = new Set(['hair', 'hat', 'face']);
+const DRAFT_DEFAULTS = {
+  bottom: 'bottom_pants', shoeColor: '#23263f', eyeColor: '#1d1b2e', eyes: 'eyes_round', height: 'height_medium', build: 'build_regular',
+};
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
 const TILE = 98;
 
@@ -24,7 +29,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
   const creating = mode === 'create';
   const tabs = creating ? TABS.filter((t) => t.id !== 'crates') : TABS;
   let tab = mode === 'shop' ? 'crates' : 'body';
-  let draft = { ...me().look };
+  let draft = { ...DRAFT_DEFAULTS, ...me().look };
   let confirmBuy = null, opening = false, waitingSave = false;
 
   body.innerHTML = `
@@ -82,9 +87,18 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     body.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   }
 
+  // colors come in rows of shades (lightest to darkest), so the grid lines families up
   function swatches(label, field, colors) {
-    return `<div class="wd-label">${label}</div><div class="swatches">${colors.map((c) =>
-      `<button type="button" class="swatch ${draft[field] === c ? 'on' : ''}" data-field="${field}" data-color="${c}" style="--c:${c}"></button>`).join('')}</div>`;
+    return `<div class="wd-label">${label}</div><div class="swatches palette">${colors.map((c) =>
+      `<button type="button" class="swatch ${draft[field] === c ? 'on' : ''}" data-field="${field}" data-color="${c}" style="--c:${c}" title="${c}"></button>`).join('')}</div>`;
+  }
+
+  // body options (height, build, eye style): always free, previewed on your own character
+  function choices(label, field, options, zoom = 'body') {
+    return `<div class="wd-label">${label}</div><div class="tiles choice-tiles">${options.map((o) =>
+      `<button class="tile ${draft[field] === o.id ? 'on' : ''}" data-choice="${field}" data-id="${o.id}" style="--r:#c3c9e4" data-zoom="${zoom}">
+        <span class="tile-art"></span><span class="tile-name">${esc(o.name)}</span><span class="tile-foot">${draft[field] === o.id ? '✓' : ''}</span>
+      </button>`).join('')}</div>`;
   }
 
   function itemTiles(slot) {
@@ -107,22 +121,35 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     renderHeader();
     if (tab === 'crates') return renderCrates();
     if (tab === 'body') {
-      content.innerHTML = swatches('Skin tone', 'skin', CATALOG.skins) + swatches('Pants', 'bottomColor', CATALOG.clothColors);
+      content.innerHTML = swatches('Skin tone', 'skin', CATALOG.skins)
+        + choices('Height', 'height', CATALOG.heights) + choices('Build', 'build', CATALOG.builds);
+    } else if (tab === 'eyes') {
+      content.innerHTML = choices('Eye style', 'eyes', CATALOG.eyeStyles, 'head') + swatches('Eye color', 'eyeColor', CATALOG.eyeColors);
     } else {
       content.innerHTML = itemTiles(tab)
         + (tab === 'hair' ? swatches('Hair color', 'hairColor', CATALOG.hairColors) : '')
-        + (tab === 'top' ? swatches('Shirt color', 'topColor', CATALOG.clothColors) : '');
-      content.querySelectorAll('.tile').forEach((t) => {
-        const look = { ...draft, [tab]: t.dataset.id };
-        portraitInto(t.querySelector('.tile-art'), look, 70, 76, { zoom: HEAD_SLOTS.has(tab) ? 'head' : 'body' });
-      });
+        + (tab === 'top' ? swatches('Shirt color', 'topColor', CATALOG.clothColors) : '')
+        + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors) + swatches('Shoe color', 'shoeColor', CATALOG.clothColors) : '');
     }
+    content.querySelectorAll('.tile').forEach((t) => {
+      const field = t.dataset.choice ?? tab;
+      const look = { ...draft, [field]: t.dataset.id };
+      const zoom = t.dataset.zoom ?? (HEAD_SLOTS.has(tab) ? 'head' : 'body');
+      portraitInto(t.querySelector('.tile-art'), look, 70, 76, { zoom });
+    });
   }
 
   content.addEventListener('click', (e) => {
     const sw = e.target.closest('[data-field]');
     if (sw) {
       draft[sw.dataset.field] = sw.dataset.color;
+      renderContent();
+      return;
+    }
+    const choice = e.target.closest('[data-choice]');
+    if (choice) {
+      if (draft[choice.dataset.choice] !== choice.dataset.id) sfx('swap');
+      draft[choice.dataset.choice] = choice.dataset.id;
       renderContent();
       return;
     }

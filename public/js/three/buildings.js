@@ -613,6 +613,7 @@ export function buildBuilding(spot, anim, ctx) {
   BUILDERS[spot.kind](g, w, d, anim, ctx);
   const cx = (spot.x + spot.w / 2 - CENTER.x) / PX, cz = (spot.y + spot.h / 2 - CENTER.y) / PX;
   g.position.set(cx, 0, cz);
+  if (spot.face === 'n') g.rotation.y = Math.PI; // door on the north side
   g.userData.spot = spot;
   return g;
 }

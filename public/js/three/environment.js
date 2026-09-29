@@ -153,10 +153,14 @@ export function buildEnvironment(scene) {
   const hillMat = toon('#58a553');
   for (let i = 0; i < 26; i++) {
     const a = (i / 26) * TAU + rnd() * 0.2;
-    const dist = 140 + rnd() * 80;
     const r = 22 + rnd() * 26;
+    // outside the fence all the way round: walk out along the angle until the hill clears the map
+    const out = 12 + rnd() * 40;
+    let k = 1;
+    const cx = Math.cos(a), cz = Math.sin(a);
+    while (Math.abs(cx * k) < HALF_W + r * 1.4 * 0.62 + out && Math.abs(cz * k) < HALF_H + r * 0.62 + out) k += 2;
     const hill = new THREE.Mesh(faceted(new THREE.IcosahedronGeometry(r, 2)), hillMat);
-    hill.position.set(Math.cos(a) * dist * 1.1, -r * 0.62, Math.sin(a) * dist * 0.85);
+    hill.position.set(cx * k, -r * 0.62, cz * k);
     hill.scale.set(1.4, 0.8 + rnd() * 0.4, 1);
     hill.receiveShadow = true;
     scene.add(hill);

@@ -27,7 +27,7 @@ function add(parent, geo, mat, { p = [0, 0, 0], r = null, s = null, outline = fa
 }
 
 /** A shop room: floor, walls (the ones between you and the camera hide), a doorway, lights. */
-function room(stage, { w, d, floor, wall, trim }) {
+function room(stage, { w, d, floor, wall, trim, motif = null }) {
   const g = new THREE.Group();
   const floorTex = canvasTexture(256, 256, (c) => {
     for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
@@ -36,9 +36,19 @@ function room(stage, { w, d, floor, wall, trim }) {
     }
   }, { repeat: [w / 4, d / 4] });
   add(g, new THREE.PlaneGeometry(w, d), new THREE.MeshToonMaterial({ map: floorTex }), { r: [-Math.PI / 2, 0, 0], cast: false });
-  add(g, new THREE.PlaneGeometry(120, 120), toon('#2a1a3a'), { p: [0, -0.02, 0], r: [-Math.PI / 2, 0, 0], cast: false });
+  // outside: a lawn, and a stone path up to the door
+  add(g, new THREE.PlaneGeometry(120, 120), toon('#6fbf5e'), { p: [0, -0.02, 0], r: [-Math.PI / 2, 0, 0], cast: false });
+  add(g, new THREE.PlaneGeometry(3, 8), toon('#d8c7a4'), { p: [0, -0.01, d / 2 + 4], r: [-Math.PI / 2, 0, 0], cast: false });
   const H = 5;
-  const wallMat = toon(wall, { side: THREE.DoubleSide });
+  // striped wallpaper with an optional little motif
+  const paper = canvasTexture(256, 256, (c) => {
+    c.fillStyle = wall;
+    c.fillRect(0, 0, 256, 256);
+    c.fillStyle = 'rgba(255,255,255,.35)';
+    for (let x = 0; x < 256; x += 64) c.fillRect(x, 0, 28, 256);
+    if (motif) motif(c);
+  }, { repeat: [w / 3, H / 3] });
+  const wallMat = new THREE.MeshToonMaterial({ map: paper, side: THREE.DoubleSide });
   const walls = {
     back: add(g, new THREE.PlaneGeometry(w, H), wallMat, { p: [0, H / 2, -d / 2] }),
     front: add(g, new THREE.PlaneGeometry(w, H), wallMat, { p: [0, H / 2, d / 2], r: [0, Math.PI, 0] }),
@@ -49,6 +59,20 @@ function room(stage, { w, d, floor, wall, trim }) {
     const along = k === 'back' || k === 'front';
     add(m, new THREE.BoxGeometry(along ? w : d, 0.3, 0.12), toon(trim), { p: [0, -H / 2 + 0.15, 0.05], cast: false });
     add(m, new THREE.BoxGeometry(along ? w : d, 0.2, 0.12), toon(trim), { p: [0, H / 2 - 0.1, 0.05], cast: false });
+    // panelled wainscot along the bottom with a rail on top
+    const len = along ? w : d, n = Math.floor(len / 1.6);
+    add(m, new THREE.BoxGeometry(len, 1.3, 0.06), toon('#ffffff'), { p: [0, -H / 2 + 0.65, 0.03], cast: false });
+    add(m, new THREE.BoxGeometry(len, 0.1, 0.14), toon(trim), { p: [0, -H / 2 + 1.32, 0.06], cast: false });
+    for (let k = 0; k < n; k++) add(m, new THREE.BoxGeometry(1.2, 0.85, 0.04), toon('#f3eef8'), { p: [-len / 2 + 0.8 + (k * (len - 1.6)) / Math.max(1, n - 1), -H / 2 + 0.68, 0.07], cast: false });
+  }
+  // sunny windows on the side walls
+  for (const side of [walls.left, walls.right]) {
+    for (const x of [-d / 4, d / 4]) {
+      add(side, new THREE.BoxGeometry(2.2, 1.8, 0.1), toon('#ffffff'), { p: [x, 0.7, 0.05], cast: false });
+      add(side, new THREE.BoxGeometry(1.9, 1.5, 0.12), toon('#bfe6ff', { emissive: '#bfe6ff', emissiveIntensity: 0.45 }), { p: [x, 0.7, 0.07], cast: false });
+      add(side, new THREE.BoxGeometry(0.08, 1.5, 0.14), toon('#ffffff'), { p: [x, 0.7, 0.09], cast: false });
+      add(side, new THREE.BoxGeometry(1.9, 0.08, 0.14), toon('#ffffff'), { p: [x, 0.7, 0.09], cast: false });
+    }
   }
   add(walls.front, new THREE.BoxGeometry(2.6, 3.4, 0.2), toon('#ffffff'), { p: [0, -H / 2 + 1.7, 0.02] });
   add(walls.front, new THREE.BoxGeometry(2.1, 3.0, 0.25), basic('#fff3c4'), { p: [0, -H / 2 + 1.5, 0.04], cast: false });
@@ -66,6 +90,42 @@ function room(stage, { w, d, floor, wall, trim }) {
     walls.right.visible = c.x < w / 2 - 0.3;
   });
   return g;
+}
+
+/**
+ * A hanging sign that names an area of the shop (readable from both sides), on two chains from
+ * the ceiling. Returns the group.
+ */
+function sign(g, text, { x, z, y = 3.6, ry = 0, w = 3.2, h = 0.8, bg = '#2ed8c3', fg = '#ffffff', hang = true } = {}) {
+  // hung up near the ceiling so they don't block your view of the room
+  if (hang) y = Math.max(y, 4.25);
+  w *= 0.82; h *= 0.82;
+  const cw = 512, ch = Math.round((512 * h) / w);
+  const tex = canvasTexture(cw, ch, (c) => {
+    c.fillStyle = '#ffffff';
+    c.beginPath(); c.roundRect(0, 0, cw, ch, ch * 0.3); c.fill();
+    c.fillStyle = bg;
+    c.beginPath(); c.roundRect(8, 8, cw - 16, ch - 16, ch * 0.25); c.fill();
+    let size = Math.floor(ch * 0.55);
+    c.font = `${size}px "Luckiest Guy", Rubik, sans-serif`;
+    while (c.measureText(text).width > cw * 0.88 && size > 12) { size -= 2; c.font = `${size}px "Luckiest Guy", Rubik, sans-serif`; }
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = 'rgba(0,0,0,.25)';
+    c.fillText(text, cw / 2 + 2, ch / 2 + size * 0.08 + 3);
+    c.fillStyle = fg;
+    c.fillText(text, cw / 2, ch / 2 + size * 0.08);
+  });
+  const s = new THREE.Group();
+  s.position.set(x, y, z);
+  s.rotation.y = ry;
+  g.add(s);
+  const mat = new THREE.MeshBasicMaterial({ map: tex });
+  add(s, new THREE.PlaneGeometry(w, h), mat, { p: [0, 0, 0.03], cast: false });
+  add(s, new THREE.PlaneGeometry(w, h), mat, { p: [0, 0, -0.03], r: [0, Math.PI, 0], cast: false });
+  add(s, new THREE.BoxGeometry(w + 0.1, h + 0.1, 0.05), toon('#ffffff'), { cast: false });
+  if (hang) for (const sx of [-w / 2 + 0.3, w / 2 - 0.3]) add(s, new THREE.CylinderGeometry(0.02, 0.02, 5 - y - h / 2, 5), toon('#8a8aa0'), { p: [sx, (5 - y) / 2 + h / 4, 0], cast: false });
+  return s;
 }
 
 function shopkeeper(g, look, x, z, anim) {
@@ -98,19 +158,58 @@ function openWalker(stage, { w, d, solids }) {
 // ---------------------------------------------------------------------------
 
 const DISPLAYS = [
-  { tab: 'hat', label: 'browse hats', look: { hat: 'hat_cowboy', top: 'top_hawaiian' } },
-  { tab: 'top', label: 'browse tops', look: { top: 'top_jersey', topColor: '#ff5d73' } },
-  { tab: 'bottom', label: 'browse bottoms', look: { bottom: 'bottom_cargo', bottomColor: '#8b5a2b' } },
-  { tab: 'face', label: 'browse glasses & masks', look: { face: 'face_sunglasses' } },
-  { tab: 'back', label: 'browse backpacks & wings', look: { back: 'back_wings' } },
-  { tab: 'aura', label: 'browse auras', look: { aura: 'aura_sparkle' } },
-  { tab: 'hair', label: 'browse hairstyles', look: { hair: 'hair_quiff', hairColor: '#ff8fc7' } },
+  { tab: 'hat', label: 'browse hats', sign: 'HATS', color: '#ff9f43', look: { hat: 'hat_cowboy', top: 'top_hawaiian' } },
+  { tab: 'top', label: 'browse tops', sign: 'TOPS', color: '#ff5d73', look: { top: 'top_jersey', topColor: '#ff5d73' } },
+  { tab: 'bottom', label: 'browse bottoms', sign: 'BOTTOMS', color: '#3b82f6', look: { bottom: 'bottom_cargo', bottomColor: '#8b5a2b' } },
+  { tab: 'face', label: 'browse glasses & masks', sign: 'GLASSES & MASKS', color: '#8b5cf6', look: { face: 'face_sunglasses' } },
+  { tab: 'back', label: 'browse backpacks & wings', sign: 'BACKPACKS & WINGS', color: '#14b8a6', look: { back: 'back_wings' } },
+  { tab: 'aura', label: 'browse auras', sign: 'AURAS', color: '#e879f9', look: { aura: 'aura_sparkle' } },
+  { tab: 'hair', label: 'browse hairstyles', sign: 'HAIRSTYLES', color: '#f472b6', look: { hair: 'hair_quiff', hairColor: '#ff8fc7' } },
 ];
+
+/** Shelves of folded clothes against a wall. */
+function clothesShelf(g, x, z, ry, colors) {
+  const s = new THREE.Group();
+  s.position.set(x, 0, z);
+  s.rotation.y = ry;
+  g.add(s);
+  add(s, new THREE.BoxGeometry(2.6, 2.6, 0.08), toon('#ffffff'), { p: [0, 1.3, -0.26], outline: true });
+  for (const sx of [-1.28, 1.28]) add(s, new THREE.BoxGeometry(0.08, 2.6, 0.6), toon('#ffffff'), { p: [sx, 1.3, 0], outline: true });
+  add(s, new THREE.BoxGeometry(2.6, 0.1, 0.6), toon('#ffffff'), { p: [0, 2.6, 0] });
+  for (const y of [0.55, 1.25, 1.95]) {
+    add(s, new THREE.BoxGeometry(2.4, 0.06, 0.55), toon('#e8dff0'), { p: [0, y - 0.25, 0.03] });
+    for (let k = 0; k < 4; k++) {
+      const c = colors[(k + Math.round(y * 3)) % colors.length];
+      for (let j = 0; j < 3; j++) add(s, new THREE.BoxGeometry(0.46, 0.1, 0.4), toon(c), { p: [-0.9 + k * 0.6, y - 0.16 + j * 0.11, 0.08], cast: false });
+    }
+  }
+}
+
+/** A rolling clothes rack with shirts on hangers. */
+function clothesRack(g, x, z, ry, colors) {
+  const r = new THREE.Group();
+  r.position.set(x, 0, z);
+  r.rotation.y = ry;
+  g.add(r);
+  const metal = toon('#c0c6d4');
+  for (const sx of [-1.1, 1.1]) {
+    add(r, new THREE.CylinderGeometry(0.04, 0.04, 2.2, 8), metal, { p: [sx, 1.1, 0] });
+    add(r, new THREE.BoxGeometry(0.08, 0.06, 0.8), metal, { p: [sx, 0.05, 0] });
+  }
+  add(r, new THREE.CylinderGeometry(0.035, 0.035, 2.3, 8), metal, { p: [0, 2.15, 0], r: [0, 0, Math.PI / 2] });
+  colors.forEach((c, k) => {
+    const x2 = -0.9 + k * (1.8 / (colors.length - 1));
+    add(r, new THREE.BoxGeometry(0.12, 0.9, 0.55), toon(c), { p: [x2, 1.6, 0], outline: true });
+    add(r, new THREE.BoxGeometry(0.1, 0.35, 0.9), toon(c), { p: [x2, 1.9, 0] });
+    add(r, new THREE.CylinderGeometry(0.012, 0.012, 0.12, 4), metal, { p: [x2, 2.1, 0], cast: false });
+  });
+}
 
 export function styleShopArea(stage) {
   stage.lights({ background: '#1a0f24', sky: 0xfff0f6, ground: 0x6a4a7a, hemi: 1.3, sun: 1.0, sunPos: [6, 30, 12], box: 16 });
   const W = 24, D = 18;
-  const g = room(stage, { w: W, d: D, floor: ['#fff0f6', '#ffd6e8'], wall: '#ffe4f0', trim: '#2ed8c3' });
+  const g = room(stage, { w: W, d: D, floor: ['#fff0f6', '#ffd6e8'], wall: '#ffe4f0', trim: '#2ed8c3',
+    motif: (c) => { c.fillStyle = 'rgba(46,216,195,.35)'; for (const [x, y] of [[46, 40], [110, 168], [174, 40], [238, 168]]) { c.beginPath(); c.arc(x, y, 7, 0, TAU); c.fill(); } } });
   stage.scene.add(g);
   const anim = [];
   const solids = [];
@@ -132,7 +231,20 @@ export function styleShopArea(stage) {
     anim.push((t, dt) => { c.update(dt, t + i, false); c.root.rotation.y += Math.sin(t * 0.6 + i) * 0.002; });
     solids.push({ x, z, r: 1.1 });
     stage.interactable({ x, z: z + 1.2, r: 2.2, label: dsp.label, icon: 'shop', obj: stand, use: shop(dsp.tab) });
+    // the area's sign hangs over it, turned to face the middle of the room
+    sign(g, dsp.sign, { x, z, y: 3.7, ry: Math.atan2(-x, 3 - z), w: dsp.sign.length > 10 ? 3.4 : 2.4, h: 0.75, bg: dsp.color });
+    add(stand, new THREE.CylinderGeometry(1.03, 1.03, 0.1, 28), toon(dsp.color), { p: [0, 0.3, 0], cast: false });
   });
+
+  // wall shelves of folded clothes and a rack of shirts
+  const tees = ['#ff5d73', '#ffd84d', '#39c6ff', '#6ee7a0', '#b77bff', '#ff9f43'];
+  clothesShelf(g, -2.5, -8.6, 0, tees);
+  clothesShelf(g, 2.5, -8.6, 0, tees.slice().reverse());
+  clothesShelf(g, -11.6, -2.5, Math.PI / 2, tees);
+  clothesShelf(g, 11.6, -2.5, -Math.PI / 2, tees);
+  solids.push({ x: -2.5, z: -8.6, w: 2.7, d: 0.7 }, { x: 2.5, z: -8.6, w: 2.7, d: 0.7 }, { x: -11.6, z: -2.5, w: 0.7, d: 2.7 }, { x: 11.6, z: -2.5, w: 0.7, d: 2.7 });
+  clothesRack(g, -9, 4.5, 0.3, ['#ff5d73', '#ff8fa3', '#ffd84d', '#39c6ff', '#7c6bff']);
+  solids.push({ x: -9, z: 4.5, w: 2.5, d: 1.2 });
 
   // the crate machine: a big gift box that bounces and glows
   const machine = new THREE.Group();
@@ -154,6 +266,7 @@ export function styleShopArea(stage) {
   anim.push((t) => { gift.position.y = 1.5 + Math.abs(Math.sin(t * 2.2)) * 0.25; gift.rotation.y = t * 0.6; glow.material.opacity = 0.35 + Math.sin(t * 3) * 0.15; });
   solids.push({ x: -4, z: 1.5, r: 1.5 });
   stage.interactable({ x: -4, z: 3.2, r: 2.4, label: 'open a mystery crate', icon: 'shop', obj: machine, use: shop('crates') });
+  sign(g, 'MYSTERY CRATES', { x: -4, z: 1.5, y: 3.9, w: 3.4, h: 0.75, bg: '#7c6bff' });
 
   // the big mirror: your own wardrobe
   const mirror = new THREE.Group();
@@ -165,13 +278,18 @@ export function styleShopArea(stage) {
   add(mirror, new THREE.BoxGeometry(2.6, 0.3, 0.8), toon('#ffc53d'), { p: [0, 0.15, 0] });
   solids.push({ x: 4, z: 1.5, w: 2.6, d: 0.8 });
   stage.interactable({ x: 4, z: 2.8, r: 2.2, label: 'change your outfit', icon: 'wardrobe', obj: mirror, use: () => stage.openPanel({ wide: true, mount: (body) => wardrobe(body) }) });
+  sign(g, 'FITTING MIRROR', { x: 4, z: 1.5, y: 4.2, w: 3.2, h: 0.7, bg: '#ffb13b' });
 
   // counter + shopkeeper, plants, a rug
   counter(g, 8, 5.5, 4, '#2ed8c3');
   solids.push({ x: 8, z: 5.5, w: 4.2, d: 1.1 });
   shopkeeper(g, { skin: '#f6c9a0', hair: 'hair_bob', hairColor: '#ff8fc7', top: 'top_suit', topColor: '#e57bff', eyes: 'eyes_lashes', face: 'face_glasses' }, 8, 4.4, anim);
   solids.push({ x: 8, z: 4.4, r: 0.6 });
-  add(g, new THREE.CircleGeometry(3.2, 40), toon('#ff8fc7'), { p: [0, 0.02, -1], r: [-Math.PI / 2, 0, 0], cast: false });
+  sign(g, 'CHECKOUT', { x: 8, z: 5.5, y: 3.6, w: 2.6, h: 0.7, bg: '#2ed8c3' });
+  // a round rug with a white trim
+  add(g, new THREE.CircleGeometry(3.4, 40), toon('#ffffff'), { p: [0, 0.015, -1], r: [-Math.PI / 2, 0, 0], cast: false });
+  add(g, new THREE.CircleGeometry(3.1, 40), toon('#ff8fc7'), { p: [0, 0.02, -1], r: [-Math.PI / 2, 0, 0], cast: false });
+  add(g, new THREE.RingGeometry(2.2, 2.4, 40), toon('#ffffff'), { p: [0, 0.025, -1], r: [-Math.PI / 2, 0, 0], cast: false });
   for (const [x, z] of [[-11, 7.5], [11, 7.5]]) {
     add(g, new THREE.CylinderGeometry(0.45, 0.35, 0.8, 14), toon('#ffffff'), { p: [x, 0.4, z], outline: true });
     add(g, new THREE.IcosahedronGeometry(0.8, 1), toon('#2f9e44'), { p: [x, 1.4, z], outline: true });
@@ -247,16 +365,24 @@ function petEgg(body) {
 export function petShopArea(stage) {
   stage.lights({ background: '#1a1408', sky: 0xfff6e0, ground: 0x8a6a4a, hemi: 1.35, sun: 1.0, sunPos: [6, 30, 12], box: 16 });
   const W = 24, D = 18;
-  const g = room(stage, { w: W, d: D, floor: ['#fff1c9', '#ffe4a8'], wall: '#fff6e6', trim: '#ff8fc7' });
+  const g = room(stage, { w: W, d: D, floor: ['#fff1c9', '#ffe4a8'], wall: '#ffeccc', trim: '#ff8fc7',
+    motif: (c) => {
+      // little paw prints
+      c.fillStyle = 'rgba(255,143,199,.4)';
+      for (const [x, y] of [[48, 60], [176, 190]]) {
+        c.beginPath(); c.ellipse(x, y, 13, 11, 0, 0, TAU); c.fill();
+        for (const [dx, dy] of [[-14, -14], [-5, -20], [5, -20], [14, -14]]) { c.beginPath(); c.arc(x + dx, y + dy, 5, 0, TAU); c.fill(); }
+      }
+    } });
   stage.scene.add(g);
   const anim = [];
   const solids = [];
 
   // three pens with low picket fences; pets wander around inside
   const pens = [
-    { x: -7, z: -4, w: 7, d: 5, rarities: ['common'] },
-    { x: 1.5, z: -4.5, w: 7, d: 4.5, rarities: ['rare'] },
-    { x: 8.5, z: -3, w: 5, d: 6, rarities: ['epic', 'legendary'] },
+    { x: -7, z: -4, w: 7, d: 5, rarities: ['common'], sign: 'COMMON PALS', color: '#6ee7a0', grass: '#9fd67a' },
+    { x: 1.5, z: -4.5, w: 7, d: 4.5, rarities: ['rare'], sign: 'RARE FRIENDS', color: '#39c6ff', grass: '#8fd6b0' },
+    { x: 8.5, z: -3, w: 5, d: 6, rarities: ['epic', 'legendary'], sign: 'EPIC & LEGENDARY', color: '#b77bff', grass: '#b8d98a' },
   ];
   const white = toon('#ffffff');
   const pets = [];
@@ -264,7 +390,13 @@ export function petShopArea(stage) {
     const grp = new THREE.Group();
     grp.position.set(pen.x, 0, pen.z);
     g.add(grp);
-    add(grp, new THREE.PlaneGeometry(pen.w, pen.d), toon('#9fd67a'), { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], cast: false });
+    add(grp, new THREE.PlaneGeometry(pen.w, pen.d), toon(pen.grass), { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], cast: false });
+    // a few tufts, a water bowl and a ball in every pen
+    for (let k = 0; k < 6; k++) add(grp, new THREE.ConeGeometry(0.08, 0.25, 4), toon('#6fb85a'), { p: [(((k * 37) % 10) / 10 - 0.5) * (pen.w - 1), 0.12, (((k * 53) % 10) / 10 - 0.5) * (pen.d - 1)], cast: false });
+    add(grp, new THREE.CylinderGeometry(0.3, 0.24, 0.16, 16), toon(pen.color), { p: [pen.w / 2 - 0.6, 0.08, pen.d / 2 - 0.6], outline: true });
+    add(grp, new THREE.CylinderGeometry(0.24, 0.24, 0.02, 16), toon('#8fd3ff'), { p: [pen.w / 2 - 0.6, 0.16, pen.d / 2 - 0.6], cast: false });
+    add(grp, new THREE.SphereGeometry(0.18, 12, 10), toon('#ff5d73'), { p: [-pen.w / 2 + 0.8, 0.18, -pen.d / 2 + 0.8], outline: true });
+    sign(g, pen.sign, { x: pen.x, z: pen.z + pen.d / 2, y: 3.4, w: 3.4, h: 0.8, bg: pen.color });
     const edge = (x0, z0, x1, z1) => {
       const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / 0.45);
       for (let k = 0; k <= n; k++) add(grp, new THREE.BoxGeometry(0.12, 0.9, 0.06), white, { p: [x0 + ((x1 - x0) * k) / n, 0.45, z0 + ((z1 - z0) * k) / n], r: [0, Math.atan2(x1 - x0, z1 - z0), 0] });
@@ -319,12 +451,56 @@ export function petShopArea(stage) {
   inc.add(warm);
   anim.push((t) => { egg.rotation.z = Math.sin(t * 5) * 0.12 * (Math.sin(t * 0.8) > 0.4 ? 1 : 0.2); warm.material.opacity = 0.35 + Math.sin(t * 2) * 0.1; });
   solids.push({ x: -5, z: 3.5, r: 1.4 });
+  sign(g, 'EGG INCUBATOR', { x: -5, z: 3.5, y: 3.6, w: 3.2, h: 0.75, bg: '#ff8fc7' });
   stage.interactable({ x: -5, z: 5.2, r: 2.4, label: 'hatch a pet egg', icon: 'shop', obj: inc,
     use: () => stage.openPanel({ mount: (body) => petEgg(body) }) });
 
   // counter + shopkeeper (with her own giraffe), pet beds and a bowl of treats
   counter(g, 6, 5, 4, '#ff8fc7');
   solids.push({ x: 6, z: 5, w: 4.2, d: 1.1 });
+  sign(g, 'CHECKOUT', { x: 6, z: 5, y: 3.6, w: 2.6, h: 0.7, bg: '#ffb13b' });
+
+  // shelves of pet food along the back wall
+  const shelf = new THREE.Group();
+  shelf.position.set(-2.5, 0, -8.6);
+  g.add(shelf);
+  add(shelf, new THREE.BoxGeometry(4.4, 2.4, 0.08), toon('#c28a4e'), { p: [0, 1.2, -0.26], outline: true });
+  for (const sx of [-2.18, 2.18]) add(shelf, new THREE.BoxGeometry(0.08, 2.4, 0.6), toon('#a0703f'), { p: [sx, 1.2, 0], outline: true });
+  add(shelf, new THREE.BoxGeometry(4.4, 0.1, 0.6), toon('#a0703f'), { p: [0, 2.4, 0] });
+  const cans = ['#ff5d73', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff'];
+  for (const y of [0.5, 1.15, 1.8]) {
+    add(shelf, new THREE.BoxGeometry(4.2, 0.06, 0.55), toon('#a0703f'), { p: [0, y - 0.22, 0.04] });
+    for (let k = 0; k < 7; k++) {
+      const c = cans[(k + Math.round(y * 4)) % cans.length];
+      if ((k + Math.round(y * 2)) % 3 === 0) add(shelf, new THREE.BoxGeometry(0.42, 0.5, 0.3), toon(c), { p: [-1.8 + k * 0.6, y + 0.03, 0.1], outline: true }); // a bag
+      else add(shelf, new THREE.CylinderGeometry(0.14, 0.14, 0.3, 12), toon(c), { p: [-1.8 + k * 0.6, y - 0.07, 0.1], cast: false }); // a can
+    }
+  }
+  solids.push({ x: -2.5, z: -8.6, w: 4.5, d: 0.7 });
+  sign(g, 'TREATS & TOYS', { x: -2.5, z: -8.2, y: 3.0, w: 3.0, h: 0.7, bg: '#ff9f43', hang: false });
+
+  // a fish tank on a stand by the right wall, fish swimming back and forth
+  const tank = new THREE.Group();
+  tank.position.set(10.8, 0, 3);
+  tank.rotation.y = -Math.PI / 2;
+  g.add(tank);
+  add(tank, new THREE.BoxGeometry(2.6, 1.0, 1.0), toon('#8b5a2b'), { p: [0, 0.5, 0], outline: true });
+  add(tank, new THREE.BoxGeometry(2.4, 1.3, 0.9), toon('#7fd4ff', { transparent: true, opacity: 0.55 }), { p: [0, 1.66, 0], cast: false });
+  add(tank, new THREE.BoxGeometry(2.4, 0.15, 0.9), toon('#f2d59b'), { p: [0, 1.08, 0], cast: false });
+  const fish = [];
+  for (let k = 0; k < 3; k++) fish.push(add(tank, new THREE.SphereGeometry(0.12, 10, 8), toon(['#ff9f43', '#ffd84d', '#ff5d73'][k]), { p: [0, 1.4 + k * 0.25, 0], s: [1.5, 1, 0.6], cast: false }));
+  anim.push((t) => fish.forEach((f, k) => { const a = t * (0.6 + k * 0.2) + k * 2; f.position.x = Math.sin(a) * 0.9; f.rotation.y = Math.cos(a) > 0 ? 0 : Math.PI; }));
+  solids.push({ x: 10.8, z: 3, w: 1.1, d: 2.7 });
+
+  // a cat tree in the corner
+  const tree = new THREE.Group();
+  tree.position.set(-10.3, 0, 1.2);
+  g.add(tree);
+  add(tree, new THREE.BoxGeometry(1.6, 0.2, 1.6), toon('#c9b7e8'), { p: [0, 0.1, 0], outline: true });
+  add(tree, new THREE.CylinderGeometry(0.16, 0.16, 2.6, 10), toon('#e8d2a8'), { p: [0, 1.4, 0] });
+  for (const [y, x] of [[1.1, 0.35], [1.9, -0.3], [2.7, 0.1]]) add(tree, new THREE.CylinderGeometry(0.55, 0.55, 0.14, 16), toon('#c9b7e8'), { p: [x, y, 0], outline: true });
+  add(tree, new THREE.SphereGeometry(0.1, 8, 6), toon('#ff5d73'), { p: [0.6, 0.85, 0.2] });
+  solids.push({ x: -10.3, z: 1.2, r: 0.9 });
   shopkeeper(g, { skin: '#c68642', hair: 'hair_pigtails', hairColor: '#6e4a2e', top: 'top_hoodie', topColor: '#ffd84d', eyes: 'eyes_sparkle', pet: 'pet_giraffe' }, 5, 3.9, anim);
   solids.push({ x: 5, z: 3.9, r: 0.6 }, { x: 6.2, z: 3.4, r: 0.6 });
   for (const [x, z, c] of [[-10, 6, '#7c6bff'], [-8, 7, '#39c6ff']]) {

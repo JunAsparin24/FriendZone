@@ -15,6 +15,7 @@ import { Fishing, Line } from './games/fishing.js';
 import { Sparks } from './three/fx.js';
 import { registerLook, mouseLooking } from './mouselook.js';
 import { CATALOG } from './catalog.js';
+const PITCH_MIN = -0.55, PITCH_LOW = 0.08; // how far you can look up; where the orbit stops dropping
 
 const CATALOG_RODS = Object.fromEntries(CATALOG.rods.map((r) => [r.id, r]));
 
@@ -120,7 +121,7 @@ export class World {
       active: () => this.running && !this.hidden && !this.paused && !this.fishing,
       look: (dx, dy) => {
         this.yaw -= dx * 0.0035 * settings.camSens;
-        this.pitch = clamp(this.pitch + dy * 0.0025 * settings.camSens * (settings.invertY ? -1 : 1), 0.28, 1.35);
+        this.pitch = clamp(this.pitch + dy * 0.0025 * settings.camSens * (settings.invertY ? -1 : 1), PITCH_MIN, 1.35);
       },
     });
 
@@ -439,7 +440,7 @@ export class World {
     if (!d.moved && Math.hypot(dx, dy) > 6) d.moved = true;
     if (d.moved) {
       this.yaw -= dx * 0.0055 * settings.camSens;
-      this.pitch = clamp(this.pitch + dy * 0.0035 * settings.camSens * (settings.invertY ? -1 : 1), 0.28, 1.35);
+      this.pitch = clamp(this.pitch + dy * 0.0035 * settings.camSens * (settings.invertY ? -1 : 1), PITCH_MIN, 1.35);
       d.x = e.clientX;
       d.y = e.clientY;
     }
@@ -766,9 +767,15 @@ export class World {
     const goal = new THREE.Vector3(p.x, 1.3 + (me ? M.groundAt(me.x, me.y) : 0), p.z);
     if (!this.camReady) { this.camTarget.copy(goal); this.camReady = true; }
     this.camTarget.lerp(goal, 1 - Math.exp(-dt * 9));
-    const c = this.camTarget, cp = Math.cos(this.pitch);
-    this.camera.position.set(c.x + Math.sin(this.yaw) * cp * this.dist, c.y + Math.sin(this.pitch) * this.dist, c.z + Math.cos(this.yaw) * cp * this.dist);
-    this.camera.lookAt(c);
+    // below a low orbit the camera stays near the ground and tilts its gaze upwards instead, so you can
+    // look up at tall buildings (but never straight up)
+    const c = this.camTarget, orbit = Math.max(this.pitch, PITCH_LOW), cp = Math.cos(orbit);
+    const cx = c.x + Math.sin(this.yaw) * cp * this.dist, cz = c.z + Math.cos(this.yaw) * cp * this.dist;
+    let cy = c.y + Math.sin(orbit) * this.dist;
+    cy = Math.max(cy, M.groundAt(M.CENTER.x + cx * M.PX, M.CENTER.y + cz * M.PX) + 0.6);
+    this.camera.position.set(cx, cy, cz);
+    const lift = Math.max(0, PITCH_LOW - this.pitch) * this.dist * 1.1;
+    this.camera.lookAt(c.x, c.y + lift, c.z);
     const dn = this.dayNight.update(c);
     if (this.clockEl && performance.now() - (this.clockAt ?? 0) > 1000) {
       this.clockAt = performance.now();

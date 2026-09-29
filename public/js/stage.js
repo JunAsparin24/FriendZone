@@ -328,9 +328,10 @@ class Stage {
     const goal = o.target.clone().add(new THREE.Vector3(0, o.height, 0));
     if (!o.cur) o.cur = goal.clone();
     o.cur.lerp(goal, 1 - Math.exp(-dt * 9));
-    const cp = Math.cos(o.pitch);
-    this.camera.position.set(o.cur.x + Math.sin(o.yaw) * cp * o.dist, o.cur.y + Math.sin(o.pitch) * o.dist, o.cur.z + Math.cos(o.yaw) * cp * o.dist);
-    this.camera.lookAt(o.cur);
+    // below a low orbit the camera stays off the floor and tilts its gaze up instead (never straight up)
+    const LOW = 0.08, orbit = Math.max(o.pitch, LOW), cp = Math.cos(orbit);
+    this.camera.position.set(o.cur.x + Math.sin(o.yaw) * cp * o.dist, Math.max(0.5, o.cur.y + Math.sin(orbit) * o.dist), o.cur.z + Math.cos(o.yaw) * cp * o.dist);
+    this.camera.lookAt(o.cur.x, o.cur.y + Math.max(0, LOW - o.pitch) * o.dist * 1.1, o.cur.z);
   }
 
   // ---- interactables ("Press E to …") -----------------------------------------------
@@ -385,7 +386,7 @@ class Stage {
   walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {} }) {
     const me = this.person(S.me);
     Object.assign(me, { x: spawn.x, z: spawn.z, heading: Math.PI });
-    const o = this.useOrbit({ target: new THREE.Vector3(), yaw: 0, pitch: 0.62, dist: 11, minDist: 5, maxDist: 20, ...orbit });
+    const o = this.useOrbit({ target: new THREE.Vector3(), yaw: 0, pitch: 0.62, dist: 11, minDist: 5, maxDist: 20, minPitch: -0.45, ...orbit });
     let target = null, sent = { at: 0, x: 0, z: 0 };
     const R = 0.4;
     const blocked = (x, z) => {

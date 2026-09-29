@@ -358,7 +358,7 @@ function buildTrack() {
   const pads = PADS.map((f, i) => {
     const off = [-3, 3, 0, -3, 3][i];
     const p = track(L * f, off);
-    const m = add(g, new THREE.PlaneGeometry(3.4, 5), new THREE.MeshBasicMaterial({ map: chevronTex, transparent: true }), [p.x, 0.07, p.z], [-Math.PI / 2, 0, -p.heading + Math.PI], { cast: false });
+    const m = add(g, new THREE.PlaneGeometry(3.4, 5), new THREE.MeshBasicMaterial({ map: chevronTex, transparent: true }), [p.x, 0.07, p.z], [-Math.PI / 2, 0, p.heading + Math.PI], { cast: false }); // chevrons point along the track
     return { s: L * f, off, x: p.x, z: p.z, m };
   });
   const boxes = [];
@@ -486,7 +486,7 @@ function rollItem(place, field) {
   return Object.keys(odds).find((k) => (r -= odds[k]) < 0) ?? 'shell';
 }
 
-const ACCEL = 17, BRAKE = 30, MAX = 29, BOOST_MAX = 44, GRASS_MAX = 11;
+const ACCEL = 12, BRAKE = 30, MAX = 29, BOOST_MAX = 44, GRASS_MAX = 11;
 
 export function racing(stage) {
   env ||= buildTrack();
@@ -747,7 +747,8 @@ export function racing(stage) {
     let max = me.star > 0 ? 36 : me.boost > 0 ? BOOST_MAX : MAX;
     if (me.zap > 0) max *= 0.6;
     if (onGrass && me.star <= 0 && me.boost <= 0) max = GRASS_MAX;
-    if (control && gas) me.v += ACCEL * dt;
+    // pull away gently and build up speed: strongest off the line, easing off towards top speed
+    if (control && gas) me.v += (me.v < 0 ? BRAKE : ACCEL * (1.15 - 0.85 * Math.min(1, Math.max(0, me.v) / MAX))) * dt;
     else if (control && brake) me.v -= (me.v > 0 ? BRAKE : ACCEL * 0.6) * dt;
     else me.v *= Math.exp(-0.9 * dt);
     if (me.boost > 0 || me.star > 0) me.v = Math.max(me.v, Math.min(max, me.v + 60 * dt));
@@ -761,8 +762,8 @@ export function racing(stage) {
     if (!control) me.h += 11 * dt;
     else if (me.slide <= 0) {
       // a drift only tightens the turn a little; steering against it straightens you out
-      const turn = me.drift ? (me.driftDir * 0.5 + steer * 0.6) : steer;
-      me.h -= turn * (me.drift ? 1.95 : 1.85) * grip * dt;
+      const turn = me.drift ? (me.driftDir * 0.22 + steer * 0.85) : steer;
+      me.h -= turn * 1.85 * grip * dt;
     }
     me.x += Math.sin(me.h) * me.v * dt;
     me.z += Math.cos(me.h) * me.v * dt;
@@ -913,7 +914,7 @@ export function racing(stage) {
       const kg = v.kart.g;
       const zapped = v.flags.includes('Z');
       kg.position.set(v.x, Math.abs(v.v) > 20 ? Math.abs(Math.sin(now / 40 + v.x)) * 0.05 : 0, v.z);
-      kg.rotation.y = v.h + (v.flags.includes('D') ? (k === S.me ? me.driftDir : 1) * -0.16 : 0);
+      kg.rotation.y = v.h + (v.flags.includes('D') ? (k === S.me ? me.driftDir : 1) * -0.08 : 0);
       kg.scale.setScalar(zapped ? 0.6 : 1);
       v.kart.wheels.forEach((w) => { w.rotation.x += dt * v.v * 1.4; });
       const boosting = v.flags.includes('B');

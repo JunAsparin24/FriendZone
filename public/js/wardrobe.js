@@ -4,6 +4,7 @@ import { S, esc, fmt, me, toast } from './state.js';
 import { CATALOG, ITEMS, RARITY, owns, howToGet } from './catalog.js';
 import { paintPortrait, portraitInto } from './avatar.js';
 import { $, listen, hiDpiCanvas, loop, confetti } from './games/util.js';
+import { sfx } from './sfx.js';
 
 const TABS = [
   { id: 'body', label: '🧍 Body' },
@@ -94,7 +95,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
       const owned = owns(p, it.id);
       const footer = owned ? (draft[slot] === it.id ? '✓ Wearing' : '')
         : confirmBuy === it.id ? `Buy for ${fmt(it.price)}?`
-          : it.price ? `🪙 ${fmt(it.price)}` : it.unlock ? `🔒 ${esc(it.unlock.hint)}` : '🎁 Crates';
+          : it.price ? `🪙 ${fmt(it.price)}` : it.unlock ? `🔒 ${esc(it.unlock.hint)}` : it.drop ? `👾 ${esc(it.drop)}` : '🎁 Crates';
       return `<button class="tile ${owned ? '' : 'locked'} ${draft[slot] === it.id ? 'on' : ''} ${confirmBuy === it.id ? 'confirm' : ''}"
         data-id="${it.id}" style="--r:${RARITY[it.rarity].color}" title="${esc(it.name)} · ${RARITY[it.rarity].label} · ${esc(howToGet(it))}">
         <span class="tile-art"></span><span class="tile-name">${esc(it.name)}</span><span class="tile-foot">${footer}</span>
@@ -129,6 +130,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     if (!tile) return;
     const it = ITEMS[tile.dataset.id];
     if (owns(me(), it.id)) {
+      if (draft[it.slot] !== it.id) sfx('swap');
       draft[it.slot] = it.id;
       confirmBuy = null;
     } else if (it.price) {
@@ -137,7 +139,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
         confirmBuy = null;
       } else confirmBuy = it.id;
     } else {
-      toast(it.unlock ? `🔒 ${it.name}: ${it.unlock.hint}` : `🎁 ${it.name} only comes from crates.`);
+      toast(it.unlock ? `🔒 ${it.name}: ${it.unlock.hint}` : it.drop ? `👾 ${it.name} drops from the ${it.drop} in the Boss Cave.` : `🎁 ${it.name} only comes from crates.`);
     }
     renderContent();
   });
@@ -174,6 +176,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
       opening = true;
       $(content, '#openCrate').disabled = true;
       $(content, '.crate-box').classList.add('shake');
+      sfx('rattle');
       net.send('crate');
     };
   }
@@ -203,7 +206,14 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     void strip.offsetWidth;
     strip.style.transition = 'transform 4.6s cubic-bezier(.08,.75,.18,1)';
     strip.style.transform = `translateX(${-offset}px)`;
-    setTimeout(() => reveal(wonId), 4800);
+    // tick every time a tile passes the marker
+    let lastTile = -1;
+    const stopTicks = loop(() => {
+      const x = new DOMMatrix(getComputedStyle(strip).transform).m41;
+      const tile = Math.floor((center - x) / TILE);
+      if (tile !== lastTile) { if (lastTile >= 0) sfx('cratetick'); lastTile = tile; }
+    });
+    setTimeout(() => { stopTicks(); reveal(wonId); }, 4800);
   }
 
   function reveal(id) {
@@ -213,6 +223,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     $(content, '.crate-reel').classList.add('hidden');
     box.classList.remove('hidden');
     box.style.setProperty('--r', r.color);
+    sfx('reveal', { rarity: it.rarity });
     box.innerHTML = `<div class="rv-art"></div><div class="rv-rarity">${r.label}</div><div class="rv-name">${esc(it.name)}</div>
       <div class="row center"><button class="btn primary" id="equipWon">Wear it</button><button class="btn" id="again">Open another</button></div>`;
     portraitInto(box.querySelector('.rv-art'), { ...draft, [it.slot]: id }, 120, 130, { zoom: HEAD_SLOTS.has(it.slot) ? 'head' : 'body' });
@@ -238,7 +249,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
       else renderHeader();
     },
     unlock: (m) => {
-      if (ITEMS[m.id] && m.source === 'shop') draft[ITEMS[m.id].slot] = m.id;
+      if (ITEMS[m.id] && m.source === 'shop') { draft[ITEMS[m.id].slot] = m.id; sfx('buy'); }
     },
     crate_result: (m) => spinCrate(m.id),
     error: (m) => {

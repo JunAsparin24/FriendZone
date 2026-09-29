@@ -1,32 +1,153 @@
-// Archery: aim with the mouse, hold to draw the bow (steadies your aim, but hold too long and
-// your arms shake), release to shoot. Wind pushes arrows and later targets move.
+// Archery (3D): stand at the shooting line and send five arrows downrange. Aim with the mouse,
+// hold to draw (your aim steadies), release to shoot. Hold too long and your arms shake; the wind
+// pushes arrows and the last two targets move. Aiming happens on a flat "target plane" measured in
+// the same units as the old 2D range (580 x 380 px), so the scoring rules are unchanged.
+import * as THREE from 'three';
 import { net } from '../net.js';
-import { $, TAU, clamp, listen, onKeys, hiDpiCanvas, loop, confetti, Popups } from './util.js';
+import { S, esc, fmt } from '../state.js';
+import { toon, canvasTexture, outlineMaterial, TAU } from '../three/materials.js';
+import { Sparks, FloatText, emojiSprite } from '../three/fx.js';
+import { sfx } from '../sfx.js';
+import { listen, confetti } from './util.js';
 
-const CW = 580, CH = 380;
-const ARROWS = 5, TR = 60, TY = 150;
-const RING_COLORS = ['#f4f4f4', '#f4f4f4', '#2a2a2a', '#2a2a2a', '#3aa0ff', '#3aa0ff', '#ff4d4d', '#ff4d4d', '#ffd84d', '#ffd84d'];
+const CW = 580, ARROWS = 5, TR = 60, TY = 150;
+const DIST = 24;            // target distance (units)
+const PX = 34;              // plane px per unit
+const TARGET_Y = 2.6;       // height of the target centre (units)
+const planePos = (cx, cy) => new THREE.Vector3((cx - CW / 2) / PX, TARGET_Y - (cy - TY) / PX, -DIST);
+const OUT = outlineMaterial(0.03);
 
-export function archery(body) {
-  body.innerHTML = `
-    <h2>🏹 Archery Range</h2>
-    <div class="game-canvas-wrap"><canvas class="archery-canvas"></canvas></div>
-    <p class="hint muted small">Aim with the mouse. <b>Hold</b> to draw the bow (your aim steadies), <b>release</b> to shoot.
-      Mind the wind, and don't hold too long or your arms shake! Arrows 4–5 move.</p>
-    <div class="row between"><div class="result"></div><button class="btn primary hidden" id="again">Shoot again</button></div>`;
-  const canvas = $(body, 'canvas'), result = $(body, '.result'), again = $(body, '#again');
-  const ctx = hiDpiCanvas(canvas, CW, CH);
-  const popups = new Popups();
+const faceTex = canvasTexture(256, 256, (ctx) => {
+  const colors = ['#f4f4f4', '#f4f4f4', '#2a2a2a', '#2a2a2a', '#3aa0ff', '#3aa0ff', '#ff4d4d', '#ff4d4d', '#ffd84d', '#ffd84d'];
+  for (let i = 0; i < 10; i++) {
+    ctx.fillStyle = colors[i];
+    ctx.beginPath(); ctx.arc(128, 128, 126 - i * 12.6, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.25)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+});
+const grassTex = canvasTexture(256, 256, (ctx) => {
+  ctx.fillStyle = '#6fbd5f';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 8; i++) {
+    ctx.fillStyle = i % 2 ? '#66b458' : '#78c667';
+    ctx.fillRect(i * 32, 0, 16, 256);
+  }
+}, { repeat: [10, 10] });
+
+let env = null;
+function buildRange() {
+  const g = new THREE.Group();
+  const add = (parent, geo, mat, p = [0, 0, 0], r = null, outline = false) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(...p);
+    if (r) m.rotation.set(...r);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    if (outline) m.add(new THREE.Mesh(geo, OUT));
+    parent.add(m);
+    return m;
+  };
+  add(g, new THREE.PlaneGeometry(200, 200), new THREE.MeshToonMaterial({ map: grassTex }), [0, 0, -30], [-Math.PI / 2, 0, 0]).castShadow = false;
+  // the shooting booth
+  const wood = toon('#a8723f');
+  for (const x of [-3.4, 3.4]) for (const z of [-1.5, 2]) add(g, new THREE.BoxGeometry(0.25, 4.8, 0.25), wood, [x, 2.4, z], null, true);
+  add(g, new THREE.BoxGeometry(7.6, 0.25, 4.4), toon('#2f7f5e'), [0, 4.9, 0.25], [0.12, 0, 0], true);
+  add(g, new THREE.BoxGeometry(6.4, 0.9, 0.2), wood, [0, 0.45, -1.5], null, true);
+  add(g, new THREE.BoxGeometry(7, 0.1, 5), toon('#c9955a'), [0, 0.05, 0.3]).castShadow = false;
+  // lanes, hay bales, flags
+  for (const x of [-7, 7]) add(g, new THREE.BoxGeometry(0.08, 0.08, DIST + 6), toon('#ffffff'), [x, 0.4, -DIST / 2]);
+  for (const [x, z] of [[-5, -8], [5.5, -12], [-6, -17], [6, -20]]) add(g, new THREE.CylinderGeometry(0.7, 0.7, 1.2, 14), toon('#e8c96a'), [x, 0.6, z], [0, 0, Math.PI / 2], true);
+  const flags = [];
+  for (const x of [-6.5, 6.5]) {
+    add(g, new THREE.CylinderGeometry(0.06, 0.06, 5, 8), toon('#6b4a2b'), [x, 2.5, -10]);
+    flags.push(add(g, new THREE.ConeGeometry(0.35, 1.6, 8, 1, true), toon('#ff5d73', { side: THREE.DoubleSide }), [x, 4.6, -10], [0, 0, -Math.PI / 2]));
+  }
+  // decorative targets in the other lanes
+  for (const x of [-11, 11]) {
+    const t = new THREE.Group();
+    add(t, new THREE.CylinderGeometry(1.4, 1.4, 0.3, 32), toon('#e8c96a'), [0, 0, 0], [Math.PI / 2, 0, 0], true);
+    add(t, new THREE.CircleGeometry(1.3, 32), new THREE.MeshToonMaterial({ map: faceTex }), [0, 0, 0.16]);
+    t.position.set(x, 2.2, -DIST);
+    g.add(t);
+  }
+  // rolling hills + trees in the distance
+  for (let i = 0; i < 9; i++) add(g, new THREE.SphereGeometry(14 + (i % 3) * 5, 20, 12), toon(i % 2 ? '#7ccf6b' : '#6ab85d'), [-60 + i * 15, -6, -70 - (i % 2) * 12]).castShadow = false;
+  let seed = 5;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  for (let i = 0; i < 40; i++) {
+    const x = (rnd() - 0.5) * 90, z = -34 - rnd() * 30;
+    const tr = new THREE.Group();
+    add(tr, new THREE.CylinderGeometry(0.25, 0.35, 2, 6), toon('#7a4a28'), [0, 1, 0]);
+    add(tr, new THREE.ConeGeometry(1.6 + rnd(), 4, 8), toon(rnd() < 0.5 ? '#2f7f5e' : '#3fa34d'), [0, 3.6, 0]);
+    tr.position.set(x, 0, z);
+    g.add(tr);
+  }
+  // the live target, on a stand that can slide sideways
+  const target = new THREE.Group();
+  add(target, new THREE.CylinderGeometry(TR / PX + 0.2, TR / PX + 0.2, 0.4, 40), toon('#e8c96a'), [0, 0, 0], [Math.PI / 2, 0, 0], true);
+  add(target, new THREE.CircleGeometry(TR / PX, 40), new THREE.MeshToonMaterial({ map: faceTex }), [0, 0, 0.21]);
+  for (const s of [-1, 1]) add(target, new THREE.BoxGeometry(0.18, TARGET_Y + 0.4, 0.18), toon('#6b4a2b'), [s * 1.2, -TARGET_Y / 2, -0.3], [0.12, 0, 0], true);
+  target.position.set(0, TARGET_Y, -DIST);
+  g.add(target);
+  return { group: g, target, flags };
+}
+
+function arrowMesh() {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 6), toon('#8b5a2b'));
+  shaft.rotation.x = Math.PI / 2;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.2, 6), toon('#c0c6d4'));
+  tip.rotation.x = -Math.PI / 2;
+  tip.position.z = -0.8;
+  g.add(shaft, tip);
+  for (let i = 0; i < 3; i++) {
+    const holder = new THREE.Group();
+    holder.rotation.z = (i / 3) * TAU;
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.26), toon('#ff5d73', { side: THREE.DoubleSide }));
+    f.rotation.y = Math.PI / 2;
+    f.position.set(0, 0.07, 0.58);
+    holder.add(f);
+    g.add(holder);
+  }
+  g.traverse((o) => { o.castShadow = true; });
+  return g; // points down -Z
+}
+
+export function archery(stage) {
+  env ||= buildRange();
+  stage.lights({ background: '#8fd0ff', sunPos: [18, 40, 20], box: 34, hemi: 1.3 });
+  stage.scene.add(env.group);
+  const sparks = new Sparks(stage.scene);
+  const texts = new FloatText(stage.scene);
+  stage.hud.innerHTML = `
+    <div class="hud-panel arch-score"><b class="score">0</b><small>/50</small><div class="quiver"></div></div>
+    <div class="hud-panel arch-wind"></div>
+    <div class="hud-panel arch-board"><h4>🏆 Zone best</h4><ol></ol></div>
+    <div class="arch-reticle"><i></i><div class="arch-meter hidden"><b></b></div></div>
+    <div class="hud-panel arch-result hidden"><div class="res"></div><button class="btn primary" data-again>Shoot again</button></div>
+    <p class="hud-panel arena-help">Aim with the mouse. <b>Hold</b> to draw the bow (your aim steadies), <b>release</b> to shoot. Mind the wind, and don't hold too long! Arrows 4–5 move.</p>`;
+  const $h = (s) => stage.hud.querySelector(s);
+  const reticle = $h('.arch-reticle');
+  stage.canvas.style.cursor = 'none';
+
+  const me = stage.person(S.me);
+  Object.assign(me, { x: 0, z: 0.6, heading: Math.PI, smooth: false });
+  me.char.setProp('bow');
+  me.char.aiming = true;
+
   let mouse = { x: CW / 2, y: TY }, drawing = false, drawT = 0, t = 0;
-  let round;
+  let round, stuck = [], flying = null, leaves = [];
 
   function newRound() {
-    round = { n: 0, shots: [], flying: null, wait: 0, done: false, sent: false };
+    for (const a of stuck) a.parent?.remove(a);
+    stuck = [];
+    round = { n: 0, shots: [], wait: 0, done: false };
     setupArrow();
-    again.classList.add('hidden');
-    result.textContent = '';
+    $h('.arch-result').classList.add('hidden');
+    renderHud();
   }
-
   function setupArrow() {
     const n = round.n;
     round.wind = n === 0 ? (Math.random() - 0.5) * 0.4 : (Math.random() - 0.5) * 2;
@@ -34,263 +155,181 @@ export function archery(body) {
     round.speed = n === 3 ? 0.9 : 1.4;
     round.baseX = 200 + Math.random() * 180;
     round.phase = Math.random() * TAU;
+    renderHud();
   }
-
   const targetX = () => (round.moving ? CW / 2 + Math.sin(t * round.speed + round.phase) * 150 : round.baseX);
 
   function sway() {
     let amp = 14;
-    if (drawing) {
-      amp = drawT < 1.2 ? 14 - (drawT / 1.2) * 10 : drawT < 2.4 ? 4 : Math.min(40, 4 + (drawT - 2.4) * 18);
-    }
-    return {
-      x: (Math.sin(t * 1.7) + Math.sin(t * 2.9 + 1) * 0.5) * amp * 0.7,
-      y: (Math.cos(t * 1.3) + Math.sin(t * 3.3 + 2) * 0.5) * amp * 0.7,
-      amp,
-    };
+    if (drawing) amp = drawT < 1.2 ? 14 - (drawT / 1.2) * 10 : drawT < 2.4 ? 4 : Math.min(40, 4 + (drawT - 2.4) * 18);
+    return { x: (Math.sin(t * 1.7) + Math.sin(t * 2.9 + 1) * 0.5) * amp * 0.7, y: (Math.cos(t * 1.3) + Math.sin(t * 3.3 + 2) * 0.5) * amp * 0.7, amp };
   }
+  const aim = () => { const s = sway(); return { x: mouse.x + s.x, y: mouse.y + s.y }; };
 
-  function aim() {
-    const s = sway();
-    return { x: mouse.x + s.x, y: mouse.y + s.y };
+  function startDraw() {
+    if (round.done || flying || round.wait > 0) return;
+    drawing = true;
+    drawT = 0;
+    sfx('draw');
   }
 
   function release() {
     if (!drawing) return;
     drawing = false;
-    if (round.done || round.flying || round.wait > 0) return;
+    if (round.done || flying || round.wait > 0) return;
     const power = Math.min(1, drawT / 0.8);
     if (power < 0.25) {
-      popups.add('Pull further!', mouse.x, mouse.y - 20, '#ffd84d', 16);
+      texts.add('Pull further!', 0, TARGET_Y + 1.5, -8, '#ffd84d', 0.8);
+      sfx('miss');
       return;
     }
+    sfx('twang');
+    sfx('arrow');
     const a = aim();
     const land = { x: a.x + round.wind * 42, y: a.y + (1 - power) * 50 };
-    round.flying = { from: { x: CW / 2, y: CH - 30 }, to: land, t: 0 };
+    const mesh = arrowMesh();
+    stage.scene.add(mesh);
+    flying = { from: new THREE.Vector3(0.1, 1.9, -0.6), to: land, t: 0, mesh };
   }
 
   function landArrow() {
-    const { to } = round.flying;
-    round.flying = null;
+    const { to, mesh } = flying;
+    flying = null;
     const tx = targetX();
     const d = Math.hypot(to.x - tx, to.y - TY);
     const pts = d <= TR ? 10 - Math.floor(d / (TR / 10)) : 0;
-    round.shots.push({ pts, onTarget: d <= TR, dx: to.x - tx, dy: to.y - TY, x: to.x, y: to.y });
-    popups.add(pts === 10 ? 'BULLSEYE! +10' : pts ? `+${pts}` : 'Miss', to.x, to.y - 18, pts >= 9 ? '#ffd84d' : pts ? '#fff' : '#ff8a9a', pts === 10 ? 22 : 18);
-    if (pts === 10) confetti($(body, '.game-canvas-wrap'), { count: 40 });
+    round.shots.push(pts);
+    const hit = planePos(to.x, to.y);
+    if (pts) {
+      // stick it in the (possibly moving) target
+      const local = env.target.worldToLocal(hit.clone());
+      mesh.position.set(local.x, local.y, 0.25 + 0.5);
+      mesh.rotation.set(0, 0, 0);
+      env.target.add(mesh);
+      stuck.push(mesh);
+      sparks.burst(hit.x, hit.y, hit.z + 0.3, pts === 10 ? '#ffd84d' : '#ffffff', { n: pts === 10 ? 26 : 10, gravity: 4, speed: 3 });
+      texts.add(pts === 10 ? 'BULLSEYE! +10' : `+${pts}`, hit.x, hit.y + 1.2, hit.z + 0.5, pts >= 9 ? '#ffd84d' : '#ffffff', pts === 10 ? 1.4 : 1);
+      if (pts === 10) { confetti(stage.hud, { count: 50 }); stage.shake(0.2); }
+      sfx(pts === 10 ? 'bullseye' : 'thud');
+    } else {
+      mesh.position.set(hit.x, 0.25, hit.z + 1.5);
+      mesh.rotation.x = 0.5;
+      stuck.push(mesh);
+      texts.add('Miss', hit.x, 2, hit.z, '#ff8a9a', 1);
+      sfx('miss');
+    }
     round.n += 1;
     if (round.n >= ARROWS) {
       round.done = true;
-      const score = round.shots.reduce((s, x) => s + x.pts, 0);
-      net.send('archery', { score });
-      round.sent = true;
-    } else {
-      round.wait = 0.7;
-    }
+      net.send('archery', { score: round.shots.reduce((s, x) => s + x, 0) });
+    } else round.wait = 0.8;
+    renderHud();
   }
 
-  function update(dt) {
-    t += dt;
-    if (drawing) drawT += dt;
-    if (round.wait > 0) {
-      round.wait -= dt;
-      if (round.wait <= 0) setupArrow();
-    }
-    if (round.flying) {
-      round.flying.t += dt / 0.38;
-      if (round.flying.t >= 1) landArrow();
-    }
-  }
-
-  function draw(dt) {
-    const sky = ctx.createLinearGradient(0, 0, 0, 170);
-    sky.addColorStop(0, '#8fd0ff');
-    sky.addColorStop(1, '#e6f6ff');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, CW, 170);
-    ctx.fillStyle = '#a4d49a';
-    ctx.beginPath(); ctx.ellipse(120, 175, 220, 60, 0, Math.PI, TAU); ctx.fill();
-    ctx.fillStyle = '#8cc684';
-    ctx.beginPath(); ctx.ellipse(460, 180, 260, 70, 0, Math.PI, TAU); ctx.fill();
-    const grass = ctx.createLinearGradient(0, 165, 0, CH);
-    grass.addColorStop(0, '#79bf6b');
-    grass.addColorStop(1, '#4f9a4a');
-    ctx.fillStyle = grass;
-    ctx.fillRect(0, 165, CW, CH - 165);
-    ctx.strokeStyle = 'rgba(255,255,255,.12)';
-    for (let i = -6; i <= 6; i++) {
-      ctx.beginPath(); ctx.moveTo(CW / 2 + i * 30, 165); ctx.lineTo(CW / 2 + i * 120, CH); ctx.stroke();
-    }
-
-    // wind flag
+  function renderHud() {
+    const score = round.shots.reduce((s, x) => s + x, 0);
+    $h('.score').textContent = score;
+    $h('.quiver').innerHTML = Array.from({ length: ARROWS }, (_, i) => `<span class="${i < round.n ? 'used' : ''}">${i < round.n ? round.shots[i] : '➶'}</span>`).join('');
     const w = round.wind;
-    const dir = w < 0 ? -1 : 1, pole = 58;
-    ctx.fillStyle = '#6b4a2b';
-    ctx.fillRect(pole - 2, 16, 4, 34);
-    ctx.fillStyle = '#ff5d73';
-    ctx.beginPath();
-    ctx.moveTo(pole + dir * 2, 17);
-    ctx.lineTo(pole + dir * (10 + Math.abs(w) * 30), 23 + Math.sin(t * 8) * 2 * Math.abs(w));
-    ctx.lineTo(pole + dir * 2, 30);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(13,31,74,.75)';
-    ctx.beginPath(); ctx.roundRect(pole - 48, 50, 96, 24, 12); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = '700 12px Rubik, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`Wind ${w < -0.05 ? '←' : w > 0.05 ? '→' : '·'} ${Math.abs(w * 10).toFixed(1)}`, pole, 66);
-
-    // target
-    const tx = targetX();
-    ctx.fillStyle = '#6b4a2b';
-    ctx.fillRect(tx - 34, TY + 30, 6, 70);
-    ctx.fillRect(tx + 28, TY + 30, 6, 70);
-    ctx.fillStyle = 'rgba(0,0,0,.2)';
-    ctx.beginPath(); ctx.ellipse(tx, TY + 100, 50, 8, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#e8c96a';
-    ctx.beginPath(); ctx.arc(tx, TY, TR + 6, 0, TAU); ctx.fill();
-    for (let i = 0; i < 10; i++) {
-      ctx.fillStyle = RING_COLORS[i];
-      ctx.beginPath(); ctx.arc(tx, TY, TR - i * (TR / 10), 0, TAU); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,.2)';
-      ctx.stroke();
-    }
-    for (const s of round.shots) {
-      const x = s.onTarget ? tx + s.dx : s.x, y = s.onTarget ? TY + s.dy : s.y;
-      ctx.strokeStyle = '#7a4a1f';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 7, y + 13); ctx.stroke();
-      ctx.fillStyle = '#ff5d73';
-      ctx.beginPath(); ctx.moveTo(x + 5, y + 10); ctx.lineTo(x + 12, y + 12); ctx.lineTo(x + 8, y + 17); ctx.fill();
-      ctx.fillStyle = '#0b1a3d';
-      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, TAU); ctx.fill();
-      ctx.lineWidth = 1;
-    }
-
-    // arrow in flight
-    if (round.flying) {
-      const f = round.flying, p = f.t;
-      const x = f.from.x + (f.to.x - f.from.x) * p, y = f.from.y + (f.to.y - f.from.y) * p - Math.sin(p * Math.PI) * 40;
-      const s = 1.6 - p * 1.1;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.atan2(f.to.y - f.from.y, f.to.x - f.from.x) + Math.PI / 2);
-      ctx.scale(s, s);
-      ctx.strokeStyle = '#7a4a1f';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(0, 14); ctx.stroke();
-      ctx.fillStyle = '#ff5d73';
-      ctx.beginPath(); ctx.moveTo(0, 10); ctx.lineTo(-5, 16); ctx.lineTo(5, 16); ctx.fill();
-      ctx.restore();
-    }
-
-    // bow
-    const power = drawing ? Math.min(1, drawT / 0.8) : 0;
-    const a = aim();
-    const bx = CW / 2, by = CH - 22;
-    const ang = Math.atan2(a.y - by, a.x - bx);
-    ctx.save();
-    ctx.translate(bx, by);
-    ctx.rotate(ang + Math.PI / 2);
-    ctx.strokeStyle = '#8b5a2b';
-    ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.arc(0, 12, 46, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
-    const ex = Math.cos(Math.PI * 1.15) * 46, ey = 12 + Math.sin(Math.PI * 1.15) * 46;
-    ctx.strokeStyle = '#eee';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(0, ey + 8 + power * 26); ctx.lineTo(-ex, ey); ctx.stroke();
-    if (!round.flying && !round.done && round.wait <= 0) {
-      ctx.strokeStyle = '#7a4a1f';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(0, ey + 8 + power * 26); ctx.lineTo(0, ey - 34 + power * 26); ctx.stroke();
-      ctx.fillStyle = '#c0c6d4';
-      ctx.beginPath(); ctx.moveTo(0, ey - 42 + power * 26); ctx.lineTo(-4, ey - 32 + power * 26); ctx.lineTo(4, ey - 32 + power * 26); ctx.fill();
-    }
-    ctx.restore();
-
-    // crosshair + draw meter
-    if (!round.done) {
-      const s = sway();
-      const shaky = drawing && drawT > 2.4;
-      ctx.strokeStyle = shaky ? '#ff5d73' : drawing ? '#6ee7a0' : '#fff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(a.x, a.y, 10 + s.amp * 0.3, 0, TAU);
-      ctx.moveTo(a.x - 18, a.y); ctx.lineTo(a.x - 6, a.y);
-      ctx.moveTo(a.x + 6, a.y); ctx.lineTo(a.x + 18, a.y);
-      ctx.moveTo(a.x, a.y - 18); ctx.lineTo(a.x, a.y - 6);
-      ctx.moveTo(a.x, a.y + 6); ctx.lineTo(a.x, a.y + 18);
-      ctx.stroke();
-      if (drawing) {
-        ctx.fillStyle = 'rgba(13,31,74,.7)';
-        ctx.fillRect(a.x - 22, a.y + 24, 44, 6);
-        ctx.fillStyle = power >= 1 ? '#6ee7a0' : '#ffd84d';
-        ctx.fillRect(a.x - 22, a.y + 24, 44 * power, 6);
-        if (shaky) popupText('arms shaking!', a.x, a.y + 44, '#ff8a9a');
-      }
-    }
-
-    // hud
-    ctx.fillStyle = 'rgba(13,31,74,.75)';
-    ctx.beginPath(); ctx.roundRect(CW - 176, 14, 162, 54, 12); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'left';
-    ctx.font = '700 14px Rubik, sans-serif';
-    const score = round.shots.reduce((s, x) => s + x.pts, 0);
-    ctx.fillText(`Score ${score}/50`, CW - 164, 36);
-    ctx.font = '16px serif';
-    for (let i = 0; i < ARROWS; i++) {
-      ctx.globalAlpha = i < round.n ? 0.25 : 1;
-      ctx.fillText('➶', CW - 164 + i * 18, 58);
-    }
-    ctx.globalAlpha = 1;
-    if (round.moving && !round.done) popupText('Moving target!', CW / 2, 40, '#ffd84d');
-    popups.draw(ctx, dt);
+    $h('.arch-wind').innerHTML = `Wind <b>${w < -0.05 ? '←' : w > 0.05 ? '→' : '·'} ${Math.abs(w * 10).toFixed(1)}</b>${round.moving && !round.done ? ' · <span class="win">Moving target!</span>' : ''}`;
+    const board = Object.values(S.players).filter((p) => p.stats.archeryBest > 0).sort((a, b) => b.stats.archeryBest - a.stats.archeryBest).slice(0, 6);
+    $h('.arch-board ol').innerHTML = board.length ? board.map((p) => `<li class="${p.key === S.me ? 'me' : ''}"><span>${esc(p.name)}</span><b>${p.stats.archeryBest}</b></li>`).join('') : '<li class="muted">No scores yet!</li>';
   }
 
-  function popupText(text, x, y, color) {
-    ctx.save();
-    ctx.font = '800 13px Rubik, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,.5)';
-    ctx.strokeText(text, x, y);
-    ctx.fillStyle = color;
-    ctx.fillText(text, x, y);
-    ctx.restore();
-  }
-
-  const toCanvas = (e) => {
-    const r = canvas.getBoundingClientRect();
-    return { x: ((e.clientX - r.left) / r.width) * CW, y: ((e.clientY - r.top) / r.height) * CH };
+  // ---- input ---------------------------------------------------------------------
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), DIST);
+  stage.onPointer = (type, e) => {
+    if (type === 'down' && e.button === 0) startDraw();
+    if (type === 'up') release();
   };
-  canvas.onpointermove = (e) => { mouse = toCanvas(e); };
-  canvas.onpointerdown = (e) => {
-    e.preventDefault();
-    mouse = toCanvas(e);
-    if (round.done) return;
-    drawing = true;
-    drawT = 0;
+  stage.onKey = (e, down) => {
+    if (e.code !== 'Space') return;
+    if (down && !e.repeat) startDraw();
+    if (!down) release();
   };
-  window.addEventListener('pointerup', release);
-  const offKeys = onKeys(
-    (e) => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); if (!round.done) { drawing = true; drawT = 0; } } },
-    (e) => { if (e.code === 'Space') release(); },
-  );
-  again.onclick = newRound;
+  $h('[data-again]').onclick = newRound;
   const off = listen({
     archery_result: (m) => {
-      result.innerHTML = `<b>${m.score}/50</b> · +${m.coins} 🪙${m.best ? ' · <span class="win">New personal best!</span>' : ''}`;
-      again.classList.remove('hidden');
+      $h('.arch-result').classList.remove('hidden');
+      $h('.res').innerHTML = `<b>${m.score}/50</b> · +${fmt(m.coins)} 🪙${m.best ? ' · <span class="win">New personal best!</span>' : ''}`;
+      if (m.best) sfx('win');
+      renderHud();
     },
     error: (m) => {
       if (m.for !== 'archery') return;
       m.handled = true;
-      result.textContent = m.msg;
-      again.classList.remove('hidden');
+      $h('.arch-result').classList.remove('hidden');
+      $h('.res').textContent = m.msg;
     },
+    player: () => renderHud(),
   });
+
+  // ---- frame ---------------------------------------------------------------------
+  const camPos = new THREE.Vector3(1.5, 2.9, 3.1), camLook = new THREE.Vector3(-0.4, TARGET_Y, -DIST);
+  const hit = new THREE.Vector3();
+  stage.onFrame((dt) => {
+    t += dt;
+    if (drawing) drawT += dt;
+    if (round.wait > 0) { round.wait -= dt; if (round.wait <= 0) setupArrow(); }
+    stage.camera.position.copy(camPos);
+    stage.camera.lookAt(camLook);
+    stage.raycaster.setFromCamera(stage.mouse, stage.camera);
+    if (stage.mouseIn && stage.raycaster.ray.intersectPlane(plane, hit)) mouse = { x: hit.x * PX + CW / 2, y: TY - (hit.y - TARGET_Y) * PX };
+    env.target.position.x = (targetX() - CW / 2) / PX;
+    // the reticle (with sway) and draw meter
+    const a = aim();
+    const p = planePos(a.x, a.y).project(stage.camera);
+    const s = sway();
+    reticle.style.transform = `translate(${((p.x + 1) / 2) * innerWidth}px, ${((1 - p.y) / 2) * innerHeight}px)`;
+    reticle.classList.toggle('drawing', drawing);
+    reticle.classList.toggle('shaky', drawing && drawT > 2.4);
+    reticle.classList.toggle('hidden', round.done);
+    const size = `${20 + s.amp * 1.2}px`;
+    reticle.querySelector('i').style.width = reticle.querySelector('i').style.height = size;
+    reticle.querySelector('.arch-meter b').style.width = `${Math.min(1, drawT / 0.8) * 100}%`;
+    reticle.querySelector('.arch-meter').classList.toggle('hidden', !drawing);
+    if (flying) {
+      flying.t += dt / 0.42;
+      const k = Math.min(1, flying.t);
+      const end = planePos(flying.to.x, flying.to.y);
+      const at = (u) => { const v = flying.from.clone().lerp(end, u); v.y += Math.sin(u * Math.PI) * 1.6; return v; };
+      const pos = at(k), ahead = at(Math.min(1, k + 0.02));
+      flying.mesh.position.copy(pos);
+      flying.mesh.lookAt(pos.clone().multiplyScalar(2).sub(ahead)); // the arrow's tip points down -Z
+      if (Math.random() < 0.6) sparks.puff(pos.x, pos.y, pos.z, '#ffffff', 0.25, 0.25);
+      if (k >= 1) landArrow();
+    }
+    // wind: flags and drifting leaves
+    env.flags.forEach((f) => {
+      f.rotation.set(0, round.wind < 0 ? Math.PI : 0, -Math.PI / 2 + Math.sin(t * 6) * 0.05 * (1 + Math.abs(round.wind)));
+      f.scale.y = 0.6 + Math.min(1, Math.abs(round.wind)) * 0.6;
+    });
+    if (Math.abs(round.wind) > 0.15 && Math.random() < Math.abs(round.wind) * dt * 6) {
+      const leaf = emojiSprite('🍃', 0.4);
+      leaf.position.set(round.wind > 0 ? -14 : 14, 1 + Math.random() * 4, -4 - Math.random() * 18);
+      stage.scene.add(leaf);
+      leaves.push({ s: leaf, life: 5 });
+    }
+    leaves = leaves.filter((l) => {
+      l.life -= dt;
+      l.s.position.x += round.wind * dt * 8;
+      l.s.position.y += Math.sin(t * 3 + l.life) * dt * 0.5;
+      l.s.material.rotation += dt * 2;
+      if (l.life > 0) return true;
+      stage.scene.remove(l.s);
+      return false;
+    });
+    sparks.update(dt);
+    texts.update(dt);
+  });
+
   newRound();
-  const stop = loop((dt) => { update(dt); draw(dt); });
-  return () => { stop(); off(); offKeys(); window.removeEventListener('pointerup', release); };
+  return () => {
+    off();
+    for (const a of stuck) a.parent?.remove(a);
+    if (flying) stage.scene?.remove(flying.mesh);
+    for (const l of leaves) stage.scene?.remove(l.s);
+    stage.canvas.style.cursor = '';
+    stage.scene?.remove(env.group);
+  };
 }

@@ -6,6 +6,14 @@ import { ACTIVITIES } from './activities.js';
 import { portraitInto } from './avatar.js';
 import { CATALOG, ITEMS, RARITY, owns } from './catalog.js';
 import { wardrobe } from './wardrobe.js';
+import { sfx } from './sfx.js';
+import { settings, setSetting, onSettings } from './settings.js';
+import { openSettings } from './settings-panel.js';
+import { music } from './music.js';
+import { iconSvg } from './icons.js';
+import { stage } from './stage.js';
+
+const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 
 const $ = (sel) => document.querySelector(sel);
 const COLORS = CATALOG.clothColors;
@@ -15,6 +23,7 @@ let screen = 'home';
 let session = null;        // { code, name, token } for the zone you're in
 let viewing = null;        // whose profile the lobby card shows
 let modal = null;          // { activity, cleanup }
+let area = null;           // the 3D area you're in (casino, arena…), if any
 
 export const world = new World($('#worldCanvas'), { onActivity: openActivity, onNear: showPrompt });
 
@@ -84,6 +93,31 @@ function enterSaved(z) {
 document.addEventListener('click', (e) => {
   const go = e.target.closest('[data-go]');
   if (go) show(go.dataset.go);
+  const b = e.target.closest('button, .swatch, [data-k]');
+  if (b && !b.disabled) sfx('click');
+});
+
+// ---------------------------------------------------------------------------
+// Sound toggle (remembered on this device)
+// ---------------------------------------------------------------------------
+
+function renderSound() {
+  $('#muteBtn').textContent = settings.muted ? '🔇' : settings.master < 0.4 ? '🔈' : '🔊';
+  $('#muteBtn').title = settings.muted ? 'Sound off (click to turn on)' : 'Sound on (click to mute)';
+  document.body.classList.toggle('no-names', !settings.names);
+}
+$('#muteBtn').onclick = () => {
+  setSetting({ muted: !settings.muted });
+  sfx('pop');
+};
+$('#settingsBtn').innerHTML = iconSvg('settings');
+$('#settingsBtn').onclick = () => openSettings();
+onSettings(renderSound);
+renderSound();
+
+// a little "now playing" card whenever the music moves on to a new song
+music.onChange((name) => {
+  if (settings.nowPlaying && screen !== 'home') toast(`🎵 Now playing: ${name}`, 'music');
 });
 
 function setupForm(form, type) {
@@ -172,6 +206,10 @@ function renderProfile() {
       <li><span>🏎️</span><b>${fmt(s.raceWins)}</b> Race Wins</li>
       <li><span>🎣</span><b>${fmt(s.fish)}</b> Fish Caught</li>
       <li><span>🏹</span><b>${fmt(s.archeryBest)}</b>/50 Best Archery</li>
+      <li><span>👾</span><b>${fmt(s.bossKills ?? 0)}</b> Bosses Beaten</li>
+      <li><span>🏠</span><b>${fmt(s.houseLikes ?? 0)}</b> House Likes</li>
+      <li><span>🎨</span><b>${fmt(s.doodleWins ?? 0)}</b> Doodle Wins</li>
+      <li><span>💥</span><b>${fmt(s.bumperWins ?? 0)}</b> Bumper Wins</li>
     </ul>
     <div class="row">${isMe ? `<button class="btn small" data-customize>✨ Customize</button>${daily}` : '<button class="btn ghost small" data-mine>← Back to my profile</button>'}</div>`;
   portraitInto(card.querySelector('.pf-av'), p.look, 96, 124);
@@ -191,7 +229,7 @@ $('#memberList').addEventListener('click', (e) => {
 });
 
 $('#profileCard').addEventListener('click', (e) => {
-  if (e.target.closest('[data-daily]')) net.send('daily');
+  if (e.target.closest('[data-daily]')) { net.send('daily'); sfx('daily'); }
   if (e.target.closest('[data-mine]')) { viewing = null; renderLobby(); }
   if (e.target.closest('[data-customize]')) openActivity('wardrobe');
 });
@@ -207,6 +245,7 @@ $('#inviteBtn').onclick = async () => {
 };
 
 $('#playBtn').onclick = () => {
+  sfx('enter');
   show('world');
   world.start();
 };
@@ -215,6 +254,7 @@ $('#switchZone').onclick = () => leaveZone();
 
 function leaveZone() {
   closeModal(true);
+  closeArea();
   world.stop();
   net.send('leave_zone');
   session = null;
@@ -252,24 +292,53 @@ function renderChat() {
     `<li><b style="color:${colorOf(m.k)}">${esc(nameOf(m.k))}</b> ${esc(m.text)}</li>`).join('');
 }
 
-$('#activityBar').innerHTML = Object.entries(ACTIVITIES).map(([id, a]) =>
-  `<button data-act="${id}" title="${a.name}"><span class="em">${a.emoji}</span><span>${a.name}</span></button>`).join('');
-$('#activityBar').onclick = (e) => {
-  const b = e.target.closest('[data-act]');
-  if (b) openActivity(b.dataset.act);
-};
 
 function showPrompt(spot) {
   const el = $('#hudPrompt');
   el.classList.toggle('hidden', !spot);
-  if (spot) el.innerHTML = `Press <kbd>E</kbd> or click to enter ${spot.emoji} ${esc(spot.name)}`;
-  el.onclick = spot ? () => openActivity(spot.id) : null;
+  if (spot) el.innerHTML = `Press <kbd>E</kbd> or click to ${spot.verb ?? 'enter'} <span class="prompt-ico">${iconSvg(spot.id) || spot.emoji}</span> ${esc(spot.name)}`;
+  el.onclick = spot ? (spot.action ?? (() => openActivity(spot.id))) : null;
 }
 
 function openActivity(id) {
   const activity = ACTIVITIES[id];
-  if (activity) openModal(activity);
+  if (!activity || modal || area) return;
+  if (activity.world) world.startActivity(activity.world);
+  else if (activity.area) openArea(activity);
+  else openModal(activity);
 }
+
+// Another part of the UI (e.g. the wardrobe in your house) asks to switch panels.
+window.addEventListener('fz:open', (e) => {
+  const activity = ACTIVITIES[e.detail];
+  if (!activity) return;
+  closeModal(true);
+  openModal(activity);
+});
+
+/** Teleport into a full-screen 3D area. */
+function openArea(activity) {
+  area = activity;
+  world.paused = true;
+  world.hidden = true;
+  showPrompt(null);
+  if (activity.scene) net.send('scene', { scene: activity.scene });
+  music.setContext(activity.battle ? 'battle' : 'main');
+  stage.open(activity, { onExit: closeArea });
+}
+
+function closeArea() {
+  if (!area) return;
+  const activity = area;
+  closeModal(true);
+  area = null;
+  stage.close();
+  world.hidden = false;
+  world.paused = false;
+  music.setContext('main');
+  if (activity.scene && screen === 'world') net.send('scene', { scene: 'world' });
+}
+stage.openPanel = (activity) => openModal(activity);
 
 function openModal(activity, { locked = false } = {}) {
   if (modal) return;
@@ -278,6 +347,8 @@ function openModal(activity, { locked = false } = {}) {
   $('#modal').classList.toggle('wide', !!activity.wide);
   $('#modal').classList.toggle('locked', locked);
   $('#modal').classList.remove('hidden');
+  sfx('open');
+  if (activity.battle) music.setContext('battle');
   modal = { activity, locked, cleanup: activity.mount($('#modalBody')) };
 }
 
@@ -292,7 +363,9 @@ function closeModal(force = false) {
   cleanup?.();
   $('#modal').classList.add('hidden');
   $('#modalBody').innerHTML = '';
-  world.paused = false;
+  sfx('close');
+  music.setContext(area?.battle ? 'battle' : 'main');
+  world.paused = !!area;
   if (activity.scene && screen === 'world') net.send('scene', { scene: 'world' });
 }
 
@@ -311,6 +384,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (modal) closeModal();
     else if (isTyping()) document.activeElement.blur();
+    else if (area) closeArea();
+    else if (world.fishing) world.stopActivity();
   } else if (e.key === 'Enter' && screen === 'world' && !modal && !isTyping()) {
     e.preventDefault();
     $('#chatInput').focus();
@@ -319,6 +394,7 @@ window.addEventListener('keydown', (e) => {
 
 $('#backLobby').onclick = () => {
   closeModal();
+  closeArea();
   world.stop();
   net.send('scene', { scene: 'lobby' });
   show('lobby');
@@ -355,14 +431,26 @@ net.on('welcome', (m) => {
 });
 
 net.on('unlock', (m) => {
+  if (m.furni) {
+    const f = FURN[m.id];
+    if (f) toast(`🏠 New furniture: ${f.emoji} ${f.name}! Place it in your house.`, 'unlock');
+    return;
+  }
   const item = ITEMS[m.id];
   if (!item || m.source === 'crate') return;
-  const how = m.source === 'shop' ? 'Purchased' : 'Unlocked';
+  const how = m.source === 'shop' ? 'Purchased' : m.source === 'boss' ? 'Boss drop' : 'Unlocked';
   toast(`✨ ${how}: ${item.name} (${RARITY[item.rarity].label})! Wear it from the wardrobe.`, 'unlock');
 });
 
 net.on('player', (m) => {
   if (!S.zone) return;
+  const prev = S.players[m.p.key];
+  if (prev && m.p.key === S.me) {
+    const gained = m.p.coins - prev.coins;
+    if (m.p.level > prev.level) setTimeout(() => sfx('levelup'), 250);
+    else if (gained >= 100) sfx('coins', { n: Math.min(10, Math.round(gained / 60)) });
+    else if (gained > 0) sfx('coin');
+  } else if (prev && !prev.online && m.p.online && screen !== 'home') sfx('online');
   S.players[m.p.key] = m.p;
   renderLobby();
   renderHud();
@@ -370,6 +458,7 @@ net.on('player', (m) => {
 
 net.on('chat', (m) => {
   S.chat = [...S.chat, m].slice(-40);
+  if (m.k !== S.me && screen === 'world') sfx('chat');
   renderChat();
 });
 
@@ -385,6 +474,7 @@ net.on('race_p', (m) => { if (S.race && m.k in S.race.racers) S.race.racers[m.k]
 net.on('kicked', (m) => {
   session = null;
   closeModal(true);
+  closeArea();
   world.stop();
   S.zone = null;
   show('home');
@@ -416,6 +506,7 @@ net.onClose = () => {
   $('#conn').textContent = 'Connection lost, reconnecting…';
   $('#conn').classList.remove('hidden');
   closeModal(true);
+  closeArea();
 };
 
 // ---------------------------------------------------------------------------

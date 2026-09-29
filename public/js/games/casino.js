@@ -1,7 +1,11 @@
-// Casino: slots with real spinning reels, a prize wheel and a 3D coin flip.
+// Casino games: slots with real spinning reels, a prize wheel, a 3D coin flip and the shared
+// roulette table. Inside the casino each machine opens just its own game (options.game).
 import { net } from '../net.js';
+import { roulette } from './roulette.js';
+import { iconSvg } from '../icons.js';
 import { me, fmt } from '../state.js';
 import { $, TAU, listen, hiDpiCanvas, loop, confetti } from './util.js';
+import { sfx } from '../sfx.js';
 
 const SYMBOLS = ['🍒', '🍋', '🔔', '⭐', '💎', '7️⃣'];
 const CELL = 84;
@@ -9,10 +13,12 @@ const WHEEL = [0, 1.5, 0, 2, 0, 0.5, 0, 2, 0, 1.5, 0, 0.5, 0, 2, 0, 5]; // must 
 const WHEEL_COLORS = { 0: '#2b2f4a', 0.5: '#6b7194', 1.5: '#39c6ff', 2: '#6ee7a0', 5: '#ffc53d' };
 const rand = () => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
 
-export function casino(body) {
+const TITLES = { slots: 'Lucky Slots', wheel: 'Prize Wheel', coinflip: 'Coin Flip', roulette: 'Roulette' };
+
+export function casino(body, { game = null } = {}) {
   body.innerHTML = `
-    <h2>🎰 Casino</h2>
-    <div class="tabs"><button class="on" data-tab="slots">🎰 Slots</button><button data-tab="wheel">🎡 Wheel</button><button data-tab="coinflip">🪙 Coin flip</button></div>
+    <h2>${iconSvg(game === 'roulette' ? 'roulette' : 'casino')} ${game ? TITLES[game] : 'Casino'}</h2>
+    <div class="tabs ${game ? 'hidden' : ''}"><button class="on" data-tab="slots">🎰 Slots</button><button data-tab="wheel">🎡 Wheel</button><button data-tab="coinflip">🪙 Coin flip</button><button data-tab="roulette">🎡 Roulette</button></div>
     <div class="bet-row">
       <label>Bet <input type="number" min="1" value="50" class="bet"></label>
       <div class="chips"><button data-b="10">10</button><button data-b="50">50</button><button data-b="100">100</button><button data-b="half">½</button><button data-b="max">Max</button></div>
@@ -37,22 +43,28 @@ export function casino(body) {
         <div class="row center"><button class="btn" data-pick="heads">👑 Heads</button><button class="btn" data-pick="tails">🦅 Tails</button></div>
         <p class="muted small center">Double or nothing.</p>
       </div>
+      <div data-pane="roulette" class="hidden"></div>
     </div>
     <p class="result big-result"></p>
     <p class="muted center">Balance: <b class="bal"></b> 🪙</p>`;
   const betInput = $(body, '.bet'), result = $(body, '.result'), bal = $(body, '.bal'), stage = $(body, '.casino-stage');
   const reels = [...body.querySelectorAll('.reel')], lever = $(body, '.lever'), coin = $(body, '.coin3d');
-  let busy = false, timers = [], flips = 0;
+  let busy = false, timers = [], flips = 0, reelTicks = 0;
   const later = (fn, ms) => timers.push(setTimeout(fn, ms));
   const showBalance = () => { if (!busy) bal.textContent = fmt(me().coins); };
   showBalance();
 
-  body.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
-    if (busy) return;
-    body.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
-    body.querySelectorAll('[data-pane]').forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== b.dataset.tab));
+  let stopRoulette = null;
+  const showTab = (tab) => {
+    body.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x.dataset.tab === tab));
+    body.querySelectorAll('[data-pane]').forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== tab));
+    $(body, '.bet-row').classList.toggle('hidden', tab === 'roulette');
+    body.querySelector('.bal').parentElement.classList.toggle('hidden', false);
     result.textContent = '';
-  }));
+    if (tab === 'roulette' && !stopRoulette) stopRoulette = roulette($(body, '[data-pane=roulette]'));
+  };
+  body.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { if (!busy) showTab(b.dataset.tab); }));
+  body.classList.toggle('casino-roulette', game === 'roulette');
   body.querySelectorAll('[data-b]').forEach((b) => (b.onclick = () => {
     const coins = me().coins;
     betInput.value = b.dataset.b === 'max' ? Math.min(coins, 5000) : b.dataset.b === 'half' ? Math.max(1, Math.floor(coins / 2)) : b.dataset.b;
@@ -69,7 +81,11 @@ export function casino(body) {
       void lever.offsetWidth;
       lever.classList.add('pull');
       reels.forEach((r) => r.classList.add('spinning'));
+      sfx('lever');
+      clearInterval(reelTicks);
+      reelTicks = setInterval(() => sfx('reeltick'), 75);
     }
+    if (game === 'wheel') sfx('whoosh');
   };
 
   const finish = (m, text) => {
@@ -78,6 +94,10 @@ export function casino(body) {
     result.textContent = text ?? (won ? `You won ${fmt(m.payout)} 🪙!` : m.payout === m.bet ? 'Bet returned.' : `You lost ${fmt(m.bet)} 🪙`);
     result.className = `result big-result ${won ? 'win' : m.payout === m.bet ? '' : 'lose'}`;
     if (won) confetti(stage, { count: m.payout >= m.bet * 10 ? 160 : 70 });
+    if (m.payout >= m.bet * 10) sfx('jackpot');
+    else if (won) sfx('coins', { n: Math.min(12, Math.round((m.payout / m.bet) * 3)) });
+    else if (m.payout === m.bet) sfx('pop');
+    else sfx('wah');
     showBalance();
   };
 
@@ -153,6 +173,7 @@ export function casino(body) {
     const before = Math.floor(rot / seg);
     rot = spin.from + (spin.to - spin.from) * eased;
     if (Math.floor(rot / seg) !== before) {
+      sfx('wheeltick');
       pointer.classList.remove('tick');
       void pointer.offsetWidth;
       pointer.classList.add('tick');
@@ -173,6 +194,10 @@ export function casino(body) {
     gamble_result: (m) => {
       if (m.game === 'slots') {
         const durations = m.reels.map((sym, i) => spinReel(reels[i], sym, i));
+        durations.forEach((d, i) => later(() => {
+          sfx('reelstop');
+          if (i === durations.length - 1) clearInterval(reelTicks);
+        }, d));
         later(() => {
           if (new Set(m.reels).size === 1) reels.forEach((r) => r.classList.add('winner'));
           later(() => reels.forEach((r) => r.classList.remove('winner')), 1800);
@@ -188,12 +213,16 @@ export function casino(body) {
         coin.parentElement.classList.remove('toss');
         void coin.offsetWidth;
         coin.parentElement.classList.add('toss');
+        sfx('flip');
+        later(() => sfx('reelstop'), 1300);
         later(() => finish(m, `${m.side === 'heads' ? '👑 HEADS' : '🦅 TAILS'}! ${m.payout ? `You won ${fmt(m.payout)} 🪙!` : `You lost ${fmt(m.bet)} 🪙`}`), 1450);
       }
     },
     error: (m) => {
       if (m.for !== 'gamble') return;
       m.handled = true;
+      clearInterval(reelTicks);
+      sfx('error');
       reels.forEach((r) => r.classList.remove('spinning'));
       busy = false;
       result.textContent = m.msg;
@@ -201,5 +230,6 @@ export function casino(body) {
     },
     player: (m) => { if (m.p.key === me().key) showBalance(); },
   });
-  return () => { timers.forEach(clearTimeout); stopWheelLoop(); off(); };
+  showTab(game ?? 'slots');
+  return () => { timers.forEach(clearTimeout); clearInterval(reelTicks); stopWheelLoop(); off(); stopRoulette?.(); body.classList.remove('casino-roulette'); };
 }

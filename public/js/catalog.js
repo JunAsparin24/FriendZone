@@ -17,6 +17,7 @@ export const owns = (player, id) => !!ITEMS[id]?.free || player.owned.includes(i
 export function howToGet(item) {
   if (item.free) return 'Free';
   if (item.unlock) return item.unlock.hint;
+  if (item.drop) return `Boss drop: ${item.drop}`;
   if (item.price) return `${item.price.toLocaleString()} coins${item.crate ? ' · or crates' : ''}`;
   return 'Crates only';
 }

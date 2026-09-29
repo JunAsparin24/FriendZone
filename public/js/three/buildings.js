@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { TAU, toon, basic, shiny, outlineMaterial, canvasTexture, emojiTexture, additive, glowTexture } from './materials.js';
 import { Character } from './character.js';
-import { PX } from '../map.js';
+import { PX, CENTER } from '../map.js';
+import { iconImage } from '../icons.js';
 
 const faceted = (geo) => { const g = geo.index ? geo.toNonIndexed() : geo; g.computeVertexNormals(); return g; };
 
@@ -83,16 +84,6 @@ const checkerTex = canvasTexture(128, 96, (ctx) => {
   for (let r = 0; r < 6; r++) for (let c = 0; c < 8; c++) {
     ctx.fillStyle = (r + c) % 2 ? '#111' : '#fff';
     ctx.fillRect(c * 16, r * 16, 16, 16);
-  }
-});
-const tapeTex = canvasTexture(256, 32, (ctx) => {
-  ctx.fillStyle = '#ffd84d';
-  ctx.fillRect(0, 0, 256, 32);
-  ctx.fillStyle = '#1d1b2e';
-  for (let x = -32; x < 256; x += 32) {
-    ctx.beginPath();
-    ctx.moveTo(x, 32); ctx.lineTo(x + 16, 32); ctx.lineTo(x + 32, 0); ctx.lineTo(x + 16, 0);
-    ctx.fill();
   }
 });
 const arenaWallTex = canvasTexture(512, 256, (ctx) => {
@@ -178,11 +169,55 @@ function windowPane(g, x, y, z, w = 1.5, h = 1.2, glow = '#9fd6ff') {
   g.add(win);
 }
 
+const EMBLEM_ICON = { '🏎️': 'racing', '👾': 'boss', '⚔️': 'arena', '🏹': 'archery', '💰': 'trading', '👕': 'shop', '🎨': 'doodle', '💥': 'bumper' };
+
+/** Canvas texture of an SVG icon (filled in as soon as the image has loaded). */
+function iconTexture(id) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  const img = iconImage(id, 256);
+  const draw = () => { c.getContext('2d').drawImage(img, 0, 0, 256, 256); tex.needsUpdate = true; };
+  if (img.complete && img.naturalWidth) draw();
+  else img.addEventListener('load', draw, { once: true });
+  return tex;
+}
+
+function roundedPlate(size, radius, depth) {
+  const s = new THREE.Shape();
+  const h = size / 2;
+  s.moveTo(-h + radius, -h);
+  s.lineTo(h - radius, -h);
+  s.quadraticCurveTo(h, -h, h, -h + radius);
+  s.lineTo(h, h - radius);
+  s.quadraticCurveTo(h, h, h - radius, h);
+  s.lineTo(-h + radius, h);
+  s.quadraticCurveTo(-h, h, -h, h - radius);
+  s.lineTo(-h, -h + radius);
+  s.quadraticCurveTo(-h, -h, -h + radius, -h);
+  const geo = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false, curveSegments: 6 });
+  geo.translate(0, 0, -depth);
+  return geo;
+}
+
 function emblem(g, emoji, ring, x, y, z, r = 0.9) {
-  const tex = emojiTexture(emoji, 256, ring);
-  const mats = [toon(ring), new THREE.MeshBasicMaterial({ map: tex }), toon(ring)];
-  const disc = add(g, new THREE.CylinderGeometry(r, r, 0.16, 36), mats, { p: [x, y, z], r: [Math.PI / 2, 0, 0], outline: true });
-  return disc;
+  const id = EMBLEM_ICON[emoji];
+  if (!id) {
+    const tex = emojiTexture(emoji, 256, ring);
+    const mats = [toon(ring), new THREE.MeshBasicMaterial({ map: tex }), toon(ring)];
+    return add(g, new THREE.CylinderGeometry(r, r, 0.16, 36), mats, { p: [x, y, z], r: [Math.PI / 2, 0, 0], outline: true });
+  }
+  // a glossy badge: dark rounded plate with the icon on the front
+  const badge = new THREE.Group();
+  badge.position.set(x, y, z);
+  add(badge, roundedPlate(r * 2.1, r * 0.55, 0.18), toon('#1a1330'), { p: [0, 0, 0.02], outline: false });
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: iconTexture(id), transparent: true, alphaTest: 0.05 }));
+  face.position.z = 0.03;
+  badge.add(face);
+  g.add(badge);
+  return badge;
 }
 
 function flag(g, x, z, anim) {
@@ -202,9 +237,128 @@ function flag(g, x, z, anim) {
   return cloth;
 }
 
+const splatTex = canvasTexture(256, 256, (ctx) => {
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 256, 256);
+  const colors = ['#ff5d73', '#ffd84d', '#39c6ff', '#6ee7a0', '#b77bff', '#ff9f43'];
+  for (let i = 0; i < 14; i++) {
+    const x = (i * 71) % 256, y = (i * 113) % 220 + 10, r = 8 + (i % 4) * 5;
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * TAU + i;
+      ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 1.5, y + Math.sin(a) * r * 1.5, r * 0.3, 0, TAU); ctx.fill();
+    }
+    ctx.fillRect(x - 2, y, 4, r * 2.2);
+  }
+});
+const easelTex = canvasTexture(256, 320, (ctx) => {
+  ctx.fillStyle = '#fffdf6';
+  ctx.fillRect(0, 0, 256, 320);
+  ctx.lineCap = ctx.lineJoin = 'round';
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#ffb347';
+  ctx.fillStyle = '#ffd84d';
+  ctx.beginPath(); ctx.arc(190, 70, 34, 0, TAU); ctx.fill(); ctx.stroke();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU;
+    ctx.beginPath(); ctx.moveTo(190 + Math.cos(a) * 46, 70 + Math.sin(a) * 46); ctx.lineTo(190 + Math.cos(a) * 62, 70 + Math.sin(a) * 62); ctx.stroke();
+  }
+  ctx.strokeStyle = '#1a1330';
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(180, 66, 4, 0, TAU); ctx.arc(200, 66, 4, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(190, 76, 12, 0.2, Math.PI - 0.2); ctx.stroke();
+  ctx.fillStyle = '#ff5d73';
+  ctx.beginPath(); ctx.moveTo(40, 190); ctx.lineTo(100, 130); ctx.lineTo(160, 190); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#9fd8ff';
+  ctx.fillRect(55, 190, 90, 80); ctx.strokeRect(55, 190, 90, 80);
+  ctx.fillStyle = '#8b5a2b';
+  ctx.fillRect(88, 225, 26, 45);
+  ctx.strokeStyle = '#3fb356';
+  ctx.lineWidth = 10;
+  ctx.beginPath(); ctx.moveTo(0, 290); ctx.bezierCurveTo(80, 270, 170, 305, 256, 280); ctx.stroke();
+});
+
 // ---- builders ------------------------------------------------------------------
 
 export const BUILDERS = {
+  studio(g, w, d, anim) {
+    const h = 4.2;
+    walls(g, w, h, d, '#ffffff', splatTex);
+    add(g, new THREE.BoxGeometry(w + 0.5, 0.35, d + 0.5), toon('#39c6ff'), { p: [0, h + 0.17, 0], outline: true });
+    ['#ff5d73', '#ffd84d', '#6ee7a0', '#b77bff', '#ff9f43'].forEach((c, i) => {
+      const x = -w / 2 + 0.8 + i * (w - 1.6) / 4;
+      add(g, new THREE.CylinderGeometry(0.12, 0.08, 0.5 + (i % 3) * 0.3, 8), toon(c), { p: [x, h - 0.1 - (i % 3) * 0.15, d / 2 + 0.28] });
+      add(g, new THREE.SphereGeometry(0.13, 8, 6), toon(c), { p: [x, h - 0.4 - (i % 3) * 0.3, d / 2 + 0.28] });
+    });
+    const pencil = new THREE.Group();
+    add(pencil, new THREE.CylinderGeometry(0.45, 0.45, 5, 6), toon('#ffd84d'), { r: [0, 0, Math.PI / 2], outline: true });
+    add(pencil, new THREE.ConeGeometry(0.45, 1.1, 6), toon('#f6c9a0'), { p: [3.05, 0, 0], r: [0, 0, -Math.PI / 2], outline: true });
+    add(pencil, new THREE.ConeGeometry(0.14, 0.35, 6), toon('#2b2f4a'), { p: [3.45, 0, 0], r: [0, 0, -Math.PI / 2] });
+    add(pencil, new THREE.CylinderGeometry(0.48, 0.48, 0.5, 12), shiny('#c0c6d4'), { p: [-2.7, 0, 0], r: [0, 0, Math.PI / 2], outline: true });
+    add(pencil, new THREE.CylinderGeometry(0.46, 0.46, 0.6, 12), toon('#ff9fb4'), { p: [-3.2, 0, 0], r: [0, 0, Math.PI / 2], outline: true });
+    pencil.position.set(0, h + 1.1, -0.6);
+    pencil.rotation.set(0, 0.3, 0.22);
+    g.add(pencil);
+    anim.push((t) => { pencil.position.y = h + 1.1 + Math.sin(t * 1.6) * 0.12; });
+    windowPane(g, -w * 0.26, 2.4, d / 2 + 0.06, 2.6, 1.7, '#fff6c9');
+    door(g, w * 0.25, d / 2 + 0.08, 1.6, 2.6, '#ff9f43');
+    const easel = new THREE.Group();
+    for (const [x, rz] of [[-0.45, 0.12], [0.45, -0.12]]) add(easel, new THREE.BoxGeometry(0.1, 2.4, 0.1), toon('#8b5a2b'), { p: [x, 1.2, 0], r: [0, 0, rz] });
+    add(easel, new THREE.BoxGeometry(0.1, 2.2, 0.1), toon('#8b5a2b'), { p: [0, 1.1, -0.45], r: [-0.35, 0, 0] });
+    add(easel, new THREE.BoxGeometry(1.3, 0.08, 0.2), toon('#8b5a2b'), { p: [0, 0.95, 0.08] });
+    add(easel, new THREE.PlaneGeometry(1.2, 1.5), new THREE.MeshToonMaterial({ map: easelTex }), { p: [0, 1.75, 0.1], r: [-0.1, 0, 0], outline: false });
+    easel.position.set(-w * 0.42, 0, d / 2 + 1.3);
+    easel.rotation.y = 0.35;
+    g.add(easel);
+    for (const [x, c] of [[w * 0.44, '#ff5d73'], [w * 0.44 - 0.7, '#39c6ff']]) {
+      add(g, new THREE.CylinderGeometry(0.28, 0.24, 0.5, 14), toon('#e8e2f4'), { p: [x, 0.25, d / 2 + 0.9], outline: true });
+      add(g, new THREE.CylinderGeometry(0.26, 0.26, 0.04, 14), toon(c), { p: [x, 0.5, d / 2 + 0.9] });
+    }
+    emblem(g, '🎨', '#ff9f43', 0, h + 1.2, d / 2 + 0.35, 0.85);
+  },
+
+  dome(g, w, d, anim) {
+    const r = Math.min(w, d) / 2 - 0.4;
+    add(g, new THREE.CylinderGeometry(r + 0.35, r + 0.55, 0.9, 48), toon('#3b5bdb'), { p: [0, 0.45, 0], outline: true });
+    add(g, new THREE.CylinderGeometry(r, r, 0.08, 48), toon('#dff4ff'), { p: [0, 0.93, 0], cast: false });
+    const ring = new THREE.MeshBasicMaterial({ color: '#ff5dac' });
+    add(g, new THREE.TorusGeometry(r + 0.42, 0.07, 8, 64), ring, { p: [0, 0.7, 0], r: [Math.PI / 2, 0, 0], cast: false });
+    const glass = new THREE.MeshStandardMaterial({ color: '#bfefff', transparent: true, opacity: 0.22, roughness: 0.05, metalness: 0.2, depthWrite: false, side: THREE.DoubleSide });
+    add(g, new THREE.SphereGeometry(r, 40, 20, 0, TAU, 0, Math.PI / 2), glass, { p: [0, 0.9, 0], outline: false, cast: false });
+    const rib = toon('#ffffff');
+    for (let i = 0; i < 4; i++) {
+      add(g, new THREE.TorusGeometry(r, 0.06, 6, 40, Math.PI), rib, { p: [0, 0.9, 0], r: [0, (i / 4) * Math.PI, 0], cast: false });
+    }
+    add(g, new THREE.SphereGeometry(0.35, 12, 10), shiny('#ffc53d'), { p: [0, r + 0.95, 0] });
+    // bumper cars circling inside
+    const cars = ['#ff5d73', '#ffd84d', '#6ee7a0'].map((c) => {
+      const car = new THREE.Group();
+      add(car, new THREE.CylinderGeometry(0.55, 0.6, 0.35, 20), toon(c), { p: [0, 0.2, 0], outline: true });
+      add(car, new THREE.TorusGeometry(0.62, 0.1, 8, 24), toon('#2b2f4a'), { p: [0, 0.15, 0], r: [Math.PI / 2, 0, 0] });
+      add(car, new THREE.SphereGeometry(0.22, 12, 10), toon('#f6c9a0'), { p: [0, 0.65, 0] });
+      car.position.y = 0.95;
+      g.add(car);
+      return car;
+    });
+    anim.push((t) => {
+      const hue = (t * 0.15) % 1;
+      ring.color.setHSL(hue, 0.9, 0.62);
+      cars.forEach((car, i) => {
+        const a = t * (0.7 + i * 0.15) + i * 2.1;
+        const rr = (r - 1.1) * (0.6 + 0.4 * Math.sin(t * 0.9 + i));
+        car.position.x = Math.cos(a) * rr;
+        car.position.z = Math.sin(a) * rr;
+        car.rotation.y = -a;
+        car.position.y = 0.95 + Math.abs(Math.sin(t * 6 + i)) * 0.05;
+      });
+    });
+    // entrance arch + neon sign
+    add(g, new THREE.BoxGeometry(2.4, 2.6, 0.5), toon('#3b5bdb'), { p: [0, 1.3, r + 0.25], outline: true });
+    add(g, new THREE.BoxGeometry(1.6, 2.1, 0.55), basic('#0e1535'), { p: [0, 1.05, r + 0.27] });
+    emblem(g, '💥', '#3b6fd0', 0, 3.3, r + 0.55, 0.8);
+  },
+
   garage(g, w, d, anim) {
     const h = 4.4;
     walls(g, w, h, d, '#e4e8ef');
@@ -234,9 +388,14 @@ export const BUILDERS = {
     }
     // half-cylinder arch: the upper half of a cylinder lying along Z
     add(g, new THREE.CylinderGeometry(2.1, 2.1, 1.4, 28, 1, false, -Math.PI / 2, Math.PI), basic('#0b0614'), { p: [0, 0, d / 2 - 1.2], r: [-Math.PI / 2, 0, 0], s: [1, 1, 1.25], cast: false });
+    // torches either side of the (now open) entrance
     for (const s of [-1, 1]) {
-      const tape = add(g, new THREE.BoxGeometry(5, 0.32, 0.06), new THREE.MeshBasicMaterial({ map: tapeTex }), { p: [0, 1.4, d / 2 - 0.7], r: [0, 0, s * 0.28] });
-      tape.castShadow = false;
+      add(g, new THREE.CylinderGeometry(0.08, 0.1, 1.6, 8), toon('#4a2e1c'), { p: [s * 2.6, 0.8, d / 2 - 0.4], outline: true });
+      const flame = new THREE.Sprite(additive(glowTexture, 0xff9a3a, 0.9));
+      flame.scale.setScalar(0.9);
+      flame.position.set(s * 2.6, 1.75, d / 2 - 0.4);
+      g.add(flame);
+      anim.push((t) => { flame.scale.setScalar(0.8 + Math.sin(t * 11 + s) * 0.08 + Math.sin(t * 7) * 0.06); });
     }
     const eyes = [];
     for (const s of [-1, 1]) {
@@ -440,7 +599,7 @@ export const BUILDERS = {
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillStyle = '#5a3a1c';
-      c.fillText('SOON!', 128, 54);
+      c.fillText('HOMES', 128, 54);
     });
     add(g, new THREE.CylinderGeometry(0.08, 0.08, 1.8, 8), toon('#8b5a2b'), { p: [0, 0.9, d / 2 + 0.6] });
     add(g, new THREE.BoxGeometry(2.2, 0.85, 0.12), [toon('#e8c07a'), toon('#e8c07a'), toon('#e8c07a'), toon('#e8c07a'), new THREE.MeshBasicMaterial({ map: signTex }), toon('#e8c07a')], { p: [0, 1.7, d / 2 + 0.66], outline: true });
@@ -452,7 +611,7 @@ export function buildBuilding(spot, anim, ctx) {
   const g = new THREE.Group();
   const w = spot.w / PX, d = spot.h / PX;
   BUILDERS[spot.kind](g, w, d, anim, ctx);
-  const cx = (spot.x + spot.w / 2 - 900) / PX, cz = (spot.y + spot.h / 2 - 600) / PX;
+  const cx = (spot.x + spot.w / 2 - CENTER.x) / PX, cz = (spot.y + spot.h / 2 - CENTER.y) / PX;
   g.position.set(cx, 0, cz);
   g.userData.spot = spot;
   return g;

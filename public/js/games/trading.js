@@ -3,6 +3,7 @@ import { net } from '../net.js';
 import { S, esc, fmt, me, nameOf } from '../state.js';
 import { portraitInto } from '../avatar.js';
 import { $, listen } from './util.js';
+import { sfx } from '../sfx.js';
 
 export function trading(body) {
   const others = Object.values(S.players)
@@ -49,6 +50,7 @@ export function trading(body) {
       if (pending) {
         result.textContent = `Sent ${fmt(pending.amount)} 🪙 to ${nameOf(pending.to)}!`;
         result.className = 'result win';
+        sfx('gift');
         form.amount.value = '';
         pending = null;
       }
@@ -57,6 +59,7 @@ export function trading(body) {
       if (m.for !== 'gift') return;
       m.handled = true;
       pending = null;
+      sfx('error');
       result.textContent = m.msg;
       result.className = 'result lose';
     },

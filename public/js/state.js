@@ -1,4 +1,5 @@
 // Client-side state for the zone you're currently in, plus small shared helpers.
+import { sfx } from './sfx.js';
 
 export const S = {
   zone: null,     // { code, name, owner }
@@ -14,6 +15,11 @@ export const SCENE_LABEL = {
   world: 'exploring',
   race: '🏎️ racing',
   arena: '⚔️ in the arena',
+  boss: '👾 fighting a boss',
+  house: '🏠 at the houses',
+  casino: '🎰 at the casino',
+  doodle: '🎨 doodling',
+  bumper: '💥 bumper brawling',
 };
 
 export const me = () => S.players[S.me];
@@ -25,7 +31,10 @@ export const xpForLevel = (level) => 100 * (level - 1) ** 2;
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
 
+const TOAST_SOUND = { error: 'error', feed: 'notify', unlock: 'unlock', music: null, '': 'pop' };
+
 export function toast(text, kind = '') {
+  sfx(TOAST_SOUND[kind] ?? 'pop');
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
   el.textContent = text;

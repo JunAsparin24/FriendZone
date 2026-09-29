@@ -7,16 +7,22 @@ import * as M from './map.js';
 import { Character } from './three/character.js';
 import { buildEnvironment } from './three/environment.js';
 import { puffTexture, basic } from './three/materials.js';
+import { sfx, ambient } from './sfx.js';
+import { settings, onSettings, pixelRatio } from './settings.js';
+import { iconSvg, iconImage } from './icons.js';
+import { Fishing, Line } from './games/fishing.js';
+import { Sparks } from './three/fx.js';
 
 export const EMOTES = M.EMOTES;
 export const SPOTS = M.SPOTS;
 
-const SPEED = 230;            // map px per second
+const SPEED = 300;            // map px per second (the map is big!)
+const SPRINT = 1.6;           // speed multiplier while holding Shift
 const R = 12;                 // collision radius in map px
-const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown']);
+const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown', 'hat_horns']);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const solid = (s) => (s.kind === 'pond' ? M.solidOf(s) : { x: s.x, y: s.y, w: s.w, h: s.h });
-const BUILDING_HEIGHT = { garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2 };
+const BUILDING_HEIGHT = { garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4 };
 
 export class World {
   constructor(canvas, hooks) {
@@ -38,19 +44,20 @@ export class World {
     this.pitch = 0.72;
     this.dist = 15;
     this.frameNo = 0;
+    this.birdAt = 4;
   }
 
   // ---- setup -------------------------------------------------------------------
 
   init() {
     const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    r.setPixelRatio(pixelRatio());
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer = r;
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 700);
+    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1100);
 
     this.scene.add(new THREE.HemisphereLight(0xdcefff, 0x6d8f55, 1.25));
     const sun = new THREE.DirectionalLight(0xfff0d4, 2.4);
@@ -61,6 +68,8 @@ export class World {
     sun.shadow.normalBias = 0.03;
     this.scene.add(sun, sun.target);
     this.sun = sun;
+    this.applyQuality();
+    onSettings((s, changed) => { if ('quality' in changed) this.applyQuality(); });
 
     this.env = buildEnvironment(this.scene);
     document.fonts?.ready.then(() => this.env.redrawText());
@@ -82,6 +91,7 @@ export class World {
       return s;
     });
     this.dustIndex = 0;
+    this.sparks = new Sparks(this.scene, 120);
 
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -91,7 +101,7 @@ export class World {
     this.signs = SPOTS.map((s) => {
       const el = document.createElement('div');
       el.className = 'wl-sign';
-      el.innerHTML = `<span class="wl-em">${s.emoji}</span>${esc(s.name)}${s.soon ? ' <small>soon</small>' : ''}<kbd>E</kbd>`;
+      el.innerHTML = `<span class="wl-em">${iconSvg(s.id) || s.emoji}</span>${esc(s.name)}<kbd>E</kbd>`;
       this.labels.append(el);
       const c = M.to3(s.x + s.w / 2, s.kind === 'pond' ? s.y : s.y + s.h / 2);
       return { spot: s, el, pos: new THREE.Vector3(c.x, BUILDING_HEIGHT[s.kind] ?? 7, c.z) };
@@ -108,11 +118,15 @@ export class World {
         const fresh = !this.actors.has(S.me);
         for (const k of [...this.actors.keys()]) if (k !== S.me) this.removeActor(k);
         const me = this.actors.get(S.me) ?? this.addActor(S.me, m.me.x, m.me.y);
-        me.x = me.tx = m.me.x;
-        me.y = me.ty = m.me.y;
+        if (this.fishing) net.send('move', { x: me.x, y: me.y }); // stay on the dock
+        else {
+          me.x = me.tx = m.me.x;
+          me.y = me.ty = m.me.y;
+        }
         if (fresh) this.camReady = false;
-        m.others.forEach((o) => this.addActor(o.k, o.x, o.y));
+        m.others.forEach((o) => { this.addActor(o.k, o.x, o.y); this.applyPose(o.k, o); });
       }),
+      net.on('pose', (m) => this.applyPose(m.k, m)),
       net.on('pos', (m) => {
         const a = this.actors.get(m.k) ?? this.addActor(m.k, m.x, m.y);
         a.tx = m.x;
@@ -130,7 +144,8 @@ export class World {
       net.on('emote', (m) => {
         const a = this.actors.get(m.k);
         if (!a) return;
-        a.char.jump();
+        a.char.emote(m.e);
+        sfx(`emote_${m.e}`, this.spatial(a));
         const e = a.el.emote;
         e.textContent = EMOTES[m.e];
         e.classList.toggle('gg', m.e === 'gg');
@@ -150,6 +165,7 @@ export class World {
     window.addEventListener('pointerup', this.onPointerUp);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('contextmenu', this.onContext);
+    this.fountain = ambient('fountain');
     this.resize();
     net.send('scene', { scene: 'world' });
     this.last = performance.now();
@@ -169,7 +185,11 @@ export class World {
     window.removeEventListener('pointerup', this.onPointerUp);
     this.canvas.removeEventListener('wheel', this.onWheel);
     this.canvas.removeEventListener('contextmenu', this.onContext);
+    if (this.fishing) { this.fishing.stop(); this.fishing = null; }
+    this.seated = null;
     for (const k of [...this.actors.keys()]) this.removeActor(k);
+    this.fountain?.stop();
+    this.fountain = null;
     this.labels?.classList.add('hidden');
     this.keys.clear();
     this.target = this.pendingSpot = this.near = null;
@@ -187,16 +207,48 @@ export class World {
     wrap.innerHTML = '<div class="wl-emote hidden"></div><div class="wl-bubble hidden"></div><div class="wl-tag"><span class="wl-lv"></span><b></b></div>';
     this.labels.append(wrap);
     const a = {
-      k, x, y, tx: x, ty: y, heading: 0, moving: false, char, lookRef: S.players[k]?.look, dustT: 0,
+      k, x, y, tx: x, ty: y, heading: 0, moving: false, char, lookRef: S.players[k]?.look, dustT: 0, speed: 1,
       el: { wrap, emote: wrap.children[0], bubble: wrap.children[1], tag: wrap.children[2] },
     };
+    char.onStep = () => {
+      const surface = Math.hypot(a.x - M.CENTER.x, a.y - M.CENTER.y) < M.PLAZA_R + 10 ? 'stone' : 'grass';
+      const o = this.spatial(a);
+      sfx('step', { ...o, vol: o.vol * (k === S.me ? 0.9 : 0.5), surface });
+    };
+    char.onLand = () => sfx('land', this.spatial(a));
     this.actors.set(k, a);
     return a;
+  }
+
+  /** Show what another player is doing in the world (fishing off the dock, their bobber…). */
+  applyPose(k, m) {
+    const a = this.actors.get(k);
+    if (!a || k === S.me) return;
+    a.pose = m.pose ?? null;
+    if (a.pose === 'bench') {
+      a.char.setProp(null);
+      a.char.setPose('bench');
+      a.lift = 0.16;
+      if (m.h != null) a.heading = m.h;
+      a.line?.show(false);
+      return;
+    }
+    a.char.setProp(a.pose ? 'rod' : null);
+    a.char.setPose(a.pose ? 'fish' : 'idle');
+    a.lift = a.pose ? 0.49 : 0;
+    if (a.pose && m.bx != null && ['cast', 'bite', 'reel'].includes(a.pose)) {
+      a.line ||= new Line(this.scene);
+      a.line.show(true);
+      a.line.bobber.position.set(m.bx, 0.1, m.bz);
+      a.line.ripple(m.bx, m.bz, a.pose === 'bite' ? 1.4 : 0.8);
+    } else a.line?.show(false);
+    if (a.pose === 'catch') a.char.emote('gg');
   }
 
   removeActor(k) {
     const a = this.actors.get(k);
     if (!a) return;
+    a.line?.dispose();
     this.scene.remove(a.char.root);
     a.el.wrap.remove();
     clearTimeout(a.bubbleTimer);
@@ -204,8 +256,107 @@ export class World {
     this.actors.delete(k);
   }
 
+  /** Sit down on the nearest bench (two seats per bench). */
+  sit(bench) {
+    const me = this.actors.get(S.me);
+    if (!me || this.seated || this.fishing) return;
+    // pick the seat nearer to you, skipping one someone else is sitting on
+    const along = { x: Math.cos(bench.h), y: -Math.sin(bench.h) }; // the bench's long axis, in map px
+    const seats = [-1, 1].map((s) => ({ x: bench.x + along.x * 10 * s, y: bench.y + along.y * 10 * s }))
+      .filter((p) => ![...this.actors.values()].some((a) => a.k !== S.me && a.pose === 'bench' && Math.hypot(a.x - p.x, a.y - p.y) < 6))
+      .sort((p, q) => Math.hypot(p.x - me.x, p.y - me.y) - Math.hypot(q.x - me.x, q.y - me.y));
+    if (!seats.length) { sfx('error'); return; }
+    this.seated = { bench, from: { x: me.x, y: me.y } };
+    me.x = me.tx = seats[0].x;
+    me.y = me.ty = seats[0].y;
+    me.heading = bench.h;
+    me.moving = false;
+    me.lift = 0.16;
+    me.char.setPose('bench');
+    this.target = this.pendingSpot = null;
+    net.send('move', { x: me.x, y: me.y });
+    this.sent = { x: me.x, y: me.y, at: performance.now() };
+    net.send('pose', { pose: 'bench', h: bench.h });
+    this.hooks.onNear(null);
+    this.nearBench = null;
+    sfx('squish');
+  }
+
+  standUp() {
+    const me = this.actors.get(S.me);
+    if (!this.seated || !me) return;
+    const h = this.seated.bench.h;
+    me.x += Math.sin(h) * 22;
+    me.y += Math.cos(h) * 22;
+    me.tx = me.x;
+    me.ty = me.y;
+    me.lift = 0;
+    me.char.setPose('idle');
+    this.seated = null;
+    net.send('move', { x: me.x, y: me.y });
+    net.send('pose', { pose: null });
+    sfx('pickup');
+  }
+
+  /** Things that happen right here in the world instead of in a panel or 3D area. */
+  startActivity(kind) {
+    if (kind !== 'fishing' || this.fishing || !this.actors.has(S.me)) return;
+    const pond = SPOTS.find((s) => s.kind === 'pond');
+    const pa = M.to3(pond.x, pond.y), pb = M.to3(pond.x + pond.w, pond.y + pond.h);
+    const dockX = (pa.x + pb.x) / 2;
+    const slots = [
+      { X: dockX - 0.55, Z: pa.z + 3.75, heading: 0 }, { X: dockX + 0.55, Z: pa.z + 3.75, heading: 0 },
+      { X: dockX - 0.95, Z: pa.z + 2.3, heading: -Math.PI / 2 }, { X: dockX + 0.95, Z: pa.z + 2.3, heading: Math.PI / 2 },
+      { X: dockX - 0.95, Z: pa.z + 1.2, heading: -Math.PI / 2 }, { X: dockX + 0.95, Z: pa.z + 1.2, heading: Math.PI / 2 },
+    ];
+    const taken = (s) => [...this.actors.values()].some((a) => a.k !== S.me && a.pose && a.pose !== 'bench' && Math.hypot(M.to3(a.x, a.y).x - s.X, M.to3(a.x, a.y).z - s.Z) < 0.5);
+    const spot = slots.find((s) => !taken(s)) ?? slots[0];
+    const me = this.actors.get(S.me);
+    me.x = me.tx = spot.X * M.PX + M.CENTER.x;
+    me.y = me.ty = spot.Z * M.PX + M.CENTER.y;
+    me.heading = spot.heading;
+    me.moving = false;
+    this.target = this.pendingSpot = null;
+    net.send('move', { x: me.x, y: me.y });
+    this.sent = { x: me.x, y: me.y, at: performance.now() };
+    this.near = null;
+    this.hooks.onNear(null);
+    this.savedCam = { yaw: this.yaw, pitch: this.pitch, dist: this.dist };
+    this.yaw = spot.heading + Math.PI;
+    this.pitch = 0.42;
+    this.dist = 7.5;
+    this.fishing = new Fishing(this, spot);
+  }
+
+  stopActivity() {
+    if (!this.fishing) return;
+    this.fishing.stop();
+    this.fishing = null;
+    const pond = SPOTS.find((s) => s.kind === 'pond');
+    const door = M.doorOf(pond);
+    const me = this.actors.get(S.me);
+    if (me) {
+      me.x = me.tx = door.x;
+      me.y = me.ty = door.y;
+      me.heading = Math.PI;
+      net.send('move', { x: me.x, y: me.y });
+    }
+    if (this.savedCam) Object.assign(this, this.savedCam);
+    sfx('close');
+  }
+
   emote(e) {
     if (this.actors.has(S.me) && EMOTES[e]) net.send('emote', { e });
+  }
+
+  /** Volume + stereo pan for a sound made by an actor, relative to you and the camera. */
+  spatial(a) {
+    const me = this.actors.get(S.me);
+    if (!me || a === me) return { vol: 1, pan: 0 };
+    const dx = a.x - me.x, dy = a.y - me.y, d = Math.hypot(dx, dy);
+    const vol = Math.max(0, 1 - d / 650) ** 1.5;
+    const pan = d > 1 ? ((dx * Math.cos(this.yaw) - dy * Math.sin(this.yaw)) / d) * 0.8 : 0;
+    return { vol, pan };
   }
 
   // ---- input -------------------------------------------------------------------
@@ -213,6 +364,15 @@ export class World {
   onKeyDown = (e) => {
     if (this.paused || isTyping()) return;
     const key = e.key.toLowerCase();
+    if (this.fishing) {
+      if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) this.fishing.press(); return; }
+      if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'e'].includes(key)) { this.stopActivity(); if (key === 'e') return; }
+    }
+    if (this.seated && ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'e', ' '].includes(key)) {
+      this.standUp();
+      if (key === 'e' || key === ' ') return;
+    }
+    if (key === 'e' && !this.near && this.nearBench) { this.sit(this.nearBench); return; }
     if (key === 'e' && this.near) {
       this.hooks.onActivity(this.near.id);
       return;
@@ -222,27 +382,31 @@ export class World {
       this.emote(Object.keys(EMOTES)[emoteIndex]);
       return;
     }
-    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'q', 'r'].includes(key)) {
+    if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'q', 'r', 'shift'].includes(key)) {
       this.keys.add(key);
       e.preventDefault();
     }
   };
-  onKeyUp = (e) => this.keys.delete(e.key.toLowerCase());
+  onKeyUp = (e) => {
+    this.keys.delete(e.key.toLowerCase());
+    if (this.fishing && e.code === 'Space') this.fishing.release();
+  };
   onBlur = () => this.keys.clear();
   onContext = (e) => e.preventDefault();
 
   onPointerDown = (e) => {
     if (this.paused) return;
+    if (this.fishing && e.button === 0) { this.fishing.press(); this.drag = { fishing: true }; return; }
     this.drag = { x: e.clientX, y: e.clientY, button: e.button, moved: false };
   };
   onPointerMove = (e) => {
     const d = this.drag;
-    if (!d) return;
+    if (!d || d.fishing) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) > 6) d.moved = true;
     if (d.moved) {
-      this.yaw -= dx * 0.0055;
-      this.pitch = clamp(this.pitch + dy * 0.0035, 0.28, 1.35);
+      this.yaw -= dx * 0.0055 * settings.camSens;
+      this.pitch = clamp(this.pitch + dy * 0.0035 * settings.camSens * (settings.invertY ? -1 : 1), 0.28, 1.35);
       d.x = e.clientX;
       d.y = e.clientY;
     }
@@ -250,15 +414,17 @@ export class World {
   onPointerUp = (e) => {
     const d = this.drag;
     this.drag = null;
+    if (d?.fishing) { this.fishing?.release(); return; }
     if (!d || d.moved || d.button !== 0 || this.paused || !this.actors.has(S.me)) return;
     this.clickAt(e.clientX, e.clientY);
   };
   onWheel = (e) => {
     e.preventDefault();
-    this.dist = clamp(this.dist * (1 + e.deltaY * 0.0011), 7, 34);
+    this.dist = clamp(this.dist * (1 + e.deltaY * 0.0011 * settings.zoomSens), 7, 34);
   };
 
   clickAt(cx, cy) {
+    if (this.seated) { this.standUp(); return; }
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
@@ -283,6 +449,21 @@ export class World {
     }
     this.pendingSpot = null;
     this.target = { x: clamp(px, 30, M.W - 30), y: clamp(py, 30, M.H - 30) };
+  }
+
+  /** Pixel ratio + shadows for the chosen graphics quality. */
+  applyQuality() {
+    if (!this.renderer) return;
+    const q = settings.quality;
+    this.renderer.setPixelRatio(pixelRatio());
+    this.sun.castShadow = q !== 'low';
+    const size = q === 'high' ? 2048 : 1024;
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    if (this.running) this.resize();
   }
 
   resize = () => {
@@ -314,7 +495,8 @@ export class World {
   update(dt, now) {
     const me = this.actors.get(S.me);
     const t = now / 1000;
-    if (me) this.updateMe(me, dt, now);
+    if (me && this.fishing) this.fishing.update(dt, now);
+    else if (me && !this.seated) this.updateMe(me, dt, now);
 
     const lerp = 1 - Math.exp(-dt * 12);
     for (const a of this.actors.values()) {
@@ -324,6 +506,9 @@ export class World {
         a.y += oy * lerp;
         a.moving = Math.hypot(ox, oy) > 1.5;
         if (a.moving) a.heading = Math.atan2(ox, oy);
+        // stride follows how fast they actually move, so feet don't slide
+        const v = dt > 0 ? (Math.hypot(ox, oy) * lerp) / dt / SPEED : 0;
+        a.speed += (1.25 * Math.min(SPRINT, Math.max(0.55, v)) - a.speed) * Math.min(1, dt * 6);
       }
       const look = S.players[a.k]?.look;
       if (look && look !== a.lookRef) {
@@ -331,11 +516,12 @@ export class World {
         a.char.setLook(look);
       }
       const p = M.to3(a.x, a.y);
-      a.char.root.position.set(p.x, 0, p.z);
+      a.char.root.position.set(p.x, a.lift ?? 0, p.z);
+      a.line?.update(dt, a.char.rodTip?.getWorldPosition(new THREE.Vector3()), 0.5);
       const cur = a.char.root.rotation.y;
       const diff = Math.atan2(Math.sin(a.heading - cur), Math.cos(a.heading - cur));
       a.char.root.rotation.y = cur + diff * Math.min(1, dt * 12);
-      a.char.update(dt, t, a.moving, 1.25);
+      a.char.update(dt, t, a.moving, a.speed);
 
       a.dustT -= dt;
       if (a.moving && a.dustT <= 0) {
@@ -356,11 +542,15 @@ export class World {
       s.material.opacity = k * 0.7;
     }
 
-    if (me) {
+    this.sparks.update(dt);
+    if (me && !this.fishing && !this.seated) {
       const near = SPOTS.find((s) => M.distToRect(me, solid(s)) < 44) ?? null;
-      if (near !== this.near) {
+      const bench = near ? null : this.layout.benches.find((b) => Math.hypot(b.x - me.x, b.y - me.y) < 34) ?? null;
+      if (near !== this.near || bench !== this.nearBench) {
         this.near = near;
-        this.hooks.onNear(near);
+        this.nearBench = bench;
+        this.hooks.onNear(near ?? (bench ? { id: 'bench', emoji: '🪑', name: 'the bench', verb: 'sit on', action: () => this.sit(bench) } : null));
+        if (near || bench) sfx('near');
       }
       if (this.pendingSpot && near === this.pendingSpot) {
         const spot = this.pendingSpot;
@@ -384,6 +574,18 @@ export class World {
 
     this.env.update(dt, t);
     this.updateCamera(dt, me);
+    this.updateAmbience(dt, me);
+  }
+
+  updateAmbience(dt, me) {
+    if (!me || !this.fountain) return;
+    const d = Math.hypot(me.x - M.CENTER.x, me.y - M.CENTER.y);
+    this.fountain.set(Math.max(0, 1 - d / 320) ** 2 * 0.22 * (this.paused ? 0.2 : 1));
+    this.birdAt -= dt;
+    if (this.birdAt <= 0) {
+      this.birdAt = 3 + Math.random() * 7;
+      if (!this.paused) sfx('bird', { vol: 0.4 + Math.random() * 0.6, pan: Math.random() * 1.6 - 0.8 });
+    }
   }
 
   updateMe(me, dt, now) {
@@ -394,8 +596,8 @@ export class World {
       if (k.has('d') || k.has('arrowright')) ix += 1;
       if (k.has('w') || k.has('arrowup')) iy -= 1;
       if (k.has('s') || k.has('arrowdown')) iy += 1;
-      if (k.has('q')) this.yaw += dt * 2;
-      if (k.has('r')) this.yaw -= dt * 2;
+      if (k.has('q')) this.yaw += dt * 2 * settings.keyTurn;
+      if (k.has('r')) this.yaw -= dt * 2 * settings.keyTurn;
     }
     let dx = 0, dy = 0;
     if (ix || iy) {
@@ -412,10 +614,12 @@ export class World {
       else { dx = vx / d; dy = vy / d; }
     }
     const len = Math.hypot(dx, dy);
+    const sprint = this.keys.has('shift') && !this.paused ? SPRINT : 1;
+    me.speed = 1.25 * sprint;
     me.moving = false;
     if (len) {
       const bx = me.x, by = me.y;
-      this.moveBy(me, (dx / len) * SPEED * dt, (dy / len) * SPEED * dt);
+      this.moveBy(me, (dx / len) * SPEED * sprint * dt, (dy / len) * SPEED * sprint * dt);
       if (Math.abs(me.x - bx) + Math.abs(me.y - by) < 0.01) this.target = null;
       else {
         me.moving = true;
@@ -448,6 +652,7 @@ export class World {
     if (!this.running) return;
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
     this.last = now;
+    if (this.hidden) { requestAnimationFrame(this.frame); return; } // a 3D area is covering the world
     this.update(dt, now);
     this.frameNo++;
     // behind an activity panel the world only needs an occasional redraw
@@ -489,6 +694,7 @@ export class World {
       }
     }
     for (const sg of this.signs) {
+      if (this.fishing) { sg.el.style.display = 'none'; continue; }
       const s = this.project(sg.pos, w, h);
       const dist = camPos.distanceTo(sg.pos);
       if (!s.visible || dist > 80) { sg.el.style.display = 'none'; continue; }
@@ -513,7 +719,12 @@ export class World {
     ctx.font = '12px serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const s of SPOTS) ctx.fillText(s.emoji, (s.x + s.w / 2) * sx, (s.y + s.h / 2) * sy);
+    for (const s of SPOTS) {
+      const img = iconImage(s.id, 64);
+      const x = (s.x + s.w / 2) * sx, y = (s.y + s.h / 2) * sy;
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, x - 9, y - 9, 18, 18);
+      else ctx.fillText(s.emoji, x, y);
+    }
     const me = this.actors.get(S.me);
     if (me) {
       ctx.fillStyle = 'rgba(255,255,255,.2)';

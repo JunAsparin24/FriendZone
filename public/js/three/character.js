@@ -297,6 +297,20 @@ const HATS = {
     head.add(halo);
     anim.push((t) => { halo.position.y = R + 0.3 + Math.sin(t * 2.2) * 0.04; halo.rotation.y = t * 0.8; });
   },
+  hat_horns(head, L, anim) {
+    const stone = toon('#8d8aa6');
+    const tips = [];
+    for (const s of [-1, 1]) {
+      const pts = [[0.24, 0.3, 0.02], [0.4, 0.44, 0.02], [0.5, 0.62, -0.02], [0.46, 0.8, -0.08]].map(([x, y, z]) => new THREE.Vector3(s * x, y, z));
+      taper(head, pts, 0.085, 0.02, stone);
+      const tip = part(head, sphere(0.035, 10, 8), basic('#ffb45a'), { p: [s * 0.46, 0.8, -0.08], outline: null, shadow: false });
+      const glow = new THREE.Sprite(additive(glowTexture, 0xff9a3a, 0.7));
+      glow.scale.setScalar(0.3);
+      tip.add(glow);
+      tips.push(glow);
+    }
+    anim.push((t) => tips.forEach((g, i) => { g.material.opacity = 0.45 + Math.sin(t * 3 + i) * 0.25; }));
+  },
   hat_crown(head) {
     const gold = shiny('#ffc53d', { metalness: 0.7, roughness: 0.25, side: THREE.DoubleSide });
     part(head, cyl(0.31, 0.29, 0.16, 32, true), gold, { p: [0, 0.4, 0], outline: OUT_THIN });
@@ -493,6 +507,22 @@ const AURAS = {
       rings[1].rotation.set(Math.PI / 2 - 0.5, -t * 1.6, 0.4);
     });
   },
+  aura_shadow(g, anim) {
+    const glow = new THREE.Sprite(additive(glowTexture, 0x7a2fd6, 0.55));
+    glow.scale.set(2, 2.6, 1);
+    glow.position.y = 1;
+    g.add(glow);
+    const list = sprites(g, additive(flameTexture, 0xa45bff, 0.85), 16, 0.35);
+    anim.push((t) => {
+      glow.material.opacity = 0.45 + Math.sin(t * 2) * 0.12;
+      list.forEach((s, i) => {
+        const p = (t * 0.7 + i / 16) % 1;
+        const a = i * 2.4 + t * 0.8;
+        s.position.set(Math.cos(a) * 0.55 * (1 - p * 0.5), p * 1.9, Math.sin(a) * 0.55 * (1 - p * 0.5));
+        s.scale.set(0.3 * (1 - p), 0.55 * (1 - p), 1);
+      });
+    });
+  },
   aura_koi(g, anim) {
     const fish = [0, 1].map((i) => {
       const f = new THREE.Group();
@@ -526,6 +556,14 @@ export class Character {
     this.blinkAt = 1 + Math.random() * 3;
     this.jumpT = 1;
     this.pose = 'idle';
+    this.walkW = 0;            // 0 = idle pose, 1 = full gait (blended so starts/stops are smooth)
+    this.look = { yaw: 0, goal: 0, next: 2 + Math.random() * 3 };
+    this.emoteName = null;
+    this.emoteT = 0;
+    this.onStep = null;        // called on every footfall (for footstep sounds)
+    this.onLand = null;        // called when a jump lands
+    this.propKind = null;      // 'blaster' | 'rod' | null, held in the right hand
+    this.aiming = false;       // both arms forward, holding the blaster
     this.setLook(look);
   }
 
@@ -536,6 +574,51 @@ export class Character {
     this.key = key;
     this.clear();
     this.build(L);
+    if (this.propKind) this.setProp(this.propKind);
+  }
+
+  /** Put something in the right hand: 'blaster', 'rod' or null. */
+  setProp(kind) {
+    this.propKind = kind;
+    const hand = this.rig?.elbows[0];
+    if (!hand) return;
+    if (this.prop) hand.remove(this.prop);
+    this.prop = null;
+    this.rodTip = null;
+    if (!kind) return;
+    const g = new THREE.Group();
+    g.position.set(0, -0.2, 0.02);
+    if (kind === 'blaster') {
+      part(g, box(0.1, 0.26, 0.14), toon('#3b4266'), { p: [0, -0.08, 0.02], outline: OUT_THIN });
+      part(g, box(0.07, 0.1, 0.1), toon('#23263f'), { p: [0, 0.04, -0.04], outline: null });
+      part(g, cyl(0.035, 0.035, 0.18, 10), shiny('#8d96a8'), { p: [0, -0.3, 0.02], outline: OUT_THIN });
+      const tip = part(g, sphere(0.04, 10, 8), basic('#6ee7ff'), { p: [0, -0.4, 0.02], outline: null, shadow: false });
+      const glow = new THREE.Sprite(additive(glowTexture, 0x6ee7ff, 0.7));
+      glow.scale.setScalar(0.25);
+      tip.add(glow);
+    } else if (kind === 'bow') {
+      // In the hand's frame (arm held forward) -Y points forward and +Z points up. The bow is a
+      // torus arc bulging forward with its grip in the hand, the string behind it.
+      const R = 0.62, a = Math.PI * 0.8;
+      const frame = new THREE.Group();
+      frame.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0)));
+      frame.position.set(0, R, 0);
+      part(frame, torus(R, 0.035, a, 8, 24), toon('#8b5a2b'), { r: [0, 0, -a / 2], outline: OUT_THIN });
+      part(frame, cyl(0.005, 0.005, 2 * R * Math.sin(a / 2), 4), basic('#f4f0ff'), { p: [R * Math.cos(a / 2), 0, 0], outline: null, shadow: false });
+      part(frame, cyl(0.045, 0.045, 0.16, 8), toon('#4a2e1c'), { p: [R, 0, 0], outline: null });
+      g.add(frame);
+    } else if (kind === 'rod') {
+      g.rotation.x = -0.6;
+      part(g, cyl(0.03, 0.035, 0.34, 8), toon('#c9955a'), { p: [0, 0.05, 0], outline: null });
+      part(g, cyl(0.045, 0.045, 0.07, 10), shiny('#c0c6d4'), { p: [0.05, -0.12, 0], r: [0, 0, Math.PI / 2], outline: null });
+      part(g, cyl(0.011, 0.02, 2.2, 6), toon('#3b2a1a'), { p: [0, -1.25, 0], outline: null });
+      const tip = new THREE.Object3D();
+      tip.position.y = -2.35;
+      g.add(tip);
+      this.rodTip = tip;
+    }
+    hand.add(g);
+    this.prop = g;
   }
 
   clear() {
@@ -556,11 +639,21 @@ export class Character {
     const body = new THREE.Group();
     this.root.add(body);
 
+    // legs: hip -> knee -> shoe, so steps can lift and bend
+    const sole = toon('#f4f0ff');
+    const knees = [];
     const legs = [-1, 1].map((s) => {
       const pivot = new THREE.Group();
       pivot.position.set(s * 0.12, 0.46, 0);
-      part(pivot, capsule(0.095, 0.2), pants, { p: [0, -0.19, 0] });
-      part(pivot, sphere(0.12, 18, 12), shoe, { p: [0, -0.41, 0.045], s: [0.95, 0.62, 1.35] });
+      part(pivot, capsule(0.1, 0.1), pants, { p: [0, -0.1, 0] });
+      const knee = new THREE.Group();
+      knee.position.y = -0.2;
+      part(knee, capsule(0.09, 0.08), pants, { p: [0, -0.08, 0] });
+      part(knee, sphere(0.12, 18, 12), shoe, { p: [0, -0.2, 0.045], s: [0.95, 0.6, 1.4] });
+      part(knee, sphere(0.12, 18, 8), sole, { p: [0, -0.235, 0.045], s: [0.98, 0.22, 1.42], outline: null });
+      part(knee, sphere(0.05, 10, 8), sole, { p: [0, -0.17, 0.17], s: [1.4, 0.6, 0.5], outline: null, shadow: false });
+      pivot.add(knee);
+      knees.push(knee);
       body.add(pivot);
       return pivot;
     });
@@ -581,15 +674,24 @@ export class Character {
 
     part(body, cyl(0.09, 0.1, 0.16), skin, { p: [0, 1.2, 0], outline: null });
 
+    // arms: shoulder -> elbow -> hand
     const armMat = top.sleeve === 'long' ? topMat : skin;
+    const elbows = [];
     const arms = [-1, 1].map((s) => {
       const pivot = new THREE.Group();
       pivot.position.set(s * 0.33, 1.1, 0);
       pivot.rotation.z = s * 0.1;
-      part(pivot, capsule(0.08, 0.2), armMat, { p: [0, -0.17, 0] });
+      part(pivot, capsule(0.08, 0.07), armMat, { p: [0, -0.09, 0] });
       if (top.sleeve === 'short') part(pivot, capsule(0.1, 0.06), topMat, { p: [0, -0.05, 0] });
       if (top.metal) part(pivot, dome(0.15), topMat, { p: [0, 0.01, 0], s: [1, 0.8, 1] });
-      part(pivot, sphere(0.09, 16, 12), skin, { p: [0, -0.38, 0] });
+      const elbow = new THREE.Group();
+      elbow.position.y = -0.19;
+      part(elbow, capsule(0.075, 0.06), armMat, { p: [0, -0.08, 0] });
+      if (top.sleeve === 'long') part(elbow, torus(0.07, 0.025, TAU, 6, 16), toon(tint(topColor, top.metal ? 0.8 : 0.85)), { p: [0, -0.15, 0], r: [Math.PI / 2, 0, 0], outline: null });
+      part(elbow, sphere(0.088, 16, 12), skin, { p: [0, -0.19, 0.005], s: [0.95, 1.05, 1] });
+      part(elbow, sphere(0.04, 8, 6), skin, { p: [s * -0.06, -0.16, 0.04], outline: null, shadow: false }); // thumb
+      pivot.add(elbow);
+      elbows.push(elbow);
       body.add(pivot);
       return pivot;
     });
@@ -616,10 +718,15 @@ export class Character {
       const p = onFace(s * 0.25, -0.09, 0.004);
       part(head, circle(0.065), basic('#ff7b9c', { transparent: true, opacity: 0.45, depthWrite: false }), { p: p.toArray(), q: faceTo(p), outline: null, shadow: false });
     }
+    let mouth = null, mouthOpen = null;
     if (L.face !== 'face_ninja') {
       const p = onFace(0, -0.13, 0.002);
       const q = faceTo(p).multiply(new THREE.Quaternion().setFromAxisAngle(Z, Math.PI));
-      part(head, torus(0.055, 0.014, Math.PI, 6, 16), basic('#6b2f2f'), { p: p.toArray(), q, outline: null, shadow: false });
+      mouth = part(head, torus(0.055, 0.014, Math.PI, 6, 16), basic('#6b2f2f'), { p: p.toArray(), q, outline: null, shadow: false });
+      const po = onFace(0, -0.15, -0.012);
+      mouthOpen = part(head, sphere(0.055, 14, 10), basic('#5a1f2a'), { p: po.toArray(), q: faceTo(po), s: [1, 0.8, 0.35], outline: null, shadow: false });
+      part(mouthOpen, sphere(0.03, 10, 8), basic('#ff7b8c'), { p: [0, -0.025, 0.02], s: [1.2, 0.6, 0.6], outline: null, shadow: false });
+      mouthOpen.visible = false;
     }
 
     const hairMat = toon(L.hairColor);
@@ -638,7 +745,7 @@ export class Character {
     this.root.add(aura);
     AURAS[L.aura]?.(aura, anim);
 
-    this.rig = { body, torso, head, legs, arms, eyes, anim };
+    this.rig = { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim };
     this.state = state;
   }
 
@@ -692,37 +799,173 @@ export class Character {
 
   jump() { this.jumpT = 0; }
 
+  /** Play an emote animation: wave, laugh, heart, fire, gg, wow. */
+  emote(name) {
+    this.emoteName = name;
+    this.emoteT = 0;
+    if (name === 'gg' || name === 'wow') this.jump();
+  }
+
+  /**
+   * Advance the animation. `speed` scales the stride (1 = walk, ~1.6+ = run); the phase advances
+   * with it so feet don't slide.
+   */
   update(dt, time, moving = false, speed = 1) {
-    const { body, torso, head, legs, arms, eyes, anim } = this.rig;
-    const walking = moving || this.pose === 'walk';
-    if (moving) this.phase += dt * 9 * speed;
+    const { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim } = this.rig;
+    const posed = this.pose === 'walk';
+    const walking = moving || posed;
+    const goal = walking ? 1 : 0;
+    if (dt === 0 || posed) this.walkW = goal;
+    else this.walkW += (goal - this.walkW) * Math.min(1, dt * 9);
+    const w = this.walkW, iw = 1 - w;
+
+    if (moving) {
+      const before = this.phase;
+      this.phase += dt * 9 * speed;
+      // a foot lands each time a leg reaches its front-most point
+      const step = (p) => Math.floor((p - Math.PI / 2) / Math.PI);
+      if (step(this.phase) !== step(before)) this.onStep?.();
+    }
     const ph = this.phase;
-    const swing = walking ? Math.sin(ph) : 0;
+    const s = Math.sin(ph), c = Math.cos(ph);
+    const run = Math.min(1, Math.max(0, (speed - 1.3) / 0.5));
+    const legA = (0.6 + run * 0.3) * w, armA = (0.5 + run * 0.4) * w;
+    const breathe = Math.sin(time * 2.2);
 
-    legs[0].rotation.x = swing * 0.75;
-    legs[1].rotation.x = -swing * 0.75;
-    arms[0].rotation.x = -swing * 0.65;
-    arms[1].rotation.x = swing * 0.65;
-    arms[0].rotation.z = -0.1 - (walking ? 0 : Math.sin(time * 1.6) * 0.03);
-    arms[1].rotation.z = 0.1 + (walking ? 0 : Math.sin(time * 1.6) * 0.03);
-    body.position.y = walking ? Math.abs(Math.cos(ph)) * 0.07 : 0;
-    body.rotation.y = walking ? Math.sin(ph) * 0.08 : 0;
-    torso.scale.y = walking ? 1 : 1 + Math.sin(time * 2.2) * 0.012;
-    head.rotation.z = walking ? Math.sin(ph) * 0.04 : Math.sin(time * 0.9) * 0.03;
-    head.rotation.x = 0;
+    // ---- idle look-around ----
+    const look = this.look;
+    if (dt > 0) {
+      look.next -= dt;
+      if (look.next <= 0) {
+        look.goal = w < 0.5 && Math.random() < 0.55 ? (Math.random() - 0.5) * 1.1 : 0;
+        look.next = 1.6 + Math.random() * 4;
+      }
+      look.yaw += (look.goal * iw - look.yaw) * Math.min(1, dt * 3.5);
+    } else look.yaw = 0;
 
-    if (this.pose === 'sit') {
+    // ---- gait ----
+    const kneeBend = [Math.max(0, -c), Math.max(0, c)]; // the leg swinging forward bends its knee
+    legs[0].rotation.x = s * legA - kneeBend[0] * 0.3 * w;
+    legs[1].rotation.x = -s * legA - kneeBend[1] * 0.3 * w;
+    knees.forEach((k, i) => { k.rotation.x = (0.08 + kneeBend[i] * (1.05 + run * 0.6)) * w + (0.03 + breathe * 0.015) * iw; });
+    arms[0].rotation.x = -s * armA;
+    arms[1].rotation.x = s * armA;
+    arms[0].rotation.z = -(0.1 + 0.06 * w + Math.sin(time * 1.6) * 0.03 * iw);
+    arms[1].rotation.z = 0.1 + 0.06 * w + Math.sin(time * 1.6) * 0.03 * iw;
+    elbows[0].rotation.set(-(0.18 * iw + (0.35 + run * 0.9 + Math.max(0, s) * 0.35) * w), 0, 0);
+    elbows[1].rotation.set(-(0.18 * iw + (0.35 + run * 0.9 + Math.max(0, -s) * 0.35) * w), 0, 0);
+
+    // keep the planted foot on the ground as the legs spread, plus a little bounce
+    const drop = 0.46 * (1 - Math.cos(Math.abs(s) * legA));
+    body.position.set(Math.sin(time * 0.7) * 0.015 * iw, -drop + (0.5 + 0.5 * Math.cos(2 * ph)) * (0.03 + run * 0.04) * w, 0);
+    body.rotation.set((0.07 + run * 0.12) * w, s * 0.09 * w, -s * 0.035 * w + Math.sin(time * 0.7) * 0.02 * iw);
+    body.scale.set(1, 1, 1);
+    torso.scale.y = 1 + breathe * 0.014 * iw;
+    head.rotation.set(
+      -body.rotation.x * 0.6 + Math.sin(2 * ph) * 0.035 * w + Math.sin(time * 0.6) * 0.03 * iw,
+      -body.rotation.y * 0.9 + look.yaw,
+      s * 0.03 * w + Math.sin(time * 0.9) * 0.03 * iw,
+    );
+
+    if (this.pose === 'bench') {
+      legs.forEach((l) => { l.rotation.x = -1.5; });
+      knees.forEach((k) => { k.rotation.x = 1.5; });
+      arms.forEach((a, i) => { a.rotation.x = -0.35; a.rotation.z = (i ? 1 : -1) * 0.12; });
+      elbows.forEach((e) => { e.rotation.x = -0.95; });
+      body.position.set(0, 0, 0);
+      body.rotation.set(-0.05, 0, 0);
+    } else if (this.pose === 'sit') {
       legs.forEach((l) => { l.rotation.x = -1.45; });
+      knees.forEach((k) => { k.rotation.x = 1.45; });
       arms.forEach((a) => { a.rotation.x = -1.1; });
-      body.position.y = 0;
+      elbows.forEach((e) => { e.rotation.x = -0.35; });
+      body.position.set(0, 0, 0);
+      body.rotation.set(0, 0, 0);
+    } else if (this.aiming) {
+      arms[0].rotation.set(-1.5, 0, -0.05);
+      elbows[0].rotation.set(0, 0, 0);
+      arms[1].rotation.set(-1.3, 0, -0.45);
+      elbows[1].rotation.set(-0.35, 0, 0);
     } else if (this.pose === 'fish') {
       arms.forEach((a, i) => { a.rotation.x = -1.2; a.rotation.z = i ? -0.25 : 0.25; });
+      elbows.forEach((e) => { e.rotation.x = -0.45; });
     }
 
+    // ---- jump: crouch, stretch in the air, squash on landing ----
     if (this.jumpT < 1) {
-      this.jumpT = Math.min(1, this.jumpT + dt / 0.45);
-      body.position.y += Math.sin(this.jumpT * Math.PI) * 0.55;
-      arms.forEach((a, i) => { a.rotation.z = (i ? 1 : -1) * (2.6 * Math.sin(this.jumpT * Math.PI)); });
+      const prev = this.jumpT;
+      this.jumpT = Math.min(1, this.jumpT + dt / 0.55);
+      const j = this.jumpT;
+      let lift = 0, squash = 0, tuck = 0;
+      if (j < 0.15) squash = Math.sin((j / 0.15) * (Math.PI / 2)) * 0.18;
+      else if (j < 0.85) {
+        const k = (j - 0.15) / 0.7;
+        lift = Math.sin(k * Math.PI) * 0.6;
+        tuck = Math.sin(k * Math.PI);
+        squash = -0.08 * Math.max(0, Math.sin(k * Math.PI * 2)); // stretch while rising
+      } else squash = Math.sin(((j - 0.85) / 0.15) * Math.PI) * 0.16;
+      body.position.y += lift - Math.max(0, squash) * 0.25;
+      body.scale.set(1 + squash * 0.5, 1 - squash, 1 + squash * 0.5);
+      legs.forEach((l) => { l.rotation.x -= tuck * 0.45 + Math.max(0, squash) * 1.5; });
+      knees.forEach((k) => { k.rotation.x += tuck * 0.9 + Math.max(0, squash) * 3; });
+      if (!this.emoteName) {
+        arms.forEach((a, i) => { a.rotation.z = (i ? 1 : -1) * (0.1 + 2.4 * tuck); });
+        elbows.forEach((e, i) => { e.rotation.z = (i ? 1 : -1) * 0.3 * tuck; });
+      }
+      if (prev < 0.85 && j >= 0.85) this.onLand?.();
+    }
+
+    // ---- emotes ----
+    let mouthWide = false;
+    if (this.emoteName) {
+      this.emoteT += dt;
+      const t = this.emoteT, dur = 1.9;
+      const k = Math.max(0, Math.min(1, t / 0.15, (dur - t) / 0.25));
+      const to = (o, axis, v) => { o.rotation[axis] += (v - o.rotation[axis]) * k; };
+      switch (this.emoteName) {
+        case 'wave':
+          to(arms[1], 'z', 2.5); to(arms[1], 'x', -0.2);
+          to(elbows[1], 'x', 0); to(elbows[1], 'z', 0.55 + Math.sin(t * 16) * 0.45);
+          to(body, 'z', -0.06); to(head, 'z', 0.1);
+          break;
+        case 'laugh':
+          to(body, 'x', -0.14 + Math.sin(t * 28) * 0.035);
+          body.position.y += Math.abs(Math.sin(t * 14)) * 0.03 * k;
+          arms.forEach((a, i) => { to(a, 'x', -0.55); to(a, 'z', (i ? 1 : -1) * 0.35); });
+          elbows.forEach((e) => to(e, 'x', -1.6));
+          to(head, 'x', -0.3);
+          mouthWide = true;
+          break;
+        case 'heart':
+          arms.forEach((a, i) => { to(a, 'x', -1.0); to(a, 'z', (i ? -1 : 1) * 0.25); });
+          elbows.forEach((e) => to(e, 'x', -1.55));
+          to(body, 'z', Math.sin(t * 4) * 0.09);
+          to(head, 'z', Math.sin(t * 4) * 0.14);
+          break;
+        case 'fire':
+          to(arms[1], 'z', 2.85); to(arms[1], 'x', 0);
+          to(elbows[1], 'z', Math.abs(Math.sin(t * 10)) * 1.1);
+          to(arms[0], 'x', -0.35); to(arms[0], 'z', -0.55); to(elbows[0], 'x', -1.7);
+          body.position.y += Math.abs(Math.sin(t * 10)) * 0.04 * k;
+          break;
+        case 'gg':
+          arms.forEach((a, i) => { to(a, 'z', (i ? 1 : -1) * 2.5); to(a, 'x', 0); });
+          elbows.forEach((e, i) => to(e, 'z', (i ? 1 : -1) * 0.15));
+          break;
+        case 'wow':
+          to(body, 'x', -0.16);
+          arms.forEach((a, i) => { to(a, 'z', (i ? 1 : -1) * 1.9); to(a, 'x', -0.2); });
+          elbows.forEach((e, i) => to(e, 'z', (i ? 1 : -1) * 1.35));
+          to(head, 'x', -0.18);
+          mouthWide = true;
+          break;
+      }
+      if (t >= dur) this.emoteName = null;
+    }
+    if (mouth) {
+      mouth.visible = !mouthWide;
+      mouthOpen.visible = mouthWide;
+      if (mouthWide) mouthOpen.scale.y = 0.7 + Math.abs(Math.sin(time * 18)) * 0.35;
     }
 
     this.blinkAt -= dt;

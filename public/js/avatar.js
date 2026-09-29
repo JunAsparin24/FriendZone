@@ -5,7 +5,7 @@ import { renderPortrait, spriteFrame, WALK_FRAMES } from './three/portrait.js';
 export { DEFAULT_LOOK };
 
 const TAU = Math.PI * 2;
-const HAT_HEIGHT = { hat_party: 14, hat_tophat: 16, hat_wizard: 22, hat_halo: 12, hat_crown: 8, hat_cowboy: 6, hat_viking: 10 };
+const HAT_HEIGHT = { hat_party: 14, hat_tophat: 16, hat_wizard: 22, hat_halo: 12, hat_crown: 8, hat_cowboy: 6, hat_viking: 10, hat_horns: 12 };
 /** Offset from the feet to above the head, in 2D sprite units (scale 1). */
 export const headTop = (look) => -60 - (HAT_HEIGHT[look?.hat] ?? 0);
 

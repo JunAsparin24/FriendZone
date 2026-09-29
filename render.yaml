@@ -1,0 +1,19 @@
+# One-click deploy on Render (https://render.com): New → Blueprint → pick this repo.
+# The persistent disk keeps everyone's zones and progress when the server restarts or redeploys.
+services:
+  - type: web
+    name: friendzone
+    runtime: python
+    plan: starter            # disks need a paid plan; see the README for the free option
+    buildCommand: echo "No build step needed"
+    startCommand: python server.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+      - key: FZ_DATA
+        value: /var/data/zones.json
+    disk:
+      name: friendzone-data
+      mountPath: /var/data
+      sizeGB: 1

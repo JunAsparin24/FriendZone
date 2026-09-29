@@ -408,6 +408,13 @@ const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
     t.size = t.kind === 'bush' ? 14 + rnd() * 5 : t.kind === 'pine' ? 30 + rnd() * 12 : 24 + rnd() * 12;
     if (!clash(t)) trees.push(t);
   }
+  // a few shade trees dotted round the square and the shops near it
+  for (let i = 0, added = 0; i < 4000 && added < 26; i++) {
+    const a = rnd() * TAU, d = PLAZA_R + 110 + rnd() * 560;
+    const t = { x: CENTER.x + Math.cos(a) * d, y: CENTER.y + Math.sin(a) * d, kind: rnd() < 0.7 ? 'oak' : 'bush', v: Math.floor(rnd() * 3), size: 0 };
+    t.size = t.kind === 'bush' ? 14 + rnd() * 4 : 24 + rnd() * 10;
+    if (!clash(t) && !nearPath(t, 48)) { trees.push(t); added++; }
+  }
   for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) { // the orchard
     const t = { x: (3720 + c * 110 + (r % 2) * 50) * K, y: (2800 + r * 80) * K, kind: 'oak', v: 3, size: 22 };
     if (!trees.some((o) => Math.hypot(o.x - t.x, o.y - t.y) < 40)) trees.push(t);
@@ -424,12 +431,17 @@ const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
 
   // ---- lamps: along the lit streets, well spaced and alternating sides; four at the square's corners
   const lamps = [];
-  const lampOk = (p) => !nearPath(p, 26) && !lamps.some((l) => Math.hypot(l.x - p.x, l.y - p.y) < 320)
+  const lampOk = (p) => !nearPath(p, 32) && !lamps.some((l) => Math.hypot(l.x - p.x, l.y - p.y) < 320)
     && !SPOTS.some((s) => distToRect(p, s) < 40) && creekDist(p.x, p.y) > CREEK_BANK && Math.hypot(p.x - CENTER.x, p.y - CENTER.y) > PLAZA_R + 20
     && !COTTAGES.some((c) => distToRect(p, { x: c.x - 40, y: c.y - 55, w: c.w + 80, h: c.h + 110 }) < 5);
   for (let i = 0; i < 4; i++) {
-    const a = ((i + 0.5) / 4) * TAU;
-    lamps.push({ x: CENTER.x + Math.cos(a) * (PLAZA_R + 24), y: CENTER.y + Math.sin(a) * (PLAZA_R + 24), h: a + Math.PI });
+    // roughly at the four corners, nudged round the edge of the square until clear of every street
+    const base = ((i + 0.5) / 4) * TAU;
+    for (let k = 0; k <= 16; k++) {
+      const a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.06;
+      const p = { x: CENTER.x + Math.cos(a) * (PLAZA_R + 24), y: CENTER.y + Math.sin(a) * (PLAZA_R + 24) };
+      if (!nearPath(p, 66)) { lamps.push({ ...p, h: a + Math.PI }); break; }
+    }
   }
   PATHS.forEach((road, ri) => {
     if (!road.lamps) return;

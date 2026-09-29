@@ -20,6 +20,7 @@ export const SCENE_LABEL = {
   casino: '🎰 at the casino',
   doodle: '🎨 doodling',
   bumper: '💥 bumper brawling',
+  archery: '🏹 at the archery range',
   shop: '👕 shopping',
   petshop: '🐾 at the pet shop',
 };
@@ -49,4 +50,5 @@ export function toast(text, kind = '') {
   setTimeout(() => el.remove(), 4300);
 }
 
-export const isTyping = () => ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+// (a box that's been hidden, like the town chat once you're inside a building, doesn't count)
+export const isTyping = () => { const el = document.activeElement; return ['INPUT', 'TEXTAREA', 'SELECT'].includes(el?.tagName) && !!el.offsetParent; };

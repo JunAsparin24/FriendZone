@@ -19,14 +19,31 @@ export function registerLook(target) {
 const current = () => targets.find((t) => document.pointerLockElement === t.canvas) ?? null;
 export const mouseLooking = () => !!current();
 
-function toggle() {
-  if (document.pointerLockElement) { document.exitPointerLock(); return; }
-  const t = targets.find((x) => x.active());
-  if (!t) return;
+// Mouse look is "sticky": once you turn it on it follows you from the town into buildings and back
+// (the lock moves to whichever view is showing) until you turn it off with Ctrl or Esc.
+let sticky = false, ourExit = false, fails = 0;
+
+function exitLock() {
+  if (!document.pointerLockElement) return;
+  ourExit = true;
+  document.exitPointerLock();
+}
+
+function lock(t) {
   try {
     const p = t.canvas.requestPointerLock();
-    p?.catch?.(() => {}); // the browser can refuse (e.g. right after leaving the lock)
-  } catch { /* not supported */ }
+    p?.then?.(() => { fails = 0; });
+    p?.catch?.(() => { if (++fails > 3) sticky = false; }); // the browser can refuse without a click/key
+  } catch { sticky = false; }
+}
+
+function toggle() {
+  if (document.pointerLockElement || sticky) { sticky = false; exitLock(); return; }
+  const t = targets.find((x) => x.active());
+  if (!t) return;
+  sticky = true;
+  fails = 0;
+  lock(t);
 }
 
 // Ctrl on its own toggles; Ctrl+C and friends don't
@@ -43,9 +60,17 @@ window.addEventListener('mousemove', (e) => {
   const t = current();
   if (t) t.look(e.movementX, e.movementY);
 });
-document.addEventListener('pointerlockchange', () => hint.classList.toggle('hidden', !current()));
-// if a panel opens or you leave the place, give the cursor back
+document.addEventListener('pointerlockchange', () => {
+  hint.classList.toggle('hidden', !current());
+  // the browser let go of the lock by itself (Esc, alt-tab): that turns mouse look off
+  if (!document.pointerLockElement && !ourExit) sticky = false;
+  ourExit = false;
+});
+// keep the lock on whatever view is active: hand it over when you go in or out of a building, and
+// give the cursor back while a panel is open
 setInterval(() => {
   const t = current();
-  if (document.pointerLockElement && (!t || !t.active())) document.exitPointerLock();
+  const want = targets.find((x) => x.active()) ?? null;
+  if (document.pointerLockElement && (!t || !t.active())) exitLock();
+  else if (sticky && want && !document.pointerLockElement) lock(want);
 }, 250);

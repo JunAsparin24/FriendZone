@@ -366,7 +366,7 @@ export function casinoArea(stage) {
       use: () => stage.openPanel({ wide: m.game === 'roulette', mount: (body) => casino(body, { game: m.game }) }),
     });
   }
-  stage.interactable({ x: 0, z: RD / 2 - 0.8, r: 1.6, label: 'leave the casino', use: () => stage.onExit?.() });
+  stage.interactable({ x: 0, z: RD / 2 - 0.8, r: 2.3, label: 'leave the casino', use: () => stage.onExit?.() });
 
   // the 3D roulette wheel follows the real table
   let wheelRot = 0, spin = null, ballAng = 0, landed = null;

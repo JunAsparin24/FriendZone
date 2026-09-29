@@ -106,6 +106,13 @@ const GLYPHS = {
     <path d="M24 44 V16 L50 10 V38" fill="none" stroke="${INK}" stroke-width="9" stroke-linejoin="round"/>
     <path d="M24 44 V16 L50 10 V38" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
     <ellipse cx="18" cy="46" rx="8" ry="6" fill="#fff" ${S}/><ellipse cx="44" cy="40" rx="8" ry="6" fill="#fff" ${S}/>`],
+  pets: ['#ffb3d9', '#e0559b', `
+    <ellipse cx="32" cy="41" rx="12" ry="10" fill="#fff" ${S}/>
+    <ellipse cx="16" cy="29" rx="5.5" ry="6.5" fill="#fff" ${S} transform="rotate(-20 16 29)"/>
+    <ellipse cx="25" cy="19" rx="5.5" ry="7" fill="#fff" ${S}/>
+    <ellipse cx="39" cy="19" rx="5.5" ry="7" fill="#fff" ${S}/>
+    <ellipse cx="48" cy="29" rx="5.5" ry="6.5" fill="#fff" ${S} transform="rotate(20 48 29)"/>
+    <ellipse cx="32" cy="42" rx="5" ry="3.5" fill="#ff8fc7"/>`],
 };
 
 /** Full SVG markup for an icon (no size = scales to its container). */

@@ -445,7 +445,7 @@ def migrate(p):
 def new_player(name, pin, color):
     salt = secrets.token_hex(8)
     return migrate({
-        "name": name, "color": color, "salt": salt, "pin": hash_pin(pin, salt), "tokens": [],
+        "key": name.lower(), "name": name, "color": color, "salt": salt, "pin": hash_pin(pin, salt), "tokens": [],
         "coins": START_COINS, "xp": 0, "lastDaily": 0, "created": int(time.time()), "stats": {},
     })
 
@@ -512,7 +512,7 @@ def house_view(p):
 
 def public(p, client):
     return {
-        "key": p["name"].lower(), "name": p["name"], "color": p["color"],
+        "key": p.get("key", p["name"].lower()), "name": p["name"], "color": p["color"],
         "coins": p["coins"], "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
         "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "rods": p["rods"], "rod": p["rod"],
         "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"])},
@@ -583,7 +583,7 @@ class Room:
 
 PRE_AUTH = {"create", "join", "resume"}
 IN_ZONE = {
-    "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "gift",
+    "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "gift", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
     "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "area_move", "pose",
@@ -645,14 +645,24 @@ class Game:
         }
         self.enter(c, code, key)
 
+    @staticmethod
+    def find_member(zone, name):
+        """The member called `name` (their current name, or the one they joined with) -> (key, player)."""
+        low = str(name or "").strip().lower()
+        if low in zone["players"]:
+            return low, zone["players"][low]
+        for key, p in zone["players"].items():
+            if p["name"].lower() == low:
+                return key, p
+        return low, None
+
     def on_join(self, c, m):
         code = clean(m.get("code"), 12).upper().replace(" ", "")
         zone = self.store.zones.get(code)
         if not zone:
             raise GameError("No FriendZone has that code.")
         name, pin, color = self.profile_fields(m)
-        key = name.lower()
-        player = zone["players"].get(key)
+        key, player = self.find_member(zone, name)
         if player:
             if not hmac.compare_digest(player["pin"], hash_pin(pin, player["salt"])):
                 c.failed_pins += 1
@@ -667,15 +677,16 @@ class Game:
 
     def on_resume(self, c, m):
         zone = self.store.zones.get(str(m.get("code", "")))
-        player = zone and zone["players"].get(str(m.get("name", "")).lower())
+        key, player = self.find_member(zone, m.get("name")) if zone else (None, None)
         token = str(m.get("token", ""))
         if not player or token not in player["tokens"]:
             raise GameError("Please sign in again with your PIN.")
-        self.enter(c, zone["code"], player["name"].lower(), token)
+        self.enter(c, zone["code"], key, token)
 
     def enter(self, c, code, key, token=None):
         room = self.room(code)
         player = room.zone["players"][key]
+        player.setdefault("key", key)  # older saves: pin the key before the name can change
         if token is None:
             token = secrets.token_urlsafe(18)
             player["tokens"] = (player["tokens"] + [token])[-8:]
@@ -708,6 +719,40 @@ class Game:
 
     def on_leave_zone(self, c, m):
         self.leave(c)
+
+    def on_quit_zone(self, c, m):
+        """Leave a zone for good: your member profile (coins, cosmetics, house…) is deleted and your
+        name disappears from the member list, chat, news, leaderboards' likes and so on."""
+        if m.get("confirm") is not True:
+            raise GameError("Please confirm you want to leave this zone.")
+        room, key, name = c.room, c.key, c.player["name"]
+        zone = room.zone
+        self.leave(c)
+        zone["players"].pop(key, None)
+        # scrub what other people can still see
+        low = name.lower()
+        room.chat = [e for e in room.chat if e.get("k") != key]
+        room.feed = [e for e in room.feed if low not in e.get("text", "").lower()]
+        for p in zone["players"].values():
+            likes = p.get("house", {}).get("likes")
+            if isinstance(likes, list) and key in likes:
+                likes.remove(key)
+        r = room.race
+        r["racers"].pop(key, None)
+        if key in r.get("order", []):
+            r["order"].remove(key)
+        if key in r.get("grid", []):
+            r["grid"].remove(key)
+        # hand the zone to the most experienced member left, or close it if nobody is
+        if not zone["players"]:
+            self.store.zones.pop(zone["code"], None)
+            self.rooms.pop(zone["code"], None)
+        else:
+            if zone["owner"] == key:
+                zone["owner"] = max(zone["players"], key=lambda k: zone["players"][k]["xp"])
+            room.broadcast({"t": "member_left", "k": key, "owner": zone["owner"], "feed": room.feed, "chat": room.chat})
+        self.store.mark()
+        c.ws.send({"t": "quit_zone", "code": zone["code"]})
 
     # ---- shared helpers --------------------------------------------------
 
@@ -754,6 +799,25 @@ class Game:
                 c.ws.send({"t": "unlock", "id": f["id"], "source": "achievement", "furni": True})
 
     # ---- cosmetics ---------------------------------------------------------
+
+    def on_rename(self, c, m):
+        name = clean(m.get("name"), 16)
+        if not NAME_RE.match(name):
+            raise GameError("Names are 1–16 letters, numbers, spaces, - or _.")
+        if not c.ready("rename", 5):
+            raise GameError("Give it a few seconds before changing your name again.")
+        low = name.lower()
+        for key, p in c.room.zone["players"].items():
+            if key != c.key and (key == low or p["name"].lower() == low):
+                raise GameError(f"Someone in this zone is already called {p['name']}.")
+        old = c.player["name"]
+        if name == old:
+            return
+        c.player["name"] = name
+        self.store.mark()
+        self.push_player(c.room, c.key)
+        c.ws.send({"t": "renamed", "name": name})
+        self.post_feed(c.room, f"✏️ {old} is now called {name}.")
 
     def on_look(self, c, m):
         look = m.get("look")
@@ -1118,7 +1182,7 @@ class Game:
         self.reward(c, coins=DAILY_BONUS)
 
     def on_gift(self, c, m):
-        target = c.room.zone["players"].get(str(m.get("to", "")).lower())
+        target_key, target = self.find_member(c.room.zone, m.get("to"))
         amount = int(num(m.get("amount", 0), 0, 10**9))
         if not target or target is c.player:
             raise GameError("Pick a friend to send coins to.")
@@ -1128,7 +1192,7 @@ class Game:
         target["coins"] += amount
         self.store.mark()
         self.push_player(c.room, c.key)
-        self.push_player(c.room, target["name"].lower())
+        self.push_player(c.room, target_key)
         self.post_feed(c.room, f"💰 {c.player['name']} sent {amount:,} coins to {target['name']}.")
 
     # ---- racing ------------------------------------------------------------
@@ -1140,7 +1204,9 @@ class Game:
         r = room.race
         return {"state": r["state"], "racers": r["racers"], "order": r["order"], "laps": RACE_LAPS,
                 "since": round(time.monotonic() - r.get("goAt", time.monotonic()), 2) if r["state"] == "running" else 0,
-                "times": r.get("times", {}), "grid": r.get("grid", list(r["racers"]))}
+                "times": r.get("times", {}),
+                # the starting order is fixed once a race starts; before that it's whoever is on the grid
+                "grid": r.get("grid", list(r["racers"])) if r["state"] in ("countdown", "running") else list(r["racers"])}
 
     def race_sync(self, room):
         room.broadcast({"t": "race", "race": self.race_view(room)})

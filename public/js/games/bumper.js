@@ -1,6 +1,6 @@
 // Bumper Brawl (3D): bumper cars on a shrinking ice rink in the middle of a lake. Knock everyone
 // else into the water, be the last one standing. Each player simulates their own car (so bumps
-// feel instant) and the server runs the rounds. W/S = gas and brake/reverse, A/D steer, Space/Shift boosts.
+// feel instant) and the server runs the rounds. WASD drives in any direction, Space/Shift boosts.
 // Cars build up speed and slide on the ice; getting hit stuns you, spins you and knocks you away.
 // Game logic runs in rink pixels (900 x 600, centre 450,300); 20 px = 1 world unit.
 import * as THREE from 'three';
@@ -14,9 +14,9 @@ import { listen, confetti } from './util.js';
 const CX = 450, CY = 300, K = 20;
 const R0 = 270, R1 = 95;              // rink radius (px) at the start / at the end of the shrink
 const CAR = 26;                        // car radius (px)
-const ACCEL = 300, BRAKE = 650, REVERSE = 220, MAX_SPEED = 330, MAX_REV = 150;
-const STEER = 3.1;                     // rad/s at speed
-const GRIP = 4.5, STUN_GRIP = 0.5;     // how fast sideways sliding dies out (ice!)
+const ACCEL = 420, MAX_SPEED = 320;
+const TURN = 9;                        // how fast the car swings round to face where you're steering (rad/s)
+const GRIP = 3.2;                      // how fast sliding sideways dies out (ice!)
 const BOOST = 440, BOOST_CD = 1.6, BOOST_T = 0.3;
 const to3 = (x, y) => [(x - CX) / K, (y - CY) / K];
 const OUT = outlineMaterial(0.04);
@@ -146,7 +146,7 @@ export function bumper(stage) {
     <div class="hud-panel bumper-status"></div>
     <div class="hud-panel arena-bottom"><div class="meter"><i></i><span>BOOST</span></div></div>
     <div class="bumper-count hidden"></div>
-    <p class="hud-panel arena-help"><kbd>W</kbd> gas · <kbd>S</kbd> brake/reverse · <kbd>A</kbd>/<kbd>D</kbd> steer · <kbd>Space</kbd>/<kbd>Shift</kbd> boost-ram · knock everyone off the ice before it melts. Last car standing wins 120 🪙!</p>`;
+    <p class="hud-panel arena-help"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive any way · <kbd>Space</kbd>/<kbd>Shift</kbd> boost-ram · knock everyone off the ice before it melts. Last car standing wins 120 🪙!</p>`;
   const winsEl = stage.hud.querySelector('.bumper-wins'), statusEl = stage.hud.querySelector('.bumper-status');
   const meterEl = stage.hud.querySelector('.meter'), countEl = stage.hud.querySelector('.bumper-count');
 
@@ -195,12 +195,16 @@ export function bumper(stage) {
     const k = e.key.toLowerCase();
     if (down && (k === ' ' || k === 'shift') && !e.repeat) boost();
   };
-  /** { gas: -1..1, steer: -1 (left) .. 1 (right) } */
+  /** WASD / arrows as a direction on the rink, relative to the camera: { x, y } (map px axes), length 0..1 */
   function controls() {
     const keys = stage.keys;
-    const gas = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0);
-    const steer = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
-    return { gas, steer };
+    const up = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0);
+    const right = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
+    if (!up && !right) return { x: 0, y: 0 };
+    // the camera looks along -(sin yaw, cos yaw); its right is (cos yaw, -sin yaw)
+    const fx = -Math.sin(orbit.yaw), fy = -Math.cos(orbit.yaw), rx = Math.cos(orbit.yaw), ry = -Math.sin(orbit.yaw);
+    const x = fx * up + rx * right, y = fy * up + ry * right, l = Math.hypot(x, y);
+    return { x: x / l, y: y / l };
   }
   function boost() {
     if (!(playing() || practicing()) || boostCd > 0 || me.stun > 0.15) return;
@@ -278,24 +282,29 @@ export function bumper(stage) {
     boostT = Math.max(0, boostT - dt);
     const R = radius(now);
     if (me && (playing() || practicing())) {
-      // car-style driving: speed builds along the car's heading, sideways motion slides out on the ice
-      const { gas, steer } = controls();
+      // drive in any direction with WASD: the car swings round to face where you're going and picks
+      // up speed that way, sliding a little on the ice; when you're knocked about you just slide
+      const dir = controls();
       me.stun = Math.max(0, me.stun - dt);
       const stunned = me.stun > 0;
+      const steering = !stunned && (dir.x || dir.y);
+      if (steering) {
+        const want = Math.atan2(dir.x, dir.y);
+        const diff = Math.atan2(Math.sin(want - me.face), Math.cos(want - me.face));
+        me.face += Math.sign(diff) * Math.min(Math.abs(diff), TURN * dt);
+        // push along where the car is actually pointing, so turning round carves an arc
+        const push = ACCEL * Math.max(0.35, Math.cos(diff));
+        me.vx += Math.sin(me.face) * push * dt;
+        me.vy += Math.cos(me.face) * push * dt;
+      }
       const fx = Math.sin(me.face), fy = Math.cos(me.face);
       let fwd = me.vx * fx + me.vy * fy;
       let lx = me.vx - fx * fwd, ly = me.vy - fy * fwd;
-      if (!stunned) {
-        if (gas > 0) fwd += ACCEL * dt;
-        else if (gas < 0) fwd -= (fwd > 20 ? BRAKE : REVERSE) * dt;
-        const turn = STEER * (0.3 + 0.7 * Math.min(1, Math.abs(fwd) / 140)) * (fwd < -10 ? -1 : 1);
-        me.face -= steer * turn * dt;
-      }
-      fwd *= Math.exp(-(gas && !stunned ? 0.25 : 1.1) * dt);
+      // coasting slows you gently; a knock sends you gliding a long way
+      fwd *= Math.exp(-(stunned ? 0.25 : steering ? 0.35 : 1.2) * dt);
       const cap = boostT > 0 ? MAX_SPEED + BOOST : MAX_SPEED;
-      if (fwd > cap) fwd += (cap - fwd) * Math.min(1, dt * 4); // boosts wear off smoothly
-      if (fwd < -MAX_REV) fwd = -MAX_REV;
-      const slide = Math.exp(-(stunned ? STUN_GRIP : GRIP) * dt);
+      if (!stunned && fwd > cap) fwd += (cap - fwd) * Math.min(1, dt * 4); // boosts wear off smoothly
+      const slide = Math.exp(-(stunned ? 0.25 : GRIP) * dt);
       lx *= slide;
       ly *= slide;
       me.vx = fx * fwd + lx;
@@ -314,13 +323,14 @@ export function bumper(stage) {
         me.y += ny * (CAR * 2 - d) * 0.5;
         const rel = (me.vx - o.vx) * nx + (me.vy - o.vy) * ny;
         if (rel < 0) {
-          // n points from them to me: how hard *they* drove into me counts extra, so getting rammed sends you flying
-          const theirs = Math.max(0, o.vx * nx + o.vy * ny);
-          const j = (-rel * 1.15 + theirs * 0.9 + 70) * (o.dash ? 1.6 : 1);
+          // n points from them to me: how hard *they* drove into me is what sends me flying; ramming
+          // someone yourself only bounces you back a little
+          const theirs = Math.max(0, o.vx * nx + o.vy * ny), mine = Math.max(0, -(me.vx * nx + me.vy * ny));
+          const j = (160 + theirs * 2.3 + mine * 0.55) * (o.dash ? 1.8 : 1);
           me.vx += nx * j;
           me.vy += ny * j;
-          const power = Math.min(1, j / 650);
-          me.stun = Math.max(me.stun, 0.25 + power * 0.6);
+          const power = Math.min(1, j / 900);
+          me.stun = Math.max(me.stun, 0.3 + power * 0.9);
           const side = Math.sign(Math.sin(me.face) * ny - Math.cos(me.face) * nx) || 1;
           me.spin += side * (2 + power * 9);
           sfx('bonk', { power });

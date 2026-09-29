@@ -276,27 +276,6 @@ function lighthouse(anim) {
   return g;
 }
 
-function signpost() {
-  const g = new THREE.Group();
-  mesh(g, new THREE.CylinderGeometry(0.1, 0.12, 3.2, 8), toon('#6b4a2b'), { p: [0, 1.6, 0] });
-  const signs = [['Casino', 0.2, '#ff5d73'], ['Lake', 2.9, '#39c6ff'], ['Arena', 0.9, '#ff9f43'], ['Cave', -2.4, '#7c6bff']];
-  signs.forEach(([label, ang, color], i) => {
-    const tex = canvasTexture(256, 64, (c) => {
-      c.fillStyle = '#e6cf9f'; c.fillRect(0, 0, 256, 64);
-      c.fillStyle = color; c.fillRect(0, 0, 18, 64);
-      c.font = '700 38px Rubik, sans-serif'; c.fillStyle = '#3a2410'; c.textBaseline = 'middle'; c.fillText(label, 30, 34);
-    });
-    const board = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 0.08), [toon('#c9955a'), toon('#c9955a'), toon('#c9955a'), toon('#c9955a'), new THREE.MeshToonMaterial({ map: tex }), new THREE.MeshToonMaterial({ map: tex })]);
-    const arm = new THREE.Group();
-    arm.rotation.y = ang;
-    board.position.set(0.8, 2.9 - i * 0.45, 0);
-    board.castShadow = true;
-    arm.add(board);
-    g.add(arm);
-  });
-  return g;
-}
-
 /** Everything in the town apart from buildings, trees and lamps. */
 export function buildTown(scene, layout, anim, waterMat) {
   const group = new THREE.Group();
@@ -308,7 +287,6 @@ export function buildTown(scene, layout, anim, waterMat) {
   place(gazebo(), M.LANDMARKS.gazebo);
   place(well(), M.LANDMARKS.well, 0.4);
   place(lighthouse(anim), M.LANDMARKS.lighthouse);
-  place(signpost(), { x: M.CENTER.x + 150, y: M.CENTER.y - 150 }, 0);
 
   // the creek: water sitting down in its channel, following the slope. It widens into a delta and
   // rises to the lake's level at the mouth, then stops a little way into the lake; where it overlaps

@@ -28,6 +28,16 @@ class Stage {
 
   setup() {
     if (this.el) return;
+    // chat bubbles over whoever said it, if they're in here with you
+    net.on('chat', (m) => {
+      const p = this.active && this.people.get(m.k);
+      if (!p) return;
+      const b = p.el.querySelector('.wl-bubble');
+      b.textContent = m.text;
+      b.classList.remove('hidden');
+      clearTimeout(p.bubbleTimer);
+      p.bubbleTimer = setTimeout(() => b.classList.add('hidden'), 5000);
+    });
     const el = document.createElement('section');
     el.className = 'area hidden';
     el.innerHTML = `
@@ -168,6 +178,10 @@ class Stage {
     this.orbit = null;
     this.onKey = this.onPointer = null;
     this.onExit = onExit;
+    // keep the town chat on top of the area, so you can talk in shops, games and houses too
+    const chat = document.querySelector('#world .chat');
+    if (chat) { chat.classList.add('chat-float'); document.body.append(chat); }
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) document.activeElement.blur(); // so E works straight away
     this.shakeAmt = 0;
     this.title.innerHTML = `${iconSvg(activity.icon) || activity.emoji} ${esc(activity.place ?? activity.name)}`;
     this.el.classList.remove('hidden');
@@ -203,6 +217,8 @@ class Stage {
     this.cleanup = null;
     this.active = null;
     this.keys.clear();
+    const chat = document.querySelector('.chat.chat-float');
+    if (chat) { chat.classList.remove('chat-float'); document.querySelector('#world')?.append(chat); }
     setTouchButtons([]);
     document.body.classList.remove('in-area');
     for (const k of [...this.people.keys()]) this.removePerson(k);

@@ -665,11 +665,13 @@ export function house(stage) {
   }
 
   // leave through the front door
-  stage.interactable({ x: W / 2, z: W - 0.6, r: 1.6, label: 'go back outside', use: () => stage.onExit?.() });
+  stage.interactable({ x: W / 2, z: W - 0.6, r: 2.3, label: 'go back outside', use: () => stage.onExit?.() });
 
   // ---- network ------------------------------------------------------------------------
 
   const off = [
+    // the owner of the house you're in left the zone: back to your own
+    net.on('member_left', (m) => { if (m.k === viewKey) visit(S.me); else if (sideOpen && tab === 'visit') renderVisit(); }),
     net.on('house', (m) => {
       if (m.k !== viewKey) { if (sideOpen && tab === 'visit') renderVisit(); return; }
       if (m.k === S.me && home) {

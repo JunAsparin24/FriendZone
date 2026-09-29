@@ -38,13 +38,20 @@ function legs(parent, mat, x, z, y, len = 0.18, r = 0.06) {
   return [[-x, -z], [x, -z], [-x, z], [x, z]].map(([lx, lz]) => {
     const pivot = new THREE.Group();
     pivot.position.set(lx, y, lz);
+    pivot.userData.y0 = y;
     add(pivot, cyl(r, r * 0.9, len), mat, { p: [0, -len / 2, 0] });
     add(pivot, sph(r * 1.05, 10, 8), mat, { p: [0, -len, 0.01], s: [1, 0.7, 1.2], outline: false });
     parent.add(pivot);
     return pivot;
   });
 }
-const trot = (list, t, moving, speed = 14, amp = 0.6) => list.forEach((l, i) => { l.rotation.x = moving ? Math.sin(t * speed + (i % 3 === 0 ? 0 : Math.PI)) * amp : 0; });
+// diagonal pairs swing together; each foot lifts as it swings forward, and settles back when you stop
+const trot = (list, t, moving, speed = 14, amp = 0.6) => list.forEach((l, i) => {
+  const s = Math.sin(t * speed + (i % 3 === 0 ? 0 : Math.PI));
+  const goal = moving ? s * amp : 0;
+  l.rotation.x += (goal - l.rotation.x) * (moving ? 1 : 0.2);
+  l.position.y = (l.userData.y0 ?? l.position.y) + (moving ? Math.max(0, s) * 0.035 : 0);
+});
 
 const BUILD = {
   pet_puppy(g, A) {
@@ -343,7 +350,24 @@ export function buildPet(id) {
   const group = new THREE.Group();
   const model = new THREE.Group();
   group.add(model);
-  const tick = make(model) ?? (() => {});
+  const inner = make(model) ?? (() => {});
   model.traverse((o) => { if (o.isMesh && !o.userData.outline) o.castShadow = true; });
+  // a shared layer of life on top of each pet's own animation: a bouncy gait that leans into the
+  // run and trails a little behind you, then an idle look-around and the odd happy hop when you stop
+  let w = 0, phase = 0, hopAt = 3 + Math.random() * 4, hop = 0;
+  const tick = (t, dt, moving) => {
+    const step = Math.min(dt || 0, 0.05);
+    w += ((moving ? 1 : 0) - w) * Math.min(1, step * 6);
+    phase += step * 13 * w;
+    const bounce = Math.abs(Math.sin(phase));
+    if (!moving && (hopAt -= step) <= 0) { hop = 1; hopAt = 4 + Math.random() * 6; }
+    hop = Math.max(0, hop - step * 2.2);
+    const hopY = Math.sin(hop * Math.PI) * 0.18;
+    model.position.set(Math.sin(phase * 0.5) * 0.03 * w, bounce * 0.07 * w + hopY, -0.3 * w);
+    model.rotation.set(0.14 * w + Math.sin(phase * 2) * 0.03 * w - hopY * 0.6, Math.sin(t * 0.45) * 0.35 * (1 - w), Math.sin(phase) * 0.06 * w);
+    const squash = 1 - (1 - bounce) * 0.06 * w + hopY * 0.3;
+    model.scale.set(1 / Math.sqrt(squash), squash, 1 / Math.sqrt(squash));
+    inner(t, step, moving);
+  };
   return { group, tick };
 }

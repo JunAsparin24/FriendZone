@@ -11,7 +11,8 @@ import { Sparks, FloatText, crowd } from '../three/fx.js';
 import { sfx } from '../sfx.js';
 import { listen, confetti } from './util.js';
 
-const TW = 14;           // track width
+const TW = 16;           // track width
+const GRID_S0 = 6, GRID_GAP = 4.5, GRID_SIDE = 3.4, GRID_SLOTS = 10; // the starting grid behind the line
 const OUT = outlineMaterial(0.04);
 
 // The circuit: a closed spline through these points (x, z). The start/finish straight runs +x at z = 90.
@@ -217,6 +218,17 @@ function buildTrack() {
   // start/finish line + gantry with the countdown lights
   const s0 = track(0);
   add(g, new THREE.PlaneGeometry(1.6, TW), new THREE.MeshBasicMaterial({ map: checkerTex }), [s0.x, 0.06, s0.z], [-Math.PI / 2, 0, s0.heading - Math.PI / 2], { cast: false });
+  // numbered grid boxes: a white bracket for each starting slot, staggered two abreast
+  const gridMat = basic('#ffffff');
+  for (let i = 0; i < GRID_SLOTS; i++) {
+    const p = track(-GRID_S0 - i * GRID_GAP, (i % 2 ? -1 : 1) * GRID_SIDE);
+    const box = new THREE.Group();
+    box.position.set(p.x, 0.045, p.z);
+    box.rotation.y = p.heading;
+    add(box, new THREE.PlaneGeometry(3.2, 0.25), gridMat, [0, 0, 1.6], [-Math.PI / 2, 0, 0], { cast: false });
+    for (const sx of [-1.6, 1.6]) add(box, new THREE.PlaneGeometry(0.25, 1.4), gridMat, [sx, 0, 1.0], [-Math.PI / 2, 0, 0], { cast: false });
+    g.add(box);
+  }
   const gantry = new THREE.Group();
   for (const side of [-1, 1]) add(gantry, new THREE.BoxGeometry(0.6, 8, 0.6), toon('#6b7194'), [side * (TW / 2 + 1.2), 4, 0], null, { outline: true });
   add(gantry, new THREE.BoxGeometry(TW + 3, 1.8, 0.9), toon('#23263f'), [0, 8, 0], null, { outline: true });
@@ -521,11 +533,12 @@ export function racing(stage) {
   const inRace = () => S.race && S.me in S.race.racers;
   const racing = () => S.race?.state === 'running' && inRace() && !finished;
 
+  /** Starting slot: two abreast in a staggered line behind the start, in the order people joined. */
   function gridSpot(k) {
-    const list = S.race?.grid ?? racers();
+    let list = S.race?.grid ?? racers();
+    if (!list.includes(k)) list = racers();
     const i = Math.max(0, list.indexOf(k));
-    const p = track(-8 - Math.floor(i / 2) * 5, (i % 2 ? -1 : 1) * 3);
-    return p;
+    return track(-GRID_S0 - i * GRID_GAP, (i % 2 ? -1 : 1) * GRID_SIDE);
   }
   function placeOnGrid() {
     const p = gridSpot(S.me);

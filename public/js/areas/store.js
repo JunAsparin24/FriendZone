@@ -149,7 +149,7 @@ function openWalker(stage, { w, d, solids }) {
     orbit: { yaw: 0, pitch: 0.65, dist: 12, maxDist: 18 },
   });
   walker.me.heading = Math.PI;
-  stage.interactable({ x: 0, z: d / 2 - 0.8, r: 1.6, label: 'go back outside', use: () => stage.onExit?.() });
+  stage.interactable({ x: 0, z: d / 2 - 0.8, r: 2.3, label: 'go back outside', use: () => stage.onExit?.() });
   return walker;
 }
 

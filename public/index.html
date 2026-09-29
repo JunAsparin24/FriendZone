@@ -86,7 +86,15 @@
       <h2>Zone news</h2>
       <ul id="lobbyFeed" class="feed"></ul>
     </div>
-    <button class="btn ghost" id="switchZone">Switch zone</button>
+    <div class="lobby-leave">
+      <button class="btn ghost" id="switchZone">Switch zone</button>
+      <button class="btn ghost danger" id="quitZone">Leave this zone</button>
+    </div>
+    <div class="card quit-confirm hidden" id="quitConfirm">
+      <h3>Leave this FriendZone for good?</h3>
+      <p>Your coins, level, cosmetics, pets and house here will be <b>deleted</b>, and your name will disappear from this zone for everyone. You can join again later with the invite code, but you'll start from scratch.</p>
+      <div class="row center"><button class="btn danger" id="quitYes">Yes, delete me from this zone</button><button class="btn ghost" id="quitNo">Cancel</button></div>
+    </div>
   </section>
 
   <!-- World: walk around together -->

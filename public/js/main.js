@@ -1,5 +1,6 @@
 // App shell: zone selection, sign-in, lobby, world HUD, chat and activity modal.
 import { actionHint, touch } from './touch.js';
+import './glyphs.js'; // swaps emoji in the interface for drawn icons
 import { net } from './net.js';
 import { S, sceneLabel, esc, fmt, me, toast, xpForLevel, colorOf, nameOf, isTyping } from './state.js';
 import { World, EMOTES } from './world.js';
@@ -195,7 +196,8 @@ function renderProfile() {
     <div class="pf-head">
       <div class="pf-av"></div>
       <div class="pf-info">
-        <div class="pf-name">${esc(p.name.toUpperCase())}</div>
+        <div class="pf-name">${esc(p.name.toUpperCase())}${isMe ? '<button class="pf-rename" data-rename title="Change your name">✏️</button>' : ''}</div>
+        ${isMe ? `<form class="pf-rename-form hidden"><input name="name" maxlength="16" value="${esc(p.name)}" autocomplete="off"><button class="btn primary small">Save</button><button type="button" class="btn ghost small" data-rename-cancel>Cancel</button></form><p class="error pf-rename-err"></p>` : ''}
         <div class="pf-level">Level ${p.level}</div>
         <div class="xpbar"><i style="width:${pct}%"></i></div>
         <div class="muted small">${fmt(p.xp - lo)} / ${fmt(hi - lo)} XP</div>
@@ -235,6 +237,26 @@ $('#profileCard').addEventListener('click', (e) => {
   if (e.target.closest('[data-daily]')) { net.send('daily'); sfx('daily'); }
   if (e.target.closest('[data-mine]')) { viewing = null; renderLobby(); }
   if (e.target.closest('[data-customize]')) openActivity('wardrobe');
+  const form = $('#profileCard .pf-rename-form');
+  if (form && (e.target.closest('[data-rename]') || e.target.closest('[data-rename-cancel]'))) {
+    const opening = !!e.target.closest('[data-rename]');
+    form.classList.toggle('hidden', !opening);
+    $('#profileCard .pf-name').classList.toggle('hidden', opening);
+    $('#profileCard .pf-rename-err').textContent = '';
+    if (opening) { form.name.focus(); form.name.select(); }
+  }
+});
+$('#profileCard').addEventListener('submit', (e) => {
+  if (!e.target.matches('.pf-rename-form')) return;
+  e.preventDefault();
+  const name = e.target.name.value.trim();
+  if (name) net.send('rename', { name });
+});
+net.on('renamed', (m) => {
+  // remember the new name for signing back in on this device
+  if (session) { session.name = m.name; rememberZone({ ...session, zoneName: S.zone?.name }); }
+  sfx('swap');
+  toast(`✏️ You're now called ${m.name}`);
 });
 
 $('#inviteBtn').onclick = async () => {
@@ -254,6 +276,27 @@ $('#playBtn').onclick = () => {
 };
 
 $('#switchZone').onclick = () => leaveZone();
+$('#quitZone').onclick = () => { $('#quitConfirm').classList.remove('hidden'); $('#quitConfirm').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+$('#quitNo').onclick = () => $('#quitConfirm').classList.add('hidden');
+$('#quitYes').onclick = () => net.send('quit_zone', { confirm: true });
+net.on('quit_zone', (m) => {
+  forgetZone(m.code);
+  $('#quitConfirm').classList.add('hidden');
+  leaveZone();
+  toast('You left the zone. Your profile there has been deleted.');
+});
+// someone else left the zone for good: drop them from everything we show
+net.on('member_left', (m) => {
+  if (!S.zone) return;
+  delete S.players[m.k];
+  S.zone.owner = m.owner;
+  S.feed = m.feed;
+  S.chat = m.chat;
+  if (viewing === m.k) viewing = null;
+  renderLobby();
+  renderChat();
+  renderHud();
+});
 
 function leaveZone() {
   closeModal(true);
@@ -399,7 +442,7 @@ window.addEventListener('keydown', (e) => {
     else if (isTyping()) document.activeElement.blur();
     else if (area) closeArea();
     else if (world.fishing) world.stopActivity();
-  } else if (e.key === 'Enter' && screen === 'world' && !modal && !isTyping()) {
+  } else if (e.key === 'Enter' && (screen === 'world' || area) && !modal && !isTyping()) {
     e.preventDefault();
     $('#chatInput').focus();
   }

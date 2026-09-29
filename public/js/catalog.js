@@ -1,7 +1,7 @@
 // Cosmetics + fish catalog, shared with the server via cosmetics.json.
 export const CATALOG = await (await fetch('cosmetics.json')).json();
 export const ITEMS = Object.fromEntries(CATALOG.items.map((i) => [i.id, i]));
-export const SLOTS = ['hair', 'top', 'hat', 'face', 'back', 'aura'];
+export const SLOTS = ['hair', 'top', 'bottom', 'hat', 'face', 'back', 'aura', 'pet'];
 
 export const RARITY = {
   junk: { label: 'Junk', color: '#8a8fa8' },
@@ -17,6 +17,7 @@ export const owns = (player, id) => !!ITEMS[id]?.free || player.owned.includes(i
 export function howToGet(item) {
   if (item.free) return 'Free';
   if (item.unlock) return item.unlock.hint;
-  if (item.price) return `${item.price.toLocaleString()} coins${item.crate ? ' · or crates' : ''}`;
+  if (item.drop) return `Boss drop: ${item.drop}`;
+  if (item.price) return `${item.price.toLocaleString()} coins${item.crate ? ' · or crates' : item.petRoll ? ' · or a pet egg' : ''}`;
   return 'Crates only';
 }

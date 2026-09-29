@@ -2,10 +2,13 @@
 import * as THREE from 'three';
 import { TAU, toon, basic, shiny, canvasTexture, additive, glowTexture, puffTexture, outlineMaterial } from './materials.js';
 import { buildBuilding } from './buildings.js';
+import { buildLamps, buildFences, buildTown } from './town.js';
 import * as M from '../map.js';
 
 const U = (px) => px / M.PX;
 const pos3 = (x, y) => M.to3(x, y);
+/** Ground height under a 3D point. */
+export const groundAt = (x, z) => M.heightAt(x * M.PX + M.CENTER.x, z * M.PX + M.CENTER.y);
 const HALF_W = M.W / M.PX / 2, HALF_H = M.H / M.PX / 2;
 
 /** Merge geometries (with transforms and a flat color each) into one non-indexed geometry with vertex colors. */
@@ -91,7 +94,7 @@ export function buildEnvironment(scene) {
 
   // ---- sky, fog, light -------------------------------------------------------
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(400, 32, 16),
+    new THREE.SphereGeometry(760, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: { top: { value: new THREE.Color('#2f6fd6') }, mid: { value: new THREE.Color('#7fb7f5') }, bottom: { value: new THREE.Color('#d9ecff') } },
@@ -104,18 +107,22 @@ export function buildEnvironment(scene) {
     }),
   );
   scene.add(sky);
-  scene.fog = new THREE.Fog('#cfe4fb', 90, 260);
+  scene.fog = new THREE.Fog('#cfe4fb', 120, 380);
   const sunGlow = new THREE.Sprite(additive(glowTexture, 0xfff2c0, 0.9));
   sunGlow.scale.setScalar(70);
-  sunGlow.position.set(160, 140, 220);
+  sunGlow.position.set(260, 220, 360);
   scene.add(sunGlow);
 
   // ---- ground ------------------------------------------------------------------
-  const groundCanvas = M.renderGround(2);
+  const groundCanvas = M.renderGround();
   const groundTex = new THREE.CanvasTexture(groundCanvas);
   groundTex.colorSpace = THREE.SRGBColorSpace;
   groundTex.anisotropy = 8;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF_W * 2, HALF_H * 2), new THREE.MeshLambertMaterial({ map: groundTex }));
+  const groundGeo = new THREE.PlaneGeometry(HALF_W * 2, HALF_H * 2, Math.round(HALF_W * 2), Math.round(HALF_H * 2));
+  const gp = groundGeo.attributes.position;
+  for (let i = 0; i < gp.count; i++) gp.setZ(i, groundAt(gp.getX(i), -gp.getY(i))); // plane z becomes height once it's laid flat
+  groundGeo.computeVertexNormals();
+  const ground = new THREE.Mesh(groundGeo, new THREE.MeshLambertMaterial({ map: groundTex }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
@@ -128,8 +135,15 @@ export function buildEnvironment(scene) {
       c.fillStyle = r() < 0.5 ? 'rgba(35,95,45,.25)' : 'rgba(190,240,150,.22)';
       c.fillRect(r() * 256, r() * 256, 2, 5);
     }
-  }, { repeat: [120, 120] });
-  const outer = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), new THREE.MeshLambertMaterial({ map: grassTex }));
+  }, { repeat: [220, 220] });
+  // the meadow beyond the map: a big sheet with the map cut out of it, so it never covers dips in the
+  // terrain (like the creek's channel)
+  const outerShape = new THREE.Shape([new THREE.Vector2(-800, -800), new THREE.Vector2(800, -800), new THREE.Vector2(800, 800), new THREE.Vector2(-800, 800)]);
+  outerShape.holes.push(new THREE.Path([new THREE.Vector2(-HALF_W, -HALF_H), new THREE.Vector2(-HALF_W, HALF_H), new THREE.Vector2(HALF_W, HALF_H), new THREE.Vector2(HALF_W, -HALF_H)]));
+  const outerGeo = new THREE.ShapeGeometry(outerShape);
+  const ouv = outerGeo.attributes.uv;
+  for (let i = 0; i < ouv.count; i++) ouv.setXY(i, (ouv.getX(i) + 800) / 1600, (ouv.getY(i) + 800) / 1600);
+  const outer = new THREE.Mesh(outerGeo, new THREE.MeshLambertMaterial({ map: grassTex }));
   outer.rotation.x = -Math.PI / 2;
   outer.position.y = -0.02;
   outer.receiveShadow = true;
@@ -139,18 +153,22 @@ export function buildEnvironment(scene) {
   const hillMat = toon('#58a553');
   for (let i = 0; i < 26; i++) {
     const a = (i / 26) * TAU + rnd() * 0.2;
-    const dist = 95 + rnd() * 60;
-    const r = 18 + rnd() * 22;
+    const r = 22 + rnd() * 26;
+    // outside the fence all the way round: walk out along the angle until the hill clears the map
+    const out = 12 + rnd() * 40;
+    let k = 1;
+    const cx = Math.cos(a), cz = Math.sin(a);
+    while (Math.abs(cx * k) < HALF_W + r * 1.4 * 0.62 + out && Math.abs(cz * k) < HALF_H + r * 0.62 + out) k += 2;
     const hill = new THREE.Mesh(faceted(new THREE.IcosahedronGeometry(r, 2)), hillMat);
-    hill.position.set(Math.cos(a) * dist * 1.1, -r * 0.62, Math.sin(a) * dist * 0.85);
+    hill.position.set(cx * k, -r * 0.62, cz * k);
     hill.scale.set(1.4, 0.8 + rnd() * 0.4, 1);
     hill.receiveShadow = true;
     scene.add(hill);
   }
   for (let i = 0; i < 18; i++) {
     const a = (i / 18) * TAU + rnd() * 0.3;
-    const dist = 210 + rnd() * 50;
-    const h = 45 + rnd() * 45;
+    const dist = 330 + rnd() * 70;
+    const h = 60 + rnd() * 55;
     const mtn = new THREE.Mesh(faceted(new THREE.ConeGeometry(h * 0.9, h, 7)), toon('#7e93b8'));
     mtn.position.set(Math.cos(a) * dist, h / 2 - 6, Math.sin(a) * dist);
     scene.add(mtn);
@@ -202,7 +220,7 @@ export function buildEnvironment(scene) {
   const oaks = [], pines = [], bushes = [];
   const place = (t) => {
     const p = pos3(t.x, t.y);
-    const item = { x: p.x, z: p.z, rot: rnd() * TAU, v: t.v };
+    const item = { x: p.x, y: M.heightAt(t.x, t.y), z: p.z, rot: rnd() * TAU, v: t.v };
     if (t.kind === 'pine') pines.push({ ...item, s: t.size / 34 * 1.1 });
     else if (t.kind === 'bush') bushes.push({ ...item, s: t.size / 16 * 0.85 });
     else oaks.push({ ...item, s: t.size / 28 * 1.1 });
@@ -210,8 +228,8 @@ export function buildEnvironment(scene) {
   layout.trees.forEach(place);
   layout.border.forEach(place);
   // forest outside the fence
-  for (let i = 0; i < 520; i++) {
-    const x = (rnd() - 0.5) * 220, z = (rnd() - 0.5) * 170;
+  for (let i = 0; i < 1300; i++) {
+    const x = (rnd() - 0.5) * 360, z = (rnd() - 0.5) * 260;
     if (Math.abs(x) < HALF_W + 2 && Math.abs(z) < HALF_H + 2) continue;
     const kind = rnd() < 0.55 ? 'pine' : 'oak';
     (kind === 'pine' ? pines : oaks).push({ x, z, rot: rnd() * TAU, s: 1 + rnd() * 0.7, v: Math.floor(rnd() * 3) });
@@ -229,7 +247,7 @@ export function buildEnvironment(scene) {
   scene.add(instanced(bushGeo, bushMat, bushes, { colorOf: (t, i) => ['#357f3c', '#43954a', '#3c8c43'][i % 3] }));
   // berries/flowers on bushes
   const berries = [];
-  bushes.forEach((b, i) => { for (let k = 0; k < 5; k++) berries.push({ x: b.x + (rnd() - 0.5) * 1.4 * b.s, y: (0.5 + rnd() * 0.6) * b.s, z: b.z + (rnd() - 0.5) * 1.2 * b.s, s: 1, v: i }); });
+  bushes.forEach((b, i) => { for (let k = 0; k < 5; k++) berries.push({ x: b.x + (rnd() - 0.5) * 1.4 * b.s, y: b.y + (0.5 + rnd() * 0.6) * b.s, z: b.z + (rnd() - 0.5) * 1.2 * b.s, s: 1, v: i }); });
   scene.add(instanced(new THREE.SphereGeometry(0.08, 6, 4), toon('#ffffff'), berries, { cast: false, colorOf: (t) => (t.v % 2 ? '#ff5d73' : '#fff6b0') }));
 
   // grass tufts
@@ -243,14 +261,14 @@ export function buildEnvironment(scene) {
     return merge(parts);
   })();
   const tufts = [];
-  for (let i = 0; i < 9000 && tufts.length < 3600; i++) {
+  for (let i = 0; i < 60000 && tufts.length < 17000; i++) {
     const px = 30 + rnd() * (M.W - 60), py = 30 + rnd() * (M.H - 60);
     if (!M.openGround({ x: px, y: py }, 0)) continue;
     const p = pos3(px, py);
-    tufts.push({ x: p.x, z: p.z, rot: rnd() * TAU, s: 0.7 + rnd() * 0.7 });
+    tufts.push({ x: p.x, y: M.heightAt(px, py), z: p.z, rot: rnd() * TAU, s: 0.7 + rnd() * 0.7 });
   }
-  for (let i = 0; i < 1800; i++) {
-    const x = (rnd() - 0.5) * 160, z = (rnd() - 0.5) * 120;
+  for (let i = 0; i < 3000; i++) {
+    const x = (rnd() - 0.5) * 260, z = (rnd() - 0.5) * 190;
     if (Math.abs(x) < HALF_W && Math.abs(z) < HALF_H) continue;
     tufts.push({ x, z, rot: rnd() * TAU, s: 0.8 + rnd() * 0.8 });
   }
@@ -259,24 +277,25 @@ export function buildEnvironment(scene) {
 
   // 3D flowers
   const flowers = [];
-  for (let i = 0; i < 3000 && flowers.length < 420; i++) {
+  for (let i = 0; i < 30000 && flowers.length < 2200; i++) {
     const px = 40 + rnd() * (M.W - 80), py = 40 + rnd() * (M.H - 80);
     if (!M.openGround({ x: px, y: py }, 0)) continue;
     const p = pos3(px, py);
     const cluster = 2 + Math.floor(rnd() * 4);
     const col = ['#ff9fb4', '#fff6b0', '#ffffff', '#e57bff', '#ffb13b', '#9fd8ff'][Math.floor(rnd() * 6)];
-    for (let k = 0; k < cluster; k++) flowers.push({ x: p.x + (rnd() - 0.5) * 0.8, z: p.z + (rnd() - 0.5) * 0.8, y: 0.28 + rnd() * 0.1, s: 1, c: col });
+    const gy = M.heightAt(px, py);
+    for (let k = 0; k < cluster; k++) flowers.push({ x: p.x + (rnd() - 0.5) * 0.8, z: p.z + (rnd() - 0.5) * 0.8, y: gy + 0.28 + rnd() * 0.1, g: gy, s: 1, c: col });
   }
   scene.add(instanced(new THREE.IcosahedronGeometry(0.1, 0), toon('#ffffff'), flowers, { cast: false, colorOf: (t) => t.c }));
-  const stems = flowers.map((f) => ({ ...f, y: 0.14, s: 1 }));
+  const stems = flowers.map((f) => ({ ...f, y: f.g + 0.14, s: 1 }));
   scene.add(instanced(new THREE.CylinderGeometry(0.012, 0.012, 0.28, 4), toon('#3f8f3a'), stems, { cast: false }));
 
   const rocks = [];
-  for (let i = 0; i < 500 && rocks.length < 70; i++) {
+  for (let i = 0; i < 4000 && rocks.length < 320; i++) {
     const px = 40 + rnd() * (M.W - 80), py = 40 + rnd() * (M.H - 80);
     if (!M.openGround({ x: px, y: py }, 10)) continue;
     const p = pos3(px, py);
-    rocks.push({ x: p.x, z: p.z, y: 0.1, s: 0.25 + rnd() * 0.45, sy: 0.18 + rnd() * 0.3, rot: rnd() * TAU });
+    rocks.push({ x: p.x, z: p.z, y: M.heightAt(px, py) + 0.1, s: 0.25 + rnd() * 0.45 + (M.heightAt(px, py) > 2 ? 0.5 : 0), sy: 0.18 + rnd() * 0.3, rot: rnd() * TAU });
   }
   scene.add(instanced(new THREE.DodecahedronGeometry(1, 0), toon('#a4a1b5'), rocks));
 
@@ -355,31 +374,10 @@ export function buildEnvironment(scene) {
   fountain.position.set(c0.x, 0, c0.z);
   scene.add(fountain);
 
-  // lamps
-  const lampPost = toon('#2b2f4a');
-  const lanternMat = toon('#fff1b8', { emissive: '#ffd27a', emissiveIntensity: 0.9 });
-  for (const l of layout.lamps) {
-    const p = pos3(l.x, l.y);
-    const lamp = new THREE.Group();
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 3.2, 8), lampPost);
-    post.position.y = 1.6;
-    post.castShadow = true;
-    lamp.add(post);
-    const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.55, 0.42), lanternMat);
-    lantern.position.y = 3.35;
-    lamp.add(lantern);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.35, 4), lampPost);
-    cap.position.y = 3.8;
-    cap.rotation.y = Math.PI / 4;
-    lamp.add(cap);
-    const glow = new THREE.Sprite(additive(glowTexture, 0xffd27a, 0.45));
-    glow.scale.setScalar(1.8);
-    glow.position.y = 3.35;
-    lamp.add(glow);
-    lamp.position.set(p.x, 0, p.z);
-    scene.add(lamp);
-  }
-  // benches facing the fountain
+  // street lamps + fences
+  const lit = buildLamps(scene, layout.lamps);
+  buildFences(scene, layout.fences);
+  // benches (you can sit on them)
   for (const b of layout.benches) {
     const p = pos3(b.x, b.y);
     const bench = new THREE.Group();
@@ -395,8 +393,8 @@ export function buildEnvironment(scene) {
       bench.add(leg);
     }
     bench.traverse((o) => { o.castShadow = true; });
-    bench.position.set(p.x, 0, p.z);
-    bench.rotation.y = Math.atan2(-p.x, -p.z);
+    bench.position.set(p.x, M.heightAt(b.x, b.y), p.z);
+    bench.rotation.y = b.h;
     scene.add(bench);
   }
   // archery targets outside the range
@@ -420,15 +418,15 @@ export function buildEnvironment(scene) {
       leg.rotation.z = s * 0.15;
       g.add(leg);
     }
-    g.position.set(p.x, 0, p.z);
-    g.rotation.y = -0.5;
+    g.position.set(p.x, M.heightAt(tg.x, tg.y), p.z);
+    g.rotation.y = Math.PI / 2 + 0.3;
     scene.add(g);
   }
 
   // ---- the pond --------------------------------------------------------------------
   const pond = M.SPOTS.find((s) => s.kind === 'pond');
   const pa = pos3(pond.x, pond.y), pb = pos3(pond.x + pond.w, pond.y + pond.h);
-  const r = U(95);
+  const r = U(150);
   const shape = new THREE.Shape();
   const [x0, x1, y0, y1] = [pa.x, pb.x, -pb.z, -pa.z];
   shape.moveTo(x0 + r, y0);
@@ -466,12 +464,13 @@ export function buildEnvironment(scene) {
   scene.add(instanced(padGeo, toon('#3f9a47'), pads, { cast: false }));
   scene.add(instanced(new THREE.SphereGeometry(0.16, 8, 6), toon('#ff9fb4'), pads.filter((_, i) => i % 2).map((p) => ({ ...p, y: 0.2, s: 1 })), { cast: false }));
   const reeds = [];
-  for (let i = 0; i < 120; i++) {
-    const a = rnd() * TAU;
-    const cx = (pa.x + pb.x) / 2, cz = (pa.z + pb.z) / 2;
-    const x = cx + Math.cos(a) * ((pb.x - pa.x) / 2 + 0.2), z = cz + Math.sin(a) * ((pb.z - pa.z) / 2 + 0.2);
-    if (Math.abs(x - dockX) < 3 && z < cz) continue;
-    reeds.push({ x: x + (rnd() - 0.5), z: z + (rnd() - 0.5), s: 0.8 + rnd() * 0.6, rot: rnd() * TAU });
+  // clumps along the shoreline (the shape is in x/-z)
+  const cz0 = (pa.z + pb.z) / 2;
+  for (const q of shape.getSpacedPoints(160)) {
+    const x = q.x, z = -q.y;
+    if (Math.abs(x - dockX) < 3 && z < cz0) continue;
+    if (rnd() < 0.35) continue;
+    reeds.push({ x: x + (rnd() - 0.5) * 0.8, z: z + (rnd() - 0.5) * 0.8, s: 0.8 + rnd() * 0.6, rot: rnd() * TAU });
   }
   const reedGeo = new THREE.CylinderGeometry(0.03, 0.04, 1.4, 5);
   reedGeo.translate(0, 0.7, 0);
@@ -489,15 +488,18 @@ export function buildEnvironment(scene) {
     buildings.push(b);
   }
 
+  // ---- the rest of the town: cottages, stalls, landmarks, the creek and its bridges
+  const town = buildTown(scene, layout, anim, waterMat);
+
   // ---- clouds + butterflies ------------------------------------------------------------
   const cloudMat = toon('#ffffff');
   const clouds = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 28; i++) {
     const parts = [];
     const n = 4 + Math.floor(rnd() * 4);
     for (let k = 0; k < n; k++) parts.push({ geo: new THREE.IcosahedronGeometry(1.4 + rnd() * 1.4, 2), matrix: T((k - n / 2) * 1.6, rnd() * 0.8, (rnd() - 0.5) * 1.6) });
     const cloud = new THREE.Mesh(merge(parts), cloudMat);
-    cloud.position.set((rnd() - 0.5) * 240, 26 + rnd() * 12, (rnd() - 0.5) * 160);
+    cloud.position.set((rnd() - 0.5) * 400, 26 + rnd() * 14, (rnd() - 0.5) * 280);
     cloud.scale.setScalar(1.2 + rnd() * 1.4);
     cloud.castShadow = true;
     cloud.userData.speed = 1 + rnd() * 1.5;
@@ -505,7 +507,7 @@ export function buildEnvironment(scene) {
     clouds.push(cloud);
   }
   const butterflies = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 30; i++) {
     const b = new THREE.Group();
     const col = ['#ff9fb4', '#ffd84d', '#9fd8ff', '#e57bff'][i % 4];
     const wings = [-1, 1].map((s) => {
@@ -529,7 +531,7 @@ export function buildEnvironment(scene) {
     for (const fn of anim) fn(t, dt);
     for (const c of clouds) {
       c.position.x += c.userData.speed * dt;
-      if (c.position.x > 130) c.position.x = -130;
+      if (c.position.x > 210) c.position.x = -210;
     }
     for (const b of butterflies) {
       const u = b.userData;
@@ -545,6 +547,9 @@ export function buildEnvironment(scene) {
       b.position.addScaledVector(u.vel, dt);
       b.position.y += Math.sin(t * 6 + u.phase) * 0.01;
       b.rotation.y = Math.atan2(u.vel.x, u.vel.z);
+      const ground = groundAt(b.position.x, b.position.z);
+      if (b.position.y < ground + 0.6) b.position.y = ground + 0.6;
+      if (u.target.y < ground + 0.8) u.target.y = ground + 0.8 + Math.random() * 1.5;
       const flap = Math.sin(t * 22 + u.phase) * 0.9;
       u.wings[0].rotation.z = -0.3 - flap;
       u.wings[1].rotation.z = 0.3 + flap;
@@ -561,5 +566,5 @@ export function buildEnvironment(scene) {
     }
   }
 
-  return { update, groundCanvas, buildings, ground, redrawText };
+  return { update, groundCanvas, buildings, ground, redrawText, sky, sunGlow, lit, windows: town.windows };
 }

@@ -1,8 +1,48 @@
 {
-  "skins": ["#ffe0c4", "#f6c9a0", "#e3ac78", "#c68642", "#8d5524", "#5a3825"],
-  "hairColors": ["#2b1d14", "#5a3a22", "#a0522d", "#d9a441", "#f2d16b", "#e8e8e8", "#ff5d73", "#39c6ff", "#7c6bff", "#6ee7a0"],
-  "clothColors": ["#ff5d73", "#ff9f43", "#ffd84d", "#6ee7a0", "#2ed8c3", "#39c6ff", "#3b5bdb", "#7c6bff", "#e57bff", "#f5f5f5", "#6b7194", "#23263f"],
+  "skins": [
+    "#fff0e0", "#ffe0c4", "#f6c9a0", "#eab98f", "#e3ac78", "#d49a6a",
+    "#c68642", "#a86b3c", "#8d5524", "#744422", "#5a3825", "#3f2618",
+    "#b8f0c8", "#b7c4ff", "#e3c4ff", "#ffc4dc", "#c9f2ff", "#d7d9e0"
+  ],
+  "hairColors": [
+    "#141014", "#2b1d14", "#3d2817", "#5a3a22", "#6e4a2e", "#8b5a3c",
+    "#a0522d", "#b5562b", "#c9723a", "#e08a47", "#d9a441", "#e8c07a",
+    "#f2d16b", "#f7e3a1", "#fff3d6", "#e8e8e8", "#b8b8c0", "#7a7a85",
+    "#ff5d73", "#ff8fc7", "#e84393", "#ff9f43", "#ffd84d", "#c9ff5d",
+    "#6ee7a0", "#2ed8c3", "#39c6ff", "#3b5bdb", "#7c6bff", "#b77bff"
+  ],
+  "clothColors": [
+    "#ffb3b3", "#ff7a7a", "#ff5d73", "#e0463c", "#b3261e", "#7a1414",
+    "#ffd1e8", "#ffa3cf", "#ff6fb5", "#e84393", "#c2185b", "#8a0f45",
+    "#ffd8b0", "#ffb870", "#ff9f43", "#f57c00", "#c75a00", "#8a3d00",
+    "#fff3b0", "#ffe066", "#ffd84d", "#f5b700", "#c99700", "#8a6a00",
+    "#c8f7d8", "#6ee7a0", "#37c871", "#2f9e44", "#1e6e30", "#0f4020",
+    "#b8f5ec", "#5ee6d3", "#2ed8c3", "#12a594", "#0b7268", "#064640",
+    "#cce9ff", "#8fd3ff", "#39c6ff", "#3b82f6", "#3b5bdb", "#1e2f8a",
+    "#e3d9ff", "#b9a6ff", "#7c6bff", "#7048e8", "#5b2a86", "#3a1a5c",
+    "#f5d0ff", "#e57bff", "#cc5de8", "#ae3ec9", "#862e9c", "#561a66",
+    "#f1e0c5", "#d9b38c", "#b08050", "#8b5a2b", "#5e3a1c", "#3a2414",
+    "#ffffff", "#f5f5f5", "#b8bdcc", "#6b7194", "#23263f", "#141418"
+  ],
+  "eyeColors": [
+    "#1d1b2e", "#4a2e1c", "#7a5230", "#2f9e44", "#12a594", "#3b82f6",
+    "#39c6ff", "#7c6bff", "#e84393", "#e0463c", "#ffc53d", "#8a8fa8"
+  ],
+  "zoneColors": ["#ff5d73", "#ff9f43", "#ffd84d", "#6ee7a0", "#2ed8c3", "#39c6ff", "#3b5bdb", "#7c6bff", "#e57bff", "#ff6fb5", "#f5f5f5", "#6b7194"],
+  "eyeStyles": [
+    { "id": "eyes_round", "name": "Classic" }, { "id": "eyes_sparkle", "name": "Sparkly" }, { "id": "eyes_lashes", "name": "Lashes" },
+    { "id": "eyes_sleepy", "name": "Sleepy" }, { "id": "eyes_happy", "name": "Happy" }
+  ],
+  "heights": [
+    { "id": "height_tiny", "name": "Tiny" }, { "id": "height_short", "name": "Short" },
+    { "id": "height_medium", "name": "Medium" }, { "id": "height_tall", "name": "Tall" }
+  ],
+  "builds": [
+    { "id": "build_slim", "name": "Slim" }, { "id": "build_regular", "name": "Regular" },
+    { "id": "build_broad", "name": "Broad" }, { "id": "build_round", "name": "Round" }
+  ],
   "crate": { "price": 400, "weights": { "common": 55, "rare": 30, "epic": 12, "legendary": 3 } },
+  "petEgg": { "price": 600, "weights": { "common": 58, "rare": 28, "epic": 11, "legendary": 3 } },
   "items": [
     { "id": "hair_short", "slot": "hair", "name": "Short", "rarity": "common", "free": true },
     { "id": "hair_spiky", "slot": "hair", "name": "Spiky", "rarity": "common", "free": true },
@@ -12,7 +52,26 @@
     { "id": "hair_curly", "slot": "hair", "name": "Curly", "rarity": "common", "free": true },
     { "id": "hair_afro", "slot": "hair", "name": "Afro", "rarity": "common", "free": true },
     { "id": "hair_none", "slot": "hair", "name": "Buzzed", "rarity": "common", "free": true },
+    { "id": "hair_bob", "slot": "hair", "name": "Bob", "rarity": "common", "free": true },
+    { "id": "hair_pigtails", "slot": "hair", "name": "Pigtails", "rarity": "common", "free": true },
+    { "id": "hair_swoop", "slot": "hair", "name": "Side Swoop", "rarity": "common", "free": true },
+    { "id": "hair_messy", "slot": "hair", "name": "Bedhead", "rarity": "common", "free": true },
+    { "id": "hair_braid", "slot": "hair", "name": "Braid", "rarity": "common", "price": 150, "crate": true },
+    { "id": "hair_spacebuns", "slot": "hair", "name": "Space Buns", "rarity": "common", "price": 200, "crate": true },
     { "id": "hair_mohawk", "slot": "hair", "name": "Mohawk", "rarity": "rare", "price": 350, "crate": true },
+    { "id": "hair_quiff", "slot": "hair", "name": "Quiff", "rarity": "rare", "price": 350, "crate": true },
+    { "id": "hair_locs", "slot": "hair", "name": "Locs", "rarity": "rare", "price": 350, "crate": true },
+    { "id": "hair_emo", "slot": "hair", "name": "Emo Fringe", "rarity": "rare", "price": 300, "crate": true },
+    { "id": "hair_topknot", "slot": "hair", "name": "Topknot", "rarity": "rare", "price": 400, "crate": true },
+    { "id": "hair_twintails", "slot": "hair", "name": "Twintails", "rarity": "epic", "price": 900, "crate": true },
+    { "id": "hair_flame", "slot": "hair", "name": "Flame Hair", "rarity": "legendary", "crate": true },
+
+    { "id": "bottom_pants", "slot": "bottom", "name": "Pants", "rarity": "common", "free": true },
+    { "id": "bottom_shorts", "slot": "bottom", "name": "Shorts", "rarity": "common", "free": true },
+    { "id": "bottom_skirt", "slot": "bottom", "name": "Skirt", "rarity": "common", "free": true },
+    { "id": "bottom_cuffed", "slot": "bottom", "name": "Cuffed Jeans", "rarity": "common", "price": 120, "crate": true },
+    { "id": "bottom_cargo", "slot": "bottom", "name": "Cargo Pants", "rarity": "rare", "price": 300, "crate": true },
+    { "id": "bottom_tutu", "slot": "bottom", "name": "Tutu", "rarity": "rare", "price": 400, "crate": true },
 
     { "id": "top_tee", "slot": "top", "name": "T-Shirt", "rarity": "common", "free": true },
     { "id": "top_hoodie", "slot": "top", "name": "Hoodie", "rarity": "common", "free": true },
@@ -39,6 +98,7 @@
     { "id": "hat_wizard", "slot": "hat", "name": "Wizard Hat", "rarity": "epic", "price": 1500, "crate": true },
     { "id": "hat_halo", "slot": "hat", "name": "Halo", "rarity": "legendary", "crate": true },
     { "id": "hat_crown", "slot": "hat", "name": "Crown", "rarity": "legendary", "unlock": { "level": 15, "hint": "Reach level 15" } },
+    { "id": "hat_horns", "slot": "hat", "name": "Golem Horns", "rarity": "epic", "drop": "Stone Golem" },
 
     { "id": "face_none", "slot": "face", "name": "Nothing", "rarity": "common", "free": true },
     { "id": "face_glasses", "slot": "face", "name": "Glasses", "rarity": "common", "free": true },
@@ -60,7 +120,78 @@
     { "id": "aura_sparkle", "slot": "aura", "name": "Sparkles", "rarity": "rare", "price": 800, "crate": true },
     { "id": "aura_fire", "slot": "aura", "name": "Inferno", "rarity": "epic", "unlock": { "stat": "elims", "min": 50, "hint": "Get 50 arena eliminations" } },
     { "id": "aura_rainbow", "slot": "aura", "name": "Prism", "rarity": "legendary", "crate": true },
-    { "id": "aura_koi", "slot": "aura", "name": "Koi Spirit", "rarity": "legendary", "unlock": { "stat": "koi", "min": 1, "hint": "Catch a Golden Koi" } }
+    { "id": "aura_koi", "slot": "aura", "name": "Koi Spirit", "rarity": "legendary", "unlock": { "stat": "koi", "min": 1, "hint": "Catch a Golden Koi" } },
+    { "id": "aura_shadow", "slot": "aura", "name": "Shadow Flame", "rarity": "legendary", "drop": "Shadow Dragon" },
+
+    { "id": "pet_none", "slot": "pet", "name": "No Pet", "rarity": "common", "free": true },
+    { "id": "pet_puppy", "slot": "pet", "name": "Puppy", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_kitten", "slot": "pet", "name": "Kitten", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_bunny", "slot": "pet", "name": "Bunny", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_duck", "slot": "pet", "name": "Duckling", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_hamster", "slot": "pet", "name": "Hamster", "rarity": "common", "price": 900, "petRoll": true },
+    { "id": "pet_frog", "slot": "pet", "name": "Froggy", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_penguin", "slot": "pet", "name": "Penguin", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_panda", "slot": "pet", "name": "Panda", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_fox", "slot": "pet", "name": "Fox", "rarity": "rare", "price": 1800, "petRoll": true },
+    { "id": "pet_giraffe", "slot": "pet", "name": "Giraffe", "rarity": "epic", "price": 3500, "petRoll": true },
+    { "id": "pet_axolotl", "slot": "pet", "name": "Axolotl", "rarity": "epic", "price": 3500, "petRoll": true },
+    { "id": "pet_unicorn", "slot": "pet", "name": "Unicorn", "rarity": "legendary", "price": 8000, "petRoll": true },
+    { "id": "pet_dragon", "slot": "pet", "name": "Baby Dragon", "rarity": "legendary", "price": 8000, "petRoll": true }
+  ],
+  "furniture": [
+    { "id": "closet", "name": "Wardrobe", "emoji": "🪞", "w": 1, "d": 1, "max": 1, "starter": true, "action": "wardrobe", "use": "swap" },
+    { "id": "bed", "name": "Cozy Bed", "emoji": "🛏️", "w": 1, "d": 2, "price": 300, "starter": true, "use": "snore" },
+    { "id": "sofa", "name": "Sofa", "emoji": "🛋️", "w": 2, "d": 1, "price": 350, "use": "squish" },
+    { "id": "armchair", "name": "Armchair", "emoji": "💺", "w": 1, "d": 1, "price": 160, "use": "squish" },
+    { "id": "beanbag", "name": "Beanbag", "emoji": "🟣", "w": 1, "d": 1, "price": 120, "use": "squish" },
+    { "id": "table", "name": "Round Table", "emoji": "🪵", "w": 1, "d": 1, "price": 100, "starter": true, "use": "thud" },
+    { "id": "chair", "name": "Chair", "emoji": "🪑", "w": 1, "d": 1, "price": 60, "starter": true, "use": "squish" },
+    { "id": "lamp", "name": "Floor Lamp", "emoji": "💡", "w": 1, "d": 1, "price": 90, "starter": true, "use": "switch" },
+    { "id": "plant", "name": "Potted Plant", "emoji": "🪴", "w": 1, "d": 1, "price": 60, "starter": true, "use": "rustle" },
+    { "id": "tree", "name": "Indoor Tree", "emoji": "🌳", "w": 1, "d": 1, "price": 180, "use": "rustle" },
+    { "id": "bookshelf", "name": "Bookshelf", "emoji": "📚", "w": 2, "d": 1, "price": 220, "use": "rustle" },
+    { "id": "tv", "name": "Big TV", "emoji": "📺", "w": 2, "d": 1, "price": 450, "use": "tv" },
+    { "id": "fireplace", "name": "Fireplace", "emoji": "🔥", "w": 2, "d": 1, "price": 550, "use": "crackle" },
+    { "id": "piano", "name": "Piano", "emoji": "🎹", "w": 2, "d": 1, "price": 900, "use": "piano" },
+    { "id": "arcade", "name": "Arcade Cabinet", "emoji": "🕹️", "w": 1, "d": 1, "price": 700, "use": "arcade" },
+    { "id": "jukebox", "name": "Jukebox", "emoji": "🎵", "w": 1, "d": 1, "price": 650, "use": "jukebox" },
+    { "id": "rug", "name": "Red Rug", "emoji": "🟥", "w": 2, "d": 2, "kind": "rug", "price": 120, "use": "squish" },
+    { "id": "rug_round", "name": "Round Rug", "emoji": "🔵", "w": 2, "d": 2, "kind": "rug", "price": 140, "use": "squish" },
+    { "id": "painting", "name": "Painting", "emoji": "🖼️", "w": 1, "d": 1, "kind": "wall", "price": 150, "use": "pop" },
+    { "id": "clock", "name": "Wall Clock", "emoji": "🕰️", "w": 1, "d": 1, "kind": "wall", "price": 120, "use": "clock" },
+    { "id": "window", "name": "Window", "emoji": "🪟", "w": 2, "d": 1, "kind": "wall", "price": 100, "use": "bird" },
+    { "id": "poster", "name": "Zone Poster", "emoji": "📜", "w": 1, "d": 1, "kind": "wall", "price": 80, "use": "pop" },
+    { "id": "fishtank", "name": "Fish Tank", "emoji": "🐠", "w": 2, "d": 1, "max": 1, "unlock": { "stat": "fish", "min": 10, "hint": "Catch 10 fish" }, "use": "bubbles" },
+    { "id": "trophy_race", "name": "Race Trophy", "emoji": "🏆", "w": 1, "d": 1, "max": 1, "unlock": { "stat": "raceWins", "min": 1, "hint": "Win a race" }, "use": "trophy" },
+    { "id": "trophy_arena", "name": "Arena Shield", "emoji": "🛡️", "w": 1, "d": 1, "max": 1, "unlock": { "stat": "arenaWins", "min": 1, "hint": "Win an arena round" }, "use": "trophy" },
+    { "id": "slot_mini", "name": "Lucky Slot", "emoji": "🎰", "w": 1, "d": 1, "max": 1, "unlock": { "stat": "jackpots", "min": 1, "hint": "Hit a slots jackpot" }, "use": "lever" },
+    { "id": "target", "name": "Archery Target", "emoji": "🎯", "w": 1, "d": 1, "max": 1, "unlock": { "stat": "archeryBest", "min": 30, "hint": "Score 30+ at archery" }, "use": "thud" },
+    { "id": "trophy_slime", "name": "King Slime Statue", "emoji": "🟢", "w": 1, "d": 1, "max": 1, "drop": "King Slime", "use": "squish" },
+    { "id": "trophy_golem", "name": "Stone Golem Statue", "emoji": "🗿", "w": 1, "d": 1, "max": 1, "drop": "Stone Golem", "use": "slam" },
+    { "id": "trophy_lich", "name": "Bone Lich Statue", "emoji": "💀", "w": 1, "d": 1, "max": 1, "drop": "Bone Lich", "use": "slam" },
+    { "id": "trophy_dragon", "name": "Shadow Dragon Statue", "emoji": "🐉", "w": 1, "d": 1, "max": 1, "drop": "Shadow Dragon", "use": "roar" }
+  ],
+  "floors": [
+    { "id": "floor_wood", "name": "Oak Planks", "free": true },
+    { "id": "floor_checker", "name": "Checkerboard", "free": true },
+    { "id": "floor_carpet", "name": "Blue Carpet", "price": 150 },
+    { "id": "floor_grass", "name": "Indoor Meadow", "price": 250 },
+    { "id": "floor_marble", "name": "Marble", "price": 400 }
+  ],
+  "walls": [
+    { "id": "wall_cream", "name": "Cream", "free": true },
+    { "id": "wall_mint", "name": "Mint", "free": true },
+    { "id": "wall_stripes", "name": "Candy Stripes", "price": 150 },
+    { "id": "wall_brick", "name": "Brick", "price": 300 },
+    { "id": "wall_stars", "name": "Starry Night", "price": 500 }
+  ],
+  "rods": [
+    { "id": "rod_twig", "name": "Twig Rod", "price": 0, "bar": 0, "luck": 0, "color": "#8b5a2b", "desc": "Where every angler starts." },
+    { "id": "rod_bamboo", "name": "Bamboo Rod", "price": 600, "bar": 14, "luck": 0.05, "color": "#c9b458", "desc": "A little easier to keep the fish on the bar." },
+    { "id": "rod_fiber", "name": "Fiberglass Rod", "price": 1500, "bar": 26, "luck": 0.08, "color": "#39c6ff", "desc": "A much bigger catch bar." },
+    { "id": "rod_clover", "name": "Lucky Clover Rod", "price": 3000, "bar": 8, "luck": 0.3, "color": "#37c871", "desc": "Rare fish just seem to like it." },
+    { "id": "rod_pro", "name": "Pro Angler Rod", "price": 6000, "bar": 36, "luck": 0.22, "color": "#e0463c", "desc": "Big bar and good luck." },
+    { "id": "rod_golden", "name": "Golden Rod", "price": 12000, "bar": 46, "luck": 0.45, "color": "#ffc53d", "desc": "The best of everything. Shiny, too." }
   ],
   "fish": [
     { "name": "Old Boot", "emoji": "🥾", "rarity": "junk", "coins": 3, "weight": 15, "bias": -4, "size": [1, 3] },

@@ -1,26 +1,34 @@
-// Activity registry: what each building in the world opens.
-import { fishing } from './games/fishing.js';
+// What each place in the world opens. There are three kinds:
+//   area  – you teleport into a full-screen 3D area (stage.js)
+//   world – it happens right there in the world (fishing off the dock)
+//   mount – a panel opens over the world (trading, the shop, houses…)
+// `icon` names an SVG badge from icons.js; `battle` switches the music to the fight playlist.
+import { fishJournal } from './games/fishing.js';
 import { archery } from './games/archery.js';
-import { casino } from './games/casino.js';
 import { trading } from './games/trading.js';
 import { racing } from './games/racing.js';
 import { arena } from './games/arena.js';
+import { boss } from './games/boss.js';
+import { house } from './games/house.js';
+import { doodle } from './games/doodle.js';
+import { bumper } from './games/bumper.js';
+import { casinoArea } from './areas/casino.js';
+import { styleShopArea, petShopArea } from './areas/store.js';
 import { wardrobe } from './wardrobe.js';
 
-const comingSoon = (emoji, name, blurb) => (body) => {
-  body.innerHTML = `<h2>${emoji} ${name}</h2><p class="soon-tag">Coming soon</p><p class="muted">${blurb}</p>`;
-  return () => {};
-};
-
 export const ACTIVITIES = {
-  racing: { emoji: '🏎️', name: 'Racing', scene: 'race', wide: true, mount: racing },
-  arena: { emoji: '⚔️', name: 'Arena', scene: 'arena', wide: true, mount: arena },
-  archery: { emoji: '🏹', name: 'Archery', wide: true, mount: archery },
-  fishing: { emoji: '🎣', name: 'Fishing', wide: true, mount: fishing },
-  casino: { emoji: '🎰', name: 'Casino', mount: casino },
-  trading: { emoji: '💰', name: 'Trading', mount: trading },
-  shop: { emoji: '👕', name: 'Style Shop', wide: true, mount: (body) => wardrobe(body, { mode: 'shop' }) },
-  wardrobe: { emoji: '🪞', name: 'Wardrobe', wide: true, mount: (body) => wardrobe(body) },
-  boss: { emoji: '👾', name: 'Boss', mount: comingSoon('👾', 'Boss Cave', 'Team up with everyone in your zone to take down giant bosses for rare loot.') },
-  house: { emoji: '🏠', name: 'Houses', mount: comingSoon('🏠', 'Houses', 'Claim a plot, build a house and decorate it with things you win around the zone.') },
+  racing: { icon: 'racing', emoji: '🏎️', name: 'Racing', place: 'Race Track', scene: 'race', area: racing },
+  arena: { icon: 'arena', emoji: '⚔️', name: 'Arena', place: 'The Arena', scene: 'arena', battle: true, area: arena },
+  boss: { icon: 'boss', emoji: '👾', name: 'Boss', place: 'Boss Cave', scene: 'boss', battle: true, area: boss },
+  bumper: { icon: 'bumper', emoji: '💥', name: 'Bumper', place: 'Bumper Dome', scene: 'bumper', battle: true, area: bumper },
+  archery: { icon: 'archery', emoji: '🏹', name: 'Archery', place: 'Archery Range', scene: 'archery', area: archery },
+  casino: { icon: 'casino', emoji: '🎰', name: 'Casino', place: 'The Casino', scene: 'casino', area: casinoArea },
+  fishing: { icon: 'fishing', emoji: '🎣', name: 'Fishing', world: 'fishing' },
+  journal: { icon: 'fishing', emoji: '📖', name: 'Fish Journal', wide: true, mount: fishJournal },
+  doodle: { icon: 'doodle', emoji: '🎨', name: 'Doodle', scene: 'doodle', wide: true, mount: doodle },
+  trading: { icon: 'trading', emoji: '💰', name: 'Trading', mount: trading },
+  shop: { icon: 'shop', emoji: '👕', name: 'Style Shop', place: 'Style Shop', scene: 'shop', area: styleShopArea },
+  pets: { icon: 'shop', emoji: '🐾', name: 'Pet Shop', place: 'Pet Shop', scene: 'petshop', area: petShopArea },
+  wardrobe: { icon: 'wardrobe', emoji: '🪞', name: 'Wardrobe', wide: true, mount: (body) => wardrobe(body) },
+  house: { icon: 'house', emoji: '🏠', name: 'Houses', place: 'Houses', scene: 'house', area: house },
 };

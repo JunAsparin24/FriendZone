@@ -53,14 +53,23 @@ PIN_RE = re.compile(r"^\d{4,6}$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 MAX_MEMBERS = 50
 
-SCENES = {"lobby", "world", "race", "arena"}
-WORLD_W, WORLD_H = 1800, 1200
+SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "bumper", "archery", "shop", "petshop"}
+AREA_SCENES = {"casino", "shop", "petshop"}  # 3D rooms you walk around in; positions are relayed to everyone inside
+
+
+def is_area(scene):
+    """Walk-around rooms: the casino, and every member's house ("house:<owner>")."""
+    return scene in AREA_SCENES or (isinstance(scene, str) and scene.startswith("house:"))
+POSES = {"fish", "cast", "bite", "reel", "catch", "bench"}
+WORLD_W, WORLD_H = 7200, 4800
 START_COINS = 500
 DAILY_BONUS = 300
 DAILY_SECS = 20 * 3600
 
-RACE_LEN = 80
-RACE_TIMEOUT = 45
+RACE_LAPS = 3
+RACE_TIMEOUT = 300          # seconds before a race is called
+RACE_MIN_LAP = 20           # nobody can really lap the Grand Prix faster than this
+RACE_ITEMS = {"turbo", "banana", "oil", "shell", "rocket", "zap", "shield", "star"}
 RACE_PRIZES = [(150, 40), (80, 25), (50, 15)]  # (coins, xp) by place
 RACE_PRIZE_REST = (25, 10)
 RACE_PRIZE_SOLO = (40, 15)
@@ -70,19 +79,162 @@ ARENA_HP = 3
 ARENA_TARGET = 5
 ARENA_SPAWNS = [(70, 70), (830, 70), (70, 530), (830, 530), (450, 60), (450, 540), (60, 300), (840, 300)]
 
+# Dungeon (Boss Cave): a co-op climb. Every run starts on floor 1: clear the monsters on each floor,
+# everyone picks an upgrade, and the group goes deeper. Every third floor is a boss. The run ends
+# when everyone is down, and the zone remembers the highest floor reached. The server runs the
+# monsters and bosses; clients dodge and report their own hits, like the arena.
+BOSS_W, BOSS_H = 900, 600
+BOSS_TICK = 0.05         # 20 updates a second, so monsters move smoothly
+BOSS_PLAYER_HP = 5
+BOSS_IFRAMES = 0.9       # seconds of invulnerability after taking a hit
+BOSS_REVIVE_R = 60       # stand this close to a downed friend to revive them
+BOSS_REVIVE_T = 2.0      # seconds it takes; revived players always come back with one heart
+BOSS_SPAWNS = [(300, 500), (450, 530), (600, 500), (200, 450), (700, 450), (450, 460)]
+DUNGEON_DMG = 10         # damage per bullet before upgrades
+DUNGEON_INTRO_T = 2.6
+DUNGEON_PICK_T = 20
+DUNGEON_OVER_T = 10
+DUNGEON_BOSS_EVERY = 3
+DUNGEON_MAX_MOBS = 14    # alive at once
+BOSSES = [
+    {"id": "slime", "name": "King Slime", "hp": 1500, "r": 50, "speed": 80,
+     "attacks": ["hop", "volley", "summon", "slam", "hop"], "minions": ["slimelet"], "loot": "trophy_slime"},
+    {"id": "golem", "name": "Stone Golem", "hp": 2400, "r": 56, "speed": 58,
+     "attacks": ["slam", "rocks", "charge", "volley"], "loot": "trophy_golem", "drop": ("hat_horns", 0.25)},
+    {"id": "lich", "name": "Bone Lich", "hp": 2200, "r": 46, "speed": 70,
+     "attacks": ["summon", "volley", "curse", "blink", "summon", "spiral"], "minions": ["bat", "archer", "skeleton"],
+     "loot": "trophy_lich"},
+    {"id": "dragon", "name": "Shadow Dragon", "hp": 3300, "r": 60, "speed": 95,
+     "attacks": ["spiral", "charge", "rocks", "volley", "spiral"], "loot": "trophy_dragon", "drop": ("aura_shadow", 0.2)},
+]
+# Monsters: hp before floor scaling, radius, speed (px/s) and how they fight.
+MOBS = {
+    "bat": {"hp": 30, "r": 14, "speed": 150},
+    "slimelet": {"hp": 45, "r": 16, "speed": 95},
+    "skeleton": {"hp": 55, "r": 15, "speed": 85},
+    "archer": {"hp": 45, "r": 15, "speed": 70, "range": 240, "every": 2.4},
+    "wisp": {"hp": 60, "r": 16, "speed": 40, "every": 3.4},
+    "brute": {"hp": 140, "r": 24, "speed": 52, "every": 4.2},
+}
+MOB_UNLOCK = [(1, "bat"), (1, "slimelet"), (2, "skeleton"), (3, "archer"), (5, "wisp"), (7, "brute")]
+UPGRADES = {
+    "dmg": {"name": "Power Shot", "emoji": "💥", "desc": "+30% damage", "max": 8},
+    "rate": {"name": "Rapid Fire", "emoji": "⚡", "desc": "Shoot 20% faster", "max": 5},
+    "multi": {"name": "Split Shot", "emoji": "🔱", "desc": "+1 bullet per shot", "max": 3},
+    "speed": {"name": "Swift Boots", "emoji": "👟", "desc": "Move 15% faster", "max": 4},
+    "heart": {"name": "Extra Life", "emoji": "❤️", "desc": "+1 max heart, and heal it", "max": 6},
+    "heal": {"name": "Full Heal", "emoji": "🩹", "desc": "Restore all your hearts", "max": 99},
+    "crit": {"name": "Lucky Shots", "emoji": "🍀", "desc": "+10% chance to crit for double damage", "max": 5},
+    "pierce": {"name": "Piercing Rounds", "emoji": "🏹", "desc": "Bullets fly through monsters", "max": 1},
+    "dash": {"name": "Quick Dash", "emoji": "💨", "desc": "Dash cooldown -30%", "max": 2},
+    "shield": {"name": "Bubble Shield", "emoji": "🫧", "desc": "Block the first hit on every floor", "max": 1},
+    "regen": {"name": "Second Breakfast", "emoji": "🍗", "desc": "Heal 1 heart after every floor", "max": 2},
+    "revive": {"name": "Second Wind", "emoji": "🌀", "desc": "Once per run, get back up on your own", "max": 1},
+    "big": {"name": "Big Bullets", "emoji": "🔵", "desc": "Bigger bullets, easier hits", "max": 2},
+}
+
+ARENA_PILLARS = [(200, 140, 70, 60), (630, 140, 70, 60), (200, 400, 70, 60), (630, 400, 70, 60), (405, 265, 90, 70)]
+ARENA_ITEMS = ("heal", "rapid", "shield", "speed")
+ARENA_ITEM_EVERY = 6
+ARENA_MAX_ITEMS = 3
+
+# Doodle Guess: take turns drawing a word while everyone else guesses.
+DOODLE_CHOOSE, DOODLE_DRAW, DOODLE_REVEAL, DOODLE_OVER = 12, 80, 5, 10
+DOODLE_PRIZES = [(160, 80), (90, 50), (60, 30)]
+DOODLE_REST = (20, 10)
+DOODLE_MAX_POINTS = 40000
+DOODLE_CUSTOM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '-]{1,23}$")
+DOODLE_WORDS = [w.strip() for w in """
+apple, banana, pizza, burger, donut, ice cream, cookie, cake, taco, sushi, carrot, cheese, egg, popcorn, watermelon,
+cat, dog, fish, bird, snake, spider, turtle, rabbit, frog, penguin, giraffe, elephant, lion, monkey, octopus, shark,
+whale, crab, bee, butterfly, snail, owl, duck, horse, cow, pig, sheep, dinosaur, dragon, unicorn, bat, mouse, bear,
+house, castle, bridge, tent, lighthouse, igloo, school, rocket, airplane, car, bicycle, boat, train, bus, tractor,
+helicopter, submarine, skateboard, scooter, balloon, kite, umbrella, glasses, hat, crown, shoe, sock, backpack,
+guitar, piano, drum, trumpet, microphone, headphones, camera, phone, computer, television, clock, lamp, candle,
+key, lock, book, pencil, scissors, hammer, ladder, bucket, broom, toothbrush, mirror, chair, bed, sofa, door,
+window, sun, moon, star, cloud, rainbow, lightning, snowman, tree, flower, cactus, mushroom, volcano, mountain,
+island, beach, wave, fire, ghost, robot, alien, pirate, ninja, wizard, mermaid, zombie, vampire, superhero,
+soccer, basketball, trophy, medal, bowling, fishing rod, sword, shield, bow, treasure, map, compass, anchor,
+heart, smile, eye, hand, foot, nose, ear, tooth, skeleton, brain, muscle, crying, sleeping, dancing, jumping,
+swimming, running, snowball, sandcastle, campfire, fireworks, birthday, gift, party hat, magnet, battery, bomb,
+diamond, coin, piggy bank, slot machine, dice, cards, chess, puzzle, yo-yo, teddy bear, spaceship, planet, comet,
+""".split(",") if w.strip()]
+
+# Bumper Brawl: knock everyone off a shrinking ice rink. Clients run their own car physics.
+BUMPER_SPAWN_R = 150
+BUMPER_ROUND_MAX = 75
+BUMPER_START_DELAY = 2.5
+
+# Roulette: one shared table in the casino, a new spin every ~30s.
+ROULETTE_BET_T, ROULETTE_SPIN_T, ROULETTE_PAUSE_T = 20, 6, 4
+ROULETTE_RED = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
+ROULETTE_PAYS = {"num": 36, "red": 2, "black": 2, "odd": 2, "even": 2, "low": 2, "high": 2, "dozen": 3}
+
+
+def roulette_hits(kind, v, n):
+    if kind == "num":
+        return n == v
+    if n == 0:
+        return False
+    return {"red": n in ROULETTE_RED, "black": n not in ROULETTE_RED, "odd": n % 2 == 1, "even": n % 2 == 0,
+            "low": n <= 18, "high": n >= 19, "dozen": (n - 1) // 12 + 1 == v}[kind]
+
+
+def bj_value(hand):
+    """Best blackjack total for a hand of (rank, suit) cards; aces count 11 when they fit."""
+    total = sum(10 if r in ("J", "Q", "K") else 1 if r == "A" else int(r) for r, _ in hand)
+    if any(r == "A" for r, _ in hand) and total + 10 <= 21:
+        total += 10
+    return total
+
+
+def bj_soft(hand):
+    total = sum(10 if r in ("J", "Q", "K") else 1 if r == "A" else int(r) for r, _ in hand)
+    return any(r == "A" for r, _ in hand) and total + 10 <= 21
+
+
+def squash(text):
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def near_miss(a, b):
+    """True if the guess is one typo away from the word."""
+    if a == b or abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b)) == 1
+    short, long_ = sorted((a, b), key=len)
+    return any(long_[:i] + long_[i + 1:] == short for i in range(len(long_)))
+
+
+HOUSE_SIZE = 10  # rooms are HOUSE_SIZE x HOUSE_SIZE tiles
+HOUSE_MAX_ITEMS = 80
+
 # Cosmetics and fish are shared with the client through one catalog file.
 CATALOG = json.loads((PUBLIC / "cosmetics.json").read_text("utf-8"))
 ITEMS = {item["id"]: item for item in CATALOG["items"]}
 FISH = CATALOG["fish"]
-LOOK_SLOTS = ("hair", "top", "hat", "face", "back", "aura")
-LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors"}
-STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBest", "jackpots")
+RODS = {r["id"]: r for r in CATALOG["rods"]}
+FURN = {f["id"]: f for f in CATALOG["furniture"]}
+FLOORS = {f["id"]: f for f in CATALOG["floors"]}
+WALLS = {f["id"]: f for f in CATALOG["walls"]}
+LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura", "pet")
+LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
+               "shoeColor": "clothColors", "eyeColor": "eyeColors"}
+LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds"}
+LOOK_EXTRAS = {"pet": "pet_none", "bottom": "bottom_pants", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
+               "height": "height_medium", "build": "build_regular"}
+STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBest", "jackpots", "bossKills", "houseLikes",
+             "doodleWins", "bumperWins", "dungeonBest")
 
 SLOT_SYMBOLS = ["🍒", "🍋", "🔔", "⭐", "💎", "7️⃣"]
 SLOT_WEIGHTS = [30, 25, 20, 13, 8, 4]
 SLOT_TRIPLE = {"🍒": 5, "🍋": 8, "🔔": 12, "⭐": 20, "💎": 40, "7️⃣": 77}
 WHEEL = [0, 1.5, 0, 2, 0, 0.5, 0, 2, 0, 1.5, 0, 0.5, 0, 2, 0, 5]  # multipliers, clockwise from the top
 MAX_BET = 5000
+BJ_RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+BJ_SUITS = ["♠", "♥", "♦", "♣"]
+BJ_DECKS = 4
 EMOTES = {"wave", "laugh", "heart", "fire", "gg", "wow"}
 
 
@@ -180,9 +332,9 @@ class Store:
         self.dirty = False
         if path.exists():
             self.zones = json.loads(path.read_text("utf-8")).get("zones", {})
-            for zone in self.zones.values():
-                for player in zone["players"].values():
-                    migrate(player)
+        for zone in self.zones.values():
+            for player in zone["players"].values():
+                migrate(player)
 
     def mark(self):
         self.dirty = True
@@ -238,15 +390,53 @@ def default_look(color):
         "bottomColor": "#23263f",
         "hair": random.choice(hair), "top": "top_tee",
         "hat": "hat_none", "face": "face_none", "back": "back_none", "aura": "aura_none",
+        **LOOK_EXTRAS,
     }
+
+
+def default_house():
+    return {
+        "floor": "floor_wood", "wall": "wall_cream", "likes": [],
+        "items": [
+            {"id": "bed", "x": 1, "y": 0, "r": 0}, {"id": "lamp", "x": 0, "y": 0, "r": 0},
+            {"id": "plant", "x": 7, "y": 0, "r": 0}, {"id": "table", "x": 5, "y": 4, "r": 0},
+            {"id": "chair", "x": 5, "y": 5, "r": 2}, {"id": "closet", "x": 3, "y": 0, "r": 0},
+        ],
+    }
+
+
+def give_closet(p):
+    """Everyone gets a wardrobe in their house (older saves get one placed in the first free spot)."""
+    if p["furni"].get("closet"):
+        return
+    p["furni"]["closet"] = 1
+    taken = set()
+    for it in p["house"]["items"]:
+        f = FURN.get(it["id"])
+        if not f or f.get("kind", "floor") != "floor":
+            continue
+        w, d = (f["w"], f["d"]) if it["r"] % 2 == 0 else (f["d"], f["w"])
+        taken |= {(it["x"] + i, it["y"] + j) for i in range(w) for j in range(d)}
+    for y in range(HOUSE_SIZE):
+        for x in range(HOUSE_SIZE):
+            if (x, y) not in taken:
+                p["house"]["items"].append({"id": "closet", "x": x, "y": y, "r": 0})
+                return
 
 
 def migrate(p):
     """Fill in fields added after a profile was first saved."""
     p.setdefault("look", default_look(p.get("color")))
     p.setdefault("lookSet", False)
+    for field, value in LOOK_EXTRAS.items():
+        p["look"].setdefault(field, value)
     p.setdefault("owned", [])
     p.setdefault("fishdex", {})
+    p.setdefault("rods", ["rod_twig"])
+    p.setdefault("rod", "rod_twig")
+    p.setdefault("furni", {f["id"]: 1 for f in CATALOG["furniture"] if f.get("starter")})
+    p.setdefault("house", default_house())
+    give_closet(p)
     for stat in STAT_KEYS:
         p["stats"].setdefault(stat, 0)
     return p
@@ -265,11 +455,67 @@ def owns(p, item_id):
     return bool(item) and (item.get("free") or item_id in p["owned"])
 
 
+def owns_deco(p, deco_id):
+    """Floors and wallpapers: free ones, or bought (stored in the furniture inventory)."""
+    deco = FLOORS.get(deco_id) or WALLS.get(deco_id)
+    return bool(deco) and (deco.get("free") or p["furni"].get(deco_id, 0) > 0)
+
+
+def met(p, cond):
+    if "level" in cond:
+        return level_for(p["xp"]) >= cond["level"]
+    return p["stats"].get(cond["stat"], 0) >= cond["min"]
+
+
+def clean_house(p, data):
+    """Validate a house layout from the client: ownership, bounds and overlaps."""
+    floor, wall = data.get("floor"), data.get("wall")
+    if floor not in FLOORS or not owns_deco(p, floor) or wall not in WALLS or not owns_deco(p, wall):
+        raise GameError("You don't own that floor or wallpaper yet.")
+    items = data.get("items")
+    if not isinstance(items, list) or len(items) > HOUSE_MAX_ITEMS:
+        raise GameError(f"A house can hold up to {HOUSE_MAX_ITEMS} things.")
+    used, taken, clean_items = {}, set(), []
+    for it in items:
+        f = FURN.get(it.get("id")) if isinstance(it, dict) else None
+        if not f:
+            raise GameError("Unknown furniture.")
+        x, y, r = int(it.get("x", -1)), int(it.get("y", -1)), int(it.get("r", 0)) % 4
+        used[f["id"]] = used.get(f["id"], 0) + 1
+        if used[f["id"]] > p["furni"].get(f["id"], 0):
+            raise GameError(f"You don't have another {f['name']}.")
+        kind = f.get("kind", "floor")
+        if kind == "wall":
+            # r 0: on the back wall at column x; r 1: on the left wall at row y
+            r %= 2
+            start = x if r == 0 else y
+            x, y = (x, 0) if r == 0 else (0, y)
+            cells = {("wall", r, start + i) for i in range(f["w"])}
+            if start < 0 or start + f["w"] > HOUSE_SIZE:
+                raise GameError("That doesn't fit on the wall.")
+        else:
+            w, d = (f["w"], f["d"]) if r % 2 == 0 else (f["d"], f["w"])
+            if x < 0 or y < 0 or x + w > HOUSE_SIZE or y + d > HOUSE_SIZE:
+                raise GameError("That doesn't fit in the room.")
+            cells = {(kind, x + i, y + j) for i in range(w) for j in range(d)}
+        if cells & taken:
+            raise GameError("Things can't overlap.")
+        taken |= cells
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r})
+    return {"floor": floor, "wall": wall, "items": clean_items}
+
+
+def house_view(p):
+    h = p["house"]
+    return {"floor": h["floor"], "wall": h["wall"], "items": h["items"], "likes": h["likes"]}
+
+
 def public(p, client):
     return {
         "key": p["name"].lower(), "name": p["name"], "color": p["color"],
         "coins": p["coins"], "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
-        "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"],
+        "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "rods": p["rods"], "rod": p["rod"],
+        "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"])},
         "dailyAt": p.get("lastDaily", 0) + DAILY_SECS,
         "online": client is not None, "scene": client.scene if client else None,
     }
@@ -282,6 +528,9 @@ class Client:
         self.key = None
         self.scene = None
         self.x = self.y = None  # last position in the world
+        self.ax = self.az = self.ah = None  # position inside a 3D area (casino floor)
+        self.pose = None  # e.g. fishing at the pond, sitting on a bench
+        self.pose_extra = {}
         self.cooldowns = {}
         self.failed_pins = 0
 
@@ -307,6 +556,19 @@ class Room:
         self.feed = []
         self.race = {"id": 0, "state": "idle", "racers": {}, "order": [], "field": 0, "last": {}}
         self.arena = {}  # player key -> fighter state
+        self.boss = {"fighters": {}, "b": None, "task": None, "state": "lobby", "floor": 0, "ends": 0.0, "mobs": {},
+                     "mob_id": 0, "queue": [], "spawn_at": 0.0, "dmg": {}, "ran": set(), "last": None}
+        self.arena_items = {}
+        self.arena_item_seq = 0
+        self.arena_spawning = False
+        self.doodle = {"id": 0, "state": "idle", "queue": [], "turn": -1, "drawer": None, "word": None, "choices": [],
+                       "ends": 0.0, "dur": 0, "guessed": {}, "scores": {}, "strokes": [], "shown": set(), "ranking": []}
+        self.bumper = {"id": 0, "state": "waiting", "alive": set(), "round": set(), "fighters": {}, "start": 0.0,
+                       "ends": 0.0, "wins": {}}
+        self.roulette = {"id": 0, "state": "idle", "ends": 0.0, "bets": {}, "history": [], "result": None}
+
+    def in_scene(self, scene):
+        return [k for k, c in self.clients.items() if c.scene == scene]
 
     def broadcast(self, msg, scene=None, exclude=None):
         data = encode(msg)
@@ -322,8 +584,12 @@ class Room:
 PRE_AUTH = {"create", "join", "resume"}
 IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "gift",
-    "look", "buy", "crate",
-    "race_join", "race_leave", "race_start", "race_step", "arena_move", "arena_shoot", "arena_hit",
+    "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
+    "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
+    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "area_move", "pose",
+    "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
+    "bumper_move", "bumper_out", "roulette_bet", "roulette_clear", "roulette_sync",
+    "house_get", "house_save", "house_buy", "house_like",
 }
 
 
@@ -363,6 +629,8 @@ class Game:
         return name, pin, color
 
     def on_create(self, c, m):
+        if not c.ready("create", 10):
+            raise GameError("Hang on a few seconds before making another zone.")
         zone_name = clean(m.get("zoneName"), 24)
         if not zone_name:
             raise GameError("Give your FriendZone a name.")
@@ -476,14 +744,14 @@ class Game:
         p = c.player
         for item in CATALOG["items"]:
             cond = item.get("unlock")
-            if not cond or item["id"] in p["owned"]:
-                continue
-            if "level" in cond:
-                met = level_for(p["xp"]) >= cond["level"]
-            else:
-                met = p["stats"].get(cond["stat"], 0) >= cond["min"]
-            if met:
+            if cond and item["id"] not in p["owned"] and met(p, cond):
                 self.grant(c, item, "achievement")
+        for f in CATALOG["furniture"]:
+            cond = f.get("unlock")
+            if cond and not p["furni"].get(f["id"]) and met(p, cond):
+                p["furni"][f["id"]] = 1
+                self.store.mark()
+                c.ws.send({"t": "unlock", "id": f["id"], "source": "achievement", "furni": True})
 
     # ---- cosmetics ---------------------------------------------------------
 
@@ -495,6 +763,10 @@ class Game:
         for field, palette in LOOK_COLORS.items():
             if look.get(field) not in CATALOG[palette]:
                 raise GameError("Unknown color.")
+            new[field] = look[field]
+        for field, options in LOOK_CHOICES.items():
+            if look.get(field) not in {o["id"] for o in CATALOG[options]}:
+                raise GameError("Unknown body option.")
             new[field] = look[field]
         for slot in LOOK_SLOTS:
             item = ITEMS.get(look.get(slot))
@@ -536,11 +808,32 @@ class Game:
         self.grant(c, item, "crate")
         self.push_player(c.room, c.key)
 
+    def on_pet_egg(self, c, m):
+        """Hatch a pet egg: a random pet you don't have yet (rarer ones are rarer)."""
+        p, price = c.player, CATALOG["petEgg"]["price"]
+        if p["coins"] < price:
+            raise GameError(f"A pet egg costs {price} coins.")
+        if not c.ready("pet_egg", 1.5):
+            raise GameError("Hang on, the last egg is still hatching!")
+        pool = [i for i in CATALOG["items"] if i.get("petRoll") and i["id"] not in p["owned"]]
+        if not pool:
+            raise GameError("You've already got every pet!")
+        weights = {r: w for r, w in CATALOG["petEgg"]["weights"].items() if any(i["rarity"] == r for i in pool)}
+        rarity = random.choices(list(weights), weights=list(weights.values()))[0]
+        item = random.choice([i for i in pool if i["rarity"] == rarity])
+        p["coins"] -= price
+        c.ws.send({"t": "pet_hatched", "id": item["id"]})
+        self.grant(c, item, "egg")
+        self.push_player(c.room, c.key)
+
     # ---- scenes & the world ----------------------------------------------
 
     def on_scene(self, c, m):
-        if m.get("scene") in SCENES:
-            self.set_scene(c, m["scene"])
+        scene = m.get("scene")
+        if scene in SCENES:
+            self.set_scene(c, scene)
+        elif isinstance(scene, str) and scene.startswith("house:") and scene[6:] in c.room.zone["players"]:
+            self.set_scene(c, scene)  # walking into someone's house
 
     def set_scene(self, c, scene):
         room, prev = c.room, c.scene
@@ -548,10 +841,21 @@ class Game:
             return
         if prev == "world" and scene != "world":
             room.broadcast({"t": "despawn", "k": c.key}, scene="world", exclude=c)
+            c.pose = None
+        if is_area(prev) and scene != prev:
+            room.broadcast({"t": "area_del", "k": c.key}, scene=prev, exclude=c)
+            c.ax = c.az = c.ah = None
         if prev == "arena" and scene != "arena":
             self.arena_leave(c)
         if prev == "race" and scene != "race":
             self.race_remove(c)
+        if prev == "boss" and scene != "boss":
+            self.boss_leave(c)
+        if prev == "doodle" and scene != "doodle":
+            c.scene = scene
+            self.doodle_leave(room, c.key)
+        if prev == "bumper" and scene != "bumper":
+            self.bumper_leave(c)
         c.scene = scene
         if scene is None:
             return
@@ -559,11 +863,23 @@ class Game:
             if c.x is None:  # somewhere on the plaza, clear of the fountain
                 angle, dist = random.uniform(0, math.tau), random.uniform(70, 95)
                 c.x, c.y = WORLD_W / 2 + math.cos(angle) * dist, WORLD_H / 2 + math.sin(angle) * dist
-            others = [{"k": o.key, "x": o.x, "y": o.y} for o in room.clients.values() if o.scene == "world" and o is not c]
+            others = [{"k": o.key, "x": o.x, "y": o.y, "pose": o.pose, **(o.pose_extra if o.pose else {})}
+                      for o in room.clients.values() if o.scene == "world" and o is not c]
             c.ws.send({"t": "world", "me": {"x": c.x, "y": c.y}, "others": others})
             room.broadcast({"t": "pos", "k": c.key, "x": c.x, "y": c.y}, scene="world", exclude=c)
         elif scene == "arena":
             self.arena_join(c)
+        elif scene == "boss":
+            self.boss_join(c)
+        elif scene == "doodle":
+            self.doodle_join(c)
+        elif scene == "bumper":
+            self.bumper_join(c)
+        elif scene == "casino":
+            self.roulette_join(c)
+        if is_area(scene):
+            c.ws.send({"t": "area", "others": [{"k": o.key, "x": o.ax, "z": o.az, "h": o.ah} for o in room.clients.values()
+                                                if o.scene == scene and o is not c and o.ax is not None]})
         elif scene == "race":
             c.ws.send({"t": "race", "race": self.race_view(room)})
         self.push_player(room, c.key)
@@ -573,6 +889,27 @@ class Game:
             return
         c.x, c.y = num(m["x"], 0, WORLD_W), num(m["y"], 0, WORLD_H)
         c.room.broadcast({"t": "pos", "k": c.key, "x": round(c.x, 1), "y": round(c.y, 1)}, scene="world", exclude=c)
+
+    def on_area_move(self, c, m):
+        if not is_area(c.scene):
+            return
+        c.ax, c.az, c.ah = num(m["x"], -200, 200), num(m["z"], -200, 200), num(m.get("h", 0), -7, 7)
+        c.room.broadcast({"t": "area_pos", "k": c.key, "x": round(c.ax, 2), "z": round(c.az, 2), "h": round(c.ah, 2)},
+                         scene=c.scene, exclude=c)
+
+    def on_pose(self, c, m):
+        """World poses other players should see (sitting on the dock fishing, the bobber...)."""
+        if c.scene != "world" or not c.ready("pose", 0.1):
+            return
+        pose = m.get("pose") if m.get("pose") in POSES else None
+        c.pose = pose
+        msg = {"t": "pose", "k": c.key, "pose": pose}
+        if pose and "bx" in m:
+            msg.update(bx=round(num(m["bx"], -200, 200), 2), bz=round(num(m["bz"], -200, 200), 2))
+        if pose and "h" in m:
+            msg["h"] = round(num(m["h"], -7, 7), 3)
+        c.pose_extra = {k: v for k, v in msg.items() if k in ("bx", "bz", "h")}
+        c.room.broadcast(msg, scene="world", exclude=c)
 
     def on_chat(self, c, m):
         text = clean(m.get("text"), 140)
@@ -592,7 +929,8 @@ class Game:
         """Sent when the reeling minigame is won. `q` is how well the player tracked the fish."""
         if not c.ready("fish", 2.5):
             raise GameError("Easy there, the fish need a moment.")
-        q = num(m.get("q", 0), 0, 1)
+        # a luckier rod counts as a better catch when choosing which fish bit
+        q = num(m.get("q", 0), 0, 1) + RODS.get(c.player["rod"], {}).get("luck", 0)
         weights = [f["weight"] * math.exp(f["bias"] * (q - 0.5)) for f in FISH]
         fish = random.choices(FISH, weights=weights)[0]
         lo, hi = fish["size"]
@@ -608,6 +946,23 @@ class Game:
                    "first": first, "record": record and not first})
         if fish["rarity"] in ("rare", "epic", "legendary"):
             self.post_feed(c.room, f"🎣 {c.player['name']} caught a {fish['rarity']} {fish['name']} ({size} in)!")
+
+    def on_rod(self, c, m):
+        """Buy a fishing rod, or pick one you own."""
+        rod = RODS.get(str(m.get("id", "")))
+        p = c.player
+        if not rod:
+            raise GameError("Unknown rod.")
+        if rod["id"] not in p["rods"]:
+            if p["coins"] < rod["price"]:
+                raise GameError(f"The {rod['name']} costs {rod['price']:,} coins.")
+            p["coins"] -= rod["price"]
+            p["rods"].append(rod["id"])
+            if rod["price"] >= 6000:
+                self.post_feed(c.room, f"🎣 {p['name']} bought the {rod['name']}!")
+        p["rod"] = rod["id"]
+        self.store.mark()
+        self.push_player(c.room, c.key)
 
     def on_archery(self, c, m):
         if not c.ready("archery", 4):
@@ -656,6 +1011,103 @@ class Game:
         if payout >= bet * 10 and payout >= 500:
             self.post_feed(c.room, f"🎰 JACKPOT! {c.player['name']} won {payout:,} coins!")
 
+    # ---- blackjack: each player plays their own hand against the house dealer ----
+
+    def bj_send(self, c, **extra):
+        h = c.bj
+        done = h["done"]
+        dealer = h["dealer"] if done else h["dealer"][:1] + [["?", "?"]]
+        c.ws.send({"t": "bj", "player": h["player"], "dealer": dealer, "pv": bj_value(h["player"]),
+                   "dv": bj_value(h["dealer"]) if done else bj_value(h["dealer"][:1]), "bet": h["bet"], "done": done,
+                   "result": h.get("result"), "payout": h.get("payout", 0),
+                   "canDouble": not done and len(h["player"]) == 2 and c.player["coins"] >= h["bet"], **extra})
+
+    def bj_draw(self, h):
+        if len(h["shoe"]) < 15:
+            h["shoe"] = [[r, s] for r in BJ_RANKS for s in BJ_SUITS] * BJ_DECKS
+            random.shuffle(h["shoe"])
+        return h["shoe"].pop()
+
+    def on_bj_deal(self, c, m):
+        if getattr(c, "bj", None) and not c.bj["done"]:
+            raise GameError("Finish this hand first.")
+        bet = int(num(m.get("bet", 0), 0, MAX_BET))
+        if bet < 1:
+            raise GameError("Place a bet first.")
+        if bet > c.player["coins"]:
+            raise GameError("You don't have that many coins.")
+        if not c.ready("bj", 0.6):
+            raise GameError("The dealer is still shuffling.")
+        shoe = c.bj["shoe"] if getattr(c, "bj", None) else []
+        c.bj = h = {"shoe": shoe, "bet": bet, "player": [], "dealer": [], "done": False}
+        c.player["coins"] -= bet
+        self.store.mark()
+        for _ in range(2):
+            h["player"].append(self.bj_draw(h))
+            h["dealer"].append(self.bj_draw(h))
+        self.push_player(c.room, c.key)
+        if bj_value(h["player"]) == 21 or bj_value(h["dealer"]) == 21:
+            self.bj_finish(c)
+        else:
+            self.bj_send(c)
+
+    def on_bj_hit(self, c, m):
+        h = getattr(c, "bj", None)
+        if not h or h["done"] or not c.ready("bj_act", 0.25):
+            return
+        h["player"].append(self.bj_draw(h))
+        if bj_value(h["player"]) >= 21:
+            self.bj_finish(c)
+        else:
+            self.bj_send(c)
+
+    def on_bj_stand(self, c, m):
+        h = getattr(c, "bj", None)
+        if h and not h["done"]:
+            self.bj_finish(c)
+
+    def on_bj_double(self, c, m):
+        h = getattr(c, "bj", None)
+        if not h or h["done"] or len(h["player"]) != 2:
+            return
+        if c.player["coins"] < h["bet"]:
+            raise GameError("You don't have enough coins to double.")
+        c.player["coins"] -= h["bet"]
+        h["bet"] *= 2
+        h["player"].append(self.bj_draw(h))
+        self.bj_finish(c)
+
+    def bj_finish(self, c):
+        """Dealer plays out (stands on all 17s), then settle the hand."""
+        h = c.bj
+        pv = bj_value(h["player"])
+        natural = pv == 21 and len(h["player"]) == 2
+        dealer_natural = bj_value(h["dealer"]) == 21 and len(h["dealer"]) == 2
+        if pv <= 21 and not natural and not dealer_natural:
+            while bj_value(h["dealer"]) < 17:
+                h["dealer"].append(self.bj_draw(h))
+        dv = bj_value(h["dealer"])
+        bet = h["bet"]
+        if pv > 21:
+            result, payout = "bust", 0
+        elif natural and not dealer_natural:
+            result, payout = "blackjack", bet + bet * 3 // 2
+        elif dealer_natural and not natural:
+            result, payout = "dealer_bj", 0
+        elif dv > 21:
+            result, payout = "dealer_bust", bet * 2
+        elif pv > dv:
+            result, payout = "win", bet * 2
+        elif pv == dv:
+            result, payout = "push", bet
+        else:
+            result, payout = "lose", 0
+        h.update(done=True, result=result, payout=payout)
+        self.reward(c, coins=payout, xp=3)
+        self.bj_send(c)
+        if payout - bet >= 1000:
+            self.post_feed(c.room, f"🃏 {c.player['name']} won {payout - bet:,} coins at blackjack!")
+
     def on_daily(self, c, m):
         p = c.player
         now = int(time.time())
@@ -681,9 +1133,14 @@ class Game:
 
     # ---- racing ------------------------------------------------------------
 
+    # Kart racing: every driver simulates their own kart (so steering feels instant) and streams its
+    # position; the server runs the countdown, relays karts and items, and records the finish.
+
     def race_view(self, room):
         r = room.race
-        return {"state": r["state"], "racers": r["racers"], "order": r["order"], "len": RACE_LEN}
+        return {"state": r["state"], "racers": r["racers"], "order": r["order"], "laps": RACE_LAPS,
+                "since": round(time.monotonic() - r.get("goAt", time.monotonic()), 2) if r["state"] == "running" else 0,
+                "times": r.get("times", {}), "grid": r.get("grid", list(r["racers"]))}
 
     def race_sync(self, room):
         room.broadcast({"t": "race", "race": self.race_view(room)})
@@ -706,7 +1163,6 @@ class Game:
         if c.key not in r["racers"]:
             return
         del r["racers"][c.key]
-        r["last"].pop(c.key, None)
         if not r["racers"]:
             r.update(id=r["id"] + 1, state="idle", order=[])
         elif r["state"] == "running" and all(k in r["order"] for k in r["racers"]):
@@ -718,7 +1174,8 @@ class Game:
         room, r = c.room, c.room.race
         if c.key not in r["racers"] or r["state"] != "waiting":
             return
-        r.update(id=r["id"] + 1, state="countdown", order=[], last={}, field=len(r["racers"]))
+        r.update(id=r["id"] + 1, state="countdown", order=[], field=len(r["racers"]), times={},
+                 grid=list(r["racers"]))
         for k in r["racers"]:
             r["racers"][k] = 0
         self.race_sync(room)
@@ -728,7 +1185,7 @@ class Game:
         r = room.race
         if r["id"] != rid or r["state"] != "countdown":
             return
-        r["state"] = "running"
+        r["state"], r["goAt"] = "running", time.monotonic()
         self.race_sync(room)
         asyncio.get_running_loop().call_later(RACE_TIMEOUT, self.race_finish, room, rid)
 
@@ -738,7 +1195,7 @@ class Game:
             return
         r["state"] = "done"
         self.race_sync(room)
-        asyncio.get_running_loop().call_later(5, self.race_reset, room, rid)
+        asyncio.get_running_loop().call_later(6, self.race_reset, room, rid)
 
     def race_reset(self, room, rid):
         r = room.race
@@ -749,21 +1206,43 @@ class Game:
             r["racers"][k] = 0
         self.race_sync(room)
 
-    def on_race_step(self, c, m):
+    def on_race_pos(self, c, m):
+        """Your kart: position, heading, speed, race progress (laps, fractional) and status flags."""
+        room, r = c.room, c.room.race
+        if r["state"] not in ("countdown", "running") or c.key not in r["racers"]:
+            return
+        progress = num(m.get("p", 0), -1, RACE_LAPS + 0.5)
+        r["racers"][c.key] = round(progress, 4)
+        room.broadcast({"t": "race_kp", "k": c.key, "x": round(num(m["x"], -500, 500), 2), "z": round(num(m["z"], -500, 500), 2),
+                        "h": round(num(m.get("h", 0), -1e4, 1e4), 3), "v": round(num(m.get("v", 0), -60, 80), 1),
+                        "p": r["racers"][c.key], "f": str(m.get("f", ""))[:12]}, scene="race", exclude=c)
+
+    def on_race_item(self, c, m):
+        """Somebody used an item: everyone sees it (hazards, projectiles, zaps)."""
+        room, r = c.room, c.room.race
+        kind = m.get("kind")
+        if r["state"] != "running" or c.key not in r["racers"] or kind not in RACE_ITEMS or not c.ready("race_item", 0.3):
+            return
+        room.broadcast({"t": "race_item", "k": c.key, "kind": kind, "id": str(m.get("id", ""))[:24],
+                        "x": round(num(m.get("x", 0), -500, 500), 2), "z": round(num(m.get("z", 0), -500, 500), 2),
+                        "h": round(num(m.get("h", 0), -1e4, 1e4), 3), "target": str(m.get("target", ""))[:20]}, scene="race")
+
+    def on_race_hit(self, c, m):
+        """Your kart got hit by (or drove over) something: take it off everyone's track."""
+        room, r = c.room, c.room.race
+        if r["state"] != "running" or c.key not in r["racers"]:
+            return
+        room.broadcast({"t": "race_hit", "k": c.key, "id": str(m.get("id", ""))[:24], "by": str(m.get("by", ""))[:20]}, scene="race")
+
+    def on_race_done(self, c, m):
         room, r = c.room, c.room.race
         if r["state"] != "running" or c.key not in r["racers"] or c.key in r["order"]:
             return
-        side = m.get("side")
-        now = time.monotonic()
-        last = r["last"].get(c.key)
-        if side not in ("L", "R") or (last and (last[0] == side or now - last[1] < 0.045)):
-            return
-        r["last"][c.key] = (side, now)
-        progress = r["racers"][c.key] = r["racers"][c.key] + 1
-        room.broadcast({"t": "race_p", "k": c.key, "p": progress}, scene="race")
-        if progress < RACE_LEN:
-            return
+        elapsed = time.monotonic() - r["goAt"]
+        if r["racers"][c.key] < RACE_LAPS - 0.05 or elapsed < RACE_MIN_LAP * RACE_LAPS:
+            return  # not actually finished (or impossibly fast)
         r["order"].append(c.key)
+        r["times"][c.key] = round(elapsed, 2)
         place = len(r["order"])
         if r["field"] == 1:
             coins, xp = RACE_PRIZE_SOLO
@@ -771,7 +1250,7 @@ class Game:
             coins, xp = RACE_PRIZES[place - 1] if place <= len(RACE_PRIZES) else RACE_PRIZE_REST
         if place == 1 and r["field"] > 1:
             self.reward(c, coins=coins, xp=xp, raceWins=1, wins=1)
-            self.post_feed(room, f"🏁 {c.player['name']} won the race!")
+            self.post_feed(room, f"🏁 {c.player['name']} won the Grand Prix in {elapsed:.1f}s!")
         else:
             self.reward(c, coins=coins, xp=xp)
         self.race_sync(room)
@@ -798,7 +1277,11 @@ class Game:
         room.arena[c.key] = {"x": x, "y": y, "a": 0, "hp": ARENA_HP, "score": 0,
                              "spawn": time.monotonic(), "hits": set()}
         players = {k: self.fighter_view(f) for k, f in room.arena.items()}
-        c.ws.send({"t": "arena", "players": players, "target": ARENA_TARGET, "hp": ARENA_HP})
+        c.ws.send({"t": "arena", "players": players, "target": ARENA_TARGET, "hp": ARENA_HP,
+                   "items": list(room.arena_items.values())})
+        if not room.arena_spawning:
+            room.arena_spawning = True
+            asyncio.get_running_loop().call_later(3, self.arena_item_tick, room)
         room.broadcast({"t": "arena_add", "k": c.key, **players[c.key]}, scene="arena", exclude=c)
 
     def arena_leave(self, c):
@@ -852,6 +1335,34 @@ class Game:
                 self.post_feed(room, f"⚔️ {killer.player['name']} won an Arena round!")
             room.broadcast({"t": "arena_round", "winner": by}, scene="arena")
 
+    def arena_item_tick(self, room):
+        if not room.arena:
+            room.arena_spawning = False
+            room.arena_items.clear()
+            return
+        if len(room.arena_items) < ARENA_MAX_ITEMS:
+            for _ in range(20):
+                x, y = random.uniform(60, ARENA_W - 60), random.uniform(80, ARENA_H - 50)
+                if not any(px - 30 < x < px + pw + 30 and py - 30 < y < py + ph + 50 for px, py, pw, ph in ARENA_PILLARS):
+                    break
+            room.arena_item_seq += 1
+            item = {"id": room.arena_item_seq, "kind": random.choice(ARENA_ITEMS), "x": round(x), "y": round(y)}
+            room.arena_items[item["id"]] = item
+            room.broadcast({"t": "arena_item", "item": item}, scene="arena")
+        asyncio.get_running_loop().call_later(ARENA_ITEM_EVERY, self.arena_item_tick, room)
+
+    def on_arena_pick(self, c, m):
+        room = c.room
+        f = room.arena.get(c.key)
+        item = room.arena_items.get(int(num(m.get("id", 0), 0, 1e9)))
+        if not f or f["hp"] <= 0 or not item or math.dist((f["x"], f["y"]), (item["x"], item["y"])) > 70:
+            return
+        del room.arena_items[item["id"]]
+        room.broadcast({"t": "arena_picked", "id": item["id"], "k": c.key, "kind": item["kind"]}, scene="arena")
+        if item["kind"] == "heal" and f["hp"] < ARENA_HP:
+            f["hp"] += 1
+            room.broadcast({"t": "arena_hp", "k": c.key, "hp": f["hp"], "heal": True}, scene="arena")
+
     def arena_respawn(self, room, key):
         f = room.arena.get(key)
         if not f or f["hp"] > 0:
@@ -859,6 +1370,1039 @@ class Game:
         f["x"], f["y"] = self.arena_spawn_point(room, key)
         f["hp"], f["spawn"] = ARENA_HP, time.monotonic()
         room.broadcast({"t": "arena_spawn", "k": key, "x": f["x"], "y": f["y"], "hp": f["hp"]}, scene="arena")
+
+    # ---- dungeon (boss cave) -------------------------------------------------------
+
+    @staticmethod
+    def boss_view(room):
+        b = room.boss["b"]
+        if not b:
+            return None
+        return {"id": b["id"], "name": b["name"], "tier": b["tier"], "x": round(b["x"], 1), "y": round(b["y"], 1),
+                "hp": b["hp"], "max": b["max"], "r": b["r"], "st": b["st"], "enraged": b["enraged"]}
+
+    @staticmethod
+    def boss_fighter_view(f):
+        return {"x": f["x"], "y": f["y"], "a": f["a"], "hp": f["hp"], "max": f["max"], "up": f["up"],
+                "shield": f["shield"]}
+
+    @staticmethod
+    def mob_view(m):
+        return [m["id"], m["kind"], round(m["x"], 1), round(m["y"], 1), m["hp"], m["max"]]
+
+    def dungeon_view(self, room, key, **extra):
+        bs = room.boss
+        f = bs["fighters"].get(key)
+        v = {"t": "boss", "state": bs["state"], "floor": bs["floor"], "best": room.zone.get("dungeonBest", 0),
+             "left": round(max(0.0, bs["ends"] - time.monotonic()), 2), "boss": self.boss_view(room),
+             "mobs": [self.mob_view(m) for m in bs["mobs"].values()],
+             "fighters": {k: self.boss_fighter_view(o) for k, o in bs["fighters"].items()},
+             "picked": [k for k, o in bs["fighters"].items() if o["picked"]], "last": bs["last"], **extra}
+        if f and bs["state"] == "pick" and not f["picked"]:
+            v["choices"] = [{"id": u, **UPGRADES[u], "lvl": f["up"].get(u, 0)} for u in f["choices"]]
+        return v
+
+    def dungeon_sync(self, room, **extra):
+        for k in room.in_scene("boss"):
+            room.clients[k].ws.send(self.dungeon_view(room, k, **extra))
+
+    @staticmethod
+    def new_fighter():
+        x, y = random.choice(BOSS_SPAWNS)
+        return {"x": x, "y": y, "a": -math.pi / 2, "hp": BOSS_PLAYER_HP, "max": BOSS_PLAYER_HP, "down": 0, "rev": 0.0,
+                "hurt": time.monotonic(), "up": {}, "shield": False, "wind": False, "picked": False, "choices": []}
+
+    def boss_join(self, c):
+        room, bs = c.room, c.room.boss
+        f = bs["fighters"][c.key] = self.new_fighter()
+        if bs["state"] in ("intro", "fight", "pick"):
+            bs["ran"].add(c.key)
+            if bs["state"] == "pick":
+                f["choices"] = self.dungeon_choices(f)
+        b = bs["b"]
+        if b and b["st"] != "dead" and c.key not in b["counted"]:
+            # a new friend joined mid-fight: the boss toughens up to match
+            b["counted"].add(c.key)
+            extra = int(b["base"] * 0.65)
+            b["max"] += extra
+            b["hp"] += extra
+        c.ws.send(self.dungeon_view(room, c.key))
+        room.broadcast({"t": "boss_add", "k": c.key, **self.boss_fighter_view(f)}, scene="boss", exclude=c)
+        if not bs["task"]:
+            bs["task"] = asyncio.get_running_loop().create_task(self.boss_loop(room))
+
+    def boss_leave(self, c):
+        if c.room.boss["fighters"].pop(c.key, None) is not None:
+            c.room.broadcast({"t": "boss_del", "k": c.key}, scene="boss")
+
+    async def boss_loop(self, room):
+        bs = room.boss
+        last = time.monotonic()
+        try:
+            while bs["fighters"]:
+                await asyncio.sleep(BOSS_TICK)
+                now = time.monotonic()
+                dt, last = min(0.3, now - last), now
+                try:
+                    self.boss_tick(room, dt, now)
+                except Exception as e:  # one bad tick shouldn't end the run
+                    print("dungeon tick failed:", repr(e))
+        finally:
+            bs["task"] = None
+            if not bs["fighters"]:
+                # everyone left: the next group starts a fresh run
+                bs.update(state="lobby", floor=0, b=None, mobs={}, queue=[], dmg={}, ran=set())
+
+    # ---- runs and floors ----
+
+    def on_boss_start(self, c, m):
+        room, bs = c.room, c.room.boss
+        if bs["state"] != "lobby" or c.key not in bs["fighters"]:
+            return
+        for f in bs["fighters"].values():
+            f.update(hp=BOSS_PLAYER_HP, max=BOSS_PLAYER_HP, up={}, shield=False, wind=False, picked=False, choices=[], rev=0.0)
+        bs.update(floor=0, dmg={}, ran=set(bs["fighters"]), last=None)
+        self.post_feed(room, f"🏰 {c.player['name']} started a dungeon run! Jump in at the Boss Cave.")
+        self.dungeon_floor(room, time.monotonic())
+
+    def dungeon_floor(self, room, now):
+        """Go one floor deeper: patch everyone up, then either spawn a boss or line up monsters."""
+        bs = room.boss
+        bs["floor"] += 1
+        floor = bs["floor"]
+        bs.update(state="intro", ends=now + DUNGEON_INTRO_T, mobs={}, queue=[], b=None, spawn_at=now + DUNGEON_INTRO_T)
+        for f in bs["fighters"].values():
+            if f["hp"] <= 0:
+                f["hp"] = 1  # downed friends get back up between floors, with one heart
+            elif f["up"].get("regen"):
+                f["hp"] = min(f["max"], f["hp"] + f["up"]["regen"])
+            f.update(shield=bool(f["up"].get("shield")), picked=False, choices=[], rev=0.0, hurt=now)
+        if floor % DUNGEON_BOSS_EVERY == 0:
+            self.boss_spawn(room, now)
+        else:
+            pool = [kind for at, kind in MOB_UNLOCK if floor >= at]
+            n = max(1, len(bs["fighters"]))
+            count = min(32, 4 + int(floor * 1.6) + 2 * (n - 1))
+            newest = [kind for at, kind in MOB_UNLOCK if at == floor]
+            bs["queue"] = newest + [random.choice(pool) for _ in range(count - len(newest))]
+            random.shuffle(bs["queue"])
+        self.dungeon_sync(room, spawn=True)
+
+    def dungeon_choices(self, f):
+        pool = [u for u, spec in UPGRADES.items() if f["up"].get(u, 0) < spec["max"]]
+        if f["hp"] >= f["max"] or f["hp"] <= 0:
+            pool.remove("heal")
+        weights = [2 if u in ("heart", "dmg") else 1 for u in pool]
+        picks = []
+        while pool and len(picks) < 3:
+            u = random.choices(pool, weights)[0]
+            i = pool.index(u)
+            pool.pop(i)
+            weights.pop(i)
+            picks.append(u)
+        return picks
+
+    @staticmethod
+    def dungeon_apply(f, u):
+        f["up"][u] = f["up"].get(u, 0) + 1
+        if u == "heart":
+            f["max"] += 1
+            if f["hp"] > 0:
+                f["hp"] += 1
+        elif u == "heal" and f["hp"] > 0:
+            f["hp"] = f["max"]
+        elif u == "shield":
+            f["shield"] = True
+
+    def dungeon_clear(self, room, now):
+        bs = room.boss
+        bs.update(state="pick", ends=now + DUNGEON_PICK_T)
+        for f in bs["fighters"].values():
+            f.update(picked=False, choices=self.dungeon_choices(f))
+        room.broadcast({"t": "boss_clear", "floor": bs["floor"]}, scene="boss")
+        self.dungeon_sync(room)
+
+    def on_boss_pick(self, c, m):
+        bs = c.room.boss
+        f = bs["fighters"].get(c.key)
+        u = str(m.get("id", ""))
+        if bs["state"] != "pick" or not f or f["picked"] or u not in f["choices"]:
+            return
+        self.dungeon_apply(f, u)
+        f["picked"] = True
+        c.room.broadcast({"t": "boss_picked", "k": c.key, "id": u, "f": self.boss_fighter_view(f)}, scene="boss")
+
+    def dungeon_wipe(self, room, now):
+        """Everyone is down: the run is over. Pay out by floors cleared and damage dealt."""
+        bs = room.boss
+        floor, cleared = bs["floor"], bs["floor"] - 1
+        record = floor > room.zone.get("dungeonBest", 0)
+        if record:
+            room.zone["dungeonBest"] = floor
+        total = sum(bs["dmg"].values()) or 1
+        results = {}
+        for k in bs["ran"]:
+            c = room.clients.get(k)
+            if not c or c.scene != "boss":
+                continue
+            share = bs["dmg"].get(k, 0) / total
+            coins = 25 * cleared + int(150 * share * min(1, cleared / 3)) + (10 if cleared else 0)
+            xp = 15 * cleared + int(60 * share)
+            c.player["stats"]["dungeonBest"] = max(c.player["stats"].get("dungeonBest", 0), floor)
+            self.reward(c, coins=coins, xp=xp)
+            results[k] = {"coins": coins, "xp": xp, "dmg": bs["dmg"].get(k, 0)}
+        bs.update(state="over", ends=now + DUNGEON_OVER_T, b=None, mobs={}, queue=[],
+                  last={"floor": floor, "names": [room.zone["players"][k]["name"] for k in bs["ran"] if k in room.zone["players"]]})
+        self.store.mark()
+        if record and len(bs["ran"]):
+            names = ", ".join(bs["last"]["names"][:4])
+            self.post_feed(room, f"🏰 New dungeon record! {names} reached floor {floor}.")
+        room.broadcast({"t": "boss_wipe", "floor": floor, "record": record, "results": results}, scene="boss")
+        self.dungeon_sync(room)
+
+    def boss_tick(self, room, dt, now):
+        bs = room.boss
+        fighters, st = bs["fighters"], bs["state"]
+        if st == "over":
+            if now >= bs["ends"]:
+                bs["state"] = "lobby"
+                self.dungeon_sync(room)
+            return
+        if st == "lobby":
+            return
+        if st == "pick":
+            if now >= bs["ends"] or all(f["picked"] for f in fighters.values()):
+                for f in fighters.values():
+                    if not f["picked"] and f["choices"]:
+                        self.dungeon_apply(f, random.choice(f["choices"]))
+                self.dungeon_floor(room, now)
+            return
+        b = bs["b"]
+        if st == "intro" and now >= bs["ends"]:
+            bs["state"] = st = "fight"
+            if b:
+                b.update(st="fight", next=now + 1.2)
+            room.broadcast({"t": "boss_phase", "st": "fight"}, scene="boss")
+        # downed players: a friend standing close revives them (with one heart)
+        for k, f in fighters.items():
+            if f["hp"] > 0:
+                continue
+            helped = any(o["hp"] > 0 and math.dist((o["x"], o["y"]), (f["x"], f["y"])) < BOSS_REVIVE_R
+                         for ok, o in fighters.items() if ok != k)
+            f["rev"] = min(BOSS_REVIVE_T, f["rev"] + dt) if helped else max(0.0, f["rev"] - dt * 0.5)
+            wind = f["up"].get("revive") and not f["wind"] and now - f["down"] >= 4
+            if f["rev"] >= BOSS_REVIVE_T or wind:
+                if wind and f["rev"] < BOSS_REVIVE_T:
+                    f["wind"] = True
+                f["hp"], f["rev"], f["hurt"] = 1, 0.0, now
+                room.broadcast({"t": "boss_up", "k": k, "hp": 1, "helped": helped, "wind": bool(wind and not helped)}, scene="boss")
+        if st == "fight":
+            if fighters and all(f["hp"] <= 0 for f in fighters.values()):
+                self.dungeon_wipe(room, now)
+                return
+            cap = min(DUNGEON_MAX_MOBS, 5 + bs["floor"] // 2 + len(fighters))
+            if bs["queue"] and now >= bs["spawn_at"] and len(bs["mobs"]) < cap:
+                n = min(len(bs["queue"]), 3, cap - len(bs["mobs"]))
+                self.spawn_mobs(room, [bs["queue"].pop() for _ in range(n)])
+                bs["spawn_at"] = now + 1.3
+            self.mobs_tick(room, dt, now)
+            if b and b["st"] == "fight":
+                self.boss_steer(b, fighters, dt, now)
+                if now >= b["next"] and not b["move"]:
+                    self.boss_attack(room, b, fighters, now)
+            boss_done = not b or (b["st"] == "dead" and now - b["deadAt"] >= 2.5)
+            if not bs["mobs"] and not bs["queue"] and boss_done:
+                self.dungeon_clear(room, now)
+                return
+        msg = {"t": "boss_s", "m": {m["id"]: [round(m["x"], 1), round(m["y"], 1)] for m in bs["mobs"].values()},
+               "rev": {k: round(f["rev"] / BOSS_REVIVE_T, 2) for k, f in fighters.items() if f["hp"] <= 0}}
+        if b:
+            msg.update(x=round(b["x"], 1), y=round(b["y"], 1), hp=b["hp"], max=b["max"])
+        room.broadcast(msg, scene="boss")
+
+    # ---- monsters ----
+
+    def spawn_mobs(self, room, kinds, near=None):
+        bs = room.boss
+        mult = 1 + 0.15 * (bs["floor"] - 1)
+        players = [(f["x"], f["y"]) for f in bs["fighters"].values()] or [(BOSS_W / 2, BOSS_H / 2)]
+        now = time.monotonic()
+        out = []
+        for kind in kinds:
+            spec = MOBS[kind]
+            if near:
+                x, y = near[0] + random.uniform(-110, 110), near[1] + random.uniform(-60, 110)
+            else:
+                # come in from the edges, as far from the players as possible
+                spots = [(random.choice((40, BOSS_W - 40)), random.uniform(40, BOSS_H - 40)) for _ in range(4)]
+                spots += [(random.uniform(40, BOSS_W - 40), random.choice((40, BOSS_H - 40))) for _ in range(4)]
+                x, y = max(spots, key=lambda s: min(math.dist(s, p) for p in players))
+            bs["mob_id"] += 1
+            hp = int(spec["hp"] * mult)
+            m = {"id": bs["mob_id"], "kind": kind, "hp": hp, "max": hp, "r": spec["r"], "t": random.uniform(0, 5),
+                 "x": min(BOSS_W - spec["r"], max(spec["r"], x)), "y": min(BOSS_H - spec["r"], max(spec["r"], y)),
+                 "next": now + random.uniform(1.2, 2.6), "wind": 0.0, "fast": min(1.4, 1 + 0.03 * bs["floor"])}
+            bs["mobs"][m["id"]] = m
+            out.append(self.mob_view(m))
+        if out:
+            room.broadcast({"t": "mob_add", "mobs": out, "near": bool(near)}, scene="boss")
+
+    def mobs_tick(self, room, dt, now):
+        bs = room.boss
+        alive = [f for f in bs["fighters"].values() if f["hp"] > 0]
+        if not alive:
+            return
+        mobs = list(bs["mobs"].values())
+        shots = []
+        for m in mobs:
+            spec, kind = MOBS[m["kind"]], m["kind"]
+            f = min(alive, key=lambda o: (o["x"] - m["x"]) ** 2 + (o["y"] - m["y"]) ** 2)
+            dx, dy = f["x"] - m["x"], f["y"] - m["y"]
+            d = math.hypot(dx, dy) or 1
+            ux, uy = dx / d, dy / d
+            m["t"] += dt
+            if kind == "bat":  # weaves side to side as it swoops in
+                w = math.sin(m["t"] * 4) * 0.9
+                vx, vy = ux - uy * w, uy + ux * w
+            elif kind == "slimelet":  # hops
+                hop = m["t"] % 1.1 < 0.45
+                vx, vy = (ux * 2.2, uy * 2.2) if hop else (0.0, 0.0)
+            elif kind == "archer":  # keeps its distance and strafes
+                want = spec["range"]
+                s = 1 if d > want + 40 else -1 if d < want - 60 else 0
+                side = math.sin(m["t"] * 0.7)
+                vx, vy = ux * s - uy * side * 0.6, uy * s + ux * side * 0.6
+            elif kind == "wisp":  # drifts about
+                vx, vy = ux * 0.5 + math.cos(m["t"]) * 0.8, uy * 0.5 + math.sin(m["t"] * 1.3) * 0.8
+            else:  # skeletons and brutes walk straight at you
+                vx, vy = ux, uy
+            if m["wind"] > now:
+                vx = vy = 0.0
+            for o in mobs:  # don't stack up on each other
+                if o is m:
+                    continue
+                ox, oy = m["x"] - o["x"], m["y"] - o["y"]
+                od, lim = math.hypot(ox, oy), m["r"] + o["r"] + 4
+                if 0 < od < lim:
+                    vx += ox / od * (lim - od) / lim * 1.5
+                    vy += oy / od * (lim - od) / lim * 1.5
+            sp = spec["speed"] * m["fast"]
+            m["x"] = min(BOSS_W - m["r"], max(m["r"], m["x"] + vx * sp * dt))
+            m["y"] = min(BOSS_H - m["r"], max(m["r"], m["y"] + vy * sp * dt))
+            if "every" in spec and now >= m["next"]:
+                m["next"] = now + spec["every"] * random.uniform(0.85, 1.2)
+                if kind == "archer" and d < spec["range"] + 160:
+                    shots.append({"x": round(m["x"]), "y": round(m["y"]), "a": round(math.atan2(dy, dx), 3), "n": 1, "sp": 250})
+                elif kind == "wisp":
+                    shots.append({"x": round(m["x"]), "y": round(m["y"]), "a": round(random.uniform(0, math.tau), 3), "n": 6, "sp": 165})
+                elif kind == "brute" and d < 220:
+                    m["wind"] = now + 0.9
+                    room.broadcast({"t": "boss_atk", "kind": "slam", "c": [[round(f["x"]), round(f["y"])]], "r": 62, "d": 0.9,
+                                    "mob": m["id"]}, scene="boss")
+                else:
+                    m["next"] = now + 0.5
+        if shots:
+            room.broadcast({"t": "mob_shot", "s": shots}, scene="boss")
+
+    # ---- bosses ----
+
+    def boss_spawn(self, room, now):
+        bs = room.boss
+        idx = bs["floor"] // DUNGEON_BOSS_EVERY - 1
+        spec = BOSSES[idx % len(BOSSES)]
+        tier = idx // len(BOSSES)
+        n = max(1, len(bs["fighters"]))
+        base = int(spec["hp"] * (1 + 0.35 * tier) * (1 + 0.05 * (bs["floor"] - 1)))
+        hp = int(base * (1 + 0.65 * (n - 1)))
+        bs["b"] = {"spec": spec, "id": spec["id"], "name": spec["name"], "tier": tier, "x": BOSS_W / 2, "y": 170.0,
+                   "hp": hp, "max": hp, "base": base, "r": spec["r"], "st": "intro", "next": now + 99, "target": None,
+                   "retarget": 0.0, "move": None, "enraged": False, "dmg": {}, "counted": set(bs["fighters"]), "deadAt": 0.0}
+
+    @staticmethod
+    def boss_steer(b, fighters, dt, now):
+        mv = b["move"]
+        if mv:  # scripted dash, hop or teleport
+            if now >= mv["t1"]:
+                b["x"], b["y"], b["move"] = mv["x1"], mv["y1"], None
+            elif now >= mv["t0"]:
+                k = (now - mv["t0"]) / (mv["t1"] - mv["t0"])
+                b["x"] = mv["x0"] + (mv["x1"] - mv["x0"]) * k
+                b["y"] = mv["y0"] + (mv["y1"] - mv["y0"]) * k
+            return
+        alive = [k for k, f in fighters.items() if f["hp"] > 0]
+        if not alive:
+            tx, ty = BOSS_W / 2, 200
+        else:
+            if b["target"] not in alive or now >= b["retarget"]:
+                b["target"] = random.choice(alive)
+                b["retarget"] = now + random.uniform(3, 5)
+            tx, ty = fighters[b["target"]]["x"], fighters[b["target"]]["y"]
+        dx, dy = tx - b["x"], ty - b["y"]
+        d = math.hypot(dx, dy)
+        keep = b["r"] + 70 + (120 if b["id"] == "lich" else 0)  # the lich hangs back behind its minions
+        if d > keep:
+            step = min(d - keep, b["spec"]["speed"] * (1.35 if b["enraged"] else 1) * dt)
+            b["x"] += dx / d * step
+            b["y"] += dy / d * step
+        b["x"] = min(BOSS_W - b["r"], max(b["r"], b["x"]))
+        b["y"] = min(BOSS_H - b["r"], max(b["r"], b["y"]))
+
+    def boss_attack(self, room, b, fighters, now):
+        bs = room.boss
+        alive = [f for f in fighters.values() if f["hp"] > 0]
+        kind = random.choice(b["spec"]["attacks"])
+        if kind in ("charge", "hop") and not alive:
+            kind = "volley"
+        if kind == "summon" and len(bs["mobs"]) >= DUNGEON_MAX_MOBS - 3:
+            kind = "volley"
+        rage, x, y, r = b["enraged"], b["x"], b["y"], b["r"]
+        msg = {"t": "boss_atk", "kind": kind}
+        busy = 0.0  # how long the attack keeps the boss occupied
+        if kind == "slam":
+            targets = alive if rage else random.sample(alive, min(len(alive), 2))
+            spots = [(f["x"], f["y"]) for f in targets] or [(x, y + 130)]
+            msg.update(c=[[round(sx), round(sy)] for sx, sy in spots], r=85, d=1.1)
+        elif kind in ("rocks", "curse"):
+            spots = [(f["x"], f["y"]) for f in alive]
+            spots += [(random.uniform(60, BOSS_W - 60), random.uniform(60, BOSS_H - 60)) for _ in range(5 if rage else 3)]
+            msg.update(c=[[round(sx), round(sy)] for sx, sy in spots], r=62 if kind == "rocks" else 72, d=1.3 if kind == "rocks" else 1.2)
+        elif kind == "volley":
+            msg.update(x=round(x), y=round(y), n=18 if rage else 12, sp=240 if rage else 205,
+                       off=round(random.uniform(0, math.tau), 3), d=0.55, waves=2 if rage else 1, gap=0.4, rot=0.13)
+        elif kind == "spiral":
+            waves = 11 if rage else 8
+            msg.update(x=round(x), y=round(y), n=6, sp=215, off=round(random.uniform(0, math.tau), 3), d=0.5,
+                       waves=waves, gap=0.16, rot=0.3 * random.choice((-1, 1)))
+            busy = waves * 0.16
+        elif kind == "summon":
+            count = (4 if rage else 3) + (len(alive) > 2)
+            msg.update(x=round(x), y=round(y), d=0.9)
+            minions = [random.choice(b["spec"]["minions"]) for _ in range(count)]
+            asyncio.get_running_loop().call_later(0.9, self.boss_summon, room, b, minions)
+            busy = 1.2
+        elif kind == "blink":
+            spots = [(random.uniform(120, BOSS_W - 120), random.uniform(100, BOSS_H - 160)) for _ in range(6)]
+            tx, ty = max(spots, key=lambda s: min((math.dist(s, (f["x"], f["y"])) for f in alive), default=0))
+            msg.update(x=round(x), y=round(y), tx=round(tx), ty=round(ty), d=0.6)
+            b["move"] = {"x0": tx, "y0": ty, "x1": tx, "y1": ty, "t0": now + 0.6, "t1": now + 0.62}
+            busy = 0.9
+        else:
+            f = random.choice(alive)
+            if kind == "charge":
+                dx, dy = f["x"] - x, f["y"] - y
+                d = math.hypot(dx, dy) or 1
+                tx = min(BOSS_W - r, max(r, x + dx / d * 560))
+                ty = min(BOSS_H - r, max(r, y + dy / d * 560))
+                dur = max(0.2, math.hypot(tx - x, ty - y) / 680)
+                delay = 0.8
+                msg.update(x=round(x), y=round(y), tx=round(tx), ty=round(ty), d=delay, dur=round(dur, 3))
+            else:  # hop onto someone and land with a shockwave
+                tx = min(BOSS_W - r, max(r, f["x"]))
+                ty = min(BOSS_H - r, max(r, f["y"]))
+                delay, dur = 0.35, 0.85
+                msg.update(x=round(x), y=round(y), tx=round(tx), ty=round(ty), d=delay, dur=dur, r=115)
+            b["move"] = {"x0": x, "y0": y, "x1": tx, "y1": ty, "t0": now + delay, "t1": now + delay + dur}
+            busy = delay + dur
+        room.broadcast(msg, scene="boss")
+        b["next"] = now + busy + 2.2 * (0.62 if rage else 1) * random.uniform(0.85, 1.15)
+
+    def boss_summon(self, room, b, minions):
+        room_left = DUNGEON_MAX_MOBS - len(room.boss["mobs"])
+        if room.boss["b"] is b and b["st"] == "fight" and room.boss["state"] == "fight" and room_left > 0:
+            self.spawn_mobs(room, minions[:room_left], near=(b["x"], b["y"]))
+
+    # ---- players ----
+
+    def on_boss_move(self, c, m):
+        f = c.room.boss["fighters"].get(c.key)
+        if not f or f["hp"] <= 0:
+            return
+        f["x"], f["y"], f["a"] = num(m["x"], 0, BOSS_W), num(m["y"], 0, BOSS_H), num(m["a"], -7, 7)
+        c.room.broadcast({"t": "boss_pos", "k": c.key, "x": round(f["x"], 1), "y": round(f["y"], 1),
+                          "a": round(f["a"], 2)}, scene="boss", exclude=c)
+
+    def on_boss_shoot(self, c, m):
+        f = c.room.boss["fighters"].get(c.key)
+        if not f or f["hp"] <= 0 or not c.ready("shoot", 0.06):
+            return
+        c.room.broadcast({"t": "boss_shot", "k": c.key, "x": num(m["x"], 0, BOSS_W), "y": num(m["y"], 0, BOSS_H),
+                          "a": num(m["a"], -7, 7), "n": int(num(m.get("n", 1), 1, 4))}, scene="boss", exclude=c)
+
+    def on_boss_hit(self, c, m):
+        """Sent when one of your shots hits a monster (id) or the boss (no id)."""
+        room, bs = c.room, c.room.boss
+        f = bs["fighters"].get(c.key)
+        if bs["state"] != "fight" or not f or f["hp"] <= 0 or not c.ready("boss_hit", 0.02):
+            return
+        up = f["up"]
+        crit = random.random() < 0.08 + 0.1 * up.get("crit", 0)
+        dmg = int(DUNGEON_DMG * (1 + 0.3 * up.get("dmg", 0)) * (2 if crit else 1))
+        if m.get("id") is not None:
+            mob = bs["mobs"].get(int(num(m["id"], 0, 1e9)))
+            if not mob:
+                return
+            dmg = min(dmg, mob["hp"])
+            bs["dmg"][c.key] = bs["dmg"].get(c.key, 0) + dmg
+            mob["hp"] -= dmg
+            if mob["hp"] <= 0:
+                del bs["mobs"][mob["id"]]
+                room.broadcast({"t": "mob_die", "id": mob["id"], "k": c.key, "d": dmg, "crit": crit}, scene="boss")
+            else:
+                room.broadcast({"t": "mob_dmg", "id": mob["id"], "hp": mob["hp"], "k": c.key, "d": dmg, "crit": crit}, scene="boss")
+            return
+        b = bs["b"]
+        if not b or b["st"] != "fight":
+            return
+        dmg = min(dmg, b["hp"])
+        b["hp"] -= dmg
+        b["dmg"][c.key] = b["dmg"].get(c.key, 0) + dmg
+        bs["dmg"][c.key] = bs["dmg"].get(c.key, 0) + dmg
+        room.broadcast({"t": "boss_dmg", "k": c.key, "d": dmg, "hp": b["hp"], "crit": crit}, scene="boss")
+        if not b["enraged"] and b["hp"] <= b["max"] / 2:
+            b["enraged"] = True
+            room.broadcast({"t": "boss_phase", "st": "enraged"}, scene="boss")
+        if b["hp"] <= 0:
+            self.boss_defeat(room, b)
+
+    def on_boss_hurt(self, c, m):
+        """Sent by a player who got caught by an attack; friends are trusted to be honest."""
+        room, bs = c.room, c.room.boss
+        f = bs["fighters"].get(c.key)
+        now = time.monotonic()
+        if bs["state"] != "fight" or not f or f["hp"] <= 0 or now - f["hurt"] < BOSS_IFRAMES:
+            return
+        f["hurt"] = now
+        if f["shield"]:
+            f["shield"] = False
+            room.broadcast({"t": "boss_shield", "k": c.key}, scene="boss")
+            return
+        f["hp"] -= 1
+        room.broadcast({"t": "boss_hp", "k": c.key, "hp": f["hp"]}, scene="boss")
+        if f["hp"] <= 0:
+            f["down"], f["rev"] = now, 0.0
+            room.broadcast({"t": "boss_down", "k": c.key}, scene="boss")
+
+    def boss_defeat(self, room, b):
+        spec, bs = b["spec"], room.boss
+        b.update(st="dead", move=None, deadAt=time.monotonic())
+        for mid in list(bs["mobs"]):  # its minions crumble with it
+            room.broadcast({"t": "mob_die", "id": mid, "k": None}, scene="boss")
+        bs["mobs"] = {}
+        room.zone["bossKills"] = room.zone.get("bossKills", 0) + 1
+        self.store.mark()
+        total = sum(b["dmg"].values()) or 1
+        mvp = max(b["dmg"], key=b["dmg"].get) if b["dmg"] else None
+        results = {}
+        for k in list(bs["fighters"]):
+            c = room.clients.get(k)
+            if not c or c.scene != "boss":
+                continue
+            dealt = b["dmg"].get(k, 0)
+            share = dealt / total
+            coins = 60 + int(220 * share) + 40 * b["tier"] + (80 if k == mvp and len(b["dmg"]) > 1 else 0)
+            xp = 40 + int(100 * share)
+            loot = []
+            if spec["loot"] in FURN and not c.player["furni"].get(spec["loot"]):
+                c.player["furni"][spec["loot"]] = 1
+                loot.append(spec["loot"])
+            drop = spec.get("drop")
+            if drop and drop[0] not in c.player["owned"] and random.random() < drop[1]:
+                self.grant(c, ITEMS[drop[0]], "boss")
+                loot.append(drop[0])
+            self.reward(c, coins=coins, xp=xp, bossKills=1)
+            results[k] = {"coins": coins, "xp": xp, "dmg": dealt, "loot": loot}
+        room.broadcast({"t": "boss_dead", "name": spec["name"], "mvp": mvp, "results": results}, scene="boss")
+        mvp_name = room.zone["players"][mvp]["name"] if mvp in room.zone["players"] else None
+        self.post_feed(room, f"👾 {spec['name']} was defeated on floor {bs['floor']}!" + (f" MVP: {mvp_name}" if mvp_name else ""))
+
+    # ---- doodle guess --------------------------------------------------------------
+
+    def doodle_view(self, room, key):
+        d = room.doodle
+        word = d["word"] or ""
+        show_word = d["state"] in ("reveal", "over") or key == d["drawer"] or key in d["guessed"]
+        v = {
+            "t": "doodle", "state": d["state"], "drawer": d["drawer"], "players": room.in_scene("doodle"),
+            "turn": d["turn"] + 1, "turns": len(d["queue"]), "left": round(max(0.0, d["ends"] - time.monotonic()), 2),
+            "dur": d["dur"], "scores": d["scores"], "guessed": d["guessed"], "strokes": d["strokes"],
+            "hint": "".join(ch if (i in d["shown"] or not ch.isalpha()) else "_" for i, ch in enumerate(word)),
+            "word": word if show_word else None, "ranking": d["ranking"],
+        }
+        if key == d["drawer"] and d["state"] == "choosing":
+            v["choices"] = d["choices"]
+        return v
+
+    def doodle_sync(self, room):
+        for k in room.in_scene("doodle"):
+            room.clients[k].ws.send(self.doodle_view(room, k))
+
+    def doodle_later(self, room, delay, fn, *args):
+        asyncio.get_running_loop().call_later(delay, fn, room, room.doodle["id"], *args)
+
+    def doodle_join(self, c):
+        d = c.room.doodle
+        if d["state"] in ("choosing", "drawing", "reveal"):
+            d["scores"].setdefault(c.key, 0)
+            if c.key not in d["queue"][d["turn"] + 1:]:
+                d["queue"].append(c.key)  # late joiners get a turn at the end
+        self.doodle_sync(c.room)
+
+    def doodle_leave(self, room, key):
+        d = room.doodle
+        if d["state"] in ("idle", "over"):
+            self.doodle_sync(room)
+            return
+        d["queue"] = d["queue"][:d["turn"] + 1] + [k for k in d["queue"][d["turn"] + 1:] if k != key]
+        if len(room.in_scene("doodle")) < 2:
+            d.update(state="idle", drawer=None, word=None, ranking=[])
+            d["id"] += 1
+            room.broadcast({"t": "doodle_msg", "sys": "Not enough players left, so the game ended."}, scene="doodle")
+        elif key == d["drawer"] and d["state"] in ("choosing", "drawing"):
+            self.doodle_reveal(room, d["id"])
+            return
+        self.doodle_sync(room)
+
+    def on_doodle_start(self, c, m):
+        room, d = c.room, c.room.doodle
+        players = room.in_scene("doodle")
+        if d["state"] not in ("idle", "over"):
+            return
+        if len(players) < 2:
+            raise GameError("You need at least 2 players to start. Invite someone!")
+        random.shuffle(players)
+        rounds = 2 if len(players) <= 3 else 1
+        d.update(queue=players * rounds, turn=-1, scores={k: 0 for k in players}, ranking=[])
+        self.post_feed(room, f"🎨 {c.player['name']} started a Doodle Guess game! Come draw.")
+        self.doodle_next(room, d["id"])
+
+    def doodle_next(self, room, token):
+        d = room.doodle
+        if token != d["id"]:
+            return
+        present = set(room.in_scene("doodle"))
+        d["turn"] += 1
+        while d["turn"] < len(d["queue"]) and d["queue"][d["turn"]] not in present:
+            d["turn"] += 1
+        if d["turn"] >= len(d["queue"]) or len(present) < 2:
+            self.doodle_over(room)
+            return
+        d["id"] += 1
+        d.update(state="choosing", drawer=d["queue"][d["turn"]], choices=random.sample(DOODLE_WORDS, 3), word=None,
+                 guessed={}, strokes=[], shown=set(), ends=time.monotonic() + DOODLE_CHOOSE, dur=DOODLE_CHOOSE)
+        self.doodle_later(room, DOODLE_CHOOSE, self.doodle_auto_pick)
+        self.doodle_sync(room)
+
+    def doodle_auto_pick(self, room, token):
+        d = room.doodle
+        if token == d["id"] and d["state"] == "choosing":
+            self.doodle_begin(room, random.choice(d["choices"]))
+
+    def on_doodle_pick(self, c, m):
+        d = c.room.doodle
+        if d["state"] != "choosing" or c.key != d["drawer"]:
+            return
+        if "word" in m:
+            # the artist made up their own word
+            word = clean(m.get("word"), 24)
+            if not DOODLE_CUSTOM_RE.match(word) or len(squash(word)) < 2:
+                raise GameError("Custom words are 2–24 letters, numbers, spaces or dashes.")
+            self.doodle_begin(c.room, word.lower())
+            c.room.broadcast({"t": "doodle_msg", "sys": f"✏️ {c.player['name']} made up their own word!"}, scene="doodle")
+            return
+        self.doodle_begin(c.room, d["choices"][int(num(m.get("i", 0), 0, 2))])
+
+    def doodle_begin(self, room, word):
+        d = room.doodle
+        d["id"] += 1
+        d.update(state="drawing", word=word, ends=time.monotonic() + DOODLE_DRAW, dur=DOODLE_DRAW)
+        self.doodle_later(room, DOODLE_DRAW * 0.45, self.doodle_hint)
+        self.doodle_later(room, DOODLE_DRAW * 0.7, self.doodle_hint)
+        self.doodle_later(room, DOODLE_DRAW, self.doodle_reveal)
+        self.doodle_sync(room)
+
+    def doodle_hint(self, room, token):
+        d = room.doodle
+        if token != d["id"] or d["state"] != "drawing":
+            return
+        hidden = [i for i, ch in enumerate(d["word"]) if ch.isalpha() and i not in d["shown"]]
+        if len(hidden) > 2:
+            d["shown"].add(random.choice(hidden))
+        hint = "".join(ch if (i in d["shown"] or not ch.isalpha()) else "_" for i, ch in enumerate(d["word"]))
+        room.broadcast({"t": "doodle_hint", "hint": hint}, scene="doodle")
+
+    def doodle_reveal(self, room, token):
+        d = room.doodle
+        if token != d["id"] or d["state"] not in ("choosing", "drawing"):
+            return
+        if d["word"] is None:
+            d["word"] = random.choice(d["choices"]) if d["choices"] else "?"
+        d["id"] += 1
+        d.update(state="reveal", ends=time.monotonic() + DOODLE_REVEAL, dur=DOODLE_REVEAL)
+        self.doodle_later(room, DOODLE_REVEAL, self.doodle_next)
+        self.doodle_sync(room)
+
+    def doodle_over(self, room):
+        d = room.doodle
+        present = set(room.in_scene("doodle"))
+        ranking = sorted((k for k in d["scores"] if k in present), key=lambda k: -d["scores"][k])
+        d["id"] += 1
+        d.update(state="over", drawer=None, ranking=ranking, ends=time.monotonic() + DOODLE_OVER, dur=DOODLE_OVER)
+        if len(ranking) >= 2:
+            for place, k in enumerate(ranking):
+                coins, xp = DOODLE_PRIZES[place] if place < len(DOODLE_PRIZES) else DOODLE_REST
+                extra = {"doodleWins": 1, "wins": 1} if place == 0 and d["scores"][k] > 0 else {}
+                self.reward(room.clients[k], coins=coins, xp=xp, **extra)
+            winner = room.zone["players"][ranking[0]]["name"]
+            self.post_feed(room, f"🎨 {winner} won Doodle Guess with {d['scores'][ranking[0]]} points!")
+        self.doodle_later(room, DOODLE_OVER, self.doodle_idle)
+        self.doodle_sync(room)
+
+    def doodle_idle(self, room, token):
+        d = room.doodle
+        if token == d["id"] and d["state"] == "over":
+            d.update(state="idle", ranking=[])
+            self.doodle_sync(room)
+
+    def on_doodle_draw(self, c, m):
+        room, d = c.room, c.room.doodle
+        if d["state"] != "drawing" or c.key != d["drawer"]:
+            return
+        color = str(m.get("c", "#000000"))
+        if not COLOR_RE.match(color):
+            return
+        width = num(m.get("w", 6), 1, 60)
+        pts = [[round(num(p[0], 0, 1), 4), round(num(p[1], 0, 1), 4)] for p in m.get("p", [])[:200]]
+        if not pts or sum(len(s["p"]) for s in d["strokes"]) + len(pts) > DOODLE_MAX_POINTS:
+            return
+        sid = int(num(m.get("id", 0), 0, 1e9))
+        if d["strokes"] and d["strokes"][-1]["id"] == sid:
+            d["strokes"][-1]["p"].extend(pts)
+        else:
+            d["strokes"].append({"id": sid, "c": color, "w": width, "p": pts})
+        room.broadcast({"t": "doodle_draw", "id": sid, "c": color, "w": width, "p": pts}, scene="doodle", exclude=c)
+
+    def on_doodle_undo(self, c, m):
+        room, d = c.room, c.room.doodle
+        if d["state"] == "drawing" and c.key == d["drawer"] and d["strokes"]:
+            d["strokes"].pop()
+            room.broadcast({"t": "doodle_undo"}, scene="doodle", exclude=c)
+
+    def on_doodle_clear(self, c, m):
+        room, d = c.room, c.room.doodle
+        if d["state"] == "drawing" and c.key == d["drawer"]:
+            d["strokes"] = []
+            room.broadcast({"t": "doodle_clear"}, scene="doodle", exclude=c)
+
+    def on_doodle_guess(self, c, m):
+        room, d = c.room, c.room.doodle
+        text = clean(m.get("text"), 60)
+        if not text or not c.ready("guess", 0.4):
+            return
+        playing = d["state"] == "drawing" and c.key != d["drawer"] and c.key not in d["guessed"]
+        if not playing:
+            if d["state"] != "drawing" or (c.key != d["drawer"] and c.key not in d["guessed"]):
+                room.broadcast({"t": "doodle_msg", "k": c.key, "text": text}, scene="doodle")
+            return
+        guess, word = squash(text), squash(d["word"])
+        if guess == word:
+            left = max(0.0, d["ends"] - time.monotonic())
+            pts = 50 + int(100 * left / DOODLE_DRAW) + max(0, 30 - 10 * len(d["guessed"]))
+            d["guessed"][c.key] = pts
+            d["scores"][c.key] = d["scores"].get(c.key, 0) + pts
+            d["scores"][d["drawer"]] = d["scores"].get(d["drawer"], 0) + 25
+            room.broadcast({"t": "doodle_guessed", "k": c.key, "pts": pts, "scores": d["scores"]}, scene="doodle")
+            c.ws.send({"t": "doodle_word", "word": d["word"]})
+            if all(k in d["guessed"] or k == d["drawer"] for k in room.in_scene("doodle")):
+                self.doodle_reveal(room, d["id"])
+        else:
+            if near_miss(guess, word):
+                c.ws.send({"t": "doodle_close", "text": text})
+            room.broadcast({"t": "doodle_msg", "k": c.key, "text": text}, scene="doodle")
+
+    # ---- bumper brawl ----------------------------------------------------------------
+
+    def bumper_view(self, room):
+        b = room.bumper
+        now = time.monotonic()
+        return {"t": "bumper", "state": b["state"], "id": b["id"], "alive": list(b["alive"]),
+                "fighters": b["fighters"], "elapsed": round(now - b["start"], 2) if b["state"] == "fight" else 0,
+                "left": round(max(0.0, b["ends"] - now), 2), "wins": b["wins"], "shrink": BUMPER_ROUND_MAX - 15}
+
+    def bumper_join(self, c):
+        room, b = c.room, c.room.bumper
+        b["fighters"][c.key] = {"x": 450, "y": 300, "vx": 0, "vy": 0}
+        c.ws.send(self.bumper_view(room))
+        room.broadcast({"t": "bumper_add", "k": c.key}, scene="bumper", exclude=c)
+        self.bumper_maybe_start(room)
+
+    def bumper_leave(self, c):
+        room, b = c.room, c.room.bumper
+        b["fighters"].pop(c.key, None)
+        was_alive = c.key in b["alive"]
+        b["alive"].discard(c.key)
+        room.broadcast({"t": "bumper_del", "k": c.key}, scene="bumper")
+        if was_alive and b["state"] == "fight" and len(b["alive"]) <= 1:
+            self.bumper_end(room, b["id"])
+        elif b["state"] in ("starting", "countdown") and len(room.in_scene("bumper")) < 2:
+            b["id"] += 1
+            b.update(state="waiting", alive=set())
+            room.broadcast(self.bumper_view(room), scene="bumper")
+
+    def bumper_maybe_start(self, room):
+        b = room.bumper
+        if b["state"] != "waiting" or len(room.in_scene("bumper")) < 2:
+            return
+        b["id"] += 1
+        b.update(state="starting", ends=time.monotonic() + BUMPER_START_DELAY)
+        room.broadcast(self.bumper_view(room), scene="bumper")
+        asyncio.get_running_loop().call_later(BUMPER_START_DELAY, self.bumper_countdown, room, b["id"])
+
+    def bumper_countdown(self, room, token):
+        b = room.bumper
+        if token != b["id"] or b["state"] != "starting":
+            return
+        players = room.in_scene("bumper")
+        if len(players) < 2:
+            b.update(state="waiting")
+            room.broadcast(self.bumper_view(room), scene="bumper")
+            return
+        random.shuffle(players)
+        spawns = {}
+        for i, k in enumerate(players):
+            a = i / len(players) * math.tau
+            spawns[k] = [round(450 + math.cos(a) * BUMPER_SPAWN_R), round(300 + math.sin(a) * BUMPER_SPAWN_R * 0.95)]
+            b["fighters"][k] = {"x": spawns[k][0], "y": spawns[k][1], "vx": 0, "vy": 0}
+        b["id"] += 1
+        b.update(state="countdown", alive=set(players), round=set(players), ends=time.monotonic() + 3)
+        room.broadcast({**self.bumper_view(room), "spawns": spawns}, scene="bumper")
+        asyncio.get_running_loop().call_later(3, self.bumper_fight, room, b["id"])
+
+    def bumper_fight(self, room, token):
+        b = room.bumper
+        if token != b["id"] or b["state"] != "countdown":
+            return
+        b.update(state="fight", start=time.monotonic(), ends=time.monotonic() + BUMPER_ROUND_MAX)
+        room.broadcast(self.bumper_view(room), scene="bumper")
+        asyncio.get_running_loop().call_later(BUMPER_ROUND_MAX, self.bumper_end, room, b["id"])
+
+    def on_bumper_move(self, c, m):
+        b = c.room.bumper
+        f = b["fighters"].get(c.key)
+        if not f:
+            return
+        f.update(x=round(num(m["x"], -200, 1100), 1), y=round(num(m["y"], -200, 800), 1),
+                 vx=round(num(m["vx"], -2000, 2000), 1), vy=round(num(m["vy"], -2000, 2000), 1),
+                 h=round(num(m.get("h", 0), -1e4, 1e4), 3))
+        c.room.broadcast({"t": "bumper_pos", "k": c.key, **f, "d": bool(m.get("d"))}, scene="bumper", exclude=c)
+
+    def on_bumper_out(self, c, m):
+        room, b = c.room, c.room.bumper
+        if b["state"] != "fight" or c.key not in b["alive"]:
+            return
+        b["alive"].discard(c.key)
+        by = str(m.get("by") or "")
+        by = by if by != c.key and by in b["round"] and by in room.clients else None
+        room.broadcast({"t": "bumper_out", "k": c.key, "by": by}, scene="bumper")
+        if by:
+            self.reward(room.clients[by], coins=10, xp=5)
+        if len(b["alive"]) <= 1:
+            self.bumper_end(room, b["id"])
+
+    def bumper_end(self, room, token):
+        b = room.bumper
+        if token != b["id"] or b["state"] != "fight":
+            return
+        winner = next(iter(b["alive"]), None) if len(b["alive"]) == 1 else None
+        b["id"] += 1
+        b.update(state="done", ends=time.monotonic() + 4)
+        for k in b["round"]:
+            c = room.clients.get(k)
+            if not c or c.scene != "bumper":
+                continue
+            if k == winner:
+                self.reward(c, coins=120, xp=60, bumperWins=1, wins=1)
+            else:
+                self.reward(c, coins=15, xp=10)
+        if winner:
+            b["wins"][winner] = b["wins"].get(winner, 0) + 1
+            if len(b["round"]) >= 3:
+                self.post_feed(room, f"💥 {room.zone['players'][winner]['name']} won a round of Bumper Brawl!")
+        room.broadcast({**self.bumper_view(room), "winner": winner}, scene="bumper")
+        asyncio.get_running_loop().call_later(4, self.bumper_reset, room, b["id"])
+
+    def bumper_reset(self, room, token):
+        b = room.bumper
+        if token != b["id"] or b["state"] != "done":
+            return
+        b.update(state="waiting", alive=set(), round=set())
+        room.broadcast(self.bumper_view(room), scene="bumper")
+        self.bumper_maybe_start(room)
+
+    # ---- roulette -------------------------------------------------------------------
+
+    def roulette_view(self, room):
+        r = room.roulette
+        return {"t": "roulette", "state": r["state"], "left": round(max(0.0, r["ends"] - time.monotonic()), 2),
+                "bets": r["bets"], "history": r["history"], "result": r["result"], "id": r["id"]}
+
+    def roulette_join(self, c):
+        room = c.room
+        if room.roulette["state"] == "idle":
+            self.roulette_round(room, room.roulette["id"])
+        else:
+            c.ws.send(self.roulette_view(room))
+
+    def roulette_round(self, room, token):
+        r = room.roulette
+        if token != r["id"]:
+            return
+        r["id"] += 1
+        if not room.in_scene("casino"):
+            r.update(state="idle", bets={})
+            return
+        r.update(state="betting", ends=time.monotonic() + ROULETTE_BET_T, bets={}, result=None)
+        room.broadcast(self.roulette_view(room), scene="casino")
+        asyncio.get_running_loop().call_later(ROULETTE_BET_T, self.roulette_spin, room, r["id"])
+
+    def roulette_spin(self, room, token):
+        r = room.roulette
+        if token != r["id"]:
+            return
+        r["id"] += 1
+        r.update(state="spinning", result=random.randrange(37), ends=time.monotonic() + ROULETTE_SPIN_T)
+        room.broadcast({"t": "roulette_spin", "n": r["result"], "spin": ROULETTE_SPIN_T}, scene="casino")
+        asyncio.get_running_loop().call_later(ROULETTE_SPIN_T, self.roulette_payout, room, r["id"])
+
+    def roulette_payout(self, room, token):
+        r = room.roulette
+        if token != r["id"]:
+            return
+        n = r["result"]
+        wins = {}
+        for k, bets in r["bets"].items():
+            total = sum(b["amount"] * ROULETTE_PAYS[b["kind"]] for b in bets if roulette_hits(b["kind"], b["v"], n))
+            wins[k] = total
+            c = room.clients.get(k)
+            if c and total:
+                self.reward(c, coins=total, xp=3, **({"jackpots": 1} if any(b["kind"] == "num" and b["v"] == n for b in bets) else {}))
+            elif total:  # they left the table; still pay them
+                room.zone["players"][k]["coins"] += total
+                self.store.mark()
+            if total >= 1000:
+                self.post_feed(room, f"🎡 {room.zone['players'][k]['name']} won {total:,} coins on {n} at roulette!")
+        r["history"] = ([n] + r["history"])[:12]
+        r["id"] += 1
+        r.update(state="result", ends=time.monotonic() + ROULETTE_PAUSE_T)
+        room.broadcast({"t": "roulette_result", "n": n, "wins": wins, "history": r["history"]}, scene="casino")
+        asyncio.get_running_loop().call_later(ROULETTE_PAUSE_T, self.roulette_round, room, r["id"])
+
+    def on_roulette_sync(self, c, m):
+        if c.scene == "casino":
+            if c.room.roulette["state"] == "idle":
+                self.roulette_round(c.room, c.room.roulette["id"])
+            else:
+                c.ws.send(self.roulette_view(c.room))
+
+    def on_roulette_bet(self, c, m):
+        room, r, p = c.room, c.room.roulette, c.player
+        kind = m.get("kind")
+        if r["state"] != "betting" or r["ends"] - time.monotonic() < 0.5:
+            raise GameError("No more bets! Wait for the next round.")
+        if kind not in ROULETTE_PAYS:
+            raise GameError("Unknown bet.")
+        v = int(num(m.get("v", 0), 0, 36))
+        if kind == "dozen" and v not in (1, 2, 3):
+            raise GameError("Unknown bet.")
+        if kind != "num" and kind != "dozen":
+            v = 0
+        amount = int(num(m.get("amount", 0), 0, MAX_BET))
+        mine = r["bets"].setdefault(c.key, [])
+        if amount < 1:
+            raise GameError("Pick a chip first.")
+        if sum(b["amount"] for b in mine) + amount > MAX_BET:
+            raise GameError(f"The table limit is {MAX_BET:,} coins per round.")
+        if amount > p["coins"]:
+            raise GameError("You don't have that many coins.")
+        p["coins"] -= amount
+        self.store.mark()
+        for b in mine:
+            if b["kind"] == kind and b["v"] == v:
+                b["amount"] += amount
+                break
+        else:
+            mine.append({"kind": kind, "v": v, "amount": amount})
+        room.broadcast({"t": "roulette_bet", "k": c.key, "bets": mine}, scene="casino")
+        self.push_player(room, c.key)
+
+    def on_roulette_clear(self, c, m):
+        room, r = c.room, c.room.roulette
+        mine = r["bets"].pop(c.key, [])
+        if r["state"] != "betting" or not mine:
+            if mine:
+                r["bets"][c.key] = mine
+            return
+        c.player["coins"] += sum(b["amount"] for b in mine)
+        self.store.mark()
+        room.broadcast({"t": "roulette_bet", "k": c.key, "bets": []}, scene="casino")
+        self.push_player(room, c.key)
+
+    # ---- houses ------------------------------------------------------------------
+
+    def on_house_get(self, c, m):
+        key = str(m.get("k") or c.key).lower()
+        owner = c.room.zone["players"].get(key)
+        if not owner:
+            raise GameError("That house doesn't exist.")
+        c.ws.send({"t": "house", "k": key, "house": house_view(owner)})
+
+    def on_house_save(self, c, m):
+        if not c.ready("house_save", 0.2):
+            return
+        p = c.player
+        try:
+            p["house"].update(clean_house(p, m))
+        except GameError:
+            c.ws.send({"t": "house", "k": c.key, "house": house_view(p)})  # put the client back in sync
+            raise
+        self.store.mark()
+        c.room.broadcast({"t": "house", "k": c.key, "house": house_view(p)})
+        self.push_player(c.room, c.key)
+
+    def on_house_buy(self, c, m):
+        p = c.player
+        item_id = str(m.get("id", ""))
+        item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id)
+        if not item or "price" not in item:
+            raise GameError("That isn't for sale.")
+        have = p["furni"].get(item_id, 0)
+        limit = 1 if item_id not in FURN else item.get("max", 10)
+        if have >= limit:
+            raise GameError("You already have that." if limit == 1 else f"You can own up to {limit} of those.")
+        if p["coins"] < item["price"]:
+            raise GameError(f"You need {item['price']:,} coins for that.")
+        p["coins"] -= item["price"]
+        p["furni"][item_id] = have + 1
+        self.store.mark()
+        c.ws.send({"t": "house_bought", "id": item_id})
+        self.push_player(c.room, c.key)
+
+    def on_house_like(self, c, m):
+        key = str(m.get("k", "")).lower()
+        owner = c.room.zone["players"].get(key)
+        if not owner or key == c.key:
+            raise GameError("You can't like your own house!")
+        likes = owner["house"]["likes"]
+        if c.key in likes:
+            raise GameError("You already liked this house.")
+        if not c.ready("like", 1):
+            return
+        likes.append(c.key)
+        owner["stats"]["houseLikes"] = owner["stats"].get("houseLikes", 0) + 1
+        owner["coins"] += 10
+        self.store.mark()
+        c.room.broadcast({"t": "house", "k": key, "house": house_view(owner)})
+        self.push_player(c.room, key)
+        self.post_feed(c.room, f"🏠 {c.player['name']} loved {owner['name']}'s house!")
 
 
 # --------------------------------------------------------------------------

@@ -4,50 +4,68 @@ import { S, esc, fmt, me, toast } from './state.js';
 import { CATALOG, ITEMS, RARITY, owns, howToGet } from './catalog.js';
 import { paintPortrait, portraitInto } from './avatar.js';
 import { $, listen, hiDpiCanvas, loop, confetti } from './games/util.js';
+import { sfx } from './sfx.js';
 
 const TABS = [
-  { id: 'body', label: '🧍 Body' },
-  { id: 'hair', label: '💇 Hair' },
-  { id: 'top', label: '👕 Top' },
-  { id: 'hat', label: '🎩 Hat' },
-  { id: 'face', label: '🕶️ Face' },
-  { id: 'back', label: '🪽 Back' },
-  { id: 'aura', label: '✨ Aura' },
-  { id: 'crates', label: '🎁 Crates' },
+  { id: 'body', icon: '🧍', label: 'Body' },
+  { id: 'eyes', icon: '👀', label: 'Eyes' },
+  { id: 'hair', icon: '💇', label: 'Hair' },
+  { id: 'top', icon: '👕', label: 'Top' },
+  { id: 'bottom', icon: '👖', label: 'Bottom' },
+  { id: 'hat', icon: '🎩', label: 'Hat' },
+  { id: 'face', icon: '🕶️', label: 'Face' },
+  { id: 'back', icon: '🪽', label: 'Back' },
+  { id: 'aura', icon: '✨', label: 'Aura' },
+  { id: 'pet', icon: '🐾', label: 'Pet' },
+  { id: 'crates', icon: '🎁', label: 'Crates' },
 ];
+const TITLES = {
+  body: 'Body & skin', eyes: 'Eyes', hair: 'Hairstyle', top: 'Tops', bottom: 'Bottoms', hat: 'Hats',
+  face: 'Glasses & masks', back: 'Backpacks & wings', aura: 'Auras', pet: 'Pets', crates: 'Mystery crates',
+};
 const HEAD_SLOTS = new Set(['hair', 'hat', 'face']);
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
+const DRAFT_DEFAULTS = {
+  bottom: 'bottom_pants', shoeColor: '#23263f', eyeColor: '#1d1b2e', eyes: 'eyes_round', height: 'height_medium', build: 'build_regular', pet: 'pet_none',
+};
 const TILE = 98;
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+const zoomFor = (slot) => (slot === 'pet' ? 'pet' : HEAD_SLOTS.has(slot) || slot === 'eyes' ? 'head' : 'body');
 
-export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
+export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSaved } = {}) {
   const creating = mode === 'create';
   const tabs = creating ? TABS.filter((t) => t.id !== 'crates') : TABS;
-  let tab = mode === 'shop' ? 'crates' : 'body';
-  let draft = { ...me().look };
-  let confirmBuy = null, opening = false, waitingSave = false;
+  let tab = startTab ?? (mode === 'shop' ? 'crates' : 'body');
+  const saved = { ...DRAFT_DEFAULTS, ...me().look };
+  let draft = { ...saved };
+  let filter = 'all', confirmBuy = null, opening = false, waitingSave = false, previewZoom = 'body';
 
   body.innerHTML = `
-    <h2>${creating ? '✨ Create your character' : mode === 'shop' ? '👕 Style Shop' : '👕 Wardrobe'}</h2>
-    ${creating ? '<p class="muted">Pick your look. You\'ll unlock cooler stuff by playing, shopping and opening crates!</p>' : ''}
-    <div class="wardrobe">
-      <div class="wd-preview">
-        <canvas class="wd-canvas"></canvas>
+    <div class="wd2">
+      <aside class="wd2-stage">
+        <h2 class="wd2-title">${creating ? '✨ Create your character' : mode === 'shop' ? '👕 Style Shop' : '🪞 Wardrobe'}</h2>
+        <div class="wd2-preview"><canvas class="wd-canvas"></canvas>
+          <div class="wd2-zoom"><button data-zoom="body" class="on" title="Full body">🧍</button><button data-zoom="head" title="Close-up">🙂</button><button data-zoom="pet" title="Your pet">🐾</button></div>
+        </div>
         <div class="wd-name"></div>
         <div class="wd-collection muted small"></div>
+        <div class="wd2-tools"><button class="btn small" id="wdRandom" title="Random outfit from things you own">🎲 Random</button><button class="btn small" id="wdReset" title="Undo your changes">↺ Reset</button></div>
         <button class="btn primary wide" id="saveLook">${creating ? "Let's go!" : 'Save look'}</button>
-      </div>
-      <div class="wd-panel">
-        <div class="tabs wd-tabs">${tabs.map((t) => `<button data-tab="${t.id}">${t.label}</button>`).join('')}</div>
+        <div class="wd2-unsaved muted small"></div>
+      </aside>
+      <nav class="wd2-rail">${tabs.map((t) => `<button data-tab="${t.id}"><span>${t.icon}</span>${t.label}</button>`).join('')}</nav>
+      <section class="wd2-panel">
+        <div class="wd2-head"><h3 class="wd2-section"></h3><div class="wd2-filters"></div></div>
         <div class="wd-content"></div>
-      </div>
+      </section>
     </div>`;
   const content = $(body, '.wd-content');
   const canvas = $(body, '.wd-canvas');
-  const PW = 180, PH = 230;
+  const PW = 220, PH = 290;
   const pctx = hiDpiCanvas(canvas, PW, PH);
 
   // live 3D preview: spins slowly, drag to turn the character
-  let yaw = 0.5, spin = 0.6, dragX = null;
+  let yaw = 0.5, spin = 0.5, dragX = null;
   canvas.style.cursor = 'grab';
   canvas.onpointerdown = (e) => { dragX = e.clientX; spin = 0; canvas.setPointerCapture(e.pointerId); };
   canvas.onpointermove = (e) => {
@@ -55,22 +73,26 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     yaw += (e.clientX - dragX) * 0.012;
     dragX = e.clientX;
   };
-  canvas.onpointerup = () => { dragX = null; setTimeout(() => { if (dragX == null) spin = 0.6; }, 2500); };
+  canvas.onpointerup = () => { dragX = null; setTimeout(() => { if (dragX == null) spin = 0.5; }, 2500); };
 
   const stopPreview = loop((dt, now) => {
     yaw += spin * dt;
     pctx.clearRect(0, 0, PW, PH);
-    const g = pctx.createRadialGradient(PW / 2, PH - 30, 10, PW / 2, PH - 30, 110);
-    g.addColorStop(0, 'rgba(255,216,77,.25)');
+    const g = pctx.createRadialGradient(PW / 2, PH - 30, 10, PW / 2, PH - 30, 130);
+    g.addColorStop(0, 'rgba(255,216,77,.28)');
     g.addColorStop(1, 'rgba(255,216,77,0)');
     pctx.fillStyle = g;
     pctx.fillRect(0, 0, PW, PH);
-    pctx.fillStyle = '#3a6fd0';
-    pctx.beginPath(); pctx.ellipse(PW / 2, PH - 18, 60, 14, 0, 0, Math.PI * 2); pctx.fill();
-    pctx.fillStyle = '#4579d6';
-    pctx.beginPath(); pctx.ellipse(PW / 2, PH - 22, 60, 14, 0, 0, Math.PI * 2); pctx.fill();
-    paintPortrait(pctx, draft, PW, PH - 12, { time: now / 1000, yaw });
+    if (previewZoom === 'body') {
+      pctx.fillStyle = '#3a6fd0';
+      pctx.beginPath(); pctx.ellipse(PW / 2, PH - 18, 72, 16, 0, 0, Math.PI * 2); pctx.fill();
+      pctx.fillStyle = '#4f86e8';
+      pctx.beginPath(); pctx.ellipse(PW / 2, PH - 22, 72, 16, 0, 0, Math.PI * 2); pctx.fill();
+    }
+    paintPortrait(pctx, draft, PW, PH - (previewZoom === 'body' ? 12 : 0), { time: now / 1000, yaw, zoom: previewZoom === 'head' ? 'bust' : previewZoom });
   });
+
+  const changed = () => JSON.stringify(draft) !== JSON.stringify(saved);
 
   function renderHeader() {
     const p = me();
@@ -79,24 +101,43 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     const have = CATALOG.items.filter((i) => owns(p, i.id)).length;
     $(body, '.wd-collection').textContent = `Collection ${have}/${total} · 🪙 ${fmt(p.coins)}`;
     body.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+    $(body, '.wd2-section').textContent = TITLES[tab];
+    const itemsTab = !['body', 'eyes', 'crates'].includes(tab);
+    $(body, '.wd2-filters').innerHTML = itemsTab
+      ? [['all', 'All'], ['owned', 'Owned'], ['new', 'Not yet']].map(([id, label]) => `<button data-filter="${id}" class="${filter === id ? 'on' : ''}">${label}</button>`).join('')
+      : '';
+    $(body, '.wd2-unsaved').textContent = !creating && changed() ? '● Unsaved changes' : '';
+    $(body, '#saveLook').classList.toggle('pulse', !creating && changed());
   }
 
+  // colors come in rows of shades (lightest to darkest), so the grid lines families up
   function swatches(label, field, colors) {
-    return `<div class="wd-label">${label}</div><div class="swatches">${colors.map((c) =>
-      `<button type="button" class="swatch ${draft[field] === c ? 'on' : ''}" data-field="${field}" data-color="${c}" style="--c:${c}"></button>`).join('')}</div>`;
+    return `<div class="wd2-card"><div class="wd-label">${label} <i class="wd2-chip" style="--c:${draft[field]}"></i></div><div class="swatches palette">${colors.map((c) =>
+      `<button type="button" class="swatch ${draft[field] === c ? 'on' : ''}" data-field="${field}" data-color="${c}" style="--c:${c}" title="${c}"></button>`).join('')}</div></div>`;
+  }
+
+  // body options (height, build, eye style): always free, previewed on your own character
+  function choices(label, field, options, zoom = 'body') {
+    return `<div class="wd2-card"><div class="wd-label">${label}</div><div class="tiles choice-tiles">${options.map((o) =>
+      `<button class="tile ${draft[field] === o.id ? 'on' : ''}" data-choice="${field}" data-id="${o.id}" style="--r:#c3c9e4" data-zoom="${zoom}">
+        <span class="tile-art"></span><span class="tile-name">${esc(o.name)}</span><span class="tile-foot">${draft[field] === o.id ? '✓' : ''}</span>
+      </button>`).join('')}</div></div>`;
   }
 
   function itemTiles(slot) {
     const p = me();
     const items = CATALOG.items.filter((i) => i.slot === slot)
+      .filter((i) => filter === 'all' || (filter === 'owned') === owns(p, i.id))
       .sort((a, b) => (owns(p, b.id) - owns(p, a.id)) || RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity));
+    if (!items.length) return `<p class="muted">${filter === 'owned' ? "You don't own anything here yet." : 'You own everything here!'}</p>`;
     return `<div class="tiles">${items.map((it) => {
       const owned = owns(p, it.id);
-      const footer = owned ? (draft[slot] === it.id ? '✓ Wearing' : '')
+      const footer = owned ? (draft[slot] === it.id ? '✓ Wearing' : 'Owned')
         : confirmBuy === it.id ? `Buy for ${fmt(it.price)}?`
-          : it.price ? `🪙 ${fmt(it.price)}` : it.unlock ? `🔒 ${esc(it.unlock.hint)}` : '🎁 Crates';
+          : it.price ? `🪙 ${fmt(it.price)}` : it.unlock ? `🔒 ${esc(it.unlock.hint)}` : it.drop ? `👾 ${esc(it.drop)}` : '🎁 Crates';
       return `<button class="tile ${owned ? '' : 'locked'} ${draft[slot] === it.id ? 'on' : ''} ${confirmBuy === it.id ? 'confirm' : ''}"
         data-id="${it.id}" style="--r:${RARITY[it.rarity].color}" title="${esc(it.name)} · ${RARITY[it.rarity].label} · ${esc(howToGet(it))}">
+        <span class="tile-rarity">${RARITY[it.rarity].label}</span>${owned ? '' : '<span class="tile-lock">🔒</span>'}
         <span class="tile-art"></span><span class="tile-name">${esc(it.name)}</span><span class="tile-foot">${footer}</span>
       </button>`;
     }).join('')}</div>`;
@@ -106,22 +147,49 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     renderHeader();
     if (tab === 'crates') return renderCrates();
     if (tab === 'body') {
-      content.innerHTML = swatches('Skin tone', 'skin', CATALOG.skins) + swatches('Pants', 'bottomColor', CATALOG.clothColors);
+      content.innerHTML = swatches('Skin tone', 'skin', CATALOG.skins)
+        + choices('Height', 'height', CATALOG.heights) + choices('Build', 'build', CATALOG.builds);
+    } else if (tab === 'eyes') {
+      content.innerHTML = choices('Eye style', 'eyes', CATALOG.eyeStyles, 'head') + swatches('Eye color', 'eyeColor', CATALOG.eyeColors);
     } else {
-      content.innerHTML = itemTiles(tab)
+      content.innerHTML = `<div class="wd2-card">${itemTiles(tab)}${tab === 'pet' ? '<p class="muted small">Buy pets here, or hatch a random one from an egg at the 🐾 Pet Shop in town (cheaper!).</p>' : ''}</div>`
         + (tab === 'hair' ? swatches('Hair color', 'hairColor', CATALOG.hairColors) : '')
-        + (tab === 'top' ? swatches('Shirt color', 'topColor', CATALOG.clothColors) : '');
-      content.querySelectorAll('.tile').forEach((t) => {
-        const look = { ...draft, [tab]: t.dataset.id };
-        portraitInto(t.querySelector('.tile-art'), look, 70, 76, { zoom: HEAD_SLOTS.has(tab) ? 'head' : 'body' });
-      });
+        + (tab === 'top' ? swatches('Shirt color', 'topColor', CATALOG.clothColors) : '')
+        + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors) + swatches('Shoe color', 'shoeColor', CATALOG.clothColors) : '');
     }
+    content.querySelectorAll('.tile').forEach((t) => {
+      const field = t.dataset.choice ?? tab;
+      const look = { ...draft, [field]: t.dataset.id };
+      const zoom = t.dataset.zoom ?? zoomFor(tab);
+      portraitInto(t.querySelector('.tile-art'), look, 84, 90, { zoom });
+    });
+  }
+
+  function setZoom(z) {
+    previewZoom = z;
+    body.querySelectorAll('[data-zoom]').forEach((b) => b.classList.toggle('on', b.dataset.zoom === z));
+  }
+
+  function showTab(id) {
+    tab = id;
+    confirmBuy = null;
+    if (id !== 'crates') setZoom(zoomFor(id));
+    renderContent();
+    content.scrollTop = 0;
   }
 
   content.addEventListener('click', (e) => {
     const sw = e.target.closest('[data-field]');
     if (sw) {
       draft[sw.dataset.field] = sw.dataset.color;
+      sfx('click');
+      renderContent();
+      return;
+    }
+    const choice = e.target.closest('[data-choice]');
+    if (choice) {
+      if (draft[choice.dataset.choice] !== choice.dataset.id) sfx('swap');
+      draft[choice.dataset.choice] = choice.dataset.id;
       renderContent();
       return;
     }
@@ -129,6 +197,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     if (!tile) return;
     const it = ITEMS[tile.dataset.id];
     if (owns(me(), it.id)) {
+      if (draft[it.slot] !== it.id) sfx('swap');
       draft[it.slot] = it.id;
       confirmBuy = null;
     } else if (it.price) {
@@ -137,17 +206,34 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
         confirmBuy = null;
       } else confirmBuy = it.id;
     } else {
-      toast(it.unlock ? `🔒 ${it.name}: ${it.unlock.hint}` : `🎁 ${it.name} only comes from crates.`);
+      toast(it.unlock ? `🔒 ${it.name}: ${it.unlock.hint}` : it.drop ? `👾 ${it.name} drops from the ${it.drop} in the Boss Cave.` : `🎁 ${it.name} only comes from crates.`);
     }
     renderContent();
   });
 
-  body.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
-    if (opening) return;
-    tab = b.dataset.tab;
-    confirmBuy = null;
+  body.querySelector('.wd2-panel').addEventListener('click', (e) => {
+    const f = e.target.closest('[data-filter]');
+    if (f) { filter = f.dataset.filter; renderContent(); }
+  });
+  body.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { if (!opening) showTab(b.dataset.tab); }));
+  body.querySelectorAll('[data-zoom]').forEach((b) => (b.onclick = () => setZoom(b.dataset.zoom)));
+
+  $(body, '#wdRandom').onclick = () => {
+    const p = me();
+    for (const slot of ['hair', 'top', 'bottom', 'hat', 'face', 'back', 'aura', 'pet']) {
+      const options = CATALOG.items.filter((i) => i.slot === slot && owns(p, i.id));
+      if (options.length) draft[slot] = pick(options).id;
+    }
+    draft.hairColor = pick(CATALOG.hairColors);
+    draft.topColor = pick(CATALOG.clothColors);
+    draft.bottomColor = pick(CATALOG.clothColors);
+    draft.shoeColor = pick(CATALOG.clothColors);
+    draft.eyeColor = pick(CATALOG.eyeColors);
+    draft.eyes = pick(CATALOG.eyeStyles).id;
+    sfx('swap');
     renderContent();
-  }));
+  };
+  $(body, '#wdReset').onclick = () => { draft = { ...saved }; sfx('pop'); renderContent(); };
 
   $(body, '#saveLook').onclick = () => {
     waitingSave = true;
@@ -174,6 +260,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
       opening = true;
       $(content, '#openCrate').disabled = true;
       $(content, '.crate-box').classList.add('shake');
+      sfx('rattle');
       net.send('crate');
     };
   }
@@ -181,20 +268,20 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
   function spinCrate(wonId) {
     const pool = CATALOG.items.filter((i) => i.crate);
     const weights = CATALOG.crate.weights;
-    const pick = () => {
+    const pickOne = () => {
       let r = Math.random() * Object.values(weights).reduce((a, b) => a + b, 0);
       const rarity = RARITY_ORDER.find((k) => (r -= weights[k]) < 0) ?? 'common';
       const options = pool.filter((i) => i.rarity === rarity);
       return (options.length ? options : pool)[Math.floor(Math.random() * (options.length || pool.length))];
     };
     const WIN = 34;
-    const list = Array.from({ length: 40 }, (_, i) => (i === WIN ? ITEMS[wonId] : pick()));
+    const list = Array.from({ length: 40 }, (_, i) => (i === WIN ? ITEMS[wonId] : pickOne()));
     const reel = $(content, '.crate-reel'), strip = $(content, '.crate-strip');
     $(content, '.crate-box').classList.add('hidden');
     reel.classList.remove('hidden');
     strip.innerHTML = list.map((it) => `<div class="ctile" style="--r:${RARITY[it.rarity].color}"><span></span><b>${esc(it.name)}</b></div>`).join('');
     strip.querySelectorAll('.ctile').forEach((el, i) => {
-      portraitInto(el.querySelector('span'), { ...draft, [list[i].slot]: list[i].id }, 64, 64, { zoom: HEAD_SLOTS.has(list[i].slot) ? 'head' : 'body' });
+      portraitInto(el.querySelector('span'), { ...draft, [list[i].slot]: list[i].id }, 64, 64, { zoom: zoomFor(list[i].slot) });
     });
     const center = reel.clientWidth / 2;
     const offset = WIN * TILE + TILE / 2 - center + (Math.random() - 0.5) * (TILE * 0.6);
@@ -203,7 +290,14 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     void strip.offsetWidth;
     strip.style.transition = 'transform 4.6s cubic-bezier(.08,.75,.18,1)';
     strip.style.transform = `translateX(${-offset}px)`;
-    setTimeout(() => reveal(wonId), 4800);
+    // tick every time a tile passes the marker
+    let lastTile = -1;
+    const stopTicks = loop(() => {
+      const x = new DOMMatrix(getComputedStyle(strip).transform).m41;
+      const tile = Math.floor((center - x) / TILE);
+      if (tile !== lastTile) { if (lastTile >= 0) sfx('cratetick'); lastTile = tile; }
+    });
+    setTimeout(() => { stopTicks(); reveal(wonId); }, 4800);
   }
 
   function reveal(id) {
@@ -213,15 +307,15 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     $(content, '.crate-reel').classList.add('hidden');
     box.classList.remove('hidden');
     box.style.setProperty('--r', r.color);
+    sfx('reveal', { rarity: it.rarity });
     box.innerHTML = `<div class="rv-art"></div><div class="rv-rarity">${r.label}</div><div class="rv-name">${esc(it.name)}</div>
       <div class="row center"><button class="btn primary" id="equipWon">Wear it</button><button class="btn" id="again">Open another</button></div>`;
-    portraitInto(box.querySelector('.rv-art'), { ...draft, [it.slot]: id }, 120, 130, { zoom: HEAD_SLOTS.has(it.slot) ? 'head' : 'body' });
+    portraitInto(box.querySelector('.rv-art'), { ...draft, [it.slot]: id }, 120, 130, { zoom: zoomFor(it.slot) });
     if (it.rarity !== 'common') confetti(box.parentElement, { count: it.rarity === 'legendary' ? 180 : 90, colors: [r.color, '#fff', '#ffd84d'] });
     opening = false;
     $(box, '#equipWon').onclick = () => {
       draft[it.slot] = id;
-      tab = it.slot;
-      renderContent();
+      showTab(it.slot);
     };
     $(box, '#again').onclick = renderCrates;
   }
@@ -231,6 +325,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
       if (m.p.key !== S.me) return;
       if (waitingSave && m.p.lookSet) {
         waitingSave = false;
+        Object.assign(saved, draft);
         toast('Looking good! ✨');
         if (onSaved) return onSaved(); // closes the modal and unmounts us
       }
@@ -238,7 +333,7 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
       else renderHeader();
     },
     unlock: (m) => {
-      if (ITEMS[m.id] && m.source === 'shop') draft[ITEMS[m.id].slot] = m.id;
+      if (ITEMS[m.id] && m.source === 'shop') { draft[ITEMS[m.id].slot] = m.id; sfx('buy'); }
     },
     crate_result: (m) => spinCrate(m.id),
     error: (m) => {
@@ -248,6 +343,6 @@ export function wardrobe(body, { mode = 'wardrobe', onSaved } = {}) {
     },
   });
 
-  renderContent();
+  showTab(tab);
   return () => { stopPreview(); off(); };
 }

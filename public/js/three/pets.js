@@ -1,0 +1,306 @@
+// Pets: little chibi animals that trot along next to their owner. Every pet is built from primitives
+// with big heads, shiny eyes and rosy cheeks. build(id) returns { group, tick(t, dt, moving) }.
+import * as THREE from 'three';
+import { toon, basic, outlineMaterial, additive, glowTexture } from './materials.js';
+
+const OUT = outlineMaterial(0.018);
+
+function add(parent, geo, mat, { p = [0, 0, 0], r = null, s = null, outline = true } = {}) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(...p);
+  if (r) m.rotation.set(...r);
+  if (s) m.scale.set(...(Array.isArray(s) ? s : [s, s, s]));
+  m.castShadow = true;
+  if (outline) m.add(new THREE.Mesh(geo, OUT));
+  parent.add(m);
+  return m;
+}
+const sph = (r, w = 18, h = 14) => new THREE.SphereGeometry(r, w, h);
+const cyl = (a, b, h, n = 12) => new THREE.CylinderGeometry(a, b, h, n);
+const cone = (r, h, n = 12) => new THREE.ConeGeometry(r, h, n);
+
+/** Big glossy eyes + blush on a head facing +Z. */
+function face(head, r, { spread = 0.36, y = 0.05, size = 0.2, color = '#1d1b2e', blush = '#ff8fab', mouth = true } = {}) {
+  const eyes = [];
+  for (const s of [-1, 1]) {
+    const e = add(head, sph(r * size, 14, 10), basic(color), { p: [s * r * spread, r * y, r * 0.86], s: [1, 1.15, 0.6], outline: false });
+    add(e, sph(r * size * 0.42, 8, 6), basic('#ffffff'), { p: [r * size * 0.3, r * size * 0.35, r * size * 0.55], outline: false });
+    add(e, sph(r * size * 0.18, 6, 4), basic('#ffffff'), { p: [-r * size * 0.3, -r * size * 0.3, r * size * 0.55], outline: false });
+    eyes.push(e);
+    if (blush) add(head, new THREE.CircleGeometry(r * 0.16, 14), basic(blush, { transparent: true, opacity: 0.6, depthWrite: false }), { p: [s * r * 0.6, -r * 0.18, r * 0.8], r: [0, s * 0.6, 0], outline: false });
+  }
+  if (mouth) add(head, new THREE.TorusGeometry(r * 0.09, r * 0.025, 6, 12, Math.PI), basic('#5a1f2a'), { p: [0, -r * 0.2, r * 0.97], r: [0, 0, Math.PI], outline: false });
+  return eyes;
+}
+
+/** Four stubby legs under a body; returns them for the trotting animation. */
+function legs(parent, mat, x, z, y, len = 0.18, r = 0.06) {
+  return [[-x, -z], [x, -z], [-x, z], [x, z]].map(([lx, lz]) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(lx, y, lz);
+    add(pivot, cyl(r, r * 0.9, len), mat, { p: [0, -len / 2, 0] });
+    add(pivot, sph(r * 1.05, 10, 8), mat, { p: [0, -len, 0.01], s: [1, 0.7, 1.2], outline: false });
+    parent.add(pivot);
+    return pivot;
+  });
+}
+const trot = (list, t, moving, speed = 14, amp = 0.6) => list.forEach((l, i) => { l.rotation.x = moving ? Math.sin(t * speed + (i % 3 === 0 ? 0 : Math.PI)) * amp : 0; });
+
+const BUILD = {
+  pet_puppy(g, A) {
+    const fur = toon('#e8b778'), light = toon('#fff3de'), dark = toon('#8b5a2b');
+    const body = add(g, sph(0.2), fur, { p: [0, 0.28, -0.05], s: [1, 0.9, 1.25] });
+    add(body, sph(0.15), light, { p: [0, -0.04, 0.06], s: [0.9, 0.8, 1], outline: false });
+    const L = legs(g, fur, 0.1, 0.12, 0.2);
+    const head = add(g, sph(0.22), fur, { p: [0, 0.55, 0.12] });
+    add(head, sph(0.1), light, { p: [0, -0.07, 0.17], s: [1.2, 0.8, 0.9] });
+    add(head, sph(0.04, 10, 8), toon('#2a1a12'), { p: [0, -0.03, 0.26], outline: false });
+    const ears = [-1, 1].map((s) => add(head, sph(0.09), dark, { p: [s * 0.2, 0.02, -0.02], s: [0.6, 1.4, 0.4], r: [0, 0, s * 0.25] }));
+    face(head, 0.22, { spread: 0.34, y: 0.15, size: 0.18 });
+    const tail = add(g, cyl(0.03, 0.02, 0.18, 8), fur, { p: [0, 0.38, -0.3], r: [-0.8, 0, 0] });
+    return (t, dt, m) => { trot(L, t, m); tail.rotation.z = Math.sin(t * 14) * 0.6; ears.forEach((e, i) => { e.rotation.x = Math.sin(t * 3 + i) * 0.15; }); head.rotation.z = Math.sin(t * 1.6) * 0.08; };
+  },
+  pet_kitten(g) {
+    const fur = toon('#b9b3c9'), stripe = toon('#8e86a6'), pink = toon('#ffb3c7');
+    add(g, sph(0.18), fur, { p: [0, 0.26, -0.05], s: [1, 0.9, 1.3] });
+    const L = legs(g, fur, 0.09, 0.12, 0.2, 0.17, 0.05);
+    const head = add(g, sph(0.22), fur, { p: [0, 0.52, 0.1], s: [1.1, 0.95, 1] });
+    for (const s of [-1, 1]) {
+      add(head, cone(0.08, 0.16, 4), fur, { p: [s * 0.14, 0.2, 0], r: [0, 0, -s * 0.3] });
+      add(head, cone(0.045, 0.1, 4), pink, { p: [s * 0.14, 0.19, 0.03], r: [0, 0, -s * 0.3], outline: false });
+      for (const k of [-1, 1]) add(head, cyl(0.004, 0.004, 0.16, 4), basic('#4a4458'), { p: [s * 0.2, -0.05 + k * 0.025, 0.18], r: [0, 0, Math.PI / 2 + k * 0.15], outline: false });
+    }
+    add(head, sph(0.025, 8, 6), pink, { p: [0, -0.05, 0.22], outline: false });
+    add(head, new THREE.BoxGeometry(0.03, 0.08, 0.02), stripe, { p: [0, 0.16, 0.18], outline: false });
+    face(head, 0.22, { spread: 0.34, y: 0.1, size: 0.19, color: '#2f9e44' });
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.3, -0.26);
+    g.add(tail);
+    for (let i = 0; i < 5; i++) add(tail, sph(0.035, 8, 6), i % 2 ? stripe : fur, { p: [0, i * 0.05, -i * 0.03], outline: false });
+    return (t, dt, m) => { trot(L, t, m); tail.rotation.x = -0.3 + Math.sin(t * 2) * 0.3; tail.rotation.z = Math.sin(t * 1.3) * 0.4; };
+  },
+  pet_bunny(g) {
+    const fur = toon('#fffaf5'), pink = toon('#ffb3c7');
+    const body = add(g, sph(0.19), fur, { p: [0, 0.22, -0.02], s: [1, 0.95, 1.1] });
+    add(g, sph(0.08), fur, { p: [0, 0.22, -0.22] });
+    const head = add(g, sph(0.2), fur, { p: [0, 0.45, 0.1] });
+    const ears = [-1, 1].map((s) => {
+      const ear = new THREE.Group();
+      ear.position.set(s * 0.08, 0.16, -0.02);
+      head.add(ear);
+      add(ear, sph(0.06), fur, { p: [0, 0.14, 0], s: [0.8, 2.4, 0.5] });
+      add(ear, sph(0.035), pink, { p: [0, 0.14, 0.02], s: [0.8, 2.6, 0.4], outline: false });
+      return ear;
+    });
+    add(head, sph(0.03, 8, 6), pink, { p: [0, -0.02, 0.2], outline: false });
+    face(head, 0.2, { spread: 0.38, y: 0.12, size: 0.2 });
+    return (t, dt, m) => {
+      const hop = m ? Math.abs(Math.sin(t * 8)) : 0;
+      body.parent.position.y = hop * 0.15;
+      ears.forEach((e, i) => { e.rotation.z = (i ? -1 : 1) * (0.15 + hop * 0.3 + Math.sin(t * 2 + i) * 0.05); });
+    };
+  },
+  pet_duck(g) {
+    const yellow = toon('#ffd84d'), orange = toon('#ff9f43');
+    const body = add(g, sph(0.2), yellow, { p: [0, 0.22, -0.02], s: [1, 0.85, 1.25] });
+    const wings = [-1, 1].map((s) => add(body, sph(0.1), yellow, { p: [s * 0.18, 0.02, -0.02], s: [0.4, 0.8, 1.2] }));
+    const head = add(g, sph(0.16), yellow, { p: [0, 0.46, 0.1] });
+    add(head, sph(0.08), orange, { p: [0, -0.04, 0.15], s: [1.2, 0.45, 1.1] });
+    add(head, cone(0.03, 0.1, 6), yellow, { p: [0, 0.17, -0.02], r: [-0.4, 0, 0], outline: false });
+    face(head, 0.16, { spread: 0.42, y: 0.25, size: 0.2, mouth: false });
+    const feet = [-1, 1].map((s) => add(g, sph(0.06), orange, { p: [s * 0.08, 0.02, 0.05], s: [1, 0.3, 1.4] }));
+    return (t, dt, m) => {
+      g.children[0].rotation.z = m ? Math.sin(t * 10) * 0.12 : 0;
+      wings.forEach((w, i) => { w.rotation.z = (i ? 1 : -1) * (Math.sin(t * (m ? 16 : 3)) * 0.2); });
+      feet.forEach((f, i) => { f.position.z = 0.05 + (m ? Math.sin(t * 10 + i * Math.PI) * 0.06 : 0); });
+    };
+  },
+  pet_hamster(g) {
+    const fur = toon('#f2b36a'), cream = toon('#fff3de'), pink = toon('#ffb3c7');
+    const body = add(g, sph(0.24), fur, { p: [0, 0.22, 0], s: [1.1, 0.9, 1.1] });
+    add(body, sph(0.18), cream, { p: [0, -0.04, 0.1], s: [1, 0.9, 0.8], outline: false });
+    for (const s of [-1, 1]) {
+      add(body, sph(0.06), fur, { p: [s * 0.14, 0.2, 0], s: [1, 1, 0.5] });
+      add(body, sph(0.035), pink, { p: [s * 0.14, 0.2, 0.02], s: [1, 1, 0.4], outline: false });
+      add(body, sph(0.08), cream, { p: [s * 0.16, -0.02, 0.18], s: [1, 0.8, 0.7], outline: false }); // puffy cheeks
+    }
+    add(body, sph(0.025, 8, 6), pink, { p: [0, 0.03, 0.26], outline: false });
+    face(body, 0.24, { spread: 0.3, y: 0.18, size: 0.15 });
+    return (t, dt, m) => { body.position.y = 0.22 + (m ? Math.abs(Math.sin(t * 12)) * 0.05 : Math.sin(t * 3) * 0.01); body.scale.x = 1.1 + Math.sin(t * 5) * 0.02; };
+  },
+  pet_frog(g) {
+    const green = toon('#6ee7a0'), belly = toon('#d9ffe8');
+    const body = add(g, sph(0.22), green, { p: [0, 0.18, 0], s: [1.2, 0.8, 1.1] });
+    add(body, sph(0.16), belly, { p: [0, -0.04, 0.1], s: [1.1, 0.7, 0.8], outline: false });
+    for (const s of [-1, 1]) {
+      const eyeball = add(body, sph(0.09), green, { p: [s * 0.12, 0.2, 0.05] });
+      add(eyeball, sph(0.06), basic('#ffffff'), { p: [0, 0.01, 0.05], outline: false });
+      add(eyeball, sph(0.035), basic('#1d1b2e'), { p: [0, 0.01, 0.1], outline: false });
+      add(g, sph(0.07), green, { p: [s * 0.2, 0.04, 0.15], s: [1.3, 0.4, 1.5] });
+    }
+    add(body, new THREE.TorusGeometry(0.1, 0.012, 6, 16, Math.PI), basic('#2f6e4a'), { p: [0, 0.02, 0.2], r: [0, 0, Math.PI], outline: false });
+    for (const s of [-1, 1]) add(body, new THREE.CircleGeometry(0.035, 12), basic('#ff8fab', { transparent: true, opacity: 0.6 }), { p: [s * 0.16, 0.04, 0.2], outline: false });
+    return (t, dt, m) => {
+      const hop = m ? Math.max(0, Math.sin(t * 7)) : 0;
+      body.position.y = 0.18 + hop * 0.22;
+      body.scale.y = 0.8 + Math.sin(t * 4) * 0.03 + hop * 0.1;
+    };
+  },
+  pet_penguin(g) {
+    const black = toon('#23263f'), white = toon('#ffffff'), orange = toon('#ff9f43');
+    const body = add(g, sph(0.2), black, { p: [0, 0.3, 0], s: [1, 1.3, 0.95] });
+    add(body, sph(0.16), white, { p: [0, -0.03, 0.08], s: [0.9, 1.2, 0.8], outline: false });
+    const flippers = [-1, 1].map((s) => add(body, sph(0.07), black, { p: [s * 0.19, 0, 0], s: [0.4, 1.4, 0.8], r: [0, 0, s * 0.3] }));
+    const head = add(body, sph(0.16), black, { p: [0, 0.26, 0.02], s: [1, 0.8, 1] });
+    add(head, sph(0.12), white, { p: [0, -0.02, 0.07], s: [1.1, 0.9, 0.9], outline: false });
+    add(head, cone(0.04, 0.08, 8), orange, { p: [0, -0.02, 0.17], r: [Math.PI / 2, 0, 0], outline: false });
+    face(head, 0.14, { spread: 0.36, y: 0.2, size: 0.22, mouth: false });
+    for (const s of [-1, 1]) add(g, sph(0.05), orange, { p: [s * 0.08, 0.02, 0.06], s: [1, 0.35, 1.5] });
+    return (t, dt, m) => { body.rotation.z = m ? Math.sin(t * 9) * 0.18 : Math.sin(t * 1.5) * 0.04; flippers.forEach((f, i) => { f.rotation.z = (i ? 1 : -1) * (0.3 + Math.abs(Math.sin(t * (m ? 9 : 2))) * 0.4); }); };
+  },
+  pet_panda(g) {
+    const white = toon('#fffaf5'), black = toon('#23263f');
+    add(g, sph(0.22), white, { p: [0, 0.26, -0.04], s: [1.05, 0.95, 1.15] });
+    const L = legs(g, black, 0.11, 0.12, 0.2, 0.16, 0.07);
+    const head = add(g, sph(0.24), white, { p: [0, 0.56, 0.1] });
+    for (const s of [-1, 1]) {
+      add(head, sph(0.08), black, { p: [s * 0.18, 0.18, -0.02], s: [1, 1, 0.6] });
+      add(head, sph(0.075), black, { p: [s * 0.09, 0.03, 0.18], s: [0.8, 1.1, 0.5], r: [0, 0, s * 0.5], outline: false });
+    }
+    add(head, sph(0.035, 8, 6), black, { p: [0, -0.06, 0.23], s: [1.3, 0.8, 1], outline: false });
+    face(head, 0.24, { spread: 0.36, y: 0.12, size: 0.15 });
+    return (t, dt, m) => { trot(L, t, m, 10, 0.4); head.rotation.z = Math.sin(t * 1.2) * 0.1; };
+  },
+  pet_fox(g) {
+    const orange = toon('#ff8a3d'), white = toon('#fff6ea'), dark = toon('#3a2410');
+    add(g, sph(0.18), orange, { p: [0, 0.27, -0.06], s: [0.95, 0.85, 1.35] });
+    const L = legs(g, dark, 0.08, 0.13, 0.2, 0.18, 0.045);
+    const head = add(g, sph(0.2), orange, { p: [0, 0.52, 0.12] });
+    add(head, cone(0.1, 0.18, 12), white, { p: [0, -0.06, 0.2], r: [Math.PI / 2, 0, 0] });
+    add(head, sph(0.03, 8, 6), dark, { p: [0, -0.06, 0.3], outline: false });
+    for (const s of [-1, 1]) {
+      add(head, cone(0.08, 0.2, 4), orange, { p: [s * 0.12, 0.2, -0.02], r: [0, 0, -s * 0.25] });
+      add(head, cone(0.04, 0.1, 4), dark, { p: [s * 0.12, 0.26, 0.01], r: [0, 0, -s * 0.25], outline: false });
+    }
+    face(head, 0.2, { spread: 0.4, y: 0.18, size: 0.18, color: '#3a2410' });
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.32, -0.28);
+    g.add(tail);
+    add(tail, sph(0.1), orange, { p: [0, 0.05, -0.1], s: [0.9, 0.9, 1.7] });
+    add(tail, sph(0.06), white, { p: [0, 0.07, -0.26], outline: false });
+    return (t, dt, m) => { trot(L, t, m); tail.rotation.y = Math.sin(t * 3) * 0.4; };
+  },
+  pet_giraffe(g) {
+    const yellow = toon('#ffd36b'), spot = toon('#c9803a'), dark = toon('#6b4226'), light = toon('#fff1c9');
+    const body = add(g, sph(0.2), yellow, { p: [0, 0.42, -0.04], s: [0.95, 0.85, 1.25] });
+    [[0.12, 0.08, 0.05], [-0.13, 0.05, -0.08], [0.02, 0.15, -0.14], [-0.05, -0.02, 0.15], [0.14, -0.04, -0.12], [-0.15, 0.1, 0.08]].forEach(([x, y, z]) => {
+      add(body, sph(0.05, 10, 8), spot, { p: [x, y, z], s: [1, 1, 0.4], outline: false });
+    });
+    const L = legs(g, yellow, 0.1, 0.13, 0.36, 0.34, 0.045);
+    L.forEach((l) => add(l, sph(0.05, 8, 6), dark, { p: [0, -0.34, 0.01], s: [1, 0.6, 1.2], outline: false }));
+    const neck = new THREE.Group();
+    neck.position.set(0, 0.52, 0.12);
+    g.add(neck);
+    add(neck, cyl(0.065, 0.09, 0.5), yellow, { p: [0, 0.22, 0.05], r: [0.2, 0, 0] });
+    [[0.05, 0.1], [-0.05, 0.25], [0.04, 0.38]].forEach(([x, y]) => add(neck, sph(0.035, 8, 6), spot, { p: [x, y, 0.1 + y * 0.1], s: [1, 1, 0.4], outline: false }));
+    const head = add(neck, sph(0.16), yellow, { p: [0, 0.52, 0.14], s: [1, 0.95, 1.05] });
+    add(head, sph(0.1), light, { p: [0, -0.07, 0.12], s: [1.1, 0.8, 0.9] });
+    for (const s of [-1, 1]) {
+      add(head, cyl(0.02, 0.025, 0.12, 8), dark, { p: [s * 0.06, 0.18, -0.02] }); // ossicones
+      add(head, sph(0.032, 8, 6), dark, { p: [s * 0.06, 0.25, -0.02] });
+      add(head, sph(0.05), yellow, { p: [s * 0.16, 0.06, -0.02], s: [1.3, 0.6, 0.6], r: [0, 0, s * 0.4] });
+      add(head, sph(0.012, 6, 4), dark, { p: [s * 0.04, -0.07, 0.21], outline: false });
+    }
+    face(head, 0.16, { spread: 0.44, y: 0.2, size: 0.2 });
+    const tail = add(g, cyl(0.012, 0.012, 0.2, 6), yellow, { p: [0, 0.42, -0.28], r: [0.4, 0, 0] });
+    add(tail, sph(0.03, 8, 6), dark, { p: [0, -0.1, 0], outline: false });
+    return (t, dt, m) => {
+      trot(L, t, m, 9, 0.45);
+      neck.rotation.x = Math.sin(t * 1.3) * 0.08 + (m ? Math.sin(t * 9) * 0.05 : 0);
+      neck.rotation.z = Math.sin(t * 0.9) * 0.06;
+      tail.rotation.z = Math.sin(t * 4) * 0.4;
+    };
+  },
+  pet_axolotl(g) {
+    const pink = toon('#ffb3d1'), deep = toon('#ff6fb5');
+    const body = add(g, sph(0.16), pink, { p: [0, 0.18, -0.05], s: [0.9, 0.8, 1.5] });
+    const head = add(g, sph(0.2), pink, { p: [0, 0.26, 0.2], s: [1.2, 0.85, 0.95] });
+    const gills = [];
+    for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+      gills.push(add(head, sph(0.04, 8, 6), deep, { p: [s * (0.21 + i * 0.02), 0.06 + (i - 1) * 0.07, -0.04], s: [1.8, 0.7, 0.7], r: [0, 0, s * (0.5 - i * 0.5)] }));
+    }
+    face(head, 0.2, { spread: 0.45, y: 0.1, size: 0.14, blush: '#ff6fb5' });
+    const tail = add(body, cone(0.08, 0.3, 8), pink, { p: [0, 0.02, -0.26], r: [-Math.PI / 2, 0, 0], s: [0.4, 1, 1] });
+    const L = legs(g, pink, 0.12, 0.1, 0.1, 0.08, 0.035);
+    return (t, dt, m) => { trot(L, t, m, 12, 0.7); tail.rotation.y = Math.sin(t * (m ? 10 : 3)) * 0.4; gills.forEach((gl, i) => { gl.scale.x = 1.8 + Math.sin(t * 4 + i) * 0.3; }); };
+  },
+  pet_unicorn(g, A) {
+    const white = toon('#fffaff'), gold = toon('#ffc53d', { emissive: '#7a5200', emissiveIntensity: 0.3 });
+    const mane = ['#ff8fc7', '#ffd84d', '#6ee7a0', '#39c6ff', '#b77bff'];
+    add(g, sph(0.2), white, { p: [0, 0.4, -0.04], s: [0.95, 0.85, 1.3] });
+    const L = legs(g, white, 0.1, 0.13, 0.34, 0.3, 0.05);
+    L.forEach((l) => add(l, cyl(0.055, 0.055, 0.05, 10), toon('#b77bff'), { p: [0, -0.29, 0] }));
+    const head = add(g, sph(0.19), white, { p: [0, 0.68, 0.16], s: [1, 1, 1.05] });
+    add(head, sph(0.11), toon('#ffe4f2'), { p: [0, -0.08, 0.14], s: [1.1, 0.8, 0.9], outline: false });
+    add(head, cone(0.035, 0.24, 10), gold, { p: [0, 0.24, 0.07], r: [0.35, 0, 0] });
+    for (const s of [-1, 1]) add(head, cone(0.045, 0.1, 6), white, { p: [s * 0.1, 0.18, -0.03], r: [0, 0, -s * 0.3] });
+    mane.forEach((c, i) => add(head, sph(0.06, 10, 8), toon(c), { p: [0, 0.16 - i * 0.07, -0.12 - i * 0.02], outline: false }));
+    face(head, 0.19, { spread: 0.4, y: 0.16, size: 0.2, color: '#5b2a86' });
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.44, -0.28);
+    g.add(tail);
+    mane.forEach((c, i) => add(tail, sph(0.05, 10, 8), toon(c), { p: [0, -i * 0.05, -i * 0.03], outline: false }));
+    const sparkle = new THREE.Sprite(additive(glowTexture, 0xffe8ff, 0.6));
+    sparkle.scale.setScalar(0.5);
+    g.add(sparkle);
+    return (t, dt, m) => {
+      trot(L, t, m, 9, 0.5);
+      tail.rotation.x = Math.sin(t * 3) * 0.3;
+      const a = t * 2;
+      sparkle.position.set(Math.cos(a) * 0.35, 0.6 + Math.sin(t * 3) * 0.15, Math.sin(a) * 0.35);
+      sparkle.material.opacity = 0.3 + Math.abs(Math.sin(t * 4)) * 0.5;
+    };
+  },
+  pet_dragon(g) {
+    const purple = toon('#9d7bff'), belly = toon('#ffe4b5'), wingMat = toon('#ff8fc7', { side: THREE.DoubleSide });
+    const fly = new THREE.Group();
+    g.add(fly);
+    add(fly, sph(0.18), purple, { p: [0, 0, 0], s: [0.9, 1, 1.1] });
+    add(fly, sph(0.13), belly, { p: [0, -0.02, 0.08], s: [0.9, 1, 0.8], outline: false });
+    const head = add(fly, sph(0.18), purple, { p: [0, 0.24, 0.08] });
+    add(head, sph(0.09), belly, { p: [0, -0.06, 0.14], s: [1.2, 0.7, 0.9], outline: false });
+    for (const s of [-1, 1]) {
+      add(head, cone(0.035, 0.12, 8), toon('#fff3de'), { p: [s * 0.08, 0.17, -0.02], r: [-0.3, 0, -s * 0.2] });
+      add(head, sph(0.012, 6, 4), basic('#5b2a86'), { p: [s * 0.04, -0.05, 0.22], outline: false });
+    }
+    face(head, 0.18, { spread: 0.4, y: 0.16, size: 0.2 });
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0); shape.lineTo(0.3, 0.14); shape.lineTo(0.26, -0.02); shape.lineTo(0.18, 0.02); shape.lineTo(0.12, -0.08); shape.closePath();
+    const wingGeo = new THREE.ShapeGeometry(shape);
+    const wings = [-1, 1].map((s) => {
+      const w = new THREE.Group();
+      w.position.set(s * 0.1, 0.06, -0.08);
+      add(w, wingGeo, wingMat, { s: [s, 1, 1], r: [0, s * 0.3, 0], outline: false });
+      fly.add(w);
+      return w;
+    });
+    const tail = add(fly, cone(0.06, 0.26, 8), purple, { p: [0, -0.1, -0.2], r: [-2.2, 0, 0] });
+    return (t) => {
+      fly.position.y = 0.75 + Math.sin(t * 3) * 0.1;
+      wings.forEach((w, i) => { w.rotation.y = (i ? -1 : 1) * (0.3 + Math.sin(t * 14) * 0.5); });
+      tail.rotation.z = Math.sin(t * 3) * 0.3;
+    };
+  },
+};
+
+/** A pet ready to add to a character: { group, tick }. Returns null for no pet / unknown ids. */
+export function buildPet(id) {
+  const make = BUILD[id];
+  if (!make) return null;
+  const group = new THREE.Group();
+  const model = new THREE.Group();
+  group.add(model);
+  const tick = make(model) ?? (() => {});
+  model.traverse((o) => { if (o.isMesh && !o.userData.outline) o.castShadow = true; });
+  return { group, tick };
+}

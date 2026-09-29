@@ -414,18 +414,16 @@ export function buildEnvironment(scene) {
   // ---- the pond --------------------------------------------------------------------
   const pond = M.SPOTS.find((s) => s.kind === 'pond');
   const pa = pos3(pond.x, pond.y), pb = pos3(pond.x + pond.w, pond.y + pond.h);
-  const r = U(150);
-  const shape = new THREE.Shape();
-  const [x0, x1, y0, y1] = [pa.x, pb.x, -pb.z, -pa.z];
-  shape.moveTo(x0 + r, y0);
-  shape.lineTo(x1 - r, y0); shape.absarc(x1 - r, y0 + r, r, -Math.PI / 2, 0, false);
-  shape.lineTo(x1, y1 - r); shape.absarc(x1 - r, y1 - r, r, 0, Math.PI / 2, false);
-  shape.lineTo(x0 + r, y1); shape.absarc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI, false);
-  shape.lineTo(x0, y0 + r); shape.absarc(x0 + r, y0 + r, r, Math.PI, Math.PI * 1.5, false);
-  const pondWater = new THREE.Mesh(new THREE.ShapeGeometry(shape, 24), waterMat);
+  // the water follows the natural shoreline (shape coords are x / -z, laid flat below)
+  const shape = new THREE.Shape(M.LAKE.map((q) => { const p = pos3(q.x, q.y); return new THREE.Vector2(p.x, -p.z); }));
+  const pondWater = new THREE.Mesh(new THREE.ShapeGeometry(shape), waterMat);
   pondWater.rotation.x = -Math.PI / 2;
-  pondWater.position.y = 0.08;
+  pondWater.position.y = M.LAKE_LEVEL;
+  // drawn before the creek's water, so where the creek runs into the lake (a hair lower) it's hidden
+  // behind the lake instead of doubling up into a lighter seam
+  pondWater.renderOrder = -1;
   scene.add(pondWater);
+  const nearMouth = (x, y) => M.creekDist(x, y) < 150;
   const dockX = (pa.x + pb.x) / 2;
   const dock = new THREE.Group();
   const plank = toon('#a0703f');
@@ -443,23 +441,28 @@ export function buildEnvironment(scene) {
   dock.position.set(dockX, 0, pa.z);
   scene.add(dock);
   const pads = [];
-  for (let i = 0; i < 14; i++) {
-    const x = pa.x + 2 + rnd() * (pb.x - pa.x - 4), z = pa.z + 2 + rnd() * (pb.z - pa.z - 4);
-    if (Math.abs(x - dockX) < 2.5 && z < pa.z + 6) continue;
-    pads.push({ x, z, y: 0.1, s: 0.5 + rnd() * 0.5, rot: rnd() * TAU });
+  for (let i = 0; i < 60 && pads.length < 18; i++) {
+    const x = pa.x + rnd() * (pb.x - pa.x), z = pa.z + rnd() * (pb.z - pa.z);
+    const mx = x * M.PX + M.CENTER.x, my = z * M.PX + M.CENTER.y;
+    // in clumps near the shore, clear of the dock (where the fishing lines go) and the creek mouth
+    const d = M.lakeDist(mx, my);
+    if (d > -40 || d < -170 || (Math.abs(x - dockX) < 5 && z < pa.z + 12) || nearMouth(mx, my)) continue;
+    pads.push({ x, z, y: M.LAKE_LEVEL + 0.02, s: 0.5 + rnd() * 0.5, rot: rnd() * TAU });
   }
   const padGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.04, 16, 1, false, 0.4, TAU - 0.4);
   scene.add(instanced(padGeo, toon('#3f9a47'), pads, { cast: false }));
   scene.add(instanced(new THREE.SphereGeometry(0.16, 8, 6), toon('#ff9fb4'), pads.filter((_, i) => i % 2).map((p) => ({ ...p, y: 0.2, s: 1 })), { cast: false }));
-  const reeds = [];
-  // clumps along the shoreline (the shape is in x/-z)
-  const cz0 = (pa.z + pb.z) / 2;
-  for (const q of shape.getSpacedPoints(160)) {
-    const x = q.x, z = -q.y;
-    if (Math.abs(x - dockX) < 3 && z < cz0) continue;
-    if (rnd() < 0.35) continue;
-    reeds.push({ x: x + (rnd() - 0.5) * 0.8, z: z + (rnd() - 0.5) * 0.8, s: 0.8 + rnd() * 0.6, rot: rnd() * TAU });
-  }
+  const reeds = [], shoreRocks = [];
+  // clumps along the shoreline, leaving the dock and the creek mouth open
+  M.LAKE.forEach((q, i) => {
+    const p = pos3(q.x, q.y);
+    if ((Math.abs(p.x - dockX) < 3.5 && p.z < pa.z + 4) || nearMouth(q.x, q.y)) return;
+    if (i % 9 === 4) shoreRocks.push({ x: p.x + (rnd() - 0.5) * 0.6, y: M.heightAt(q.x, q.y) + 0.05, z: p.z + (rnd() - 0.5) * 0.6, s: 0.5 + rnd() * 0.5, sy: 0.35 + rnd() * 0.25, rot: rnd() * TAU });
+    if (rnd() < 0.3) return;
+    for (let k = 0; k < 2; k++) reeds.push({ x: p.x + (rnd() - 0.5) * 1.1, y: M.LAKE_LEVEL - 0.05, z: p.z + (rnd() - 0.5) * 1.1, s: 0.8 + rnd() * 0.6, rot: rnd() * TAU });
+  });
+  scene.add(instanced(faceted(new THREE.DodecahedronGeometry(1, 0)), toon('#9a97ab'), shoreRocks));
+  scene.add(instanced(new THREE.SphereGeometry(0.6, 10, 6), toon('#5b8f4a'), shoreRocks.map((r) => ({ ...r, y: r.y + r.sy * 0.75, s: r.s * 0.8, sy: 0.2 })), { cast: false }));
   const reedGeo = new THREE.CylinderGeometry(0.03, 0.04, 1.4, 5);
   reedGeo.translate(0, 0.7, 0);
   scene.add(instanced(reedGeo, withWind(toon('#3b7f3a'), wind, 0.12, 0.2), reeds, { cast: false }));

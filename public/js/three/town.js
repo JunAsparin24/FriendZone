@@ -310,15 +310,20 @@ export function buildTown(scene, layout, anim, waterMat) {
   place(lighthouse(anim), M.LANDMARKS.lighthouse);
   place(signpost(), { x: M.CENTER.x + 150, y: M.CENTER.y - 150 }, 0);
 
-  // the creek: water sitting down in its channel, following the slope, with a foamy edge line
-  const pts = M.CREEK;
+  // the creek: water sitting down in its channel, following the slope. It widens into a delta and
+  // rises to the lake's level at the mouth, then stops a little way into the lake; where it overlaps
+  // the lake it sits a hair lower so the two surfaces don't flicker against each other.
+  const all = M.CREEK;
+  const end = all.findIndex((q) => M.lakeDist(q.x, q.y) < -35);
+  const pts = end > 0 ? all.slice(0, end + 1) : all;
   const pos = [], idx = [];
   pts.forEach((q, i) => {
     const n = pts[Math.min(pts.length - 1, i + 1)], pr = pts[Math.max(0, i - 1)];
     const dx = n.x - pr.x, dy = n.y - pr.y, l = Math.hypot(dx, dy) || 1;
-    const y = M.creekWaterAt(q.x, q.y);
+    let y = M.creekWaterAt(q.x, q.y);
+    if (M.lakeDist(q.x, q.y) < 60) y = Math.min(y, M.LAKE_LEVEL - 0.015);
     for (const side of [-1, 1]) {
-      const p = M.to3(q.x - (dy / l) * (M.CREEK_WATER + 6) * side, q.y + (dx / l) * (M.CREEK_WATER + 6) * side);
+      const p = M.to3(q.x - (dy / l) * (q.w + 6) * side, q.y + (dx / l) * (q.w + 6) * side);
       pos.push(p.x, y, p.z);
     }
     if (i < pts.length - 1) { const a2 = i * 2; idx.push(a2, a2 + 2, a2 + 1, a2 + 1, a2 + 2, a2 + 3); }
@@ -330,7 +335,9 @@ export function buildTown(scene, layout, anim, waterMat) {
   const creekMat = waterMat.clone();
   creekMat.uniforms = waterMat.uniforms; // share the animated ripples with the lake
   creekMat.side = THREE.DoubleSide;
-  group.add(new THREE.Mesh(creekGeo, creekMat));
+  const creekWater = new THREE.Mesh(creekGeo, creekMat);
+  creekWater.renderOrder = 1; // after the lake (see environment.js)
+  group.add(creekWater);
   // the spring at the head of the creek: a round pool ringed by mossy boulders
   {
     const q0 = pts[0], q1 = pts[1];
@@ -357,7 +364,8 @@ export function buildTown(scene, layout, anim, waterMat) {
     const n = pts[Math.min(pts.length - 1, i + 1)];
     const dx = n.x - q.x, dy = n.y - q.y, l = Math.hypot(dx, dy) || 1;
     for (const side of [-1, 1]) {
-      const x = q.x - (dy / l) * (M.CREEK_WATER + 18) * side, y = q.y + (dx / l) * (M.CREEK_WATER + 18) * side;
+      const x = q.x - (dy / l) * (q.w + 18) * side, y = q.y + (dx / l) * (q.w + 18) * side;
+      if (M.lakeDist(x, y) < 20) continue; // the lake has its own reeds
       const p = p3(x, y);
       if ((i + side) % 3 === 0) mesh(group, new THREE.DodecahedronGeometry(0.45, 0), stoneMat, { p: [p.x, p.y + 0.1, p.z], s: [1, 0.5, 1] });
       else for (let k = 0; k < 3; k++) mesh(group, new THREE.CylinderGeometry(0.03, 0.04, 1.3, 5), reedMat, { p: [p.x + (k - 1) * 0.2, p.y + 0.6, p.z + ((k * 7) % 3 - 1) * 0.15], cast: false });

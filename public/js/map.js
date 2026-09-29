@@ -34,13 +34,49 @@ const PLAN_SPOTS = [
   { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 2230, y: 2330, w: 380, h: 270, face: 'n' },
   { id: 'pets', emoji: '🐾', name: 'Pet Shop', kind: 'petshop', x: 3230, y: 1720, w: 280, h: 210, face: 'n' },
 ];
+// ---- the lake -----------------------------------------------------------------------------------
+// A natural shoreline: a smooth closed curve through these plan points, with coves and a bulge on
+// the northeast shore where the creek flows in. The dock sits at its northernmost point.
+const LAKE_CTRL = [
+  [880, 2126], [1000, 2140], [1095, 2172], [1165, 2222], [1212, 2296], [1200, 2372], [1150, 2440],
+  [1070, 2478], [985, 2520], [880, 2512], [790, 2522], [700, 2478], [632, 2400], [606, 2318],
+  [640, 2240], [712, 2192], [800, 2146],
+];
+export const LAKE = closedSpline(LAKE_CTRL.map(([x, y]) => P(x, y)), 18);
+export const LAKE_LEVEL = 0.1; // height of the lake's water surface (world units)
+const lakeBox = LAKE.reduce((b, q) => ({ x0: Math.min(b.x0, q.x), x1: Math.max(b.x1, q.x), y0: Math.min(b.y0, q.y), y1: Math.max(b.y1, q.y) }), { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
+/** Inside the lake's shoreline? */
+export function inLake(x, y) {
+  if (x < lakeBox.x0 || x > lakeBox.x1 || y < lakeBox.y0 || y > lakeBox.y1) return false;
+  let inside = false;
+  for (let i = 0, j = LAKE.length - 1; i < LAKE.length; j = i++) {
+    const a = LAKE[i], b = LAKE[j];
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+/** Distance to the shoreline in map px: negative inside the lake, positive outside. */
+export function lakeDist(x, y) {
+  const out = distToRect({ x, y }, { x: lakeBox.x0, y: lakeBox.y0, w: lakeBox.x1 - lakeBox.x0, h: lakeBox.y1 - lakeBox.y0 });
+  if (out > 200) return out;
+  let best = Infinity;
+  for (let i = 0; i < LAKE.length; i++) best = Math.min(best, distToSeg({ x, y }, LAKE[i], LAKE[(i + 1) % LAKE.length]));
+  return inLake(x, y) ? -best : best;
+}
+const lakeTop = LAKE.reduce((a, q) => (q.y < a.y ? q : a));
+
 export const SPOTS = PLAN_SPOTS.map((s) => {
+  if (s.kind === 'pond') {
+    // the pond's box is centred on the dock (its northernmost shore point) and spans the whole lake
+    const half = Math.max(lakeTop.x - lakeBox.x0, lakeBox.x1 - lakeTop.x);
+    return { ...s, x: lakeTop.x - half, y: lakeTop.y, w: half * 2, h: lakeBox.y1 - lakeTop.y };
+  }
   const cx = (s.x + s.w / 2) * K, cy = (s.y + s.h / 2) * K, w = s.w * BIG, h = s.h * BIG;
   return { ...s, x: cx - w / 2, y: cy - h / 2, w, h, scale: BIG };
 });
 
-/** The part of a spot you can't walk through (buildings: the lower part; ponds: all of it). */
-export const solidOf = (s) => (s.kind === 'pond' ? { x: s.x, y: s.y - 14, w: s.w, h: s.h + 14 } : { x: s.x, y: s.y + s.h * 0.42, w: s.w, h: s.h * 0.58 });
+/** The part of a building you can't walk through (the lake uses its shoreline instead: lakeDist). */
+export const solidOf = (s) => ({ x: s.x, y: s.y + s.h * 0.42, w: s.w, h: s.h * 0.58 });
 export function doorOf(s) {
   if (s.kind === 'pond') return { x: s.x + s.w / 2, y: s.y - 30 };
   if (s.face === 'n') return { x: s.x + s.w / 2, y: s.y - 20 };
@@ -102,6 +138,20 @@ function spline(ctrl, step = 22) {
   pts.push({ x: last[0], y: last[1] });
   return pts;
 }
+/** A smooth closed loop through the control points (Catmull-Rom, wrapping around). */
+function closedSpline(ctrl, step = 22) {
+  const pts = [], n = ctrl.length;
+  for (let i = 0; i < n; i++) {
+    const p0 = ctrl[(i - 1 + n) % n], p1 = ctrl[i], p2 = ctrl[(i + 1) % n], p3 = ctrl[(i + 2) % n];
+    const m = Math.max(2, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / step));
+    for (let k = 0; k < m; k++) {
+      const t = k / m, t2 = t * t, t3 = t2 * t;
+      const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      pts.push({ x: f(p0[0], p1[0], p2[0], p3[0]), y: f(p0[1], p1[1], p2[1], p3[1]) });
+    }
+  }
+  return pts;
+}
 const door = (id) => { const d = doorOf(SPOTS.find((s) => s.id === id)); return [d.x, d.y]; };
 const C = CENTER;
 const edge = (dx, dy) => [C.x + dx * (PLAZA_R + 20), C.y + dy * (PLAZA_R + 20)]; // a point just off the square
@@ -109,7 +159,10 @@ const ROADS = [
   { name: 'Main Street', w: 1.1, lamps: true, ctrl: [edge(1, 0.1), P(2950, 1640), P(3420, 1600), door('casino')] },
   { name: 'Speedway Road', w: 1, lamps: true, ctrl: [edge(0, -1), P(2410, 1250), P(2380, 800), door('racing')] },
   { name: 'Highland Road', w: 0.9, lamps: true, ctrl: [edge(-0.75, -0.66), P(2000, 1330), P(1760, 1120), P(1600, 900), P(1440, 740), door('boss')] },
-  { name: 'Market Street', w: 1, lamps: true, ctrl: [edge(-1, 0.05), door('trading'), P(1640, 1560), P(1250, 1520), door('archery')] },
+  { name: 'Market Street', w: 1, lamps: true, ctrl: [edge(-1, 0.05), door('trading')] },
+  // west out of town: forks off the Highland Road (at one of its control points, so it starts right on
+  // it), passes north of the Trading Post, crosses the creek on the bridge and ends at the archery range
+  { name: 'Market Street', w: 1, lamps: true, ctrl: [P(2000, 1330), P(1850, 1365), P(1710, 1450), P(1640, 1545), P(1250, 1520), door('archery')] },
   { name: 'Lakeside Walk', w: 0.8, ctrl: [P(1300, 1528), P(1180, 1780), P(1060, 1990), door('fishing')] },
   { name: 'Maple Lane', w: 0.9, lamps: true, ctrl: [edge(0, 1), P(2410, 1900), door('house')] },
   { name: 'Maple Lane', w: 0.85, ctrl: [P(1640, 2190), P(2050, 2200), P(2420, 2215), P(2850, 2210), P(3280, 2240), P(3560, 2330)] },
@@ -124,27 +177,71 @@ export const nearPath = (p, margin) => PATHS.some((path) => path.pts.some((q) =>
 
 // the creek runs down from the highland into the lake, in a channel you can't wade through; streets
 // cross it on bridges
-export const CREEK = spline([P(1560, 1000), P(1450, 1260), P(1480, 1500), P(1360, 1760), P(1220, 1960), P(1150, 2150)], 20);
-export const CREEK_WATER = 30;   // half width of the water (map px)
+// The last control point sits inside the lake, so the creek really flows into it.
+export const CREEK = spline([P(1560, 1000), P(1450, 1260), P(1480, 1500), P(1360, 1760), P(1220, 1960), P(1205, 2090), P(1140, 2262)], 20);
+export const CREEK_WATER = 30;   // half width of the water (map px) along most of its length
 const CREEK_BANK = 70;           // where the banks meet the meadow
-export const CREEK_DEPTH = 1.6;  // world units the channel is dug into the ground
+const BANK_SLOPE = CREEK_BANK - CREEK_WATER;
+const MOUTH = 320;               // over its last stretch (map px) the creek opens out into the lake
+// The creek runs full, like the lake: its water sits LAKE_LEVEL above the meadow it flows through,
+// held in by low banks (a lip `levee` above the ground at the water's edge). Each point gets its own
+// water half-width `w`, bed `depth` below the water and `levee`; towards the mouth the creek widens
+// into a little delta and the lip sinks below the lake's surface so the two meet as one sheet of water.
+const CREEK_LEVEE = 0.22;
+{
+  let s = 0;
+  for (let i = CREEK.length - 1; i >= 0; i--) {
+    if (i < CREEK.length - 1) s += Math.hypot(CREEK[i + 1].x - CREEK[i].x, CREEK[i + 1].y - CREEK[i].y);
+    const t = Math.min(1, Math.max(0, 1 - s / MOUTH)), m = t * t * (3 - 2 * t);
+    CREEK[i].w = CREEK_WATER + 48 * m;
+    CREEK[i].depth = 1.1 + (0.35 - 1.1) * m;
+    CREEK[i].levee = CREEK_LEVEE + (-0.12 - CREEK_LEVEE) * m ** 4; // the lip holds until right at the lake
+  }
+}
 export const nearCreek = (p, margin) => CREEK.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < margin);
 const creekBox = CREEK.reduce((b, q) => ({ x0: Math.min(b.x0, q.x), x1: Math.max(b.x1, q.x), y0: Math.min(b.y0, q.y), y1: Math.max(b.y1, q.y) }), { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
-export function creekDist(x, y) {
-  if (x < creekBox.x0 - CREEK_BANK || x > creekBox.x1 + CREEK_BANK || y < creekBox.y0 - CREEK_BANK || y > creekBox.y1 + CREEK_BANK) return Infinity;
-  let best = Infinity;
-  for (let i = 0; i < CREEK.length - 1; i++) best = Math.min(best, distToSeg({ x, y }, CREEK[i], CREEK[i + 1]));
-  return best;
+const CREEK_REACH = CREEK_BANK + 80; // widest the channel and its banks get (at the mouth)
+/** Nearest point on the creek: distance, and the water half-width and depth there. */
+function creekInfo(x, y) {
+  if (x < creekBox.x0 - CREEK_REACH || x > creekBox.x1 + CREEK_REACH || y < creekBox.y0 - CREEK_REACH || y > creekBox.y1 + CREEK_REACH) return null;
+  let best = Infinity, bi = 0, bt = 0;
+  for (let i = 0; i < CREEK.length - 1; i++) {
+    const a = CREEK[i], b = CREEK[i + 1], dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l));
+    const d = Math.hypot(x - a.x - dx * t, y - a.y - dy * t);
+    if (d < best) { best = d; bi = i; bt = t; }
+  }
+  const a = CREEK[bi], b = CREEK[bi + 1], lerp = (k) => a[k] + (b[k] - a[k]) * bt;
+  // `hc`: the meadow's height at the middle of the creek there, so the water stays level across it
+  const hc = hillHeight(a.x + (b.x - a.x) * bt, a.y + (b.y - a.y) * bt);
+  return { d: best, w: lerp('w'), depth: lerp('depth'), levee: lerp('levee'), hc };
 }
-const carve = (d) => (d >= CREEK_BANK ? 0 : d <= CREEK_WATER ? 1 : 0.5 * (1 + Math.cos(Math.PI * (d - CREEK_WATER) / (CREEK_BANK - CREEK_WATER))));
+export function creekDist(x, y) {
+  return creekInfo(x, y)?.d ?? Infinity;
+}
+/** Ground height near the creek: a rounded bed under the water rising to the lip of the bank at the
+ *  water's edge, then easing back down (or up) to the surrounding meadow. */
+function creekGround(c, local) {
+  const water = c.hc + LAKE_LEVEL, lip = c.hc + c.levee;
+  if (c.d <= c.w) {
+    const bowl = 0.5 * (1 + Math.cos(Math.PI * c.d / c.w)); // 1 in the middle, 0 at the edge
+    return lip + (water - c.depth - lip) * bowl;
+  }
+  // a flat-topped lip (wider than the 20 px height grid) so the water's edge is always tucked into it
+  const LIP = 24;
+  if (c.d <= c.w + LIP) return Math.max(lip, local);
+  const k = 0.5 * (1 + Math.cos(Math.PI * Math.min(1, (c.d - c.w - LIP) / BANK_SLOPE)));
+  return local + (Math.max(lip, local) - local) * k;
+}
 
-// heights on a 20 px grid (hills minus the creek channel), read back with bilinear filtering
+// heights on a 20 px grid (hills plus the creek's channel and banks), read back with bilinear filtering
 const CELL = 20, GW = Math.ceil(W / CELL) + 1, GH = Math.ceil(H / CELL) + 1;
 const HGRID = new Float32Array(GW * GH);
 for (let j = 0; j < GH; j++) {
   for (let i = 0; i < GW; i++) {
     const x = i * CELL, y = j * CELL;
-    HGRID[j * GW + i] = hillHeight(x, y) - CREEK_DEPTH * carve(creekDist(x, y));
+    const c = creekInfo(x, y), local = hillHeight(x, y);
+    HGRID[j * GW + i] = c && c.d < c.w + 24 + BANK_SLOPE ? creekGround(c, local) : local;
   }
 }
 /** Terrain height (world units) at a map point. */
@@ -155,7 +252,9 @@ export function heightAt(x, y) {
   return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
 }
 /** The creek's water level at a point along it. */
-export const creekWaterAt = (x, y) => hillHeight(x, y) - CREEK_DEPTH + 0.6;
+export function creekWaterAt(x, y) {
+  return (creekInfo(x, y)?.hc ?? hillHeight(x, y)) + LAKE_LEVEL;
+}
 
 /** Where a street crosses the creek there's a bridge: { x, y, a (heading), len, w, deck }. */
 export const BRIDGES = [];
@@ -183,7 +282,10 @@ export function groundAt(x, y) {
   return b ? Math.max(heightAt(x, y), b.deck) : heightAt(x, y);
 }
 /** In the creek's water (and not on a bridge)? */
-export const inCreek = (x, y) => creekDist(x, y) < CREEK_WATER + 6 && !onBridge(x, y);
+export function inCreek(x, y) {
+  const c = creekInfo(x, y);
+  return !!c && c.d < c.w + 6 && !onBridge(x, y);
+}
 
 // ---- town furniture ------------------------------------------------------------------------
 // cottages along Maple Lane (decoration: the real houses are inside the Houses building)
@@ -225,7 +327,9 @@ export function openGround(p, pad = 10) {
   if (COTTAGES.some((c) => distToRect(p, { x: c.x - 70, y: c.y - 60, w: c.w + 140, h: c.h + 120 }) <= pad)) return false;
   if (STALLS.some((s) => Math.hypot(p.x - s.x, p.y - s.y) < 60 + pad)) return false;
   if (Object.values(LANDMARKS).some((l) => Math.hypot(p.x - l.x, p.y - l.y) < 90 + pad)) return false;
-  if (creekDist(p.x, p.y) < CREEK_BANK + pad) return false;
+  const c = creekInfo(p.x, p.y);
+  if (c && c.d < c.w + BANK_SLOPE + pad) return false;
+  if (lakeDist(p.x, p.y) < 40 + pad) return false;
   return !nearPath(p, 38);
 }
 
@@ -244,27 +348,44 @@ export function buildLayout() {
   const rnd = seeded(42);
   // ---- fences: picket fences round the cottage yards (gate towards the lane), rails by the fields
   const fences = [];
+  const roadClear = (p, pad) => PATHS.every((r) => r.pts.every((q, i) => i === 0 || distToSeg(p, r.pts[i - 1], q) > 31 * r.w + pad));
   for (const c of COTTAGES) {
     const x0 = c.x - 40, x1 = c.x + c.w + 40, gate = c.x + c.w / 2;
-    const [yFront, yBack] = c.face === 's' ? [c.y + c.h + 55, c.y - 30] : [c.y - 55, c.y + c.h + 30];
+    // pull the front of the yard in until the fence stays off the lane
+    const frontAt = (d) => (c.face === 's' ? c.y + c.h + d : c.y - d);
+    let front = 55;
+    while (front > 22 && ![x0, (x0 + gate) / 2, gate, (gate + x1) / 2, x1].every((x) => roadClear({ x, y: frontAt(front) }, 8))) front -= 3;
+    const [yFront, yBack] = [frontAt(front), c.face === 's' ? c.y - 30 : c.y + c.h + 30];
     fences.push({ kind: 'picket', pts: [{ x: gate - 22, y: yFront }, { x: x0, y: yFront }, { x: x0, y: yBack }, { x: x1, y: yBack }, { x: x1, y: yFront }, { x: gate + 22, y: yFront }] });
   }
 const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
   fences.push({ kind: 'rail', pts: plan([[330, 1180], [330, 1760], [600, 1800]]) }); // archery field
   fences.push({ kind: 'rail', pts: plan([[3560, 2760], [3700, 2980], [4200, 3040], [4330, 2820]]) }); // orchard
-  // a rail along the downhill edge of the Highland Road as it climbs, clear of the road itself
+  // a rail along the downhill edge of the Highland Road as it climbs. It stays on ONE side of the
+  // road (picking per post made it zigzag across the road at bends) and breaks wherever it would
+  // come near any street, so it never blocks a path.
   const hill = HILLS[0], road = PATHS.find((r) => r.name === 'Highland Road');
-  const rail = [];
+  const clearOfRoads = (p) => PATHS.every((r) => r.pts.every((q, i) => i === 0 || distToSeg(p, r.pts[i - 1], q) > 31 * r.w + 18));
+  const sides = [];
   road.pts.forEach((q, i) => {
     if (i % 3 || i < road.pts.length * 0.35 || i > road.pts.length - 8) return;
     const n = road.pts[Math.min(road.pts.length - 1, i + 1)];
     const len = Math.hypot(n.x - q.x, n.y - q.y) || 1;
     const nx = -(n.y - q.y) / len, ny = (n.x - q.x) / len;
     const off = 60 * road.w;
-    const a = { x: q.x + nx * off, y: q.y + ny * off }, b = { x: q.x - nx * off, y: q.y - ny * off };
-    rail.push(Math.hypot(a.x - hill.x, a.y - hill.y) > Math.hypot(b.x - hill.x, b.y - hill.y) ? a : b);
+    sides.push([{ x: q.x + nx * off, y: q.y + ny * off }, { x: q.x - nx * off, y: q.y - ny * off }]);
   });
-  fences.push({ kind: 'rail', pts: rail });
+  const downhill = sides.reduce((s, [a, b]) => s + Math.sign(Math.hypot(a.x - hill.x, a.y - hill.y) - Math.hypot(b.x - hill.x, b.y - hill.y)), 0) >= 0 ? 0 : 1;
+  let run = [];
+  const endRun = () => { if (run.length > 1) fences.push({ kind: 'rail', pts: run }); run = []; };
+  for (const pair of sides) {
+    const p = pair[downhill];
+    const prev = run[run.length - 1];
+    const mid = prev && { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
+    if (!clearOfRoads(p) || (mid && !clearOfRoads(mid))) { endRun(); continue; }
+    run.push(p);
+  }
+  endRun();
   const solids = propSolids(fences);
   const nearFence = (p, m) => fences.some((f) => f.pts.some((q, i) => i < f.pts.length - 1 && distToSeg(p, q, f.pts[i + 1]) < m));
 
@@ -337,8 +458,13 @@ const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
     const p = { x: g.x + Math.cos(a) * 170, y: g.y + Math.sin(a) * 170 };
     benches.push({ ...p, h: facing(p, g.x, g.y) });
   }
+  // two on the east shore (south of the creek mouth), set back from the water and facing it
   const pond = SPOTS.find((s) => s.kind === 'pond');
-  benches.push({ x: pond.x + pond.w + 60, y: pond.y + 140, h: -Math.PI / 2 }, { x: pond.x + pond.w + 60, y: pond.y + 240, h: -Math.PI / 2 });
+  for (const dy of [260, 370]) {
+    const y = pond.y + dy;
+    const shoreX = LAKE.filter((q) => Math.abs(q.y - y) < 30).reduce((m, q) => Math.max(m, q.x), -Infinity);
+    benches.push({ x: shoreX + 85, y, h: -Math.PI / 2 });
+  }
   benches.push({ x: 1330 * K, y: 830 * K, h: facing({ x: 1330 * K, y: 830 * K }, 1700 * K, 1400 * K) }); // view from the highland
 
   const archery = SPOTS.find((s) => s.id === 'archery');
@@ -435,13 +561,44 @@ export function renderGround(scale = 0.55) {
     }
   }
 
-  // the creek: grassy then sandy banks down to the channel bed (the 3D water sits on top)
-  for (const [width, color] of [[CREEK_BANK * 2, 'rgba(70,130,60,.35)'], [CREEK_BANK * 1.4, '#d9c38f'], [CREEK_WATER * 2, '#8f7a52']]) {
+  // the lake: a sandy beach and shallows following the shoreline, deep blue further out (the 3D
+  // water sits on top). Painted before the creek so the creek's delta spreads over the beach.
+  const shore = new Path2D();
+  LAKE.forEach((q, i) => (i ? shore.lineTo(q.x, q.y) : shore.moveTo(q.x, q.y)));
+  shore.closePath();
+  ctx.lineJoin = 'round';
+  for (const [width, color] of [[110, 'rgba(70,130,60,.3)'], [70, '#d9c38f'], [26, '#b89d68']]) {
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
-    ctx.beginPath();
-    CREEK.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
-    ctx.stroke();
+    ctx.stroke(shore);
+  }
+  const lc = { x: (lakeBox.x0 + lakeBox.x1) / 2, y: (lakeBox.y0 + lakeBox.y1) / 2 };
+  const wg = ctx.createRadialGradient(lc.x, lc.y, 20, lc.x, lc.y, (lakeBox.x1 - lakeBox.x0) / 1.7);
+  wg.addColorStop(0, '#12407a');
+  wg.addColorStop(0.7, '#1f5fa8');
+  wg.addColorStop(1, '#3f8fcf');
+  ctx.save();
+  ctx.clip(shore);
+  ctx.fillStyle = wg;
+  ctx.fill(shore);
+  ctx.strokeStyle = 'rgba(110,170,215,.8)'; // pale shallows just inside the shoreline
+  ctx.lineWidth = 50;
+  ctx.stroke(shore);
+  ctx.restore();
+
+  // the creek: grassy then sandy banks down to the channel bed (the 3D water sits on top). Drawn a
+  // segment at a time because it widens into a delta at the lake.
+  for (const [extra, color] of [[BANK_SLOPE, 'rgba(70,130,60,.35)'], [12, '#d9c38f'], [0, '#8f7a52']]) {
+    ctx.strokeStyle = color;
+    for (let i = 0; i < CREEK.length - 1; i++) {
+      const a = CREEK[i], b = CREEK[i + 1];
+      if (color === '#8f7a52' && inLake(a.x, a.y)) continue; // the lake bed shows through at the mouth
+      ctx.lineWidth = (a.w + b.w + extra * 2);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
   }
 
   // the town square
@@ -489,19 +646,6 @@ export function renderGround(scale = 0.55) {
       ctx.beginPath(); ctx.arc(x, y, 1.3, 0, TAU); ctx.fill();
     }
   }
-
-  // lake bed (the 3D water surface sits on top of this)
-  const pond = SPOTS.find((s) => s.kind === 'pond');
-  ctx.fillStyle = '#d9c38f';
-  ctx.beginPath(); ctx.roundRect(pond.x - 30, pond.y - 30, pond.w + 60, pond.h + 60, 230); ctx.fill();
-  ctx.fillStyle = '#b89d68';
-  ctx.beginPath(); ctx.roundRect(pond.x - 8, pond.y - 8, pond.w + 16, pond.h + 16, 205); ctx.fill();
-  const wg = ctx.createRadialGradient(pond.x + pond.w / 2, pond.y + pond.h / 2, 20, pond.x + pond.w / 2, pond.y + pond.h / 2, pond.w / 1.6);
-  wg.addColorStop(0, '#12407a');
-  wg.addColorStop(0.7, '#1f5fa8');
-  wg.addColorStop(1, '#3f8fcf');
-  ctx.fillStyle = wg;
-  ctx.beginPath(); ctx.roundRect(pond.x, pond.y, pond.w, pond.h, 190); ctx.fill();
 
   // a red carpet out of the casino's door
   const casino = SPOTS.find((s) => s.kind === 'casino');

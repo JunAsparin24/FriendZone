@@ -14,6 +14,7 @@ import { iconSvg, iconImage } from './icons.js';
 import { Fishing, Line } from './games/fishing.js';
 import { Sparks } from './three/fx.js';
 import { registerLook, mouseLooking } from './mouselook.js';
+import { touch, registerTouch, fitFov } from './touch.js';
 import { CATALOG } from './catalog.js';
 const PITCH_MIN = -0.55, PITCH_LOW = 0.08; // how far you can look up; where the orbit stops dropping
 
@@ -33,7 +34,8 @@ const SPOT_COLORS = {
 };
 /** 0 at night .. 1 in full daylight (for dimming the minimap). */
 const dayLight = () => Math.min(1, Math.max(0, (Math.sin(dayPhase() * Math.PI * 2) + 0.12) / 0.34));
-const solid = (s) => (s.kind === 'pond' ? M.solidOf(s) : { x: s.x, y: s.y, w: s.w, h: s.h });
+// how far a point is from a spot: the lake by its real shoreline, buildings by their footprint
+const spotDist = (s, p) => (s.kind === 'pond' ? Math.max(0, M.lakeDist(p.x, p.y)) : M.distToRect(p, s));
 const BUILDING_HEIGHT = { garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4 };
 
 export class World {
@@ -124,6 +126,15 @@ export class World {
         this.pitch = clamp(this.pitch + dy * 0.0025 * settings.camSens * (settings.invertY ? -1 : 1), PITCH_MIN, 1.35);
       },
     });
+    // phones: left thumb walks (read as analog in updateMe), right thumb turns the camera, pinch zooms
+    registerTouch({
+      canvas: this.canvas,
+      root: document.getElementById('world'),
+      active: () => this.running && !this.hidden && !this.paused,
+      stick: () => !this.fishing,
+      keys: null,
+      zoom: (f) => { this.dist = clamp(this.dist * f, 7, 34); },
+    });
 
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -195,6 +206,7 @@ export class World {
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointercancel', this.onPointerCancel);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('contextmenu', this.onContext);
     this.fountain = ambient('fountain');
@@ -215,6 +227,7 @@ export class World {
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);
+    window.removeEventListener('pointercancel', this.onPointerCancel);
     this.canvas.removeEventListener('wheel', this.onWheel);
     this.canvas.removeEventListener('contextmenu', this.onContext);
     if (this.fishing) { this.fishing.stop(); this.fishing = null; }
@@ -430,12 +443,13 @@ export class World {
 
   onPointerDown = (e) => {
     if (this.paused) return;
-    if (this.fishing && e.button === 0) { this.fishing.press(); this.drag = { fishing: true }; return; }
-    this.drag = { x: e.clientX, y: e.clientY, button: e.button, moved: false };
+    if (this.fishing && e.button === 0) { this.fishing.press(); this.drag = { fishing: true, id: e.pointerId }; return; }
+    if (e.fzPinch || (this.drag && e.pointerType === 'touch')) return; // a second finger (pinch) isn't a new drag
+    this.drag = { x: e.clientX, y: e.clientY, button: e.button, moved: false, id: e.pointerId };
   };
   onPointerMove = (e) => {
     const d = this.drag;
-    if (!d || d.fishing) return;
+    if (!d || d.fishing || e.pointerId !== d.id) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) > 6) d.moved = true;
     if (d.moved) {
@@ -447,8 +461,10 @@ export class World {
   };
   onPointerUp = (e) => {
     const d = this.drag;
+    if (d && e.pointerId !== d.id && !e.fzPinch) return;
     this.drag = null;
     if (d?.fishing) { this.fishing?.release(); return; }
+    if (e.fzPinch) return; // lifting a finger after a pinch isn't a tap
     if (!d || d.moved || d.button !== 0 || this.paused || !this.actors.has(S.me)) return;
     if (mouseLooking()) {
       if (this.near) this.hooks.onActivity(this.near.id);
@@ -456,6 +472,9 @@ export class World {
       return;
     }
     this.clickAt(e.clientX, e.clientY);
+  };
+  onPointerCancel = (e) => {
+    if (this.drag?.id === e.pointerId) { if (this.drag.fishing) this.fishing?.release(); this.drag = null; }
   };
   onWheel = (e) => {
     e.preventDefault();
@@ -481,7 +500,7 @@ export class World {
     if (!p) return;
     const px = p.x * M.PX + M.CENTER.x, py = p.z * M.PX + M.CENTER.y;
     const pond = SPOTS.find((s) => s.kind === 'pond');
-    if (M.distToRect({ x: px, y: py }, solid(pond)) === 0) {
+    if (M.inLake(px, py)) {
       if (this.near === pond) { this.hooks.onActivity(pond.id); return; }
       this.pendingSpot = pond;
       this.walkTo(M.doorOf(pond));
@@ -511,7 +530,7 @@ export class World {
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
-    this.camera.fov = w < 700 ? 60 : 50;
+    this.camera.fov = fitFov(w < 700 ? 60 : 50, w / h);
     this.camera.updateProjectionMatrix();
   };
 
@@ -519,7 +538,7 @@ export class World {
 
   blocked(x, y) {
     if (Math.hypot(x - M.CENTER.x, y - M.CENTER.y) < M.FOUNTAIN_R + R + 4) return true;
-    if (SPOTS.some((s) => M.distToRect({ x, y }, solid(s)) < R)) return true;
+    if (SPOTS.some((s) => spotDist(s, { x, y }) < R)) return true;
     if (this.layout.trees.some((t) => t.kind !== 'bush' && Math.hypot(x - t.x, y - t.y) < 9 + R)) return true;
     if (this.layout.lamps.some((l) => Math.hypot(x - l.x, y - l.y) < 6 + R)) return true;
     if (M.inCreek(x, y)) return true; // the creek is too deep to wade: use a bridge
@@ -671,7 +690,7 @@ export class World {
 
     this.sparks.update(dt);
     if (me && !this.fishing && !this.seated) {
-      const near = SPOTS.find((s) => M.distToRect(me, solid(s)) < 44) ?? null;
+      const near = SPOTS.find((s) => spotDist(s, me) < 44) ?? null;
       const bench = near ? null : this.layout.benches.find((b) => Math.hypot(b.x - me.x, b.y - me.y) < 34) ?? null;
       if (near !== this.near || bench !== this.nearBench) {
         this.near = near;
@@ -726,6 +745,7 @@ export class World {
       if (k.has('s') || k.has('arrowdown')) iy += 1;
       if (k.has('q')) this.yaw += dt * 2 * settings.keyTurn;
       if (k.has('r')) this.yaw -= dt * 2 * settings.keyTurn;
+      if (touch.stick.active && (touch.stick.x || touch.stick.y)) { ix = touch.stick.x; iy = touch.stick.y; }
     }
     let dx = 0, dy = 0;
     if (ix || iy) {
@@ -742,7 +762,7 @@ export class World {
       else { dx = vx / d; dy = vy / d; }
     }
     const len = Math.hypot(dx, dy);
-    const sprint = this.keys.has('shift') && !this.paused ? SPRINT : 1;
+    const sprint = (this.keys.has('shift') || (touch.stick.active && touch.stick.run)) && !this.paused ? SPRINT : 1;
     me.speed = sprint > 1 ? 2.0 : 1.0;
     me.moving = false;
     if (len) {

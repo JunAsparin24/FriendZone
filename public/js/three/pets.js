@@ -190,6 +190,49 @@ const BUILD = {
     add(tail, sph(0.06), white, { p: [0, 0.07, -0.26], outline: false });
     return (t, dt, m) => { trot(L, t, m); tail.rotation.y = Math.sin(t * 3) * 0.4; };
   },
+  pet_capybara(g) {
+    const fur = toon('#a8764a'), dark = toon('#6e4a2e'), nose = toon('#3a2616');
+    const body = add(g, sph(0.22), fur, { p: [0, 0.3, -0.06], s: [1, 0.88, 1.45] });
+    add(body, sph(0.16), toon('#bf8c5c'), { p: [0, -0.07, 0.04], s: [0.95, 0.7, 1.15], outline: false }); // lighter belly
+    const L = legs(g, dark, 0.12, 0.16, 0.2, 0.14, 0.055);
+    const head = new THREE.Group();
+    head.position.set(0, 0.48, 0.24);
+    g.add(head);
+    add(head, sph(0.17), fur, { s: [0.95, 0.9, 1.25] }); // long, boxy capybara head
+    add(head, sph(0.12), dark, { p: [0, -0.04, 0.17], s: [1.05, 0.85, 0.75] }); // big square snout
+    for (const s of [-1, 1]) {
+      add(head, sph(0.018, 8, 6), nose, { p: [s * 0.045, 0.0, 0.26], outline: false }); // nostrils
+      add(head, sph(0.045, 10, 8), dark, { p: [s * 0.11, 0.13, -0.08], s: [1, 0.8, 0.55] }); // tiny round ears
+    }
+    // sleepy, content eyes: dark ovals with heavy lids that droop further while it rests
+    const lids = [];
+    for (const s of [-1, 1]) {
+      const eye = add(head, sph(0.03, 12, 8), basic('#1d1b2e'), { p: [s * 0.12, 0.06, 0.1], s: [1, 0.9, 0.6], outline: false });
+      add(eye, sph(0.009, 6, 4), basic('#ffffff'), { p: [0.009, 0.01, 0.022], outline: false }); // tiny sparkle
+      lids.push(add(head, new THREE.SphereGeometry(0.034, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), fur, { p: [s * 0.12, 0.062, 0.1], s: [1.05, 1, 0.75], outline: false }));
+      add(head, new THREE.CircleGeometry(0.03, 12), basic('#ff8fab', { transparent: true, opacity: 0.5, depthWrite: false }), { p: [s * 0.14, -0.01, 0.13], r: [0, s * 0.7, 0], outline: false });
+    }
+    // the famous mandarin on its head, with a little leaf
+    const orange = new THREE.Group();
+    orange.position.set(0, 0.16, -0.01);
+    head.add(orange);
+    add(orange, sph(0.065, 14, 10), toon('#ff9a2e'), { p: [0, 0.05, 0], s: [1, 0.85, 1] });
+    add(orange, cyl(0.006, 0.006, 0.025, 5), toon('#6b4226'), { p: [0, 0.11, 0], outline: false });
+    add(orange, sph(0.03, 8, 6), toon('#4caf50'), { p: [0.025, 0.115, 0], s: [1.4, 0.3, 0.8], r: [0, 0, -0.4], outline: false });
+    const tail = add(body, sph(0.03, 8, 6), dark, { p: [0, 0.05, -0.22], outline: false });
+    let rest = 0;
+    return (t, dt, m) => {
+      trot(L, t, m, 8, 0.4); // an unhurried waddle
+      g.rotation.z = m ? Math.sin(t * 8) * 0.04 : 0;
+      head.rotation.x = m ? Math.sin(t * 8) * 0.05 : Math.sin(t * 0.8) * 0.04 + 0.05;
+      orange.rotation.z = Math.sin(t * (m ? 8 : 1.2)) * (m ? 0.12 : 0.05);
+      // eyes relax the longer it stands still; a slow, blissful blink now and then
+      rest = m ? Math.max(0, rest - dt * 3) : Math.min(1, rest + dt * 0.5);
+      const blink = Math.max(0, Math.sin(t * 0.9) - 0.94) * 16;
+      lids.forEach((l) => { l.rotation.x = -0.2 + Math.min(1, 0.35 + rest * 0.35 + blink) * 1.2; });
+      tail.position.y = 0.05 + Math.sin(t * 2) * 0.005;
+    };
+  },
   pet_giraffe(g) {
     const yellow = toon('#ffd36b'), spot = toon('#c9803a'), dark = toon('#6b4226'), light = toon('#fff1c9');
     const body = add(g, sph(0.2), yellow, { p: [0, 0.42, -0.04], s: [0.95, 0.85, 1.25] });

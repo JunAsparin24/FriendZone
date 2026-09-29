@@ -9,6 +9,7 @@ import { Character } from './three/character.js';
 import { settings, onSettings, pixelRatio, shakeScale } from './settings.js';
 import { iconSvg } from './icons.js';
 import { sfx } from './sfx.js';
+import { touch, registerTouch, setTouchButtons, actionHint, fitFov } from './touch.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown', 'hat_horns']);
@@ -68,6 +69,18 @@ class Stage {
     onSettings((s, changed) => {
       if ('quality' in changed) { r.setPixelRatio(pixelRatio()); this.resize(); }
     });
+    // phones: the left thumb presses WASD (or walks, in rooms), the right thumb turns/aims/taps
+    registerTouch({
+      canvas: this.canvas,
+      root: el,
+      active: () => !!this.active && !document.querySelector('#modal:not(.hidden)'),
+      stick: () => this.active?.touch?.stick !== false,
+      keys: this.keys,
+      zoom: (f) => {
+        const o = this.orbit;
+        if (o && !o.fixed) o.dist = clamp(o.dist * f, o.minDist ?? 4, o.maxDist ?? 30);
+      },
+    });
 
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('keydown', (e) => {
@@ -91,10 +104,12 @@ class Stage {
       toNdc(e);
       this.mouseIn = true;
       const d = this.drag;
-      if (d) {
+      if (d && e.pointerId === d.id) {
         const dx = e.clientX - d.x, dy = e.clientY - d.y;
         if (!d.moved && Math.hypot(dx, dy) > 6) d.moved = true;
-        if (d.moved && this.orbit && !this.orbit.fixed) {
+        // in aiming games a finger on the screen aims, it doesn't turn the camera
+        const aiming = e.pointerType === 'touch' && this.active?.touch?.aim;
+        if (d.moved && this.orbit && !this.orbit.fixed && !aiming) {
           this.orbit.yaw -= dx * 0.0055 * settings.camSens;
           this.orbit.pitch = clamp(this.orbit.pitch + dy * 0.0035 * settings.camSens * (settings.invertY ? -1 : 1), this.orbit.minPitch ?? 0.25, this.orbit.maxPitch ?? 1.3);
         }
@@ -105,14 +120,24 @@ class Stage {
     });
     this.canvas.addEventListener('pointerdown', (e) => {
       toNdc(e);
-      this.drag = { x: e.clientX, y: e.clientY, moved: false, button: e.button };
+      this.mouseIn = true; // a finger has no hover, so this is where it's "pointing" now
+      if (e.fzPinch || (this.drag && e.pointerType === 'touch')) return; // a second finger isn't a new drag
+      this.drag = { x: e.clientX, y: e.clientY, moved: false, button: e.button, id: e.pointerId };
       this.pointerDown = true;
       this.onPointer?.('down', e);
+    });
+    window.addEventListener('pointercancel', (e) => {
+      if (this.drag?.id !== e.pointerId) return;
+      this.drag = null;
+      this.pointerDown = false;
+      this.onPointer?.('up', e, { moved: true });
     });
     window.addEventListener('pointerup', (e) => {
       if (!this.active) return;
       const d = this.drag;
+      if (d && e.pointerId !== d.id) return;
       this.drag = null;
+      if (e.fzPinch) { this.pointerDown = false; this.onPointer?.('up', e, { moved: true }); return; }
       this.pointerDown = false;
       if (mouseLooking()) { if (d && !d.moved && d.button === 0) this.near?.use(); return; } // cursor hidden: click uses what's nearby
       this.onPointer?.('up', e, d);
@@ -151,6 +176,9 @@ class Stage {
     this.fade.classList.add('out');
     this.resize();
     this.active = activity;
+    setTouchButtons(activity.touch?.buttons);
+    document.body.classList.add('in-area');
+    if (touch.enabled && activity.touch?.hint) setTimeout(() => this.active === activity && this.banner(activity.touch.hint, 4500), 900);
     try {
       this.cleanup = activity.area(this);
     } catch (e) {
@@ -175,6 +203,8 @@ class Stage {
     this.cleanup = null;
     this.active = null;
     this.keys.clear();
+    setTouchButtons([]);
+    document.body.classList.remove('in-area');
     for (const k of [...this.people.keys()]) this.removePerson(k);
     this.scene = null;
     this.el.classList.add('hidden');
@@ -186,7 +216,7 @@ class Stage {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
-    this.camera.fov = w < 700 ? 62 : 50;
+    this.camera.fov = fitFov(w < 700 ? 62 : 50, w / h);
     this.camera.updateProjectionMatrix();
   }
 
@@ -358,7 +388,7 @@ class Stage {
       this.near = near;
       this.promptEl.classList.toggle('hidden', !near);
       if (near) {
-        this.promptEl.innerHTML = `Press <kbd>E</kbd> or click to ${near.icon ? `<span class="prompt-ico">${iconSvg(near.icon)}</span> ` : ''}${esc(near.label)}`;
+        this.promptEl.innerHTML = `${actionHint()} ${near.icon ? `<span class="prompt-ico">${iconSvg(near.icon)}</span> ` : ''}${esc(near.label)}`;
         this.promptEl.onclick = () => near.use();
         sfx('near');
       }
@@ -425,6 +455,7 @@ class Stage {
       if (k.has('s') || k.has('arrowdown')) iy += 1;
       if (k.has('q')) o.yaw += dt * 2 * settings.keyTurn;
       if (k.has('r')) o.yaw -= dt * 2 * settings.keyTurn;
+      if (touch.stick.active && (touch.stick.x || touch.stick.y)) { ix = touch.stick.x; iy = touch.stick.y; } // analog thumb
       let dx = 0, dz = 0;
       if (ix || iy) {
         const fx = -Math.sin(o.yaw), fz = -Math.cos(o.yaw), rx = Math.cos(o.yaw), rz = -Math.sin(o.yaw);
@@ -437,7 +468,7 @@ class Stage {
         else { dx = vx / d; dz = vz / d; }
       }
       const len = Math.hypot(dx, dz);
-      const run = k.has('shift') ? 1.9 : 0.7;
+      const run = k.has('shift') || (touch.stick.active && touch.stick.run) ? 1.9 : 0.7;
       me.moving = false;
       me.speed = run > 1 ? 1.9 : 0.85;
       if (len) {

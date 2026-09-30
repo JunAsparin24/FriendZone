@@ -216,6 +216,7 @@ export class World {
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('contextmenu', this.onContext);
     this.fountain = ambient('fountain');
+    this.rainSound = ambient('rain');
     this.resize();
     net.send('scene', { scene: 'world' });
     this.last = performance.now();
@@ -241,6 +242,8 @@ export class World {
     for (const k of [...this.actors.keys()]) this.removeActor(k);
     this.fountain?.stop();
     this.fountain = null;
+    this.rainSound?.stop();
+    this.rainSound = null;
     this.labels?.classList.add('hidden');
     this.keys.clear();
     this.target = this.pendingSpot = this.near = null;
@@ -847,6 +850,7 @@ export class World {
     const lift = Math.max(0, PITCH_LOW - this.pitch) * this.dist * 1.1;
     this.camera.lookAt(c.x, c.y + lift, c.z);
     const dn = this.dayNight.update(c);
+    this.rainSound?.set(dn.storm * (this.paused ? 0.3 : 1));
     if (this.clockEl && performance.now() - (this.clockAt ?? 0) > 1000) {
       this.clockAt = performance.now();
       const tod = timeOfDay(dn.phase);

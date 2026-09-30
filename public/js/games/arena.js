@@ -23,7 +23,7 @@ const ITEM_LOOK = {
   shield: { emoji: '🛡️', color: '#39c6ff', label: 'Shield!' },
   speed: { emoji: '👟', color: '#6ee7a0', label: 'Speed boost!' },
 };
-const BUFF_TIME = { rapid: 6, shield: 5, speed: 6 };
+const BUFF_TIME = { rapid: 6, shield: 3, speed: 6 }; // (a shield also pops after soaking up one hit)
 const THEMES = {
   sand: { floor: '#e6cf98', line: '#c9a86a', wall: '#b8a888', wall2: '#9c8c70', trim: '#e8dcc0', accent: '#d6334a', sky: '#8fc8f5', fog: '#cfe4f5', outer: '#c9b48c', kind: 'castle' },
   hedge: { floor: '#86c86e', line: '#6aa855', wall: '#2f8a44', wall2: '#257a3a', trim: '#3fa34d', accent: '#ff8fc7', sky: '#a8dcff', fog: '#d8f0e0', outer: '#4f9a45', kind: 'hedge' },
@@ -314,7 +314,7 @@ export function arena(stage) {
     glow.position.y = 1.1;
     g.add(glow);
     stage.scene.add(g);
-    items.set(it.id, { ...it, g, s, ring });
+    items.set(it.id, { ...it, g, s, ring, born: performance.now() });
   }
   function removeItem(id) {
     const it = items.get(id);
@@ -374,10 +374,12 @@ export function arena(stage) {
     sfx('whoosh');
   }
 
-  function spawnBullet(owner, id, x, y, a, h = 1.15) {
+  /** a: heading, p: pitch (> 0 aims down), h: launch height. Shots fly in a straight line along the aim. */
+  function spawnBullet(owner, id, x, y, a, h = 1.15, p = 0) {
     const mesh = orb(colorOf(owner), 0.12, 4);
     stage.scene.add(mesh);
-    bullets.push({ owner, id, x, y, h, vx: Math.cos(a) * BULLET_SPEED, vy: Math.sin(a) * BULLET_SPEED, life: BULLET_LIFE, mesh });
+    const flat = Math.cos(p) * BULLET_SPEED;
+    bullets.push({ owner, id, x, y, h, vx: Math.cos(a) * flat, vy: Math.sin(a) * flat, vh: (-Math.sin(p) * BULLET_SPEED) / K, life: BULLET_LIFE, mesh });
   }
 
   // ---- network --------------------------------------------------------------------
@@ -402,7 +404,7 @@ export function arena(stage) {
     arena_pos: (m) => { const f = fighters.get(m.k); if (f) { f.tx = m.x; f.ty = m.y; f.a = m.a; f.h = m.h ?? 0; f.sl = m.sl; } },
     arena_shot: (m) => {
       const f = fighters.get(m.k);
-      spawnBullet(m.k, m.id, m.x, m.y, m.a, 1.15 + (f?.h ?? 0));
+      spawnBullet(m.k, m.id, m.x, m.y, m.a, m.h ?? 1.15 + (f?.h ?? 0), m.p ?? 0);
       const me2 = fighters.get(S.me);
       const d = f && me2 ? Math.hypot(f.x - me2.x, f.y - me2.y) : 600;
       sfx('shoot_far', { vol: Math.max(0.15, 1 - d / 900) });
@@ -442,6 +444,17 @@ export function arena(stage) {
       breakEl.classList.remove('hidden');
     },
     arena_item: (m) => { addItem(m.item); sfx('pop', { vol: 0.5 }); },
+    arena_shield_pop: (m) => {
+      const f = fighters.get(m.k);
+      if (!f) return;
+      f.buffs.shield = 0;
+      burstAt(f.x, f.y, '#9fe8ff', 16, 1.2);
+    },
+    arena_item_gone: (m) => {
+      const it = items.get(m.id);
+      if (it) burstAt(it.x, it.y, '#ffffff', 10, 1);
+      removeItem(m.id);
+    },
     arena_picked: (m) => {
       const it = items.get(m.id);
       if (it) burstAt(it.x, it.y, ITEM_LOOK[m.kind].color, 20, 1);
@@ -515,13 +528,16 @@ export function arena(stage) {
         lastShot = now;
         tapped = false;
         const id = ++shotId;
-        const x = mine.x + Math.cos(mine.a) * 24, y = mine.y + Math.sin(mine.a) * 24;
-        if (!inWall(x, y)) {
-          spawnBullet(S.me, id, x, y, mine.a, 1.15 + jump.h);
+        // from your eyes, straight down the crosshair (up, down and all)
+        const pitch = orbit.pitch, reach = 24 * Math.cos(pitch);
+        const x = mine.x + Math.cos(mine.a) * reach, y = mine.y + Math.sin(mine.a) * reach;
+        const h0 = Math.max(0.1, orbit.height - (Math.sin(pitch) * 24) / K);
+        if (!inWall(x, y) || h0 > WALL_H) {
+          spawnBullet(S.me, id, x, y, mine.a, h0, pitch);
           recoil = 1;
           gun.flash.material.opacity = 1;
           sfx('shoot');
-          net.send('arena_shoot', { id, x, y, a: mine.a });
+          net.send('arena_shoot', { id, x, y, a: mine.a, h: h0, p: pitch });
         }
       }
       for (const it of items.values()) {
@@ -567,10 +583,11 @@ export function arena(stage) {
     bullets = bullets.filter((b) => {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
+      b.h += b.vh * dt;
       b.life -= dt;
       const [X, Z] = to3(b.x, b.y);
       b.mesh.position.set(X, b.h, Z);
-      let dead = b.life <= 0 || b.x < 0 || b.x > AW() || b.y < 0 || b.y > AH() || (inWall(b.x, b.y) && b.h < WALL_H);
+      let dead = b.life <= 0 || b.h <= 0.03 || b.x < 0 || b.x > AW() || b.y < 0 || b.y > AH() || (inWall(b.x, b.y) && b.h < WALL_H);
       if (!dead) {
         for (const [k, f] of fighters) {
           if (k === b.owner || f.hp <= 0 || Math.hypot(f.x - b.x, f.y - b.y) > PR + 7) continue;
@@ -581,7 +598,13 @@ export function arena(stage) {
           if (b.owner === S.me) hitMark = Math.max(hitMark, now + 180);
           // only the player who got hit reports it, so everyone agrees on one source of truth
           if (k === S.me && now > safeUntil && !has(f, 'shield')) net.send('arena_hit', { by: b.owner, id: b.id });
-          else if (has(f, 'shield')) sparks.burst(X, b.h, Z, '#9fe8ff', { n: 8 });
+          else if (has(f, 'shield')) {
+            // the shield soaks up this one hit, then pops
+            f.buffs.shield = 0;
+            sparks.burst(X, b.h, Z, '#9fe8ff', { n: 20, speed: 4 });
+            sfx('pop');
+            if (k === S.me) { net.send('arena_shield_pop'); stage.banner('🛡️ Shield broke!', 900); }
+          }
           break;
         }
       }
@@ -593,7 +616,11 @@ export function arena(stage) {
       return true;
     });
 
-    for (const it of items.values()) { it.s.position.y = 1.1 + Math.sin(now / 250 + it.id) * 0.2; it.ring.rotation.z = now / 600; }
+    for (const it of items.values()) {
+      it.s.position.y = 1.1 + Math.sin(now / 250 + it.id) * 0.2;
+      it.ring.rotation.z = now / 600;
+      it.g.visible = now - it.born < 5000 || Math.floor(now / 110) % 2 === 0; // blinks before it vanishes
+    }
 
     // first-person camera: at your eyes (lower while sliding), plus a little head bob and gun sway
     const mineF = fighters.get(S.me);

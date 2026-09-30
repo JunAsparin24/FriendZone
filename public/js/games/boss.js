@@ -587,7 +587,41 @@ export function boss(stage) {
     p.char.setProp('blaster');
     p.char.aiming = true;
     fighters.set(k, { ...f, tx: f.x, ty: f.y, p, rev: 0, hurt: 0 });
+    if (k === mvpKey) { mvpKey = null; setMvp(k); }
   }
+  // the last boss's MVP wears a floating golden crown until the next boss falls
+  let mvpKey = null, crown = null;
+  function makeCrown() {
+    const g = new THREE.Group();
+    const gold = new THREE.MeshStandardMaterial({ color: '#ffc53d', metalness: 0.8, roughness: 0.25, emissive: '#7a5200', emissiveIntensity: 0.4 });
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.24, 0.14, 20, 1, true), gold);
+    band.material.side = THREE.DoubleSide;
+    g.add(band);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.17, 4), gold);
+      spike.position.set(Math.cos(a) * 0.24, 0.14, Math.sin(a) * 0.24);
+      g.add(spike);
+      const gem = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: ['#e0463c', '#39c6ff', '#6ee7a0'][i % 3] }));
+      gem.position.set(Math.cos(a) * 0.255, 0.0, Math.sin(a) * 0.255);
+      g.add(gem);
+    }
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffd84d, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.scale.setScalar(0.9);
+    g.add(glow);
+    return g;
+  }
+  function setMvp(k) {
+    if (k === mvpKey && crown?.parent) return;
+    if (crown) crown.parent?.remove(crown);
+    mvpKey = k;
+    const f = k && fighters.get(k);
+    if (!f) return;
+    crown ??= makeCrown();
+    f.p.char.rig.head.add(crown);
+    crown.position.set(0, 0.62, 0);
+  }
+
   function removeFighter(k) {
     const f = fighters.get(k);
     if (f?.ring) stage.scene.remove(f.ring, f.revArc);
@@ -898,6 +932,7 @@ export function boss(stage) {
     run.state = m.state;
     run.floor = m.floor;
     run.best = m.best;
+    setMvp(m.mvp ?? null);
     run.endsAt = now + (m.left ?? 0) * 1000;
     run.choices = m.choices ?? null;
     run.picked = new Set(m.picked ?? []);
@@ -1062,6 +1097,7 @@ export function boss(stage) {
       if (m.k === S.me) { safeUntil = performance.now() + 1200; if (m.wind) stage.banner('🌀 Second Wind! Back on your feet.', 1600); }
     },
     boss_dead: (m) => {
+      setMvp(m.mvp ?? null);
       if (!boss) return;
       boss.st = 'dead';
       boss.hp = 0;
@@ -1105,6 +1141,7 @@ export function boss(stage) {
   // ---- simulation + rendering --------------------------------------------------------
   stage.onFrame((dt, now) => {
     const t = now / 1000;
+    if (crown?.parent) { crown.rotation.y = t * 1.2; crown.position.y = 0.62 + Math.sin(t * 3) * 0.04; }
     dash.cd = Math.max(0, dash.cd - dt);
     timers = timers.filter((tm) => (tm.at <= now ? (tm.fn(), false) : true));
     const p3 = stage.pointerOnPlane(1);

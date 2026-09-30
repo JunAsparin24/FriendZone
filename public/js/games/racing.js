@@ -733,9 +733,9 @@ export function racing(stage) {
     const canJoin = !joined && (r.state === 'idle' || r.state === 'waiting');
     actions.innerHTML = [
       canJoin ? '<button class="btn primary" data-a="join">Join race</button>' : '',
-      joined && r.state === 'waiting' ? '<button class="btn primary" data-a="start">🏁 Start race!</button>' : '',
+      joined && r.state === 'waiting' ? (racers().length >= 2 ? '<button class="btn primary" data-a="start">🏁 Start race!</button>' : '<button class="btn primary" disabled title="Needs 2+ racers">🏁 Waiting for racers…</button>') : '',
       joined && r.state === 'waiting' ? '<button class="btn ghost" data-a="leave">Leave grid</button>' : '',
-      r.state === 'waiting' ? `<span class="muted">${racers().length} on the grid. Anyone on it can start. Practice laps until then!</span>` : '',
+      r.state === 'waiting' ? `<span class="muted">${racers().length} on the grid. ${racers().length >= 2 ? 'Anyone on it can start.' : 'A race needs at least 2 racers.'} Practice laps until then!</span>` : '',
       !joined && !canJoin ? '<span class="muted">Race in progress. You\'re up next!</span>' : '',
     ].join('');
     actions.classList.toggle('hidden', !actions.innerHTML);

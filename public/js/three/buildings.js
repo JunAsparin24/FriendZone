@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { TAU, toon, basic, shiny, outlineMaterial, canvasTexture, additive, glowTexture } from './materials.js';
 import { Character } from './character.js';
 import { PX, CENTER, heightAt } from '../map.js';
+import { letterSign } from './signs3d.js';
 
 const faceted = (geo) => { const g = geo.index ? geo.toNonIndexed() : geo; g.computeVertexNormals(); return g; };
 
@@ -227,32 +228,19 @@ const easelTex = canvasTexture(256, 320, (ctx) => {
   ctx.beginPath(); ctx.moveTo(0, 290); ctx.bezierCurveTo(80, 270, 170, 305, 256, 280); ctx.stroke();
 });
 
-/** A framed sign board with lettering on the front face (text redrawn once fonts load). */
-function signBoard(g, ctx, text, { w = 6, h = 1.4, p = [0, 0, 0], bg = ['#d6334a', '#8f1530'], fg = '#ffffff', frame = '#5a3a22', font = '"Luckiest Guy", Rubik, sans-serif', stroke = 'rgba(0,0,0,.35)' } = {}) {
-  const cw = 1024, ch = Math.round((1024 * h) / w);
-  const draw = (c) => {
-    const grad = c.createLinearGradient(0, 0, 0, ch);
-    grad.addColorStop(0, bg[0]);
-    grad.addColorStop(1, bg[1] ?? bg[0]);
-    c.fillStyle = grad;
-    c.fillRect(0, 0, cw, ch);
-    let size = Math.floor(ch * 0.7);
-    c.font = `${size}px ${font}`;
-    while (c.measureText(text).width > cw * 0.9 && size > 10) { size -= 4; c.font = `${size}px ${font}`; }
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.lineWidth = size * 0.12;
-    c.strokeStyle = stroke;
-    c.strokeText(text, cw / 2, ch / 2 + size * 0.06);
-    c.fillStyle = fg;
-    c.fillText(text, cw / 2, ch / 2 + size * 0.06);
-  };
-  const tex = ctx?.text ? ctx.text(cw, ch, draw) : canvasTexture(cw, ch, draw);
-  const fm = toon(frame);
-  const face = new THREE.MeshBasicMaterial({ map: tex });
-  const m = add(g, new THREE.BoxGeometry(w, h, 0.25), [fm, fm, fm, fm, face, fm], { p, outline: true });
-  add(g, new THREE.BoxGeometry(w + 0.3, h + 0.3, 0.18), fm, { p: [p[0], p[1], p[2] - 0.06] });
-  return m;
+/**
+ * A building's name in big 3D marquee letters (like the casino): glowing faces, sides in the
+ * building's colour, chasing bulbs, standing on a steel rail. Fills the old w × h board area.
+ */
+function signBoard(g, ctx, text, { w = 6, h = 1.4, p = [0, 0, 0], bg = ['#d6334a', '#8f1530'], fg = '#ffffff', frame = '#5a3a22' } = {}) {
+  const light = (c) => new THREE.Color(c).getHSL({}).l > 0.75;
+  const side = light(bg[0]) ? fg : bg[0];
+  const face = light(fg) ? '#fff6e0' : '#fff6e0';
+  const rail = add(g, new THREE.BoxGeometry(w * 0.96, 0.14, 0.34), toon('#23263f'), { p: [p[0], p[1] - h / 2 - 0.02, p[2] - 0.1], outline: true });
+  const sign = letterSign(text, { w: w * 0.94, h: h * 0.95, face, side, depth: Math.min(0.32, h * 0.22) });
+  sign.position.set(p[0], p[1] - h / 2 + 0.06, p[2] + 0.05);
+  g.add(sign);
+  return rail;
 }
 
 /** A small group positioned in the builder's frame. */
@@ -371,25 +359,8 @@ export const BUILDERS = {
       add(g, new THREE.BoxGeometry(2.4, 1.7, 0.14), toon('#6a4fd8', { emissive: '#8b6bff', emissiveIntensity: 0.6 }), { p: [x, 2.3, d / 2 + 0.07], cast: false });
       for (const o of [-0.6, 0, 0.6]) add(g, new THREE.BoxGeometry(0.4, 1.0, 0.05), toon(['#ff5d73', '#39c6ff', '#ffd84d'][(o + 0.6) / 0.6 | 0]), { p: [x + o, 1.95, d / 2 + 0.16], cast: false });
     }
-    // marquee with chasing bulbs
-    const signW = 8, signH = 1.6;
-    const tex = ctx.text(1024, 205, (c) => {
-      const grd = c.createLinearGradient(0, 0, 0, 205);
-      grd.addColorStop(0, '#2a1a5e'); grd.addColorStop(1, '#140c33');
-      c.fillStyle = grd; c.fillRect(0, 0, 1024, 205);
-      c.font = '130px "Luckiest Guy", Rubik, sans-serif';
-      c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.shadowColor = '#ff4fd8'; c.shadowBlur = 30;
-      c.fillStyle = '#ffffff'; c.fillText('ARCADE', 512, 115);
-    });
-    add(g, new THREE.BoxGeometry(signW, signH, 0.3), [toon('#140c33'), toon('#140c33'), toon('#140c33'), toon('#140c33'), new THREE.MeshBasicMaterial({ map: tex }), toon('#140c33')], { p: [0, h + 1.3, d / 2 - 0.3], outline: true });
-    const bulbs = [];
-    const on = basic('#fff6b0'), off = basic('#6a5a2a');
-    for (let i = 0; i < 20; i++) {
-      const x = -signW / 2 + 0.25 + (i * (signW - 0.5)) / 19;
-      for (const y of [h + 1.3 + signH / 2 + 0.08, h + 1.3 - signH / 2 - 0.08]) bulbs.push(add(g, new THREE.SphereGeometry(0.09, 8, 6), on, { p: [x, y, d / 2 - 0.12], cast: false }));
-    }
-    anim.push((t) => { const k = Math.floor(t * 8); bulbs.forEach((b, i) => { b.material = (i + k) % 3 ? on : off; }); });
+    // marquee: big 3D letters with chasing bulbs
+    signBoard(g, ctx, 'ARCADE', { w: 7.5, h: 1.7, p: [0, h + 1.3, d / 2 - 0.2], bg: ['#6a4fd8'], frame: '#140c33' });
     // a pixel space invader on the roof that bobs about
     const inv = new THREE.Group();
     inv.position.set(-w * 0.28, h + 0.4, -d * 0.1);
@@ -471,8 +442,9 @@ export const BUILDERS = {
     for (let k = 0; k < 3; k++) cone(g, x0 + bw * (k + 0.5) + bw * 0.38, d / 2 + 1.1);
   },
 
-  cave(g, w, d, anim) {
+  cave(g, w, d, anim, ctx) {
     const rock = (x, y, z, r, c, s = [1, 1, 1]) => add(g, faceted(new THREE.DodecahedronGeometry(r, 1)), toon(c), { p: [x, y, z], s, outline: true });
+    signBoard(g, ctx, 'BOSS CAVE', { w: 6, h: 1.2, p: [0, 6.7, 1.6], bg: ['#6a2fd6'], frame: '#23263f' });
     rock(0, 1.6, -0.6, 4.6, '#7a7589', [1.35, 0.95, 0.95]);
     rock(-4.4, 1.0, 0.4, 2.6, '#86819a', [1, 0.9, 1]);
     rock(4.6, 1.1, 0.2, 2.7, '#7f7a92', [1, 0.95, 1]);
@@ -507,8 +479,9 @@ export const BUILDERS = {
     });
   },
 
-  colosseum(g, w, d, anim) {
+  colosseum(g, w, d, anim, ctx) {
     const rx = w / 2, rz = d / 2, h = 5.2;
+    signBoard(g, ctx, 'ARENA', { w: 5.4, h: 1.6, p: [0, h + 1.05, rz - 0.2], bg: ['#d6334a'], frame: '#23263f' });
     const outer = new THREE.CylinderGeometry(1, 1, h, 64, 1, true);
     const wallMat = new THREE.MeshToonMaterial({ map: tiled(arenaWallTex, 5, 1), side: THREE.DoubleSide, gradientMap: toon('#fff').gradientMap });
     add(g, outer, wallMat, { p: [0, h / 2, 0], s: [rx, 1, rz] });
@@ -848,20 +821,8 @@ export const BUILDERS = {
         s.material.opacity = 0.7 * (1 - p);
       }));
     });
-    const signTex = ctx.text(256, 96, (c) => {
-      c.fillStyle = '#e8c07a';
-      c.fillRect(0, 0, 256, 96);
-      c.strokeStyle = '#8b5a2b';
-      c.lineWidth = 8;
-      c.strokeRect(4, 4, 248, 88);
-      c.font = '44px "Luckiest Guy", Rubik, sans-serif';
-      c.textAlign = 'center';
-      c.textBaseline = 'middle';
-      c.fillStyle = '#5a3a1c';
-      c.fillText('HOMES', 128, 54);
-    });
-    add(g, new THREE.CylinderGeometry(0.08, 0.08, 1.8, 8), toon('#8b5a2b'), { p: [0, 0.9, d / 2 + 0.6] });
-    add(g, new THREE.BoxGeometry(2.2, 0.85, 0.12), [toon('#e8c07a'), toon('#e8c07a'), toon('#e8c07a'), toon('#e8c07a'), new THREE.MeshBasicMaterial({ map: signTex }), toon('#e8c07a')], { p: [0, 1.7, d / 2 + 0.66], outline: true });
+    for (const sx of [-1.1, 1.1]) add(g, new THREE.CylinderGeometry(0.08, 0.08, 1.8, 8), toon('#8b5a2b'), { p: [sx, 0.9, d / 2 + 0.6] });
+    signBoard(g, ctx, 'HOMES', { w: 2.6, h: 0.75, p: [0, 1.95, d / 2 + 0.7], bg: ['#2ed8c3'], frame: '#8b5a2b' });
   },
 };
 
@@ -905,13 +866,7 @@ BUILDERS.fishstand = function fishstand(g, w, d, anim) {
   });
   add(g, new THREE.PlaneGeometry(1.6, 0.8), new THREE.MeshBasicMaterial({ map: slate }), { p: [w / 2 - 1.3, 0.85, cz + 0.31], cast: false });
   // big sign on top
-  const sign = canvasTexture(512, 128, (c) => {
-    c.fillStyle = '#fff6e0'; c.fillRect(0, 0, 512, 128);
-    c.strokeStyle = '#2f7fe0'; c.lineWidth = 14; c.strokeRect(7, 7, 498, 114);
-    c.font = '64px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillStyle = '#2f5fa0'; c.fillText('FISH MARKET', 256, 70);
-  });
-  add(g, new THREE.BoxGeometry(4.6, 1.15, 0.15), [dark, dark, dark, dark, new THREE.MeshBasicMaterial({ map: sign }), dark], { p: [0, 4.75, -d / 2 + 0.45], outline: true });
+  signBoard(g, null, 'FISH MARKET', { w: 5.2, h: 0.9, p: [0, 4.75, -d / 2 + 0.45], bg: ['#2f7fe0'], frame: '#6b4226' });
   const bigFish = new THREE.Group();
   add(bigFish, new THREE.SphereGeometry(0.45, 16, 12), toon('#39a0ff'), { s: [2, 0.8, 0.5], outline: true });
   add(bigFish, new THREE.ConeGeometry(0.4, 0.6, 4), toon('#39a0ff'), { p: [-1.05, 0, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.35], outline: true });

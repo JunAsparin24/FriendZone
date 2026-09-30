@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildPet } from './pets.js';
 import {
   TAU, toon, basic, shiny, outlineMaterial, canvasTexture,
-  additive, starTexture, heartTexture, flameTexture, glowTexture,
+  additive, starTexture, heartTexture, flameTexture, glowTexture, puffTexture,
 } from './materials.js';
 
 export const DEFAULT_LOOK = {
@@ -275,7 +275,7 @@ function hairline(phi, front, side, back) {
 /** A hair shell hugging the head down to a hairline: high over the forehead, low at the nape. */
 function shellGeo(front, side, back, r) {
   return geo(`shell${front},${side},${back},${r}`, () => {
-    const U = 56, V = 18, pos = [], nor = [], idx = [];
+    const U = 56, V = 18, pos = [], nor = [], uv = [], idx = [];
     for (let i = 0; i <= U; i++) {
       const phi = (i / U) * TAU;
       const lim = hairline(phi, front, side, back);
@@ -284,6 +284,7 @@ function shellGeo(front, side, back, r) {
         const n = [Math.sin(th) * Math.sin(phi), Math.cos(th), Math.sin(th) * Math.cos(phi)];
         pos.push(n[0] * r, n[1] * r, n[2] * r);
         nor.push(...n);
+        uv.push(i / U, j / V); // u: round the head, v: crown -> hairline
       }
     }
     for (let i = 0; i < U; i++) {
@@ -295,6 +296,7 @@ function shellGeo(front, side, back, r) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
     return g;
   });
@@ -340,7 +342,7 @@ function curtain(head, mat, { len = 0.62, flare = 0.1, wrap = 0.35, top = 0 } = 
 }
 
 /** A tied tail of hair along a curve of points, with a scrunchie at the root. */
-function tail(head, mat, pts, r0, r1, tie = '#ff5d73') {
+function tail(head, mat, pts, r0, r1, tie = '#ff5d73') { // (tie: the scrunchie's colour)
   const v = pts.map((p) => new THREE.Vector3(...p));
   taper(head, v, r0, r1, mat);
   part(head, sphere(r1 * 1.15, 10, 8), mat, { p: v[v.length - 1].toArray(), outline: OUT_THIN });
@@ -473,6 +475,48 @@ function lockPath(phi0, th0, phi1, th1, len, { lift = 0.03, out = 0.07, sway = 0
   return pts;
 }
 
+const hairTexCache = new Map();
+/** 360 waves: rippling bands of light and dark, circling out from the crown. */
+function wavesMaterial(color) {
+  const key = `waves${color}`;
+  if (!hairTexCache.has(key)) {
+    const tex = canvasTexture(256, 256, (c) => {
+      c.fillStyle = color; c.fillRect(0, 0, 256, 256);
+      const light = mix(color, '#ffffff', 0.22), dark = mix(color, '#000000', 0.45);
+      for (let row = 0; row < 16; row++) {
+        const y0 = 6 + row * 16;
+        c.lineWidth = 5;
+        c.strokeStyle = row % 2 ? dark : light;
+        c.beginPath();
+        for (let x = 0; x <= 256; x += 4) c.lineTo(x, y0 + Math.sin((x / 256) * Math.PI * 2 * 12 + row * 0.7) * 4);
+        c.stroke();
+      }
+    });
+    tex.wrapS = THREE.RepeatWrapping;
+    hairTexCache.set(key, new THREE.MeshToonMaterial({ color: '#ffffff', map: tex, gradientMap: toon('#ffffff').gradientMap }));
+  }
+  return hairTexCache.get(key);
+}
+/** A scalp with neat box parts (the skin showing between sections), for locs and twists. */
+function partsMaterial(color, skin) {
+  const key = `parts${color}${skin}`;
+  if (!hairTexCache.has(key)) {
+    const tex = canvasTexture(256, 256, (c) => {
+      c.fillStyle = mix(color, '#000000', 0.15); c.fillRect(0, 0, 256, 256);
+      c.strokeStyle = mix(skin, color, 0.25); c.lineWidth = 5;
+      for (let i = -256; i < 512; i += 42) {
+        c.beginPath(); c.moveTo(i, 0); c.lineTo(i + 256, 256); c.stroke();
+        c.beginPath(); c.moveTo(i, 256); c.lineTo(i + 256, 0); c.stroke();
+      }
+    });
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 1);
+    hairTexCache.set(key, new THREE.MeshToonMaterial({ color: '#ffffff', map: tex, gradientMap: toon('#ffffff').gradientMap }));
+  }
+  return hairTexCache.get(key);
+}
+const tieColor = (L, def) => L.hairTie || def;
+
 const HAIR = {
   hair_short(head, mat) { shell(head, mat, { front: 0.9, side: 1.4, back: 2.15 }); fringe(head, mat); },
   // ---- braids, locs, fades and friends ----
@@ -559,20 +603,17 @@ const HAIR = {
     }
   },
   hair_waves(head, mat, L) {
-    // 360 waves: a close brushed cut with ripples circling the crown
-    shell(head, mat, { front: 1.0, side: 1.5, back: 2.2, lift: 0.012 });
-    const light = toon(mix(L.hairColor, '#ffffff', 0.12)), dark = toon(mix(L.hairColor, '#000000', 0.3));
-    for (let k = 0; k < 4; k++) {
-      const th = 0.22 + k * 0.19, y = Math.cos(th) * (R + 0.018), r = Math.sin(th) * (R + 0.018);
-      const ring = geo(`wave${k}`, () => {
-        const pts = [];
-        for (let i = 0; i <= 96; i++) {
-          const a = (i / 96) * TAU, w = Math.sin(a * (8 + k * 2)) * 0.01;
-          pts.push(new THREE.Vector3(Math.sin(a) * (r + w), y + w * 0.5, Math.cos(a) * (r + w)));
-        }
-        return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 96, 0.009, 4, true);
-      });
-      part(head, ring, k % 2 ? light : dark, { outline: null });
+    // 360 waves: a close, brushed cap with ripples all the way round, a sharp line-up at the forehead
+    // and squared-off corners at the temples
+    shell(head, wavesMaterial(hex(L.hairColor)), { front: 0.98, side: 1.55, back: 2.2, lift: 0.03 });
+    const edge = toon(mix(L.hairColor, '#000000', 0.25));
+    for (const sx of [-1, 1]) {
+      const p = onHead(sx * 1.32, 1.3, R + 0.032);
+      part(head, box(0.07, 0.12, 0.03), edge, { p: p.toArray(), q: faceTo(new THREE.Vector3(p.x, 0, p.z)), outline: null });
+    }
+    for (let i = 0; i <= 10; i++) {
+      const x = -0.28 + i * 0.056, pt = onFace(x, 0.25 - Math.abs(x) * 0.2, 0.028);
+      part(head, box(0.058, 0.018, 0.02), edge, { p: pt.toArray(), q: faceTo(pt), outline: null });
     }
   },
   hair_freeform(head, mat, L) {
@@ -655,45 +696,45 @@ const HAIR = {
         if (v.y < -0.45) continue;
         part(head, sphere(0.06, 10, 8), mat, { p: c.clone().addScaledVector(v, 0.19).toArray(), outline: null });
       }
-      part(head, torus(0.1, 0.03, TAU, 8, 20), toon('#ff5d73'), { p: c.clone().add(new THREE.Vector3(-sx * 0.05, -0.17, 0.01)).toArray(), r: [Math.PI / 2, sx * 0.45, 0], outline: null });
+      part(head, torus(0.1, 0.03, TAU, 8, 20), toon(tieColor(L, '#ff5d73')), { p: c.clone().add(new THREE.Vector3(-sx * 0.05, -0.17, 0.01)).toArray(), r: [Math.PI / 2, sx * 0.45, 0], outline: null });
     }
   },
-  hair_ponytail(head, mat) {
+  hair_ponytail(head, mat, L) {
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
     // gathered at the back of the head, tied, then falling down the neck
     part(head, sphere(0.15, 16, 12), mat, { p: [0, 0.16, -0.4], s: [1, 0.9, 0.8], outline: OUT_THIN });
-    tail(head, mat, [[0, 0.16, -0.44], [0, 0.06, -0.52], [0, -0.1, -0.53], [0, -0.3, -0.47], [0, -0.48, -0.38]], 0.14, 0.065);
+    tail(head, mat, [[0, 0.16, -0.44], [0, 0.06, -0.52], [0, -0.1, -0.53], [0, -0.3, -0.47], [0, -0.48, -0.38]], 0.14, 0.065, tieColor(L, '#ff5d73'));
     fringe(head, mat);
   },
-  hair_pigtails(head, mat) {
+  hair_pigtails(head, mat, L) {
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
     for (const s of [-1, 1]) {
-      tail(head, mat, [[s * 0.4, 0.04, -0.2], [s * 0.55, -0.1, -0.2], [s * 0.6, -0.32, -0.16], [s * 0.54, -0.5, -0.1]], 0.1, 0.045, '#ffd84d');
+      tail(head, mat, [[s * 0.4, 0.04, -0.2], [s * 0.55, -0.1, -0.2], [s * 0.6, -0.32, -0.16], [s * 0.54, -0.5, -0.1]], 0.1, 0.045, tieColor(L, '#ffd84d'));
     }
     fringe(head, mat);
   },
-  hair_twintails(head, mat) {
+  hair_twintails(head, mat, L) {
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
     for (const s of [-1, 1]) {
       part(head, sphere(0.13, 14, 10), mat, { p: [s * 0.3, 0.28, -0.2], outline: OUT_THIN });
-      tail(head, mat, [[s * 0.36, 0.28, -0.22], [s * 0.5, 0.24, -0.26], [s * 0.58, 0.04, -0.26], [s * 0.6, -0.3, -0.22], [s * 0.56, -0.66, -0.16], [s * 0.5, -0.95, -0.1]], 0.13, 0.05, '#e84393');
+      tail(head, mat, [[s * 0.36, 0.28, -0.22], [s * 0.5, 0.24, -0.26], [s * 0.58, 0.04, -0.26], [s * 0.6, -0.3, -0.22], [s * 0.56, -0.66, -0.16], [s * 0.5, -0.95, -0.1]], 0.13, 0.05, tieColor(L, '#e84393'));
     }
     fringe(head, mat, 5, { spread: 0.4 });
   },
-  hair_braid(head, mat) {
+  hair_braid(head, mat, L) {
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.35 });
     for (let i = 0; i < 8; i++) {
       const r = 0.1 - i * 0.006;
       part(head, sphere(r, 12, 10), mat, { p: [(i % 2 ? 0.035 : -0.035), -0.12 - i * 0.12, -0.47 + i * 0.012], s: [1, 1.2, 0.9], r: [0, 0, i % 2 ? 0.4 : -0.4], outline: OUT_THIN });
     }
-    part(head, torus(0.05, 0.022, TAU, 8, 16), toon('#6ee7a0'), { p: [0, -1.0, -0.39], r: [Math.PI / 2, 0, 0], outline: null });
+    part(head, torus(0.05, 0.022, TAU, 8, 16), toon(tieColor(L, '#6ee7a0')), { p: [0, -1.0, -0.39], r: [Math.PI / 2, 0, 0], outline: null });
     part(head, sphere(0.06, 10, 8), mat, { p: [0, -1.07, -0.38], s: [1, 1.4, 1], outline: OUT_THIN });
     fringe(head, mat);
   },
-  hair_bun(head, mat) {
+  hair_bun(head, mat, L) {
     shell(head, mat, { front: 0.95, side: 1.45, back: 2.2 });
     part(head, sphere(0.18), mat, { p: [0, 0.4, -0.18] });
-    part(head, torus(0.13, 0.03, TAU, 8, 20), toon('#ff5d73'), { p: [0, 0.3, -0.15], r: [Math.PI / 2 + 0.35, 0, 0], outline: null });
+    part(head, torus(0.13, 0.03, TAU, 8, 20), toon(tieColor(L, '#ff5d73')), { p: [0, 0.3, -0.15], r: [Math.PI / 2 + 0.35, 0, 0], outline: null });
     fringe(head, mat, 3);
   },
   hair_spacebuns(head, mat) {
@@ -701,10 +742,10 @@ const HAIR = {
     for (const s of [-1, 1]) part(head, sphere(0.15), mat, { p: [s * 0.27, 0.35, -0.06] });
     fringe(head, mat, 4);
   },
-  hair_topknot(head, mat) {
+  hair_topknot(head, mat, L) {
     shell(head, mat, { front: 0.8, side: 1.35, back: 2.1 });
     part(head, sphere(0.12), mat, { p: [0, R + 0.1, -0.06], s: [1, 0.85, 1] });
-    part(head, cyl(0.06, 0.08, 0.06, 12), toon('#e0463c'), { p: [0, R + 0.01, -0.05], outline: null });
+    part(head, cyl(0.06, 0.08, 0.06, 12), toon(tieColor(L, '#e0463c')), { p: [0, R + 0.01, -0.05], outline: null });
   },
   hair_curly(head, mat) {
     shell(head, mat, { front: 1.0, side: 1.55, back: 2.2, lift: 0.02 });
@@ -714,26 +755,34 @@ const HAIR = {
     shell(head, mat, { front: 1.0, side: 1.6, back: 2.25, lift: 0.02 });
     blobs(head, mat, { dist: R + 0.13, size: 0.19, step: 0.36, front: 0.9, side: 1.55, back: 2.1, outline: OUT_THIN });
   },
-  hair_locs(head, mat) {
-    shell(head, mat, { front: 0.95, side: 1.5, back: 2.2 });
-    const bead = toon('#ffc53d');
-    for (let i = 0; i < 15; i++) {
-      const phi = Math.PI / 2 + 0.25 + (i / 14) * (Math.PI - 0.5);
-      for (const s of [1, -1]) {
-        if (s < 0 && i === 14) continue;
-        const ph = s > 0 ? phi : TAU - phi;
-        const lim = hairline(ph, 0.95, 1.5, 2.2);
-        const edgeTh = Math.min(lim - 0.1, Math.PI / 2 + 0.2);
-        const root = onHead(ph, edgeTh - 0.55, R + 0.01);
-        const edge = onHead(ph, edgeTh, R + 0.05);
-        const out = new THREE.Vector3(root.x, 0, root.z).normalize();
-        const len = 0.3 + ((i * 7) % 5) * 0.04;
-        const tip = edge.clone().add(out.clone().multiplyScalar(0.03)).add(new THREE.Vector3(0, -len, 0));
-        taper(head, [root, edge, edge.clone().lerp(tip, 0.5).add(out.clone().multiplyScalar(0.015)), tip], 0.055, 0.045, mat);
-        if (i % 4 === 1) part(head, cyl(0.055, 0.055, 0.05, 10), bead, { p: root.clone().lerp(tip, 0.7).toArray(), outline: null });
-      }
+  hair_locs(head, mat, L) {
+    // locs: box-parted scalp, the top half gathered up into a high tie that spills over, the rest
+    // hanging twisty past the shoulders
+    shell(head, partsMaterial(hex(L.hairColor), hex(L.skin)), { front: 0.95, side: 1.5, back: 2.2, lift: 0.012, outline: null });
+    const shade = toon(mix(L.hairColor, '#000000', 0.25));
+    const tie = new THREE.Vector3(0, R + 0.02, -0.2);
+    // gathered locs: from all over the top of the head, along the scalp to the tie, then fountaining out
+    let n = 0;
+    for (let i = 0; i < 12; i++) {
+      const phi = (i / 12) * TAU, th = 0.55 + (i % 2) * 0.25;
+      const root = onHead(phi, th, R + 0.03);
+      const mid = root.clone().lerp(tie, 0.55).setLength(R + 0.05);
+      const out = new THREE.Vector3(Math.sin(phi) * 0.18, 0.12, -0.1 + Math.cos(phi) * 0.05);
+      const len = 0.35 + (i % 4) * 0.08;
+      const pts = [root, mid, tie.clone(), tie.clone().add(out), tie.clone().add(out.clone().multiplyScalar(1.8)).add(new THREE.Vector3(0, -len * 0.5, -0.08)), tie.clone().add(out.clone().multiplyScalar(2)).add(new THREE.Vector3((i % 3 - 1) * 0.05, -len, -0.14))];
+      strand(head, n++ % 3 === 0 ? shade : mat, pts, 0.042, 0.036, { bumps: 10, bumpAmt: 0.14, radial: 7, segs: 30 });
     }
-    fringe(head, mat, 3, { spread: 0.3 });
+    part(head, torus(0.07, 0.03, TAU, 8, 16), toon(tieColor(L, '#ffc53d')), { p: tie.toArray(), r: [0.4, 0, 0], outline: null });
+    // hanging locs round the sides and back
+    for (let i = 0; i < 20; i++) {
+      const phi = Math.PI * 0.35 + (i / 19) * Math.PI * 1.3, th = 1.25 + (i % 3) * 0.1;
+      const root = onHead(phi, th - 0.45, R + 0.025), edge = onHead(phi, th, R + 0.05);
+      const o = new THREE.Vector3(edge.x, 0, edge.z).normalize();
+      const len = 0.45 + ((i * 7) % 5) * 0.07;
+      const zz = (k) => new THREE.Vector3(o.z, 0, -o.x).multiplyScalar(((k % 2) ? 1 : -1) * 0.03); // a little zigzag
+      const pts = [root, edge, edge.clone().addScaledVector(o, 0.04).add(new THREE.Vector3(0, -len * 0.35, 0)).add(zz(1)), edge.clone().addScaledVector(o, 0.06).add(new THREE.Vector3(0, -len * 0.7, 0)).add(zz(2)), edge.clone().addScaledVector(o, 0.07).add(new THREE.Vector3(0, -len, 0))];
+      strand(head, n++ % 3 === 0 ? shade : mat, pts, 0.042, 0.035, { bumps: 11, bumpAmt: 0.14, radial: 7, segs: 30 });
+    }
   },
   hair_swoop(head, mat) {
     shell(head, mat, { front: 0.9, side: 1.4, back: 2.15 });
@@ -886,16 +935,35 @@ const HATS = {
     part(head, visor, shiny('#1a2a4a', { transparent: true, opacity: 0.88, side: THREE.DoubleSide }), { outline: null });
   },
   hat_durag(head, L) {
-    // a satin du-rag: snug over the whole head, a seam down the middle, the ties at the front and
-    // two long flaps hanging down the back
+    // a satin du-rag: fitted over the top of the head from the forehead to the back, clear of the ears,
+    // a band across the brow, a seam down the middle, knotted at the back with two long tails
     const c = hatCol(L, '#1d1b2e');
-    const satin = shiny(c, { roughness: 0.25, metalness: 0.15 });
-    // tilted back, so the front edge sits on the forehead and the back covers the nape
-    part(head, geo('duragCap', () => new THREE.SphereGeometry(R + 0.045, 36, 20, 0, TAU, 0, 1.95)), satin, { r: [-0.88, 0, 0] });
-
-    for (const s of [-1, 1]) {
-      const g = geo('duragFlap', () => { const pg = new THREE.PlaneGeometry(0.2, 0.7, 1, 6); pg.translate(0, -0.35, 0); return pg; });
-      part(head, g, toon(c, { side: THREE.DoubleSide }), { p: [s * 0.1, -0.08, -R - 0.03], r: [0.15, 0, s * 0.08], outline: OUT_THIN });
+    const satin = shiny(c, { roughness: 0.22, metalness: 0.15 });
+    shell(head, satin, { front: 1.02, side: 1.32, back: 1.95, lift: 0.055 });
+    // the band: a slightly raised strip following the front edge round to the back
+    const band = geo('duragBand', () => {
+      const pts = [];
+      for (let i = 0; i <= 40; i++) {
+        const phi = (i / 40) * TAU;
+        pts.push(onHead(phi, hairline(phi, 1.02, 1.32, 1.95 + 0.18) - 0.07, R + 0.062));
+      }
+      return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 80, 0.022, 6, true);
+    });
+    part(head, band, satin, { outline: null });
+    // the seam down the middle
+    const seam = geo('duragSeam2', () => {
+      const pts = [];
+      for (let i = 0; i <= 12; i++) pts.push(onHead(0, -1.75 + (i / 12) * 2.72, R + 0.06));
+      return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.01, 5);
+    });
+    part(head, seam, toon(tint(c, 0.7)), { outline: null });
+    // knot and tails at the back
+    const knot = onHead(Math.PI, 1.72, R + 0.07);
+    part(head, sphere(0.07, 12, 10), satin, { p: knot.toArray(), s: [1.2, 0.9, 0.8], outline: OUT_THIN });
+    for (const sx of [-1, 1]) {
+      part(head, sphere(0.06, 10, 8), satin, { p: [knot.x + sx * 0.08, knot.y + 0.02, knot.z + 0.02], s: [1.4, 0.7, 0.5], r: [0, 0, sx * 0.5], outline: OUT_THIN });
+      const g = geo('duragTail', () => { const pg = new THREE.PlaneGeometry(0.13, 0.6, 1, 6); pg.translate(0, -0.3, 0); return pg; });
+      part(head, g, toon(c, { side: THREE.DoubleSide }), { p: [knot.x + sx * 0.05, knot.y - 0.04, knot.z - 0.02], r: [0.18, 0, sx * 0.12], outline: OUT_THIN });
     }
   },
   hat_viking(head) {
@@ -1020,6 +1088,11 @@ const FACES = {
   },
   face_3dglasses(head) {
     const frame = toon('#f4f0ff');
+    part(head, box(0.1, 0.03, 0.02), frame, { p: [0, EYE_Y + 0.02, R + 0.03], outline: null });
+    for (const s of [-1, 1]) {
+      const a = onFace(s * (EYE_X + 0.11), EYE_Y + 0.03, 0.025), b = new THREE.Vector3(s * (R + 0.015), EYE_Y + 0.03, 0.02), c2 = new THREE.Vector3(s * (R - 0.03), EYE_Y, -0.2);
+      taper(head, [a, b, c2], 0.014, 0.014, frame);
+    }
     [['#ff3b4f', -1], ['#39c6ff', 1]].forEach(([c, s]) => {
       const p = onFace(s * EYE_X, EYE_Y, 0.035);
       part(head, box(0.19, 0.12, 0.012), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.75 }), { p: p.toArray(), q: faceTo(p), outline: null });
@@ -1167,6 +1240,119 @@ const BACKS = {
     const ws = [wing(back, -1, true), wing(back, 1, true)];
     anim.push((t) => ws.forEach((w, i) => { w.rotation.y = (i ? -1 : 1) * (0.5 + Math.sin(t * 3) * 0.3); }));
   },
+  back_quiver(back) {
+    // an archer's quiver, full of fletched arrows
+    part(back, cyl(0.1, 0.085, 0.5, 14), toon('#8b5a2b'), { p: [0.08, 0, -0.16], r: [0, 0, -0.35] });
+    for (const y of [0.2, -0.2]) part(back, torus(0.1, 0.015, TAU, 6, 16), toon('#ffc53d'), { p: [0.08 + y * 0.35, y, -0.16], r: [Math.PI / 2, 0.35, 0], outline: null });
+    for (let i = 0; i < 5; i++) {
+      const x = 0.08 + 0.13 + (i % 3 - 1) * 0.035, z = -0.16 + (i < 3 ? 0.02 : -0.03);
+      part(back, cyl(0.01, 0.01, 0.3, 5), toon('#c9955a'), { p: [x - 0.04, 0.38, z], r: [0, 0, -0.35], outline: null });
+      part(back, box(0.07, 0.09, 0.005), toon(['#e0463c', '#f4f0ff', '#37c871'][i % 3]), { p: [x - 0.08, 0.53, z], r: [0, 0, -0.35], outline: null });
+    }
+    part(back, box(0.04, 0.6, 0.02), toon('#5a3a1e'), { p: [0, 0.05, 0.02], r: [0, 0, 0.8], outline: null });
+  },
+  back_sword(back, anim) {
+    // a greatsword slung across the back, with a glowing rune on the blade
+    const g = new THREE.Group();
+    g.position.set(0, 0.05, -0.17);
+    g.rotation.z = 0.6;
+    back.add(g);
+    part(g, box(0.1, 0.9, 0.025), shiny('#d8dde8', { metalness: 0.8, roughness: 0.25 }), { p: [0, -0.15, 0], outline: OUT_THIN });
+    part(g, cone(0.05, 0.12, 4), shiny('#d8dde8', { metalness: 0.8, roughness: 0.25 }), { p: [0, -0.66, 0], r: [Math.PI, Math.PI / 4, 0], s: [1, 1, 0.3], outline: null });
+    part(g, box(0.32, 0.05, 0.06), shiny('#ffc53d', { metalness: 0.7 }), { p: [0, 0.31, 0], outline: OUT_THIN });
+    part(g, cyl(0.03, 0.03, 0.22, 8), toon('#5a2a1a'), { p: [0, 0.45, 0] });
+    part(g, sphere(0.045, 10, 8), shiny('#b77bff'), { p: [0, 0.58, 0], outline: null });
+    const rune = part(g, box(0.03, 0.4, 0.03), basic('#8f6bff'), { p: [0, -0.1, 0], outline: null, shadow: false });
+    anim.push((t) => { rune.material.color.setHSL(0.72, 0.9, 0.55 + Math.sin(t * 3) * 0.12); });
+  },
+  back_anglerpack(back, anim, state, L) {
+    // a fishing pack: basket, rod poking up, and today's catch dangling off the side
+    const c = backCol(L, '#6b8e23');
+    part(back, box(0.42, 0.44, 0.22), toon(c), { p: [0, -0.04, -0.1] });
+    part(back, box(0.44, 0.08, 0.24), toon(tint(c, 0.75)), { p: [0, 0.2, -0.1] });
+    part(back, cyl(0.012, 0.018, 1.2, 6), toon('#8b5a2b'), { p: [-0.15, 0.45, -0.2], r: [0.1, 0, 0.25], outline: null });
+    part(back, cyl(0.04, 0.04, 0.05, 10), shiny('#c0c6d4'), { p: [-0.12, 0.05, -0.23], r: [0, 0, Math.PI / 2], outline: null });
+    const fish = new THREE.Group();
+    fish.position.set(0.24, -0.05, -0.08);
+    back.add(fish);
+    part(fish, sphere(0.07, 12, 8), toon('#6fa8dc'), { p: [0, -0.1, 0], s: [0.6, 1.6, 0.5], outline: OUT_THIN });
+    part(fish, cone(0.05, 0.08, 4), toon('#6fa8dc'), { p: [0, -0.24, 0], r: [Math.PI, 0, 0], s: [1, 1, 0.3], outline: null });
+    anim.push((t, dt, moving) => { fish.rotation.z = Math.sin(t * (moving ? 10 : 2)) * (moving ? 0.35 : 0.1); });
+  },
+  back_flag(back, anim) {
+    // a checkered racing flag on a pole, flapping as you run
+    part(back, cyl(0.015, 0.015, 1.5, 6), shiny('#c0c6d4'), { p: [0.3, 0.55, -0.2], outline: null });
+    const tex = geo('checkerTex', () => canvasTexture(64, 64, (c) => { for (let y = 0; y < 4; y++) for (let x = 0; x < 6; x++) { c.fillStyle = (x + y) % 2 ? '#1d1b2e' : '#ffffff'; c.fillRect(x * 11, y * 16, 11, 16); } }));
+    const g = new THREE.PlaneGeometry(0.5, 0.34, 8, 1);
+    g.translate(0.25, 0, 0);
+    const base = Float32Array.from(g.attributes.position.array);
+    const flag = new THREE.Mesh(g, new THREE.MeshToonMaterial({ map: tex, side: THREE.DoubleSide }));
+    flag.position.set(0.31, 1.12, -0.2);
+    flag.rotation.y = Math.PI / 2 + 0.6;
+    back.add(flag);
+    anim.push((t, dt, moving) => {
+      const pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) { const x0 = base[i * 3]; pos.setZ(i, Math.sin(t * (moving ? 14 : 5) - x0 * 9) * 0.05 * (x0 / 0.5)); }
+      pos.needsUpdate = true;
+    });
+  },
+  back_shield(back, anim, state, L) {
+    // a round arena shield with a gold rim and boss
+    const c = backCol(L, '#b3261e');
+    part(back, cyl(0.3, 0.3, 0.05, 28), toon(c), { p: [0, 0, -0.17], r: [Math.PI / 2, 0, 0] });
+    part(back, torus(0.3, 0.025, TAU, 6, 32), shiny('#ffc53d', { metalness: 0.7 }), { p: [0, 0, -0.2], outline: null });
+    part(back, sphere(0.07, 12, 10), shiny('#ffc53d', { metalness: 0.7 }), { p: [0, 0, -0.21], s: [1, 1, 0.6], outline: null });
+    for (const r of [0.8, -0.8]) part(back, box(0.04, 0.5, 0.01), shiny('#e8e0d0', { metalness: 0.5 }), { p: [0, 0, -0.2], r: [0, 0, r], outline: null });
+  },
+  back_guitar(back, anim, state, L) {
+    // an electric guitar slung over the shoulder
+    const c = backCol(L, '#e0463c');
+    const g = new THREE.Group();
+    g.position.set(0.02, -0.05, -0.17);
+    g.rotation.z = -0.7;
+    back.add(g);
+    part(g, sphere(0.16, 16, 12), shiny(c, { roughness: 0.3 }), { p: [0, -0.18, 0], s: [1.1, 1, 0.3] });
+    part(g, sphere(0.12, 16, 12), shiny(c, { roughness: 0.3 }), { p: [0, 0.0, 0], s: [0.9, 0.8, 0.3] });
+    part(g, box(0.05, 0.5, 0.03), toon('#3a2a1a'), { p: [0, 0.35, 0] });
+    part(g, box(0.08, 0.1, 0.03), toon('#1d1b2e'), { p: [0, 0.62, 0] });
+    part(g, box(0.1, 0.12, 0.01), toon('#f4f0ff'), { p: [0.02, -0.12, -0.05], outline: null });
+    part(back, box(0.04, 0.62, 0.015), toon('#1d1b2e'), { p: [0, 0.05, 0.03], r: [0, 0, -0.8], outline: null });
+  },
+  back_butterfly(back, anim, state, L) {
+    // big stained-glass butterfly wings that flutter
+    const c = backCol(L, '#b77bff');
+    const mat = new THREE.MeshToonMaterial({ color: c, transparent: true, opacity: 0.85, side: THREE.DoubleSide, emissive: c, emissiveIntensity: 0.25 });
+    const edge = toon('#1d1b2e', { side: THREE.DoubleSide });
+    const ws = [-1, 1].map((sx) => {
+      const w = new THREE.Group();
+      w.position.set(sx * 0.06, 0.12, -0.14);
+      back.add(w);
+      for (const [y, r, sy] of [[0.12, 0.3, 1.1], [-0.2, 0.2, 1]]) {
+        part(w, geo(`bflyRing${r}`, () => new THREE.RingGeometry(r * 0.94, r * 1.06, 24)), edge, { p: [sx * r * 0.95, y, 0.002], s: [1, sy, 1], outline: null });
+        part(w, circle(r), mat, { p: [sx * r * 0.95, y, 0], s: [1, sy, 1], outline: null });
+        part(w, circle(r * 0.35), basic('#ffffff'), { p: [sx * r * 1.1, y + 0.03, 0.005], outline: null, shadow: false });
+      }
+      return w;
+    });
+    anim.push((t, dt, moving) => ws.forEach((w, i) => { w.rotation.y = (i ? -1 : 1) * (0.35 + Math.abs(Math.sin(t * (moving ? 12 : 3))) * 0.55); }));
+  },
+  back_mech(back, anim) {
+    // a chunky mech booster pack with glowing thrust rings
+    const metal = shiny('#4a4f66', { metalness: 0.6, roughness: 0.35 });
+    part(back, box(0.46, 0.46, 0.2), metal, { p: [0, 0.02, -0.14] });
+    part(back, box(0.3, 0.12, 0.04), basic('#39e6ff'), { p: [0, 0.12, -0.25], outline: null, shadow: false });
+    const rings = [];
+    for (const sx of [-1, 1]) {
+      part(back, cyl(0.09, 0.11, 0.3, 14), metal, { p: [sx * 0.2, -0.24, -0.2] });
+      const ring = part(back, torus(0.08, 0.02, TAU, 6, 18), basic('#39e6ff'), { p: [sx * 0.2, -0.41, -0.2], r: [Math.PI / 2, 0, 0], outline: null, shadow: false });
+      const beam = part(back, cone(0.07, 0.35, 12), basic('#8ff4ff', { transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [sx * 0.2, -0.6, -0.2], r: [Math.PI, 0, 0], outline: null, shadow: false });
+      rings.push([ring, beam]);
+    }
+    anim.push((t, dt, moving) => rings.forEach(([ring, beam], i) => {
+      ring.scale.setScalar(1 + Math.sin(t * 10 + i) * 0.1);
+      beam.scale.y = (moving ? 1.4 : 0.5) + Math.sin(t * 25 + i) * 0.15;
+    }));
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1257,6 +1443,189 @@ const AURAS = {
       f.rotation.y = -a;
       f.rotation.z = Math.sin(t * 8 + i) * 0.15;
     }));
+  },
+  aura_abyss(g, anim) {
+    // Abyssal Depths: a slow vortex of deep-sea glow, runes circling at your feet and bubbles rising
+    const glow = new THREE.Sprite(additive(glowTexture, 0x1fd8c8, 0.4));
+    glow.scale.set(2.2, 2.6, 1);
+    glow.position.y = 0.9;
+    g.add(glow);
+    const rune = part(g, geo('abyssRunes', () => new THREE.RingGeometry(0.62, 0.78, 6, 1)), basic('#3ff0d8', { transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }), { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const bubbles = sprites(g, additive(glowTexture, 0x9ffcff, 0.8), 12, 0.12);
+    const wisps = sprites(g, additive(flameTexture, 0x5b2aff, 0.6), 8, 0.3);
+    anim.push((t) => {
+      rune.rotation.z = t * 0.6;
+      glow.material.opacity = 0.35 + Math.sin(t * 1.5) * 0.1;
+      bubbles.forEach((s, i) => { const p = (t * 0.35 + i / 12) % 1, a = i * 2.3 + t; s.position.set(Math.cos(a) * 0.55, p * 2.1, Math.sin(a) * 0.55); s.scale.setScalar(0.06 + (1 - p) * 0.06); });
+      wisps.forEach((s, i) => { const a = t * 1.2 + (i / 8) * TAU; s.position.set(Math.cos(a) * 0.7, 0.25 + Math.sin(t * 2 + i) * 0.15, Math.sin(a) * 0.7); });
+    });
+  },
+  aura_warlord(g, anim) {
+    // Warlord: blood-red embers and three blades orbiting you
+    const glow = new THREE.Sprite(additive(glowTexture, 0xff2a2a, 0.35));
+    glow.scale.set(2, 2.4, 1);
+    glow.position.y = 0.9;
+    g.add(glow);
+    const blades = [0, 1, 2].map(() => {
+      const b = new THREE.Group();
+      part(b, box(0.04, 0.42, 0.012), shiny('#e8eaf2', { metalness: 0.8, roughness: 0.2 }), { p: [0, 0.1, 0], outline: OUT_THIN });
+      part(b, box(0.14, 0.03, 0.03), shiny('#c21838'), { p: [0, -0.12, 0], outline: null });
+      const trail = new THREE.Sprite(additive(glowTexture, 0xff3b3b, 0.6));
+      trail.scale.set(0.3, 0.6, 1);
+      b.add(trail);
+      g.add(b);
+      return b;
+    });
+    const embers = sprites(g, additive(glowTexture, 0xff5a3a, 0.9), 14, 0.08);
+    anim.push((t) => {
+      blades.forEach((b, i) => { const a = t * 1.8 + (i / 3) * TAU; b.position.set(Math.cos(a) * 0.85, 1.0 + Math.sin(t * 2 + i) * 0.15, Math.sin(a) * 0.85); b.rotation.set(0, -a, 0.3); });
+      embers.forEach((s, i) => { const p = (t * 0.6 + i / 14) % 1, a = i * 2.4; s.position.set(Math.cos(a) * 0.5, p * 1.9, Math.sin(a) * 0.5); s.material.opacity = 1 - p; });
+    });
+  },
+  aura_laurel(g, anim) {
+    // Champion's Laurels: a golden laurel wreath floating over your head and a shower of gold sparks
+    const gold = shiny('#ffc53d', { metalness: 0.75, roughness: 0.25 });
+    const wreath = new THREE.Group();
+    wreath.position.y = 2.25;
+    g.add(wreath);
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * TAU;
+      if (Math.abs(Math.sin(a / 2)) < 0.12) continue; // a gap at the front
+      part(wreath, sphere(0.06, 8, 6), gold, { p: [Math.sin(a) * 0.32, 0, Math.cos(a) * 0.32], s: [0.6, 0.3, 1.4], r: [0, a, 0.4], outline: null });
+    }
+    const halo = new THREE.Sprite(additive(glowTexture, 0xffd84d, 0.5));
+    halo.scale.setScalar(1.1);
+    wreath.add(halo);
+    const sparks = sprites(g, additive(starTexture, 0xffe27a), 10, 0.12);
+    anim.push((t) => {
+      wreath.rotation.y = t * 0.5;
+      wreath.position.y = 2.25 + Math.sin(t * 2) * 0.04;
+      sparks.forEach((s, i) => { const p = (t * 0.5 + i / 10) % 1, a = i * 1.9; s.position.set(Math.cos(a) * (0.3 + p * 0.4), 2.2 - p * 2.0, Math.sin(a) * (0.3 + p * 0.4)); s.scale.setScalar(0.12 * (1 - p)); });
+    });
+  },
+  aura_tide(g, anim) {
+    // Tidecaller: a spiralling ring of water with little fish leaping through it
+    const water = part(g, geo('tideRing', () => new THREE.TorusGeometry(0.75, 0.06, 8, 48)), basic('#5fc8ff', { transparent: true, opacity: 0.55, depthWrite: false }), { p: [0, 0.5, 0], r: [Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const drops = sprites(g, additive(glowTexture, 0xbfeaff, 0.9), 16, 0.08);
+    const fish = [0, 1, 2].map((i) => {
+      const f = new THREE.Group();
+      part(f, sphere(0.06, 10, 8), toon(['#6fa8dc', '#ff8a5c', '#6ee7a0'][i]), { s: [1.6, 0.8, 0.7], outline: OUT_THIN });
+      part(f, cone(0.05, 0.08, 4), toon(['#6fa8dc', '#ff8a5c', '#6ee7a0'][i]), { p: [-0.12, 0, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.3], outline: null });
+      g.add(f);
+      return f;
+    });
+    anim.push((t) => {
+      water.rotation.z = t;
+      water.position.y = 0.5 + Math.sin(t * 1.5) * 0.25;
+      water.scale.setScalar(1 + Math.sin(t * 3) * 0.04);
+      drops.forEach((s, i) => { const a = t * 2 + i * 0.39; s.position.set(Math.cos(a) * 0.75, water.position.y + Math.sin(t * 5 + i) * 0.08, Math.sin(a) * 0.75); });
+      fish.forEach((f, i) => {
+        const a = t * 1.6 + (i / 3) * TAU, hop = Math.abs(Math.sin(t * 2.2 + i * 2));
+        f.position.set(Math.cos(a) * 0.75, water.position.y + hop * 0.5, Math.sin(a) * 0.75);
+        f.rotation.set(0, -a - Math.PI / 2, Math.cos(t * 2.2 + i * 2) * 0.9);
+      });
+    });
+  },
+  aura_speed(g, anim) {
+    // Speed Demon: speed lines whipping past, a checkered ring at your feet and tyre-smoke puffs
+    const lines = [];
+    for (let i = 0; i < 12; i++) {
+      const l = part(g, box(0.02, 0.02, 0.8), basic(i % 3 ? '#ffffff' : '#ffd84d', { transparent: true, opacity: 0.8, depthWrite: false }), { outline: null, shadow: false });
+      l.userData.a = (i / 12) * TAU;
+      lines.push(l);
+    }
+    const tex = geo('checkRingTex', () => canvasTexture(256, 32, (c) => { for (let x = 0; x < 16; x++) for (let y = 0; y < 2; y++) { c.fillStyle = (x + y) % 2 ? '#1d1b2e' : '#ffffff'; c.fillRect(x * 16, y * 16, 16, 16); } }));
+    const ring = part(g, geo('checkRing', () => new THREE.RingGeometry(0.6, 0.72, 48, 1)), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }), { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const smoke = sprites(g, new THREE.SpriteMaterial({ map: puffTexture, transparent: true, opacity: 0.5, depthWrite: false }), 6, 0.3);
+    anim.push((t, dt, moving) => {
+      ring.rotation.z = -t * 2;
+      lines.forEach((l, i) => {
+        const p = (t * 2.5 + i / 12) % 1, a = l.userData.a;
+        l.position.set(Math.cos(a) * 0.65, 0.3 + (i % 4) * 0.4, Math.sin(a) * 0.65 - (p - 0.5) * 1.6);
+        l.material.opacity = Math.sin(p * Math.PI) * 0.8;
+      });
+      smoke.forEach((s, i) => { const p = (t * 0.8 + i / 6) % 1; s.position.set((i - 2.5) * 0.12, 0.1 + p * 0.5, -0.4 - p * 0.6); s.scale.setScalar(0.2 + p * 0.4); s.material.opacity = (1 - p) * (moving ? 0.6 : 0.25); });
+    });
+  },
+  aura_storm(g, anim) {
+    // Stormborn: a little thundercloud over your head, rain, and lightning cracking down around you
+    const cloud = new THREE.Group();
+    cloud.position.y = 2.35;
+    g.add(cloud);
+    for (const [x, z, r] of [[0, 0, 0.26], [0.24, 0.05, 0.2], [-0.24, -0.03, 0.21], [0.1, -0.15, 0.18], [-0.08, 0.16, 0.18]]) part(cloud, sphere(r, 12, 10), toon('#4a5068'), { p: [x, 0, z], s: [1, 0.7, 1], outline: OUT_THIN });
+    const rain = [];
+    for (let i = 0; i < 14; i++) rain.push(part(g, box(0.012, 0.14, 0.012), basic('#bfe0ff', { transparent: true, opacity: 0.8 }), { outline: null, shadow: false }));
+    const boltMat = new THREE.MeshBasicMaterial({ color: '#fff6a0', transparent: true, opacity: 0 });
+    const bolt = new THREE.Group();
+    g.add(bolt);
+    const zig = [[0, 2.2], [0.15, 1.7], [-0.05, 1.3], [0.12, 0.8], [-0.02, 0.3]];
+    for (let i = 0; i < zig.length - 1; i++) {
+      const [x0, y0] = zig[i], [x1, y1] = zig[i + 1];
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const seg = new THREE.Mesh(box(0.04, len, 0.04), boltMat);
+      seg.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
+      seg.rotation.z = Math.atan2(x0 - x1, y1 - y0) * -1;
+      bolt.add(seg);
+    }
+    const flash = new THREE.Sprite(additive(glowTexture, 0xfff6a0, 0));
+    flash.scale.setScalar(2.4);
+    flash.position.y = 1.2;
+    bolt.add(flash);
+    let next = 1;
+    anim.push((t) => {
+      cloud.rotation.y = t * 0.3;
+      rain.forEach((r, i) => { const p = (t * 1.6 + i / 14) % 1, a = i * 2.4; r.position.set(Math.cos(a) * 0.22, 2.2 - p * 2.1, Math.sin(a) * 0.22); });
+      if (t > next) { next = t + 1.2 + Math.random() * 2.2; bolt.rotation.y = Math.random() * TAU; bolt.position.set(Math.cos(t) * 0.6, 0, Math.sin(t) * 0.6); boltMat.userData.at = t; }
+      const k = Math.max(0, 1 - (t - (boltMat.userData.at ?? -9)) * 5);
+      boltMat.opacity = k;
+      flash.material.opacity = k * 0.7;
+    });
+  },
+  aura_og(g, anim) {
+    // OG Tester (admin-given only): a holographic crown of light, three counter-spinning rune rings in
+    // gold, cyan and magenta, a spinning "OG" sigil at your feet, orbiting stars and rising glitch cubes
+    const colors = [0xffd84d, 0x39e6ff, 0xff4fd8];
+    const column = new THREE.Sprite(additive(glowTexture, 0xffffff, 0.35));
+    column.scale.set(1.6, 3.4, 1);
+    column.position.y = 1.2;
+    g.add(column);
+    const rings = colors.map((c, i) => part(g, geo(`ogRing${i}`, () => new THREE.TorusGeometry(0.72 + i * 0.12, 0.018, 6, 64)),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.9, 0], outline: null, shadow: false }));
+    const sigilTex = geo('ogSigil', () => canvasTexture(256, 256, (c) => {
+      c.translate(128, 128);
+      c.strokeStyle = '#ffd84d'; c.lineWidth = 6;
+      c.beginPath(); c.arc(0, 0, 118, 0, TAU); c.stroke();
+      c.lineWidth = 3; c.beginPath(); c.arc(0, 0, 96, 0, TAU); c.stroke();
+      for (let i = 0; i < 12; i++) { c.save(); c.rotate((i / 12) * TAU); c.fillStyle = i % 2 ? '#39e6ff' : '#ff4fd8'; c.fillRect(-4, -114, 8, 16); c.restore(); }
+      c.beginPath(); for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU - Math.PI / 2; c.lineTo(Math.cos(a) * 92, Math.sin(a) * 92); } c.closePath(); c.strokeStyle = '#39e6ff'; c.stroke();
+      c.font = '900 74px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillStyle = '#ffd84d'; c.shadowColor = '#ff4fd8'; c.shadowBlur = 16; c.fillText('OG', 0, 6);
+    }));
+    const sigil = part(g, geo('ogSigilPlane', () => new THREE.PlaneGeometry(2, 2)), new THREE.MeshBasicMaterial({ map: sigilTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), { p: [0, 0.04, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const crown = new THREE.Group();
+    crown.position.y = 2.3;
+    g.add(crown);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * TAU;
+      part(crown, cone(0.045, 0.22, 4), new THREE.MeshBasicMaterial({ color: colors[i % 3], transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }), { p: [Math.cos(a) * 0.26, 0.08, Math.sin(a) * 0.26], outline: null, shadow: false });
+    }
+    part(crown, geo('ogCrownRing', () => new THREE.TorusGeometry(0.26, 0.02, 6, 32)), new THREE.MeshBasicMaterial({ color: '#ffd84d' }), { r: [Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const stars = sprites(g, additive(starTexture, 0xffffff), 10, 0.16);
+    const cubes = [];
+    for (let i = 0; i < 12; i++) cubes.push(part(g, box(0.06, 0.06, 0.06), new THREE.MeshBasicMaterial({ color: colors[i % 3], transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), { outline: null, shadow: false }));
+    anim.push((t) => {
+      rings[0].rotation.set(Math.PI / 2 + Math.sin(t * 0.8) * 0.35, t * 1.4, 0);
+      rings[1].rotation.set(Math.PI / 2 - 0.6, -t * 1.9, Math.sin(t) * 0.3);
+      rings[2].rotation.set(Math.PI / 2 + 0.7, t * 1.1, -0.4);
+      rings.forEach((r, i) => { r.material.opacity = 0.6 + Math.sin(t * 3 + i * 2) * 0.25; });
+      sigil.rotation.z = t * 0.5;
+      sigil.material.opacity = 0.75 + Math.sin(t * 2) * 0.2;
+      crown.rotation.y = -t;
+      crown.position.y = 2.3 + Math.sin(t * 2) * 0.05;
+      column.material.opacity = 0.25 + Math.sin(t * 1.3) * 0.08;
+      stars.forEach((s, i) => { const a = t * 0.9 + (i / 10) * TAU; s.position.set(Math.cos(a) * 1.05, 0.9 + Math.sin(t * 2 + i) * 0.6, Math.sin(a) * 1.05); s.scale.setScalar(0.08 + Math.max(0, Math.sin(t * 5 + i)) * 0.14); });
+      cubes.forEach((cb, i) => { const p = (t * 0.45 + i / 12) % 1, a = i * 2.2; cb.position.set(Math.cos(a) * 0.5, p * 2.4, Math.sin(a) * 0.5); cb.rotation.set(t * 2 + i, t * 3, 0); cb.scale.setScalar(1 - p); cb.material.opacity = (1 - p) * (Math.sin(t * 20 + i) > -0.6 ? 1 : 0.2); });
+    });
   },
 };
 
@@ -1476,7 +1845,13 @@ export class Character {
       body.add(skirt);
       const skirtMat = k.plaid ? patternMaterial('plaid', hex(L.bottomColor), '#1d1b2e') : toon(L.bottomColor, { side: THREE.DoubleSide });
       if (k.plaid) skirtMat.side = THREE.DoubleSide;
-      part(skirt, cyl(0.27 * B.w, k.flare * B.w, k.len, 28, true), skirtMat, { p: [0, -k.len / 2 + 0.04, 0], s: [1, 1, 0.85 * B.d], outline: OUT_THIN });
+      // tucked up under the shirt at the waist, snug over the hips, then flaring out to the hem
+      const prof = geo(`skirtProf${k.len},${k.flare}`, () => new THREE.LatheGeometry([
+        new THREE.Vector2(k.flare - 0.012, -k.len - 0.01), new THREE.Vector2(k.flare, -k.len), new THREE.Vector2(0.262 + (k.flare - 0.262) * 0.45, -k.len * 0.55),
+        new THREE.Vector2(0.262, -0.06), new THREE.Vector2(0.252, 0.03), new THREE.Vector2(0.235, 0.14),
+      ], 32));
+      part(skirt, prof, skirtMat, { s: [B.w, 1, 0.82 * B.d], outline: OUT_THIN });
+      part(skirt, torus(0.252, 0.02, TAU, 6, 32), toon(tint(L.bottomColor, 0.8)), { p: [0, 0.03, 0], r: [Math.PI / 2, 0, 0], s: [B.w, 0.82 * B.d, 1], outline: null });
       if (k.frill) part(skirt, cyl(k.flare * B.w * 0.96, k.flare * B.w * 1.2, 0.08, 28, true), toon(tint(L.bottomColor, 1.35), { side: THREE.DoubleSide }), { p: [0, -k.len + 0.06, 0], s: [1, 1, 0.85 * B.d], outline: null });
       anim.push((t, dt, moving) => { skirt.rotation.x = moving ? Math.sin(t * 9) * 0.04 : 0; });
     }

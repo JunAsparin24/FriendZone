@@ -11,12 +11,14 @@ export const RARITY = {
   epic: { label: 'Epic', color: '#b77bff' },
   legendary: { label: 'Legendary', color: '#ffc53d' },
   mythic: { label: 'Mythic', color: '#ff4fd8' },
+  exclusive: { label: 'Exclusive', color: '#39e6ff' },
 };
 
 export const owns = (player, id) => !!ITEMS[id]?.free || player.owned.includes(id);
 
 export function howToGet(item) {
   if (item.free) return 'Free';
+  if (item.exclusive) return 'Exclusive: only given out by an admin';
   if (item.unlock) return item.unlock.hint;
   if (item.drop) return `Boss drop: ${item.drop}`;
   if (item.price) return `${item.price.toLocaleString()} coins${item.crate ? ' · or crates' : item.petRoll ? ' · or a pet egg' : ''}`;

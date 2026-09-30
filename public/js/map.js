@@ -336,7 +336,16 @@ export const LANDMARKS = Object.fromEntries(Object.entries({
 export const BOARD_SPOTS = [['dungeon', 'boss', 1], ['archery', 'archery', -1], ['race', 'racing', 1], ['arenaWins', 'arena', -1],
   ['arenaKills', 'arena', 1], ['fish', 'fishing', 1]].map(([id, spotId, side]) => {
   const spot = SPOTS.find((s) => s.id === spotId), door = doorOf(spot), [dx, dy] = doorDir(spot);
-  const x = door.x + dx * 110 - dy * 230 * side, y = door.y + dy * 110 + dx * 230 * side;
+  // beside the door; if that lands on a path (the board and its champion's pedestal are wide), slide it
+  // further out to the side, then forward, until the footprint is clear of every road
+  const clear = (px, py) => !nearPath({ x: px, y: py }, 70) && !nearPath({ x: px - dy * 90 * side, y: py + dx * 90 * side }, 45) && lakeDist(px, py) > 60;
+  let x = door.x + dx * 110 - dy * 230 * side, y = door.y + dy * 110 + dx * 230 * side;
+  search: for (const fwd of [0, 60, 120, -40]) {
+    for (let out = 0; out <= 360; out += 30) {
+      const cx = door.x + dx * (110 + fwd) - dy * (230 + out) * side, cy = door.y + dy * (110 + fwd) + dx * (230 + out) * side;
+      if (clear(cx, cy)) { x = cx; y = cy; break search; }
+    }
+  }
   const tx = door.x + dx * 420, ty = door.y + dy * 420; // where visitors come from
   return { id, x, y, dx, dy, tx, ty, face: Math.atan2(tx - x, ty - y) };
 });

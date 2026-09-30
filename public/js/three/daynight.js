@@ -28,7 +28,7 @@ const NIGHT = { top: C('#050a1f'), mid: C('#0d1a44'), bottom: C('#1e2d5c'), fog:
 const STORM = { top: C('#4d586b'), mid: C('#76808f'), bottom: C('#98a1ad'), fog: C('#8b95a3'), hemiSky: C('#b7c2d0'), hemiGround: C('#4f5f4a') };
 const STORM_NIGHT = { top: C('#0b0f1a'), mid: C('#151c2b'), bottom: C('#222b3b'), fog: C('#1a2130'), hemiSky: C('#56637d'), hemiGround: C('#1a2030') };
 const CLOUD = { day: C('#ffffff'), dusk: C('#ffc2b0'), night: C('#34416b'), storm: C('#7c8595'), stormNight: C('#232a3a') };
-const RAIN_DROPS = 2600, RAIN_BOX = 22, RAIN_H = 16, SPLASHES = 140, WIND = 2.5;
+const RAIN_DROPS = 1700, RAIN_BOX = 22, RAIN_H = 16, SPLASHES = 90, WIND = 2.5;
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -64,7 +64,7 @@ export class DayNight {
     // each one knows the ground height under it, and splashes when it lands
     this.groundAt = null; // (x, z) => ground height, set by the world
     this.drops = Array.from({ length: RAIN_DROPS }, () => ({ x: 0, y: -1, z: 0, g: 0, v: 0, fresh: true }));
-    this.rainMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.014, 0.014, 0.85, 4, 1, true),
+    this.rainMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.011, 0.011, 0.7, 4, 1, true),
       new THREE.MeshBasicMaterial({ color: '#d8e6ff', transparent: true, opacity: 0, depthWrite: false }), RAIN_DROPS);
     this.rainMesh.frustumCulled = false;
     this.rainMesh.visible = false;
@@ -93,7 +93,7 @@ export class DayNight {
     // only some of the drops fall in a drizzle; all of them in a downpour
     const live = Math.floor(RAIN_DROPS * Math.min(1, storm * 1.2));
     this.rainMesh.count = live;
-    this.rainMesh.material.opacity = 0.55 * Math.min(1, storm * 1.3);
+    this.rainMesh.material.opacity = 0.35 * Math.min(1, storm * 1.3);
     const m = this._m, q = this._tilt, sc = this._s.set(1, 1, 1), P = this._p;
     const respawn = (d, anywhere) => {
       d.x = center.x + (Math.random() - 0.5) * RAIN_BOX * 2;
@@ -111,7 +111,7 @@ export class DayNight {
       if (d.y <= d.g) {
         // splash (only near you, where you can see it)
         const dx = d.x - center.x, dz = d.z - center.z;
-        if (dx * dx + dz * dz < 196 && Math.random() < 0.55) {
+        if (dx * dx + dz * dz < 196 && Math.random() < 0.35) {
           const sp = this.splashes[this.splashIdx++ % SPLASHES];
           sp.t = 0; sp.x = d.x; sp.y = d.g + 0.03; sp.z = d.z;
         }
@@ -140,8 +140,8 @@ export class DayNight {
       }
     }
     sc.set(1, 1, 1);
-    this.ringMesh.material.opacity = 0.55 * storm * (1 - 0.3 * Math.random());
-    this.dropletMesh.material.opacity = 0.85 * storm;
+    this.ringMesh.material.opacity = 0.35 * storm;
+    this.dropletMesh.material.opacity = 0.55 * storm;
     this.ringMesh.instanceMatrix.needsUpdate = true;
     this.dropletMesh.instanceMatrix.needsUpdate = true;
   }

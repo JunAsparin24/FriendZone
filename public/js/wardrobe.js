@@ -24,7 +24,7 @@ const TITLES = {
   face: 'Glasses & masks', back: 'Backpacks & wings', aura: 'Auras', pet: 'Pets', crates: 'Mystery crates',
 };
 const HEAD_SLOTS = new Set(['hair', 'hat', 'face']);
-const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
+const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic', 'exclusive'];
 const DRAFT_DEFAULTS = {
   bottom: 'bottom_pants', shoeColor: '#23263f', eyeColor: '#1d1b2e', eyes: 'eyes_round', height: 'height_medium', build: 'build_regular', pet: 'pet_none',
 };
@@ -147,7 +147,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       const owned = owns(p, it.id);
       const footer = owned ? (draft[slot] === it.id ? '✓ Wearing' : 'Owned')
         : confirmBuy === it.id ? `Buy for ${fmt(it.price)}?`
-          : it.price ? `🪙 ${fmt(it.price)}` : it.unlock ? `🔒 ${esc(it.unlock.hint)}` : it.drop ? `👾 ${esc(it.drop)}` : '🎁 Crates';
+          : it.exclusive ? '✨ Exclusive' : it.price ? `🪙 ${fmt(it.price)}` : it.unlock ? `🔒 ${esc(it.unlock.hint)}` : it.drop ? `👾 ${esc(it.drop)}` : '🎁 Crates';
       return `<button class="tile ${owned ? '' : 'locked'} ${draft[slot] === it.id ? 'on' : ''} ${confirmBuy === it.id ? 'confirm' : ''}"
         data-id="${it.id}" style="--r:${RARITY[it.rarity].color}" title="${esc(it.name)} · ${RARITY[it.rarity].label} · ${esc(howToGet(it))}">
         <span class="tile-rarity">${RARITY[it.rarity].label}</span>${owned ? '' : '<span class="tile-lock">🔒</span>'}
@@ -166,7 +166,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       content.innerHTML = choices('Eye style', 'eyes', CATALOG.eyeStyles, 'head') + swatches('Eye color', 'eyeColor', CATALOG.eyeColors);
     } else {
       content.innerHTML = `<div class="wd2-card">${itemTiles(tab)}${tab === 'pet' ? '<p class="muted small">Buy pets here, or hatch a random one from an egg at the 🐾 Pet Shop in town (cheaper!).</p>' : ''}</div>`
-        + (tab === 'hair' ? swatches('Hair color', 'hairColor', CATALOG.hairColors) : '')
+        + (tab === 'hair' ? swatches('Hair color', 'hairColor', CATALOG.hairColors) + (ITEMS[draft.hair]?.tie ? swatches('Hair tie color', 'hairTie', CATALOG.clothColors, { original: true }) : '') : '')
         + (tab === 'top' ? topPickers() : '')
         + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors)
           + choices('Shoes', 'shoes', CATALOG.shoeStyles, 'feet') + swatches('Shoe color', 'shoeColor', CATALOG.clothColors)

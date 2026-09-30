@@ -169,6 +169,7 @@ UPGRADES = {
 
 ARENA_ITEMS = ("heal", "rapid", "shield", "speed")
 ARENA_ITEM_EVERY = 6
+ARENA_ITEM_LIFE = 6.5   # an untouched power-up disappears after this long
 ARENA_MAX_ITEMS = 3
 
 # Doodle Guess: take turns drawing a word while everyone else guesses.
@@ -345,7 +346,7 @@ LOOK_EXTRAS = {"pet": "pet_none", "bottom": "bottom_pants", "shoeColor": "#23263
                "shoes": "shoes_sneakers", "socks": "socks_none", "sockColor": "#f5f5f5",
                "height": "height_medium", "build": "build_regular"}
 STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBest", "jackpots", "bossKills", "houseLikes",
-             "doodleWins", "bumperWins", "dungeonBest")
+             "doodleWins", "bumperWins", "dungeonBest", "mythic")
 
 SLOT_SYMBOLS = ["🍒", "🍋", "🔔", "⭐", "💎", "7️⃣"]
 SLOT_WEIGHTS = [30, 25, 20, 13, 8, 4]
@@ -785,7 +786,7 @@ class DungeonRun:
         self.room = room
         self.members = set()
         self.boss = {"fighters": {}, "b": None, "task": None, "state": "lobby", "floor": 0, "ends": 0.0, "mobs": {},
-                     "mob_id": 0, "queue": [], "spawn_at": 0.0, "dmg": {}, "ran": set(), "last": None}
+                     "mob_id": 0, "queue": [], "spawn_at": 0.0, "dmg": {}, "ran": set(), "last": None, "mvp": None}
 
     def __getattr__(self, name):
         return getattr(self.room, name)
@@ -813,7 +814,7 @@ IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
     "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
-    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "area_move", "pose",
+    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "arcade_score", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
     "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
@@ -1078,7 +1079,7 @@ class Game:
             if look.get(field) not in {o["id"] for o in CATALOG[options]}:
                 raise GameError("Unknown body option.")
             new[field] = look[field]
-        for field in ("hatColor", "backColor", "topTint", "topAccent"):  # optional recolours (hat, back item, top + its trim)
+        for field in ("hatColor", "backColor", "topTint", "topAccent", "hairTie"):  # optional recolours (hat, back item, top + its trim)
             col = look.get(field) or ""
             if col and col not in CATALOG["clothColors"]:
                 raise GameError("Unknown color.")
@@ -1348,7 +1349,8 @@ class Game:
             raise GameError("Like: /item me hat_crown (or /item me all). /items lists ids.")
         item_id = args[-1].lower()
         keys = self._adm_targets(c, " ".join(args[:-1]))
-        ids = [i["id"] for i in CATALOG["items"]] if item_id == "all" else [item_id]
+        # (exclusive items like the OG Tester aura are only ever given one at a time, on purpose)
+        ids = [i["id"] for i in CATALOG["items"] if not i.get("exclusive")] if item_id == "all" else [item_id]
         if item_id != "all" and item_id not in ITEMS:
             raise GameError(f"No item called {item_id}. Try /items {item_id.split('_')[0]}")
         for k in keys:
@@ -1483,6 +1485,8 @@ class Game:
         entry["n"] += 1
         entry["best"] = max(entry["best"], size)
         extra = {"koi": 1} if fish["rarity"] in ("legendary", "mythic") else {}
+        if fish["rarity"] == "mythic":
+            extra["mythic"] = 1
         # the catch goes in your fish bag, to sell at the Fish Market (a full bag sells it on the spot, at half price)
         bag = c.player["fishbag"]
         price = fish_price(fish, size)
@@ -1737,6 +1741,8 @@ class Game:
         room, r = c.room, c.room.race
         if c.key not in r["racers"] or r["state"] != "waiting":
             return
+        if len(r["racers"]) < 2:
+            raise GameError("You need at least one other racer on the grid to start. Practice laps until someone joins!")
         r.update(id=r["id"] + 1, state="countdown", order=[], field=len(r["racers"]), times={},
                  grid=list(r["racers"]))
         for k in r["racers"]:
@@ -1874,9 +1880,16 @@ class Game:
         f = c.room.arena.get(c.key)
         if not f or f["hp"] <= 0 or not c.ready("shoot", 0.1) or time.monotonic() < c.room.arena_break:
             return
+        # h: launch height (world units), p: aim pitch, so the shot flies exactly where the crosshair was
         c.room.broadcast({"t": "arena_shot", "k": c.key, "id": int(num(m["id"], 0, 1e9)),
-                          "x": num(m["x"], 0, ARENA_W), "y": num(m["y"], 0, ARENA_H), "a": num(m["a"], -7, 7)},
+                          "x": num(m["x"], 0, ARENA_W), "y": num(m["y"], 0, ARENA_H), "a": num(m["a"], -7, 7),
+                          "h": round(num(m.get("h", 1.15), 0, 12), 3), "p": round(num(m.get("p", 0), -1.6, 1.6), 4)},
                          scene="arena", exclude=c)
+
+    def on_arena_shield_pop(self, c, m):
+        """Your shield soaked up a hit and broke: tell everyone so its bubble disappears for them too."""
+        if c.key in c.room.arena and c.ready("shieldpop", 0.3):
+            c.room.broadcast({"t": "arena_shield_pop", "k": c.key}, scene="arena", exclude=c)
 
     def on_arena_hit(self, c, m):
         """Sent by the player who got hit; friends are trusted to be honest."""
@@ -1946,7 +1959,13 @@ class Game:
             item = {"id": room.arena_item_seq, "kind": random.choice(ARENA_ITEMS), "x": round(x), "y": round(y)}
             room.arena_items[item["id"]] = item
             room.broadcast({"t": "arena_item", "item": item}, scene="arena")
+            asyncio.get_running_loop().call_later(ARENA_ITEM_LIFE, self.arena_item_expire, room, item["id"])
         asyncio.get_running_loop().call_later(ARENA_ITEM_EVERY, self.arena_item_tick, room)
+
+    def arena_item_expire(self, room, item_id):
+        """Power-ups nobody grabs fade away after a few seconds."""
+        if room.arena_items.pop(item_id, None):
+            room.broadcast({"t": "arena_item_gone", "id": item_id}, scene="arena")
 
     def on_arena_pick(self, c, m):
         room = c.room
@@ -1994,7 +2013,7 @@ class Game:
              "left": round(max(0.0, bs["ends"] - time.monotonic()), 2), "boss": self.boss_view(room),
              "mobs": [self.mob_view(m) for m in bs["mobs"].values()],
              "fighters": {k: self.boss_fighter_view(o) for k, o in bs["fighters"].items()},
-             "picked": [k for k, o in bs["fighters"].items() if o["picked"]], "last": bs["last"], **extra}
+             "picked": [k for k, o in bs["fighters"].items() if o["picked"]], "last": bs["last"], "mvp": bs.get("mvp"), **extra}
         if f and bs["state"] == "pick" and not f["picked"]:
             v["choices"] = [{"id": u, **UPGRADES[u], "lvl": f["up"].get(u, 0)} for u in f["choices"]]
         return v
@@ -2074,7 +2093,7 @@ class Game:
             return
         for f in bs["fighters"].values():
             f.update(hp=BOSS_PLAYER_HP, max=BOSS_PLAYER_HP, up={}, shield=False, wind=False, picked=False, choices=[], rev=0.0)
-        bs.update(floor=0, dmg={}, ran=set(bs["fighters"]), last=None)
+        bs.update(floor=0, dmg={}, ran=set(bs["fighters"]), last=None, mvp=None)
         self.post_feed(room.room, f"🏰 {c.player['name']} started a dungeon run!")
         self.dungeon_floor(room, time.monotonic())
 
@@ -2592,6 +2611,7 @@ class Game:
         self.store.mark()
         total = sum(b["dmg"].values()) or 1
         mvp = max(b["dmg"], key=b["dmg"].get) if b["dmg"] else None
+        room.boss["mvp"] = mvp  # wears a crown through the next floor
         results = {}
         for k in list(bs["fighters"]):
             c = room.clients.get(k)

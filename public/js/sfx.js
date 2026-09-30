@@ -458,11 +458,11 @@ function rainAmbient() {
       src.connect(fl); fl.connect(g); g.connect(sfxBus); src.start();
       return { src, g };
     };
-    nodes = [mk('bandpass', 2600, 0.35), mk('lowpass', 380, 0.7)];
+    nodes = [mk('bandpass', 2200, 0.35), mk('lowpass', 380, 0.7)];
     // close raindrops pattering on things
     timer = setInterval(() => {
       if (level < 0.05 || !nodes) return;
-      for (let i = 0; i < 3; i++) if (Math.random() < level) noise({ type: 'bandpass', f: rnd(2500, 6000), q: 3, dur: 0.02, vol: 0.02 * level, at: Math.random() * 0.1 });
+      for (let i = 0; i < 3; i++) if (Math.random() < level) noise({ type: 'bandpass', f: rnd(2500, 6000), q: 3, dur: 0.02, vol: 0.012 * level, at: Math.random() * 0.1 });
     }, 110);
   };
   return {
@@ -470,8 +470,8 @@ function rainAmbient() {
       start();
       level = Math.max(0, v);
       if (!nodes) return;
-      nodes[0].g.gain.setTargetAtTime(level * 0.09, ac.currentTime, 0.4);
-      nodes[1].g.gain.setTargetAtTime(level * 0.07, ac.currentTime, 0.4);
+      nodes[0].g.gain.setTargetAtTime(level * 0.05, ac.currentTime, 0.4);
+      nodes[1].g.gain.setTargetAtTime(level * 0.04, ac.currentTime, 0.4);
     },
     stop() {
       stopped = true;

@@ -337,6 +337,7 @@ FURN = {f["id"]: f for f in CATALOG["furniture"]}
 FLOORS = {f["id"]: f for f in CATALOG["floors"]}
 WALLS = {f["id"]: f for f in CATALOG["walls"]}
 CEILINGS = {f["id"]: f for f in CATALOG["ceilings"]}
+DOORS = {f["id"]: f for f in CATALOG["doors"]}
 HOUSE_DOOR = (4, 6)  # the front door's columns (nothing hangs on the wall there)
 LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura", "pet")
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
@@ -635,7 +636,7 @@ def owns(p, item_id):
 
 def owns_deco(p, deco_id):
     """Floors and wallpapers: free ones, or bought (stored in the furniture inventory)."""
-    deco = FLOORS.get(deco_id) or WALLS.get(deco_id) or CEILINGS.get(deco_id)
+    deco = FLOORS.get(deco_id) or WALLS.get(deco_id) or CEILINGS.get(deco_id) or DOORS.get(deco_id)
     return bool(deco) and (deco.get("free") or p["furni"].get(deco_id, 0) > 0)
 
 
@@ -663,6 +664,9 @@ def clean_house(p, data):
         raise GameError("You don't own that floor or wallpaper yet.")
     if ceiling not in CEILINGS or not owns_deco(p, ceiling):
         raise GameError("You don't own that ceiling yet.")
+    door = data.get("door") or "door_classic"
+    if door not in DOORS or not owns_deco(p, door):
+        raise GameError("You don't own that door yet.")
     items = data.get("items")
     if not isinstance(items, list) or len(items) > HOUSE_MAX_ITEMS:
         raise GameError(f"A house can hold up to {HOUSE_MAX_ITEMS} things.")
@@ -696,12 +700,12 @@ def clean_house(p, data):
             raise GameError("Things can't overlap.")
         taken |= cells
         clean_items.append({"id": f["id"], "x": x, "y": y, "r": r})
-    return {"floor": floor, "wall": wall, "ceiling": ceiling, "items": clean_items}
+    return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "items": clean_items}
 
 
 def house_view(p):
     h = p["house"]
-    return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "items": h["items"], "likes": h["likes"]}
+    return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"), "items": h["items"], "likes": h["likes"]}
 
 
 def public(p, client):
@@ -1368,7 +1372,7 @@ class Game:
             args = args[:-1]
         fid = args[-1].lower()
         keys = self._adm_targets(c, " ".join(args[:-1]))
-        every = {**FURN, **FLOORS, **WALLS}
+        every = {**FURN, **FLOORS, **WALLS, **CEILINGS, **DOORS}
         if fid != "all" and fid not in every:
             raise GameError(f"No furniture called {fid}. Try /items {fid.split('_')[0]}")
         ids = list(every) if fid == "all" else [fid]
@@ -1382,7 +1386,7 @@ class Game:
 
     def admin_items(self, c, args):
         q = " ".join(args).lower()
-        ids = [i["id"] for i in CATALOG["items"]] + list(FURN) + list(FLOORS) + list(WALLS)
+        ids = [i["id"] for i in CATALOG["items"]] + list(FURN) + list(FLOORS) + list(WALLS) + list(CEILINGS) + list(DOORS)
         hits = [i for i in ids if q in i][:60]
         self.sys(c, (", ".join(hits) or "Nothing matches.") + (" …" if len(hits) == 60 else ""))
 
@@ -3152,7 +3156,7 @@ class Game:
     def on_house_buy(self, c, m):
         p = c.player
         item_id = str(m.get("id", ""))
-        item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id) or CEILINGS.get(item_id)
+        item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id) or CEILINGS.get(item_id) or DOORS.get(item_id)
         if not item or "price" not in item:
             raise GameError("That isn't for sale.")
         have = p["furni"].get(item_id, 0)

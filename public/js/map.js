@@ -340,8 +340,10 @@ export const BOARD_SPOTS = [['dungeon', 'boss', 1], ['archery', 'archery', -1], 
   // further out to the side, then forward, until the footprint is clear of every road
   const clear = (px, py) => !nearPath({ x: px, y: py }, 70) && !nearPath({ x: px - dy * 90 * side, y: py + dx * 90 * side }, 45) && lakeDist(px, py) > 60;
   let x = door.x + dx * 110 - dy * 230 * side, y = door.y + dy * 110 + dx * 230 * side;
+  // and keep it out past the building's side, so it never hides the front (or the sign on top)
+  const half = spot.kind === 'pond' ? 0 : (dx !== 0 ? spot.h : spot.w) / 2, out0 = Math.max(0, Math.ceil((half + 120 - 230) / 30) * 30);
   search: for (const fwd of [0, 60, 120, -40]) {
-    for (let out = 0; out <= 360; out += 30) {
+    for (let out = out0; out <= out0 + 360; out += 30) {
       const cx = door.x + dx * (110 + fwd) - dy * (230 + out) * side, cy = door.y + dy * (110 + fwd) + dx * (230 + out) * side;
       if (clear(cx, cy)) { x = cx; y = cy; break search; }
     }

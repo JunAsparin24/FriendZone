@@ -229,15 +229,14 @@ const easelTex = canvasTexture(256, 320, (ctx) => {
 });
 
 /**
- * A building's name in big 3D marquee letters (like the casino): glowing faces, sides in the
- * building's colour, chasing bulbs, standing on a steel rail. Fills the old w × h board area.
+ * A building's name in big 3D letters: glowing faces, sides in the building's colour, in a typeface
+ * that suits the place, standing on a rail. Fills the old w × h board area.
  */
-function signBoard(g, ctx, text, { w = 6, h = 1.4, p = [0, 0, 0], bg = ['#d6334a', '#8f1530'], fg = '#ffffff', frame = '#5a3a22' } = {}) {
+function signBoard(g, ctx, text, { w = 6, h = 1.4, p = [0, 0, 0], bg = ['#d6334a', '#8f1530'], fg = '#ffffff', frame = '#5a3a22', font = 'block', face = '#fff6e0', even = true, rail: railCol = '#23263f' } = {}) {
   const light = (c) => new THREE.Color(c).getHSL({}).l > 0.75;
   const side = light(bg[0]) ? fg : bg[0];
-  const face = light(fg) ? '#fff6e0' : '#fff6e0';
-  const rail = add(g, new THREE.BoxGeometry(w * 0.96, 0.14, 0.34), toon('#23263f'), { p: [p[0], p[1] - h / 2 - 0.02, p[2] - 0.1], outline: true });
-  const sign = letterSign(text, { w: w * 0.94, h: h * 0.95, face, side, depth: Math.min(0.32, h * 0.22) });
+  const rail = add(g, new THREE.BoxGeometry(w * 0.96, 0.14, 0.34), toon(railCol), { p: [p[0], p[1] - h / 2 - 0.02, p[2] - 0.1], outline: true });
+  const sign = letterSign(text, { w: w * 0.94, h: h * 0.95, face, side, font, even, depth: Math.min(0.32, h * 0.22) });
   sign.position.set(p[0], p[1] - h / 2 + 0.06, p[2] + 0.05);
   g.add(sign);
   return rail;
@@ -342,28 +341,129 @@ export const BUILDERS = {
   },
 
   arcade(g, w, d, anim, ctx) {
-    // a neon-trimmed games hall: dark purple walls, a marquee sign with chasing bulbs, a big pixel
-    // invader on the roof and glowing windows showing cabinets inside
-    const h = 5.2;
-    walls(g, w, h, d, '#3b2a6e');
-    add(g, new THREE.BoxGeometry(w + 0.6, 0.4, d + 0.6), toon('#221845'), { p: [0, h + 0.2, 0], outline: true });
-    const neon = (c) => basic(c);
-    for (const [y, c] of [[h - 0.15, '#ff4fd8'], [0.7, '#39e6ff']]) {
-      add(g, new THREE.BoxGeometry(w + 0.08, 0.12, 0.08), neon(c), { p: [0, y, d / 2 + 0.05], cast: false });
+    // a neon games hall whose entrance is a giant arcade cabinet: you walk in under its control panel,
+    // the big screen plays a little chase game, and the ARCADE marquee glows on top. Light-up floor
+    // tiles out front, a pixel invader and a spinning coin on the roof.
+    const h = 5.2, fz = d / 2;
+    walls(g, w, h, d, '#2b1d57');
+    add(g, new THREE.BoxGeometry(w + 0.6, 0.4, d + 0.6), toon('#1a1238'), { p: [0, h + 0.2, 0], outline: true });
+    const pink = basic('#ff4fd8'), cyan = basic('#39e6ff');
+    add(g, new THREE.BoxGeometry(w + 0.7, 0.1, 0.1), pink, { p: [0, h + 0.42, fz + 0.32], cast: false });
+    add(g, new THREE.BoxGeometry(w + 0.08, 0.1, 0.08), cyan, { p: [0, 0.7, fz + 0.05], cast: false });
+    for (const x of [-w / 2 - 0.04, w / 2 + 0.04]) add(g, new THREE.BoxGeometry(0.1, h, 0.1), pink, { p: [x, h / 2, fz + 0.05], cast: false });
+    // side windows: glowing, with cabinets silhouetted inside, and a neon frame
+    for (const x of [-w * 0.33, w * 0.33]) {
+      add(g, new THREE.BoxGeometry(2.8, 2.1, 0.12), toon('#140c2a'), { p: [x, 2.5, fz + 0.06] });
+      add(g, new THREE.BoxGeometry(2.5, 1.8, 0.14), toon('#6a4fd8', { emissive: '#8b6bff', emissiveIntensity: 0.7 }), { p: [x, 2.5, fz + 0.07], cast: false });
+      for (const [o, c] of [[-0.75, '#ff5d73'], [0, '#39c6ff'], [0.75, '#ffd84d']]) {
+        add(g, new THREE.BoxGeometry(0.45, 1.15, 0.05), toon('#140c2a'), { p: [x + o, 2.05, fz + 0.16], cast: false });
+        add(g, new THREE.BoxGeometry(0.3, 0.25, 0.06), basic(c), { p: [x + o, 2.35, fz + 0.17], cast: false });
+      }
+      for (const [dx, dy, sw, sh] of [[0, 1.08, 2.9, 0.08], [0, -1.08, 2.9, 0.08], [-1.43, 0, 0.08, 2.24], [1.43, 0, 0.08, 2.24]]) {
+        add(g, new THREE.BoxGeometry(sw, sh, 0.08), x < 0 ? cyan : pink, { p: [x + dx, 2.5 + dy, fz + 0.16], cast: false });
+      }
     }
-    for (const x of [-w / 2 - 0.04, w / 2 + 0.04]) add(g, new THREE.BoxGeometry(0.1, h, 0.1), neon('#ff4fd8'), { p: [x, h / 2, d / 2 + 0.05], cast: false });
-    // door + glowing windows with little cabinets
-    door(g, 0, d / 2 + 0.08, 2.0, 3.0, '#ff4fd8');
-    for (const x of [-w * 0.3, w * 0.3]) {
-      add(g, new THREE.BoxGeometry(2.6, 1.9, 0.12), toon('#1a1330'), { p: [x, 2.3, d / 2 + 0.06] });
-      add(g, new THREE.BoxGeometry(2.4, 1.7, 0.14), toon('#6a4fd8', { emissive: '#8b6bff', emissiveIntensity: 0.6 }), { p: [x, 2.3, d / 2 + 0.07], cast: false });
-      for (const o of [-0.6, 0, 0.6]) add(g, new THREE.BoxGeometry(0.4, 1.0, 0.05), toon(['#ff5d73', '#39c6ff', '#ffd84d'][(o + 0.6) / 0.6 | 0]), { p: [x + o, 1.95, d / 2 + 0.16], cast: false });
+    // a neon lightning bolt over each window
+    const bolt = new THREE.Shape([[0.2, 0.9], [-0.25, 0.05], [0.02, 0.05], [-0.2, -0.9], [0.3, 0.15], [0.02, 0.15], [0.25, 0.9]].map(([x, y]) => new THREE.Vector2(x, y)));
+    for (const x of [-w * 0.33, w * 0.33]) add(g, new THREE.ShapeGeometry(bolt), basic('#ffe14d'), { p: [x, 4.3, fz + 0.08], s: [0.7, 0.7, 1], cast: false });
+
+    // ---- the giant cabinet
+    const cab = sub(g, 0, 0, fz);
+    const cw = 5.6, sideW = 0.4, top = 7.4;
+    // side panels in the classic cabinet silhouette (z out from the wall, y up)
+    const prof = new THREE.Shape([[0, 0], [2.2, 0], [2.2, 3.0], [2.6, 3.2], [2.6, 3.55], [1.7, 3.8], [1.55, 5.9], [2.1, 6.4], [2.1, top], [0, top]].map(([z, y]) => new THREE.Vector2(z, y)));
+    const sideGeo = new THREE.ExtrudeGeometry(prof, { depth: sideW, bevelEnabled: false });
+    sideGeo.rotateY(-Math.PI / 2); // shape x → +z, extrusion → -x
+    const sideMat = toon('#5b3fd0');
+    for (const sx of [-1, 1]) {
+      add(cab, sideGeo, sideMat, { p: [sx * cw / 2 + (sx > 0 ? sideW : 0), 0, 0], outline: true });
+      // side art: a pink stripe and a cyan one
+      for (const [c, y] of [['#ff4fd8', 1.6], ['#39e6ff', 2.0]]) add(cab, new THREE.BoxGeometry(0.04, 0.18, 2.0), basic(c), { p: [sx * (cw / 2 + sideW + 0.02), y, 1.1], cast: false });
     }
-    // marquee: big 3D letters with chasing bulbs
-    signBoard(g, ctx, 'ARCADE', { w: 7.5, h: 1.7, p: [0, h + 1.3, d / 2 - 0.2], bg: ['#6a4fd8'], frame: '#140c33' });
+    const inner = cw;
+    // control panel: the porch roof over the door, with a joystick and big buttons
+    const panel = add(cab, new THREE.BoxGeometry(inner, 0.35, 1.1), toon('#1a1238'), { p: [0, 3.35, 2.1], r: [0.25, 0, 0], outline: true });
+    add(panel, new THREE.BoxGeometry(inner, 0.04, 1.0), toon('#2d2466'), { p: [0, 0.19, 0] });
+    add(panel, new THREE.CylinderGeometry(0.06, 0.06, 0.55, 8), toon('#c0c6d4'), { p: [-1.5, 0.45, 0] });
+    add(panel, new THREE.SphereGeometry(0.2, 14, 10), toon('#ff5d73'), { p: [-1.5, 0.75, 0], outline: true });
+    ['#ff5d73', '#ffd84d', '#39c6ff', '#6ee7a0', '#ff9f43', '#e57bff'].forEach((c, i) => {
+      add(panel, new THREE.CylinderGeometry(0.17, 0.17, 0.12, 16), toon(c, { emissive: c, emissiveIntensity: 0.3 }), { p: [0.1 + (i % 3) * 0.55, 0.24, -0.2 + ((i / 3) | 0) * 0.42], outline: true });
+    });
+    // coin door glowing below the panel, beside the entrance
+    for (const sx of [-1, 1]) {
+      add(cab, new THREE.BoxGeometry(0.7, 0.9, 0.08), toon('#1a1238'), { p: [sx * 1.9, 1.5, 0.08] });
+      add(cab, new THREE.BoxGeometry(0.12, 0.3, 0.1), basic('#ff4040'), { p: [sx * 1.9, 1.6, 0.1], cast: false });
+    }
+    door(cab, 0, 0.08, 1.9, 2.8, '#ff4fd8');
+    // bezel + the screen, tilted back a touch, playing a little chase game
+    const scrH = 2.0, scrMid = new THREE.Vector2(1.6, 4.85);
+    add(cab, new THREE.BoxGeometry(inner, 2.2, 0.2), toon('#0d0a1a'), { p: [0, scrMid.y, scrMid.x - 0.12], r: [-0.07, 0, 0] });
+    add(cab, new THREE.BoxGeometry(inner, top - 3.6, 0.2), toon('#1a1238'), { p: [0, 3.6 + (top - 3.6) / 2, 0.1] });
+    const scrTex = canvasTexture(160, 120, () => {});
+    const sc = scrTex.image.getContext('2d');
+    scrTex.magFilter = THREE.NearestFilter;
+    const screen = add(cab, new THREE.PlaneGeometry(inner - 0.5, scrH - 0.25), new THREE.MeshBasicMaterial({ map: scrTex }), { p: [0, scrMid.y, scrMid.x + 0.0], r: [-0.07, 0, 0], cast: false });
+    let frame = -1;
+    const drawScreen = (t) => {
+      const f = Math.floor(t * 10);
+      if (f === frame) return;
+      frame = f;
+      sc.fillStyle = '#05030f'; sc.fillRect(0, 0, 160, 120);
+      sc.strokeStyle = '#3b5bff'; sc.lineWidth = 3;
+      sc.strokeRect(6, 36, 148, 48); sc.strokeRect(14, 44, 132, 32);
+      const x = ((t * 40) % 220) - 30;
+      sc.fillStyle = '#ffd9a8';
+      for (let dx = 10; dx < 160; dx += 12) if (dx > x + 8) sc.fillRect(dx, 59, 3, 3);
+      const mouth = Math.abs(Math.sin(t * 12)) * 0.7;
+      sc.fillStyle = '#ffe14d';
+      sc.beginPath(); sc.moveTo(x, 60); sc.arc(x, 60, 9, mouth, TAU - mouth); sc.closePath(); sc.fill();
+      [['#ff4040', 30], ['#ff9fe0', 52]].forEach(([c, lag]) => {
+        const gx = x - lag;
+        sc.fillStyle = c;
+        sc.beginPath(); sc.arc(gx, 57, 8, Math.PI, 0); sc.lineTo(gx + 8, 67);
+        for (let k = 0; k < 4; k++) sc.lineTo(gx + 8 - (k + 0.5) * 4, k % 2 ? 67 : 63);
+        sc.lineTo(gx - 8, 67); sc.closePath(); sc.fill();
+        sc.fillStyle = '#fff'; sc.fillRect(gx - 5, 53, 4, 4); sc.fillRect(gx + 1, 53, 4, 4);
+      });
+      sc.font = 'bold 13px monospace'; sc.textAlign = 'center';
+      sc.fillStyle = '#39e6ff'; sc.fillText('HI 99990', 80, 22);
+      if (f % 10 < 6) { sc.fillStyle = '#ff4fd8'; sc.fillText('INSERT COIN', 80, 106); }
+      scrTex.needsUpdate = true;
+    };
+    drawScreen(0);
+    anim.push(drawScreen);
+    // speaker panel between the screen and the marquee
+    add(cab, new THREE.BoxGeometry(inner, 0.75, 0.15), toon('#1a1238'), { p: [0, 6.1, 1.8], r: [-0.8, 0, 0] });
+    // the lit marquee with the ARCADE letters
+    add(cab, new THREE.BoxGeometry(inner, top - 6.4, 0.15), toon('#ff4fd8', { emissive: '#ff4fd8', emissiveIntensity: 0.5 }), { p: [0, 6.4 + (top - 6.4) / 2, 2.05], cast: false });
+    add(cab, new THREE.BoxGeometry(cw + sideW * 2 - 0.2, 0.2, 2.3), toon('#1a1238'), { p: [0, top + 0.1, 1.05], outline: true });
+    const sign = letterSign('ARCADE', { font: 'arcade', w: inner - 0.4, h: 0.62, face: '#7df9ff', side: '#2b1d57', depth: 0.22, glow: 0.6 });
+    sign.position.set(0, 6.55, 2.15);
+    cab.add(sign);
+    // light-up floor tiles out front
+    const tiles = [];
+    const tileCols = ['#ff4fd8', '#39e6ff', '#ffe14d', '#6ee7a0'];
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) {
+      const m = new THREE.MeshToonMaterial({ color: '#1a1238', emissive: '#000000', gradientMap: toon('#fff').gradientMap });
+      add(g, new THREE.BoxGeometry(0.86, 0.08, 0.86), m, { p: [(c - 1.5) * 0.92, 0.04, fz + 2.9 + r * 0.92], cast: false });
+      tiles.push({ m, r, c });
+    }
+    let tstep = -1;
+    anim.push((t) => {
+      const st = Math.floor(t * 3);
+      if (st === tstep) return;
+      tstep = st;
+      for (const tl of tiles) {
+        const on = (tl.r + tl.c + st) % 3 === 0 || ((tl.r * 7 + tl.c * 3 + st) % 5 === 0);
+        const col = tileCols[(tl.r + tl.c + st) % 4];
+        tl.m.color.set(on ? col : '#1a1238');
+        tl.m.emissive.set(on ? col : '#000000');
+        tl.m.emissiveIntensity = on ? 0.6 : 0;
+      }
+    });
     // a pixel space invader on the roof that bobs about
     const inv = new THREE.Group();
-    inv.position.set(-w * 0.28, h + 0.4, -d * 0.1);
+    inv.position.set(-w * 0.3, h + 0.4, -d * 0.1);
     g.add(inv);
     const px = ['0010000100', '0001001000', '0011111100', '0110110110', '1111111111', '1011111101', '1010000101', '0001101100'];
     const pm = basic('#6ee7a0');
@@ -371,9 +471,18 @@ export const BUILDERS = {
       if (ch === '1') add(inv, new THREE.BoxGeometry(0.28, 0.28, 0.28), pm, { p: [(cI - 4.5) * 0.28, (7 - r) * 0.28 + 0.2, 0], cast: false });
     }));
     anim.push((t) => { inv.position.y = h + 0.4 + Math.abs(Math.sin(t * 2)) * 0.25; inv.rotation.y = Math.sin(t * 0.8) * 0.4; });
+    // a giant spinning coin on the other side of the roof
+    const coin = new THREE.Group();
+    coin.position.set(w * 0.3, h + 1.8, -d * 0.1);
+    g.add(coin);
+    add(coin, new THREE.CylinderGeometry(1.1, 1.1, 0.25, 32), shiny('#ffc53d'), { r: [Math.PI / 2, 0, 0], outline: true });
+    const star = new THREE.Shape();
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU + Math.PI / 2, rr = i % 2 ? 0.28 : 0.65; star[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); }
+    for (const sz of [1, -1]) add(coin, new THREE.ExtrudeGeometry(star, { depth: 0.06, bevelEnabled: false }), shiny('#ffe27a'), { p: [0, 0, sz * 0.13], r: [0, sz > 0 ? 0 : Math.PI, 0] });
+    anim.push((t) => { coin.rotation.y = t * 1.6; coin.position.y = h + 1.8 + Math.sin(t * 2.2) * 0.15; });
     // a giant joystick by the door
     const js = new THREE.Group();
-    js.position.set(w / 2 + 1.2, 0, d / 2 + 0.8);
+    js.position.set(w / 2 + 1.2, 0, fz + 0.8);
     g.add(js);
     add(js, new THREE.BoxGeometry(1.2, 0.5, 1.2), toon('#221845'), { p: [0, 0.25, 0], outline: true });
     const stick = add(js, new THREE.CylinderGeometry(0.08, 0.08, 1.2, 10), toon('#c0c6d4'), { p: [0, 1.0, 0] });
@@ -423,7 +532,7 @@ export const BUILDERS = {
     // the big sign on the roof above the pit garages, on two legs
     const sx = x0 + bw * 1.5;
     for (const o of [-3.6, 3.6]) add(g, new THREE.BoxGeometry(0.22, 2.2, 0.22), toon('#3a3f55'), { p: [sx + o, h + 1.3, d / 2 - 1.2] });
-    signBoard(g, ctx, 'GRAND PRIX', { w: 10, h: 2.1, p: [sx, h + 2.0, d / 2 - 1.0], bg: ['#e0463c', '#a3212a'], frame: '#23232b' });
+    signBoard(g, ctx, 'GRAND PRIX', { font: 'racing', w: 10, h: 2.1, p: [sx, h + 2.0, d / 2 - 1.0], bg: ['#e0463c', '#a3212a'], frame: '#23232b' });
     // grandstand flags along the roof edge
     const fc = ['#e0463c', '#ffffff', '#39c6ff', '#ffd84d'];
     for (let k = 0; k < 9; k++) {
@@ -444,7 +553,7 @@ export const BUILDERS = {
 
   cave(g, w, d, anim, ctx) {
     const rock = (x, y, z, r, c, s = [1, 1, 1]) => add(g, faceted(new THREE.DodecahedronGeometry(r, 1)), toon(c), { p: [x, y, z], s, outline: true });
-    signBoard(g, ctx, 'BOSS CAVE', { w: 6, h: 1.2, p: [0, 6.7, 1.6], bg: ['#6a2fd6'], frame: '#23263f' });
+    signBoard(g, ctx, 'BOSS CAVE', { font: 'spooky', face: '#d9c2ff', w: 6, h: 1.2, p: [0, 6.7, 1.6], bg: ['#6a2fd6'], frame: '#23263f' });
     rock(0, 1.6, -0.6, 4.6, '#7a7589', [1.35, 0.95, 0.95]);
     rock(-4.4, 1.0, 0.4, 2.6, '#86819a', [1, 0.9, 1]);
     rock(4.6, 1.1, 0.2, 2.7, '#7f7a92', [1, 0.95, 1]);
@@ -481,7 +590,7 @@ export const BUILDERS = {
 
   colosseum(g, w, d, anim, ctx) {
     const rx = w / 2, rz = d / 2, h = 5.2;
-    signBoard(g, ctx, 'ARENA', { w: 5.4, h: 1.6, p: [0, h + 1.05, rz - 0.2], bg: ['#d6334a'], frame: '#23263f' });
+    signBoard(g, ctx, 'ARENA', { font: 'military', w: 5.4, h: 1.6, p: [0, h + 1.05, rz - 0.2], bg: ['#d6334a'], frame: '#23263f' });
     const outer = new THREE.CylinderGeometry(1, 1, h, 64, 1, true);
     const wallMat = new THREE.MeshToonMaterial({ map: tiled(arenaWallTex, 5, 1), side: THREE.DoubleSide, gradientMap: toon('#fff').gradientMap });
     add(g, outer, wallMat, { p: [0, h / 2, 0], s: [rx, 1, rz] });
@@ -536,7 +645,7 @@ export const BUILDERS = {
     gable(tower, tD, tW, 2.8, tH, '#2f7f5e', 0.5);
     const fz = tz + tD / 2;
     door(g, 0, fz + 0.08, 1.8, 2.9, '#6b4226');
-    signBoard(g, ctx, 'ARCHERY', { w: 4.4, h: 0.95, p: [0, 3.55, fz + 0.2], bg: ['#6b4226', '#4a2e1c'], fg: '#ffe9a8', frame: '#3a2414' });
+    signBoard(g, ctx, 'Archery', { font: 'medieval', face: '#ffe9a8', rail: '#4a2e1c', w: 4.4, h: 0.95, p: [0, 3.55, fz + 0.2], bg: ['#6b4226', '#4a2e1c'], fg: '#ffe9a8', frame: '#3a2414' });
     const rings = ['#ffffff', '#23232b', '#39a0ff', '#e0463c', '#ffd84d'];
     rings.forEach((c, i) => add(g, new THREE.CylinderGeometry(1.25 - i * 0.24, 1.25 - i * 0.24, 0.12, 32), toon(c), { p: [0, 5.2, fz + 0.1 + i * 0.03], r: [Math.PI / 2, 0, 0], outline: i === 0, cast: false }));
     const arrow = sub(g, 0.25, 5.35, fz + 0.2);
@@ -570,66 +679,194 @@ export const BUILDERS = {
   },
 
   casino(g, w, d, anim, ctx) {
-    const h = 4.8;
+    // a Vegas casino: purple stone hall with gold art-deco trim, a stepped billboard carrying the CASINO
+    // marquee letters, a fan of giant playing cards and big dice on the roof, and a bulb-lit canopy
+    // on gold columns over a red carpet with velvet ropes
+    const h = 4.8, fz = d / 2;
+    const gold = shiny('#ffc53d'), deep = toon('#24103f');
     walls(g, w, h, d, '#3a1f5c', stoneTex);
-    add(g, new THREE.BoxGeometry(w + 0.6, 0.45, d + 0.6), shiny('#ffc53d'), { p: [0, h + 0.2, 0] });
-    // the sign: big 3D block letters (glowing faces, red returns) standing on a steel rail on the roof
-    // edge, each one ringed with marquee bulbs that chase round the letters
-    const signW = w * 0.9;
+    add(g, new THREE.BoxGeometry(w + 0.6, 0.45, d + 0.6), gold, { p: [0, h + 0.2, 0] });
+    add(g, new THREE.BoxGeometry(w + 0.16, 0.34, d + 0.16), deep, { p: [0, h - 0.25, 0] });
+    add(g, new THREE.BoxGeometry(w + 0.2, 0.07, 0.07), basic('#ff4fd8'), { p: [0, h - 0.45, fz + 0.1], cast: false });
+    add(g, new THREE.BoxGeometry(w + 0.4, 0.3, d + 0.4), gold, { p: [0, 0.62, 0] });
+    // art-deco pilasters: dark fins with gold inlay and a stepped cap
+    for (const x of [-w * 0.47, -w * 0.19, w * 0.19, w * 0.47]) {
+      add(g, new THREE.BoxGeometry(0.42, h - 1.0, 0.24), deep, { p: [x, 0.77 + (h - 1.0) / 2, fz + 0.12], outline: true });
+      add(g, new THREE.BoxGeometry(0.1, h - 1.4, 0.06), gold, { p: [x, 0.77 + (h - 1.0) / 2, fz + 0.26], cast: false });
+      add(g, new THREE.BoxGeometry(0.62, 0.2, 0.34), gold, { p: [x, h - 0.2, fz + 0.14] });
+    }
+    // tall arched windows glowing pink
+    const glass = toon('#e57bff', { emissive: '#c05bff', emissiveIntensity: 0.6 });
+    const halfDisc = (r) => new THREE.CylinderGeometry(r, r, 0.12, 24, 1, false, 0, Math.PI);
+    for (const x of [-w * 0.33, w * 0.33]) {
+      const ww = 1.8, wh = 1.7, y0 = 1.15;
+      add(g, new THREE.BoxGeometry(ww + 0.3, wh, 0.1), gold, { p: [x, y0 + wh / 2, fz + 0.05] });
+      add(g, halfDisc(ww / 2 + 0.15), gold, { p: [x, y0 + wh, fz + 0.05], r: [Math.PI / 2, Math.PI / 2, 0] });
+      add(g, new THREE.BoxGeometry(ww, wh, 0.12), glass, { p: [x, y0 + wh / 2, fz + 0.07], cast: false });
+      add(g, halfDisc(ww / 2), glass, { p: [x, y0 + wh, fz + 0.08], r: [Math.PI / 2, Math.PI / 2, 0], cast: false });
+      add(g, new THREE.BoxGeometry(0.07, wh + ww / 2, 0.16), gold, { p: [x, y0 + (wh + ww / 2) / 2, fz + 0.1], cast: false });
+      add(g, new THREE.BoxGeometry(ww, 0.07, 0.16), gold, { p: [x, y0 + wh, fz + 0.1], cast: false });
+      for (const a of [0.5, 1.0, 2.1, 2.6]) add(g, new THREE.BoxGeometry(0.05, ww / 2, 0.16), gold, { p: [x + Math.cos(a) * ww / 4, y0 + wh + Math.sin(a) * ww / 4, fz + 0.1], r: [0, 0, a - Math.PI / 2], cast: false });
+      add(g, new THREE.BoxGeometry(ww + 0.5, 0.18, 0.4), gold, { p: [x, y0 - 0.05, fz + 0.18] });
+    }
+    // the entrance: gold-framed glass doors under a canopy
+    add(g, new THREE.BoxGeometry(3.4, 3.5, 0.2), gold, { p: [0, 1.75, fz + 0.05] });
+    for (const sx of [-1, 1]) {
+      add(g, new THREE.BoxGeometry(1.35, 3.0, 0.24), toon('#7a4fc0', { emissive: '#5a2fa0', emissiveIntensity: 0.5 }), { p: [sx * 0.72, 1.5, fz + 0.08] });
+      add(g, new THREE.BoxGeometry(0.08, 1.1, 0.12), gold, { p: [sx * 0.2, 1.5, fz + 0.24] });
+    }
+    const cy = 3.7, cdp = 2.8, cwid = 6.2;
+    add(g, new THREE.BoxGeometry(cwid, 0.35, cdp), deep, { p: [0, cy, fz + cdp / 2], outline: true });
+    add(g, new THREE.BoxGeometry(cwid + 0.14, 0.14, cdp + 0.07), gold, { p: [0, cy + 0.22, fz + cdp / 2 + 0.03] });
+    add(g, new THREE.BoxGeometry(cwid + 0.14, 0.3, 0.1), gold, { p: [0, cy, fz + cdp + 0.03] });
+    for (const sx of [-1, 1]) {
+      add(g, new THREE.CylinderGeometry(0.16, 0.2, cy, 14), gold, { p: [sx * (cwid / 2 - 0.35), cy / 2, fz + cdp - 0.35], outline: true });
+      add(g, new THREE.BoxGeometry(0.5, 0.2, 0.5), gold, { p: [sx * (cwid / 2 - 0.35), 0.1, fz + cdp - 0.35] });
+    }
+    // chasing bulbs round the canopy's edge
+    const bulbPts = [];
+    for (let i = 0; i <= 20; i++) bulbPts.push([-cwid / 2 + (i / 20) * cwid, fz + cdp + 0.1]);
+    for (const sx of [-1, 1]) for (let i = 1; i <= 8; i++) bulbPts.push([sx * (cwid / 2 + 0.08), fz + cdp - (i / 9) * cdp]);
+    const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 8, 6), basic('#ffffff'), bulbPts.length);
+    const m4 = new THREE.Matrix4(), BON = new THREE.Color('#fff6b0'), BOFF = new THREE.Color('#7a5a1a');
+    bulbPts.forEach(([x, z], i) => { m4.makeTranslation(x, cy, z); bulbs.setMatrixAt(i, m4); bulbs.setColorAt(i, BON); });
+    g.add(bulbs);
+    // red carpet and velvet ropes
+    add(g, new THREE.BoxGeometry(2.4, 0.05, 4.4), toon('#b3203a'), { p: [0, 0.03, fz + 2.2], cast: false });
+    add(g, new THREE.BoxGeometry(2.6, 0.04, 4.5), gold, { p: [0, 0.02, fz + 2.2], cast: false });
+    const rope = toon('#c2183a');
+    for (const sx of [-1, 1]) {
+      const posts = [fz + 1.4, fz + 2.9, fz + 4.3].map((z) => new THREE.Vector3(sx * 1.6, 0, z));
+      for (const pp of posts) {
+        add(g, new THREE.CylinderGeometry(0.05, 0.05, 1.0, 8), gold, { p: [pp.x, 0.5, pp.z] });
+        add(g, new THREE.CylinderGeometry(0.2, 0.24, 0.08, 12), gold, { p: [pp.x, 0.04, pp.z] });
+        add(g, new THREE.SphereGeometry(0.09, 10, 8), gold, { p: [pp.x, 1.02, pp.z] });
+      }
+      for (let i = 0; i < posts.length - 1; i++) {
+        const a = posts[i], b = posts[i + 1];
+        const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(a.x, 0.92, a.z), new THREE.Vector3(a.x, 0.55, (a.z + b.z) / 2), new THREE.Vector3(b.x, 0.92, b.z));
+        add(g, new THREE.TubeGeometry(curve, 12, 0.045, 6), rope);
+      }
+    }
+    // potted palms either side of the canopy
+    for (const sx of [-1, 1]) {
+      const x = sx * (cwid / 2 + 1.1), z = fz + 1.0;
+      add(g, new THREE.CylinderGeometry(0.55, 0.42, 0.8, 14), gold, { p: [x, 0.4, z], outline: true });
+      for (let i = 0; i < 6; i++) add(g, new THREE.CylinderGeometry(0.12, 0.15, 0.55, 8), toon(i % 2 ? '#8b5a2b' : '#a8743f'), { p: [x + sx * i * 0.04, 1.05 + i * 0.5, z], r: [0, 0, -sx * 0.06] });
+      const crown = [x + sx * 0.24, 3.9, z];
+      for (let i = 0; i < 8; i++) {
+        const leaf = new THREE.Group();
+        leaf.position.set(...crown);
+        leaf.rotation.set(0.55 + (i % 2) * 0.25, (i / 8) * TAU, 0, 'YXZ');
+        g.add(leaf);
+        add(leaf, new THREE.BoxGeometry(0.4, 0.05, 1.7), toon(i % 2 ? '#2f9e44' : '#37b24d'), { p: [0, 0, 0.8], outline: true });
+      }
+    }
+
+    // ---- roof: a stepped billboard behind the marquee letters
     const letters = casinoLetters();
-    const units = letters.reduce((n, l) => n + l.w, 0) + 0.18 * (letters.length - 1);
-    const k = Math.min(2.1, signW / units);
+    const gapU = 0.2;
+    const ext = letters.map((l) => {
+      const b = new THREE.Box2();
+      for (const sh of l.shapes) for (const pt of sh.getPoints(12)) b.expandByPoint(pt);
+      return b;
+    });
+    // letters sit an even gap apart, measured between the actual ink of each one
+    const units = ext.reduce((n, b) => n + (b.max.x - b.min.x), 0) + gapU * (letters.length - 1);
+    const k = Math.min(2.1, (w * 0.86) / units);
+    const signY = h + 0.6, boardZ = fz - 1.0;
+    const bw = units * k + 1.4, bh = k * 1.0 + 1.1;
+    add(g, new THREE.BoxGeometry(bw, bh, 0.3), deep, { p: [0, signY - 0.4 + bh / 2, boardZ], outline: true });
+    add(g, new THREE.BoxGeometry(bw * 0.55, 0.8, 0.3), deep, { p: [0, signY - 0.4 + bh + 0.4, boardZ], outline: true });
+    add(g, new THREE.BoxGeometry(bw * 0.25, 0.6, 0.3), deep, { p: [0, signY - 0.4 + bh + 1.1, boardZ], outline: true });
+    for (const [bwi, y0, hh] of [[bw, signY - 0.4, bh], [bw * 0.55, signY - 0.4 + bh, 0.8], [bw * 0.25, signY - 0.4 + bh + 0.8, 0.6]]) {
+      add(g, new THREE.BoxGeometry(bwi + 0.1, 0.1, 0.34), gold, { p: [0, y0 + hh, boardZ + 0.02] });
+      for (const sx of [-1, 1]) add(g, new THREE.BoxGeometry(0.1, hh, 0.34), gold, { p: [sx * (bwi / 2 + 0.02), y0 + hh / 2, boardZ + 0.02] });
+    }
+    for (const sx of [-1, 1]) for (const zz of [boardZ - 0.9]) add(g, new THREE.BoxGeometry(0.2, bh, 0.2), toon('#5b5f73'), { p: [sx * bw * 0.35, signY - 0.4 + bh / 2, zz], r: [-0.4, 0, 0] });
+    add(g, new THREE.BoxGeometry(units * k + 0.6, 0.22, 0.6), toon('#23263f'), { p: [0, signY - 0.12, fz - 0.45], outline: true });
     const sign = new THREE.Group();
-    sign.position.set(-(units * k) / 2, h + 0.45, d / 2 - 0.3);
+    sign.position.set(-(units * k) / 2, signY, fz - 0.4);
     g.add(sign);
-    add(g, new THREE.BoxGeometry(units * k + 0.6, 0.22, 0.5), toon('#23263f'), { p: [0, h + 0.34, d / 2 - 0.15], outline: true });
     const face = new THREE.MeshToonMaterial({ color: '#fff6e0', emissive: '#ffe9b0', emissiveIntensity: 0.55, gradientMap: toon('#fff').gradientMap });
     const side = toon('#c21838');
-    const on = basic('#fff6b0'), off = basic('#7a5a1a');
-    const bulbs = [];
     const bulbGeo = new THREE.SphereGeometry(0.026, 8, 6);
+    const pts = [];
     let x = 0;
-    for (const l of letters) {
+    letters.forEach((l, li) => {
+      const b = ext[li];
       const lg = new THREE.Group();
-      lg.position.x = x * k;
+      lg.position.x = (x - b.min.x) * k;
       lg.scale.setScalar(k);
       sign.add(lg);
       const geo = new THREE.ExtrudeGeometry(l.shapes, { depth: 0.32, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 1, curveSegments: 18 });
       add(lg, geo, [face, side], { p: [0, 0, -0.32], outline: true });
       // bulbs along every edge of the letter (outer outline and holes), just proud of the face
-      for (const sh of l.shapes) {
-        for (const path of [sh, ...sh.holes]) {
-          const len = path.getLength();
-          const n = Math.max(4, Math.round(len / 0.2));
-          path.getSpacedPoints(n).slice(0, n).forEach((pt) => {
-            const bulb = new THREE.Mesh(bulbGeo, on);
-            bulb.position.set(pt.x, pt.y, 0.035);
-            lg.add(bulb);
-            bulbs.push(bulb);
-          });
-        }
+      for (const sh of l.shapes) for (const path of [sh, ...sh.holes]) {
+        const n = Math.max(4, Math.round(path.getLength() / 0.2));
+        path.getSpacedPoints(n).slice(0, n).forEach((pt) => pts.push([lg, pt]));
       }
-      x += l.w + 0.18;
-    }
+      x += b.max.x - b.min.x + gapU;
+    });
+    const letterBulbs = new THREE.InstancedMesh(bulbGeo, basic('#ffffff'), pts.length);
+    sign.add(letterBulbs);
+    pts.forEach(([lg, pt], i) => { m4.makeScale(k, k, k).setPosition(lg.position.x + pt.x * k, pt.y * k, 0.035 * k); letterBulbs.setMatrixAt(i, m4); letterBulbs.setColorAt(i, BON); });
     // soft glow behind the whole sign
     const halo = new THREE.Sprite(additive(glowTexture, 0xff5d73, 0.35));
     halo.scale.set(units * k * 1.3, k * 2.2, 1);
-    halo.position.set(0, h + 0.45 + k * 0.5, d / 2 - 0.6);
+    halo.position.set(0, signY + k * 0.5, boardZ + 0.3);
     g.add(halo);
+    // a fan of giant playing cards rising behind the billboard
+    const cardTex = (suit, red) => canvasTexture(180, 252, (c) => {
+      c.fillStyle = '#fffdf6'; c.fillRect(0, 0, 180, 252);
+      c.strokeStyle = '#c9a227'; c.lineWidth = 8; c.strokeRect(8, 8, 164, 236);
+      c.fillStyle = red ? '#d61f3a' : '#1c1830';
+      c.font = 'bold 40px Georgia, serif'; c.textAlign = 'center';
+      c.fillText('A', 34, 56); c.fillText(suit, 34, 92);
+      c.font = 'bold 120px Georgia, serif'; c.fillText(suit, 90, 170);
+    });
+    const cards = new THREE.Group();
+    cards.position.set(0, signY - 0.4 + bh + 0.9, boardZ - 0.45);
+    g.add(cards);
+    [['\u2660', false], ['\u2665', true], ['\u2663', false], ['\u2666', true]].forEach(([suit, red], i) => {
+      const card = new THREE.Group();
+      card.rotation.z = (1.5 - i) * 0.32;
+      card.position.z = -i * 0.06;
+      cards.add(card);
+      const mat = new THREE.MeshToonMaterial({ map: cardTex(suit, red), gradientMap: toon('#fff').gradientMap });
+      add(card, new THREE.BoxGeometry(1.8, 2.5, 0.05), [toon('#fffdf6'), toon('#fffdf6'), toon('#fffdf6'), toon('#fffdf6'), mat, toon('#8b1a2e')], { p: [0, 1.4, 0], outline: true });
+    });
+    // big dice tumbled on the roof corners
+    const die = (x, z, ry, rx) => {
+      const dg = new THREE.Group();
+      dg.position.set(x, h + 0.45 + 0.75, z);
+      dg.rotation.set(rx, ry, 0);
+      g.add(dg);
+      add(dg, new THREE.BoxGeometry(1.5, 1.5, 1.5), toon('#fffdf6'), { outline: true });
+      const pip = new THREE.CylinderGeometry(0.13, 0.13, 0.04, 12), pm = toon('#d61f3a');
+      const faces = [[[0, 0]], [[-0.4, -0.4], [0.4, 0.4]], [[-0.4, -0.4], [0, 0], [0.4, 0.4]], [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]], [[-0.4, -0.4], [0.4, -0.4], [0, 0], [-0.4, 0.4], [0.4, 0.4]], [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0], [0.4, 0], [-0.4, 0.4], [0.4, 0.4]]];
+      const axes = [[0, 0.76, 0, 0, 0], [0, 0, 0.76, Math.PI / 2, 0], [0.76, 0, 0, 0, Math.PI / 2], [-0.76, 0, 0, 0, Math.PI / 2], [0, 0, -0.76, Math.PI / 2, 0], [0, -0.76, 0, 0, 0]];
+      faces.forEach((f, fi) => {
+        const [ax, ay, az, rx2, rz2] = axes[fi];
+        for (const [u, v] of f) {
+          const pos = ax ? [ax, u, v] : ay ? [u, ay, v] : [u, v, az];
+          add(dg, pip, pm, { p: pos, r: [rx2, 0, rz2], cast: false });
+        }
+      });
+      return dg;
+    };
+    const d1 = die(-w * 0.4, -d * 0.1, 0.5, 0.0), d2 = die(w * 0.4, -d * 0.18, -0.3, 0.0);
     anim.push((t) => {
       const step = Math.floor(t * 8);
-      bulbs.forEach((b, i) => { b.material = (step + i) % 3 === 0 ? off : on; });
+      for (let i = 0; i < bulbPts.length; i++) bulbs.setColorAt(i, (step + i) % 3 === 0 ? BOFF : BON);
+      bulbs.instanceColor.needsUpdate = true;
+      for (let i = 0; i < pts.length; i++) letterBulbs.setColorAt(i, (step + i) % 3 === 0 ? BOFF : BON);
+      letterBulbs.instanceColor.needsUpdate = true;
       halo.material.opacity = 0.28 + Math.sin(t * 3) * 0.06;
+      cards.rotation.z = Math.sin(t * 0.7) * 0.04;
+      d1.rotation.y = 0.5 + Math.sin(t * 0.5) * 0.08;
+      d2.rotation.y = -0.3 - Math.sin(t * 0.6) * 0.08;
     });
-    add(g, new THREE.BoxGeometry(3, 3.2, 0.2), shiny('#ffc53d'), { p: [0, 1.6, d / 2 + 0.05] });
-    for (const s of [-1, 1]) add(g, new THREE.BoxGeometry(1.25, 2.9, 0.24), toon('#8b5cc6', { emissive: '#6b3fa0', emissiveIntensity: 0.4 }), { p: [s * 0.68, 1.5, d / 2 + 0.08] });
-    windowPane(g, -w * 0.34, 2.6, d / 2 + 0.06, 1.6, 1.4, '#e57bff');
-    windowPane(g, w * 0.34, 2.6, d / 2 + 0.06, 1.6, 1.4, '#e57bff');
-    add(g, new THREE.BoxGeometry(2.8, 0.06, 2.2), toon('#b3203a'), { p: [0, 0.03, d / 2 + 1.1] });
-    for (const s of [-1, 1]) {
-      add(g, new THREE.CylinderGeometry(0.4, 0.3, 0.7, 12), toon('#c9772a'), { p: [s * 2.2, 0.35, d / 2 + 0.8], outline: true });
-      add(g, new THREE.IcosahedronGeometry(0.65, 0), toon('#2f9e44'), { p: [s * 2.2, 1.2, d / 2 + 0.8], outline: true });
-    }
   },
 
   market(g, w, d, anim, ctx) {
@@ -647,7 +884,7 @@ export const BUILDERS = {
     const coin = add(g, new THREE.CylinderGeometry(0.55, 0.55, 0.14, 24), shiny('#ffd84d'), { p: [0, ry + 3.1, hz], r: [Math.PI / 2, 0, 0], outline: true });
     add(g, new THREE.CylinderGeometry(0.04, 0.04, 0.6, 6), toon('#5b5f73'), { p: [0, ry + 2.65, hz] });
     anim.push((t) => { coin.rotation.z = t * 1.5; });
-    signBoard(g, ctx, 'TRADING TAVERN', { w: 8.2, h: 1.3, p: [0, h + 0.9, hf + 0.9], bg: ['#4a2e1c', '#2e1b10'], fg: '#ffd84d', frame: '#8b5a2b' });
+    signBoard(g, ctx, 'Trading Tavern', { font: 'medieval', face: '#ffd84d', rail: '#4a2e1c', w: 8.2, h: 1.3, p: [0, h + 0.9, hf + 0.9], bg: ['#4a2e1c', '#2e1b10'], fg: '#ffd84d', frame: '#8b5a2b' });
     for (const o of [-3.2, 3.2]) add(g, new THREE.BoxGeometry(0.2, 1.6, 0.2), toon('#4a2e1c'), { p: [o, h + 0.2, hf + 0.8] });
     // stall: counter, posts and a sloped striped awning from the hall to the front
     const wood = toon('#b07a45');
@@ -695,7 +932,7 @@ export const BUILDERS = {
     for (let k = 0; k <= 16; k++) add(g, new THREE.CylinderGeometry(0.05, 0.05, 0.8, 6), toon('#ffffff'), { p: [-w * 0.4 + (k * w * 0.8) / 16, h1 + 0.95, uz + 1.35] });
     add(g, new THREE.BoxGeometry(w * 0.8, 0.12, 0.12), toon('#ffffff'), { p: [0, h1 + 1.35, uz + 1.35] });
     // rooftop sign
-    signBoard(g, ctx, 'STYLE SHOP', { w: 8.5, h: 1.7, p: [0, top + 1.0, uz + 0.8], bg: ['#2ed8c3', '#169e8e'], frame: '#ffffff', stroke: 'rgba(0,60,60,.4)' });
+    signBoard(g, ctx, 'Style Shop', { font: 'script', even: false, face: '#ffffff', w: 8.5, h: 1.7, p: [0, top + 1.0, uz + 0.8], bg: ['#2ed8c3', '#169e8e'], frame: '#ffffff', stroke: 'rgba(0,60,60,.4)' });
     // two display bays with mannequins, a grand door in the middle
     const dw = w * 0.32;
     const looks = [
@@ -743,7 +980,7 @@ export const BUILDERS = {
     const bone = sub(g, 0, h + 0.5, d / 2 + 0.9);
     add(bone, new THREE.BoxGeometry(5.6, 1.1, 0.3), toon('#fffaf0'), { outline: true });
     for (const x of [-2.9, 2.9]) for (const y of [-0.42, 0.42]) add(bone, new THREE.SphereGeometry(0.5, 14, 10), toon('#fffaf0'), { p: [x, y, 0], s: [1, 1, 0.45], outline: true });
-    signBoard(bone, ctx, 'PET SHOP', { w: 5.0, h: 0.9, p: [0, 0, 0.1], bg: ['#fffaf0'], fg: '#ff5fa8', frame: '#fffaf0', stroke: 'rgba(120,40,80,.25)' });
+    signBoard(bone, ctx, 'PET SHOP', { font: 'chewy', face: '#ffe0ef', w: 5.0, h: 0.9, p: [0, 0, 0.1], bg: ['#fffaf0'], fg: '#ff5fa8', frame: '#fffaf0', stroke: 'rgba(120,40,80,.25)' });
     anim.push((t) => { bone.rotation.z = Math.sin(t * 1.5) * 0.03; });
     // a big lazy cat napping on the ridge, tail swishing
     const cat = sub(g, -w * 0.18, h + rise - 0.1, 0);
@@ -822,7 +1059,7 @@ export const BUILDERS = {
       }));
     });
     for (const sx of [-1.1, 1.1]) add(g, new THREE.CylinderGeometry(0.08, 0.08, 1.8, 8), toon('#8b5a2b'), { p: [sx, 0.9, d / 2 + 0.6] });
-    signBoard(g, ctx, 'HOMES', { w: 2.6, h: 0.75, p: [0, 1.95, d / 2 + 0.7], bg: ['#2ed8c3'], frame: '#8b5a2b' });
+    signBoard(g, ctx, 'HOMES', { font: 'chunky', rail: '#8b5a2b', w: 2.6, h: 0.75, p: [0, 1.95, d / 2 + 0.7], bg: ['#2ed8c3'], frame: '#8b5a2b' });
   },
 };
 
@@ -866,7 +1103,7 @@ BUILDERS.fishstand = function fishstand(g, w, d, anim) {
   });
   add(g, new THREE.PlaneGeometry(1.6, 0.8), new THREE.MeshBasicMaterial({ map: slate }), { p: [w / 2 - 1.3, 0.85, cz + 0.31], cast: false });
   // big sign on top
-  signBoard(g, null, 'FISH MARKET', { w: 5.2, h: 0.9, p: [0, 4.75, -d / 2 + 0.45], bg: ['#2f7fe0'], frame: '#6b4226' });
+  signBoard(g, null, 'FISH MARKET', { font: 'chunky', face: '#e6f6ff', rail: '#6b4226', w: 5.2, h: 0.9, p: [0, 4.75, -d / 2 + 0.45], bg: ['#2f7fe0'], frame: '#6b4226' });
   const bigFish = new THREE.Group();
   add(bigFish, new THREE.SphereGeometry(0.45, 16, 12), toon('#39a0ff'), { s: [2, 0.8, 0.5], outline: true });
   add(bigFish, new THREE.ConeGeometry(0.4, 0.6, 4), toon('#39a0ff'), { p: [-1.05, 0, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.35], outline: true });

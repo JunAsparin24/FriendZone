@@ -233,8 +233,10 @@ function buildTrack() {
   for (const side of [-1, 1]) add(gantry, new THREE.BoxGeometry(0.6, 8, 0.6), toon('#6b7194'), [side * (TW / 2 + 1.2), 4, 0], null, { outline: true });
   add(gantry, new THREE.BoxGeometry(TW + 3, 1.8, 0.9), toon('#23263f'), [0, 8, 0], null, { outline: true });
   add(gantry, new THREE.PlaneGeometry(TW + 2.4, 1.3), new THREE.MeshBasicMaterial({ map: bannerTex('FRIENDZONE GP', '#e0463c') }), [0, 8, -0.5], [0, Math.PI, 0], { cast: false });
+  // the start lights hang in a pod under the beam, so they don't cover the banner
+  add(gantry, new THREE.BoxGeometry(4.4, 1.1, 0.6), toon('#23263f'), [0, 6.55, -0.1], null, { outline: true });
   const lamps = [0, 1, 2].map((i) => {
-    const m = add(gantry, new THREE.SphereGeometry(0.45, 16, 12), new THREE.MeshBasicMaterial({ color: '#3a2a2a' }), [(i - 1) * 1.4, 8, -0.5], null, { cast: false });
+    const m = add(gantry, new THREE.SphereGeometry(0.4, 16, 12), new THREE.MeshBasicMaterial({ color: '#3a2a2a' }), [(i - 1) * 1.4, 6.55, -0.45], null, { cast: false });
     const glow = new THREE.Sprite(additive(glowTexture, 0xff3b3b, 0));
     glow.scale.setScalar(2.6);
     m.add(glow);

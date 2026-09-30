@@ -10,6 +10,7 @@ import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
 import { buildFurniture, floorTexture, wallTexture, ceilingTexture, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
+import { buildDoor, doorImage } from '../three/doors.js';
 import { iconSvg } from '../icons.js';
 
 const N = 10;         // room size in tiles (HOUSE_SIZE on the server)
@@ -31,7 +32,7 @@ const SEATS = {
 };
 // pictures of the real thing: a 3D snapshot of furniture, the actual texture for floors and walls
 const furniImg = (id) => `<img class="fem-img" src="${furnitureThumb(id)}" alt="">`;
-const decoBg = (id) => `background:url(${surfaceImage(id)}) center/cover, ${SWATCH[id] ?? '#888'}`;
+const decoBg = (id) => (id.startsWith('door_') ? `background:url(${doorImage(id)}) center/cover` : `background:url(${surfaceImage(id)}) center/cover, ${SWATCH[id] ?? '#888'}`);
 
 // furniture snaps to quarter tiles, so things can go almost anywhere
 const SNAP = 4;
@@ -84,7 +85,7 @@ function buildRoom() {
   const wallMat = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide });
   const outside = toon('#e8d6b8');
   const trim = toon('#f4f0ff');
-  const wall = (w, h, x, y, z, ry) => {
+  const wall = (w, h, x, y, z, ry, skirting = true) => {
     const grp = new THREE.Group();
     const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
     face.receiveShadow = true;
@@ -92,7 +93,8 @@ function buildRoom() {
     shell.position.z = -0.14;
     const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, 0.06), trim);
     base.position.set(0, -h / 2 + 0.08, 0.03);
-    grp.add(face, shell, base);
+    grp.add(face, shell);
+    if (skirting) grp.add(base);
     grp.position.set(x, y, z);
     grp.rotation.y = ry;
     g.add(grp);
@@ -108,28 +110,13 @@ function buildRoom() {
   const lw = DOOR.x0, rw = N - DOOR.x1;
   const fl = wall(lw, WALL_H, lw / 2, WALL_H / 2, N, Math.PI);
   const fr = wall(rw, WALL_H, DOOR.x1 + rw / 2, WALL_H / 2, N, Math.PI);
-  const ft = wall(DOOR.x1 - DOOR.x0, WALL_H - DOOR.h, N / 2, DOOR.h + (WALL_H - DOOR.h) / 2, N, Math.PI);
+  const ft = wall(DOOR.x1 - DOOR.x0, WALL_H - DOOR.h, N / 2, DOOR.h + (WALL_H - DOOR.h) / 2, N, Math.PI, false);
   for (const p of [fl, ft, fr]) front.add(p.grp);
   g.add(front);
-  const doorFrame = toon('#8b5a2b');
-  for (const x of [DOOR.x0, DOOR.x1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, DOOR.h, 0.34), doorFrame);
-    post.position.set(x, DOOR.h / 2, N);
-    front.add(post);
-  }
-  // the front door itself (closed: walk up to it to go outside)
-  const doorMat = toon('#7a4a28');
-  const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(DOOR.x1 - DOOR.x0 - 0.14, DOOR.h - 0.04, 0.12), doorMat);
-  doorPanel.position.set(N / 2, DOOR.h / 2, N - 0.02);
-  front.add(doorPanel);
-  for (const y of [0.55, 1.45]) {
-    const inset = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.65, 0.04), toon('#8b5a2b'));
-    inset.position.set(N / 2, y, N - 0.09);
-    front.add(inset);
-  }
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), toon('#ffc53d'));
-  knob.position.set(N / 2 + 0.7, 1.05, N - 0.12);
-  front.add(knob);
+  // the front door (closed: walk up to it to go outside), in whichever style the owner picked
+  const doorSlot = new THREE.Group();
+  doorSlot.position.set(N / 2, 0, N);
+  front.add(doorSlot);
   const ceilingMat = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide });
   const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(N, N), ceilingMat);
   ceiling.rotation.x = Math.PI / 2;
@@ -191,7 +178,7 @@ function buildRoom() {
   const items = new THREE.Group();
   g.add(items);
   g.traverse((o) => { if (o.isMesh && o !== floor && o !== lawn) o.castShadow = true; });
-  return { group: g, floor, floorMat, wallMat, ceiling, ceilingMat, roof, walls, grid, marker, items };
+  return { group: g, floor, floorMat, wallMat, ceiling, ceilingMat, roof, walls, grid, marker, items, doorSlot };
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +217,7 @@ export function house(stage) {
   let buyThenUse = null;   // put this up as soon as the purchase goes through
   let entries = [];           // built items: { group, use, A, it, bounce, inter }
   const mine = () => viewKey === S.me;
-  const payload = () => ({ floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', items: home.items.map(({ id, x, y, r }) => ({ id, x, y, r })) });
+  const payload = () => ({ floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', items: home.items.map(({ id, x, y, r }) => ({ id, x, y, r })) });
 
   // ---- building the furniture ------------------------------------------------------
 
@@ -302,6 +289,12 @@ export function house(stage) {
     ct.repeat.set(N / 2, N / 2);
     room.ceilingMat.map = ct;
     room.ceilingMat.needsUpdate = true;
+    const doorId = preview.door ?? home.door ?? 'door_classic';
+    if (room.doorSlot.userData.id !== doorId) {
+      room.doorSlot.clear();
+      room.doorSlot.add(buildDoor(doorId));
+      room.doorSlot.userData.id = doorId;
+    }
   }
   /** Try on a floor/wall (id), or stop trying one on (id null). No field: stop trying everything. */
   function setPreview(field, id = null) {
@@ -677,6 +670,7 @@ export function house(stage) {
       <div class="wd-label">Floors</div><div class="furni-grid">${CATALOG.floors.filter((d) => !d.free).map((d) => shopTile(d, 'floor')).join('')}</div>
       <div class="wd-label">Wallpaper</div><div class="furni-grid">${CATALOG.walls.filter((d) => !d.free).map((d) => shopTile(d, 'wall')).join('')}</div>
       <div class="wd-label">Ceilings</div><div class="furni-grid">${CATALOG.ceilings.filter((d) => !d.free).map((d) => shopTile(d, 'ceiling')).join('')}</div>
+      <div class="wd-label">Doors</div><div class="furni-grid">${CATALOG.doors.filter((d) => !d.free).map((d) => shopTile(d, 'door')).join('')}</div>
       <div class="wd-label">Earn these around the zone</div><div class="furni-grid">${earn.map((f) => shopTile(f, 'furni')).join('')}</div>`;
   }
 
@@ -685,15 +679,16 @@ export function house(stage) {
       <button class="style-opt ${home?.[field] === d.id && !preview[field] ? 'on' : ''} ${isTrying(d.id) ? 'previewing' : ''} ${ownsDeco(d) ? '' : 'locked'}" data-style="${field}:${d.id}" title="${esc(d.name)}">
         <span class="style-sw" style="${decoBg(d.id)}"></span><span>${esc(d.name)}</span>
         <small>${ownsDeco(d) ? (home?.[field] === d.id ? '✓ Using' : '') : isTrying(d.id) ? '👀 Trying on' : `🪙 ${fmt(d.price)}`}</small></button>`).join('');
-    const all = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings];
+    const all = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings, ...CATALOG.doors];
     const bar = Object.entries(preview).map(([field, id]) => {
       const pd = all.find((x) => x.id === id);
-      return pd ? `<div class="preview-bar"><span>👀 Trying on <b>${esc(pd.name)}</b> ${field === 'floor' ? 'floor' : field === 'ceiling' ? 'ceiling' : 'wallpaper'}</span>
+      return pd ? `<div class="preview-bar"><span>👀 Trying on <b>${esc(pd.name)}</b> ${field === 'floor' ? 'floor' : field === 'ceiling' ? 'ceiling' : field === 'door' ? 'door' : 'wallpaper'}</span>
         <button class="btn primary small" data-preview-buy="${field}">Buy · 🪙 ${fmt(pd.price)}</button><button class="btn ghost small" data-preview-stop="${field}">Put back</button></div>` : '';
     }).join('');
     panel.innerHTML = `${bar}<div class="wd-label">Floor</div><div class="style-grid">${pick(CATALOG.floors, 'floor')}</div>
       <div class="wd-label">Wallpaper</div><div class="style-grid">${pick(CATALOG.walls, 'wall')}</div>
-      <div class="wd-label">Ceiling</div><div class="style-grid">${pick(CATALOG.ceilings, 'ceiling')}</div>`;
+      <div class="wd-label">Ceiling</div><div class="style-grid">${pick(CATALOG.ceilings, 'ceiling')}</div>
+      <div class="wd-label">Front door</div><div class="style-grid">${pick(CATALOG.doors, 'door')}</div>`;
   }
 
   stage.hud.addEventListener('click', (e) => {
@@ -742,7 +737,7 @@ export function house(stage) {
       renderPanel();
     } else if (ds.style) {
       const [field, id] = ds.style.split(':');
-      const d = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings].find((x) => x.id === id);
+      const d = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings, ...CATALOG.doors].find((x) => x.id === id);
       if (!ownsDeco(d)) { setPreview(field, id); sfx('pop', { vol: 0.4 }); renderPanel(); return; }
       if (preview[field]) setPreview(field, null);
       if (home[field] !== id) { home[field] = id; commit('paint'); } else renderPanel();
@@ -796,7 +791,7 @@ export function house(stage) {
   const off = [
     net.on('player', (m) => {
       if (m.p.key !== S.me || !buyThenUse || !home || !mine()) return;
-      const d = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings].find((x) => x.id === buyThenUse.id);
+      const d = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings, ...CATALOG.doors].find((x) => x.id === buyThenUse.id);
       if (!d || !ownsDeco(d)) return;
       const { field, id } = buyThenUse;
       buyThenUse = null;
@@ -813,7 +808,7 @@ export function house(stage) {
         if (echoes > 0 || saveTimer) { home.likes = m.house.likes; renderHeader(); return; }
       }
       const fresh = !home;
-      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', items: m.house.items });
+      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', items: m.house.items });
       const newLikes = home && m.house.likes.length > home.likes.length;
       if (same) home.likes = m.house.likes;
       else {
@@ -827,7 +822,7 @@ export function house(stage) {
     }),
     net.on('house_bought', (m) => {
       sfx('buy');
-      const item = FURN[m.id] ?? [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings].find((d) => d.id === m.id);
+      const item = FURN[m.id] ?? [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings, ...CATALOG.doors].find((d) => d.id === m.id);
       toast(`🛒 Bought ${item?.name ?? 'it'}!${FURN[m.id] ? ' Find it in 🛋️ Items.' : ' Pick it in 🎨 Style.'}`);
     }),
     net.on('player', (m) => {
@@ -856,7 +851,14 @@ export function house(stage) {
       p.moving = false;
     }
     if (edit) {
-      if (preview.ceiling) {
+      if (preview.door) {
+        // trying on a door: look at it from inside the room
+        if (orbit.fps) { orbit.fps = false; orbit.height = baseHeight; }
+        orbit.target.set(W / 2, 0, W * 0.6);
+        orbit.yaw += (Math.PI - orbit.yaw) * Math.min(1, dt * 4);
+        orbit.dist += (7 - orbit.dist) * Math.min(1, dt * 4);
+        orbit.pitch += (0.2 - orbit.pitch) * Math.min(1, dt * 4);
+      } else if (preview.ceiling) {
         // trying on a ceiling: stand in the middle of the room and slowly look around up at it
         orbit.fps = true;
         orbit.target.copy(center);

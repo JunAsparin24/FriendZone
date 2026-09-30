@@ -329,6 +329,16 @@
     { "id": "ceil_coffered", "name": "Coffered", "price": 300 },
     { "id": "ceil_glow", "name": "Glow Stars", "price": 350 }
   ],
+  "doors": [
+    { "id": "door_classic", "name": "Classic Oak", "free": true },
+    { "id": "door_white", "name": "Six Panel", "free": true },
+    { "id": "door_red", "name": "Red Front Door", "price": 150 },
+    { "id": "door_barn", "name": "Barn Slider", "price": 250 },
+    { "id": "door_candy", "name": "Sweetheart", "price": 250 },
+    { "id": "door_french", "name": "French Doors", "price": 350 },
+    { "id": "door_castle", "name": "Castle Gate", "price": 450 },
+    { "id": "door_scifi", "name": "Sci-Fi Hatch", "price": 600 }
+  ],
   "rods": [
     { "id": "rod_twig", "name": "Twig Rod", "price": 0, "bar": 0, "luck": 0, "color": "#8b5a2b", "desc": "Where every angler starts." },
     { "id": "rod_bamboo", "name": "Bamboo Rod", "price": 600, "bar": 14, "luck": 0.05, "color": "#c9b458", "desc": "A little easier to keep the fish on the bar." },

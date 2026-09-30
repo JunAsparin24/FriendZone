@@ -23,7 +23,7 @@ const ITEM_LOOK = {
   shield: { emoji: '🛡️', color: '#39c6ff', label: 'Shield!' },
   speed: { emoji: '👟', color: '#6ee7a0', label: 'Speed boost!' },
 };
-const BUFF_TIME = { rapid: 6, shield: 3, speed: 6 }; // (a shield also pops after soaking up one hit)
+const BUFF_TIME = { rapid: 6, shield: 5, speed: 6 }; // (a shield also pops after soaking up one hit)
 const THEMES = {
   sand: { floor: '#e6cf98', line: '#c9a86a', wall: '#b8a888', wall2: '#9c8c70', trim: '#e8dcc0', accent: '#d6334a', sky: '#8fc8f5', fog: '#cfe4f5', outer: '#c9b48c', kind: 'castle' },
   hedge: { floor: '#86c86e', line: '#6aa855', wall: '#2f8a44', wall2: '#257a3a', trim: '#3fa34d', accent: '#ff8fc7', sky: '#a8dcff', fog: '#d8f0e0', outer: '#4f9a45', kind: 'hedge' },

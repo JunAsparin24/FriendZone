@@ -1089,7 +1089,7 @@ body.mouselooking .chat { bottom: 38px; }
 .race-item small { font-size: 10px; color: var(--muted); }
 .race-item.has { border-color: var(--accent); box-shadow: 0 0 20px #ffb34788, 0 6px 0 #0003; }
 .race-item.rolling span { animation: blink .12s infinite; }
-.race-map { position: absolute; right: 12px; bottom: 84px; width: 170px; height: 140px; background: #0d1f4ab3; border: 2px solid var(--line); border-radius: 14px; }
+.race-map { position: absolute; right: 12px; bottom: 100px; width: 170px; height: 140px; background: #0d1f4ab3; border: 2px solid var(--line); border-radius: 14px; }
 .race-time { font-size: 13px; color: var(--muted); }
 
 
@@ -1304,6 +1304,10 @@ html.touch .hud-top { padding-right: 172px; } /* room for the 💬 🔊 ⚙️ b
 .tips-tab.open .tips-body { display: block; animation: tipsin .2s ease-out; }
 @keyframes tipsin { from { opacity: 0; transform: translateY(6px); } }
 html.touch .tips-tab { bottom: 150px; }
+/* racing: the speedo and minimap own the bottom right, so the tab sits above the map */
+.race-map ~ .tips-tab { bottom: 256px; }
+.race-map ~ .tips-tab .tips-body { max-width: 300px; }
+html.touch .race-map ~ .tips-tab { bottom: 150px; }
 .zone-online { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #8a8fa8; }
 .zone-online .zo-dot { width: 9px; height: 9px; border-radius: 50%; background: #6b7090; }
 .zone-online.on { color: #6ee7a0; }

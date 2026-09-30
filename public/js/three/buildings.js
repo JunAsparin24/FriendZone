@@ -688,7 +688,10 @@ export const BUILDERS = {
     add(g, new THREE.BoxGeometry(w + 0.6, 0.45, d + 0.6), gold, { p: [0, h + 0.2, 0] });
     add(g, new THREE.BoxGeometry(w + 0.16, 0.34, d + 0.16), deep, { p: [0, h - 0.25, 0] });
     add(g, new THREE.BoxGeometry(w + 0.2, 0.07, 0.07), basic('#ff4fd8'), { p: [0, h - 0.45, fz + 0.1], cast: false });
-    add(g, new THREE.BoxGeometry(w + 0.4, 0.3, d + 0.4), gold, { p: [0, 0.62, 0] });
+    // a gold band round the base: full at the back and sides, broken at the front for the doors
+    add(g, new THREE.BoxGeometry(w + 0.4, 0.3, d + 0.2), gold, { p: [0, 0.62, -0.1] });
+    const bandW = (w + 0.4) / 2 - 1.7;
+    for (const sx of [-1, 1]) add(g, new THREE.BoxGeometry(bandW, 0.3, 0.2), gold, { p: [sx * (1.7 + bandW / 2), 0.62, fz + 0.1] });
     // art-deco pilasters: dark fins with gold inlay and a stepped cap
     for (const x of [-w * 0.47, -w * 0.19, w * 0.19, w * 0.47]) {
       add(g, new THREE.BoxGeometry(0.42, h - 1.0, 0.24), deep, { p: [x, 0.77 + (h - 1.0) / 2, fz + 0.12], outline: true });
@@ -1101,7 +1104,7 @@ BUILDERS.fishstand = function fishstand(g, w, d, anim) {
     c.fillText('WE BUY FISH!', 128, 55);
     c.fillStyle = '#ffd84d'; c.font = 'bold 26px Rubik, sans-serif'; c.fillText('best prices 🪙', 128, 95);
   });
-  add(g, new THREE.PlaneGeometry(1.6, 0.8), new THREE.MeshBasicMaterial({ map: slate }), { p: [w / 2 - 1.3, 0.85, cz + 0.31], cast: false });
+  add(g, new THREE.PlaneGeometry(1.6, 0.8), new THREE.MeshBasicMaterial({ map: slate }), { p: [0, 0.85, cz + 0.31], cast: false });
   // big sign on top
   signBoard(g, null, 'FISH MARKET', { font: 'chunky', face: '#e6f6ff', rail: '#6b4226', w: 5.2, h: 0.9, p: [0, 4.75, -d / 2 + 0.45], bg: ['#2f7fe0'], frame: '#6b4226' });
   const bigFish = new THREE.Group();

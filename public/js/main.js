@@ -54,6 +54,9 @@ function forgetZone(code) {
 // Screens
 // ---------------------------------------------------------------------------
 
+// the version (year.commit, bumped by the git hook in scripts/) in the lobby's corner
+fetch('/version.json', { cache: 'no-store' }).then((r) => r.json()).then((v) => { $('#versionTag').textContent = `v${v.version}`; }).catch(() => {});
+
 function show(id) {
   screen = id;
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('hidden', s.id !== id));

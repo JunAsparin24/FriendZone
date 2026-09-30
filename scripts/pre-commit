@@ -1,0 +1,9 @@
+#!/bin/sh
+# Bumps the game's version on every commit: <year>.<commit number>, e.g. 26.27 for the 27th commit
+# made in 2026. Shown in the bottom left of the lobby. Install with: sh scripts/install-hooks.sh
+root=$(git rev-parse --show-toplevel)
+count=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+next=$((count + 1))
+year=$(date +%y)
+printf '{ "version": "%s.%s" }\n' "$year" "$next" > "$root/public/version.json"
+git add "$root/public/version.json"

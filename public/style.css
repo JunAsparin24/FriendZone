@@ -1313,3 +1313,7 @@ html.touch .race-map ~ .tips-tab { bottom: 150px; }
 .zone-online.on { color: #6ee7a0; }
 .zone-online.on .zo-dot { background: #3dff8a; box-shadow: 0 0 6px 2px #3dff8a99; animation: zo-glow 1.6s ease-in-out infinite; }
 @keyframes zo-glow { 50% { box-shadow: 0 0 10px 4px #3dff8acc; } }
+
+/* the game's version (year.commit), bottom left of the lobby */
+.version-tag { position: fixed; left: 14px; bottom: 12px; font: 12px var(--pixel); color: var(--muted); opacity: .75; letter-spacing: 1px; pointer-events: none; }
+.version-tag:empty { display: none; }

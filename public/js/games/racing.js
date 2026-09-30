@@ -688,7 +688,8 @@ export function racing(stage) {
   function gridSpot(k) {
     let list = S.race?.grid ?? racers();
     if (!list.includes(k)) list = racers();
-    const i = Math.max(0, list.indexOf(k));
+    // not on the grid yet (you've just walked in): take the next free slot, never someone else's
+    const i = list.includes(k) ? list.indexOf(k) : list.length;
     return track(-GRID_S0 - i * GRID_GAP, (i % 2 ? -1 : 1) * GRID_SIDE);
   }
   function placeOnGrid() {
@@ -705,6 +706,7 @@ export function racing(stage) {
     stage.scene.add(kart.g);
     const p = stage.person(k);
     p.char.pose = 'sit';
+    p.char.petOnLap = true; // your pet rides in your lap
     p.smooth = false;
     p.labelLift = 0.3;
     const g = gridSpot(k);

@@ -59,6 +59,11 @@ export function renderPortrait(look, w, h, { zoom = 'body', yaw = 0.45, pose = '
     persp.fov = 24;
     persp.position.set(0, 1.55 + dy, 5.0);
     persp.lookAt(0, 1.3 + dy, 0);
+  } else if (zoom === 'feet') {
+    // shoes and socks, close up
+    persp.fov = 24;
+    persp.position.set(0.5, 0.75, 2.6);
+    persp.lookAt(0, 0.22, 0);
   } else if (zoom === 'head') {
     const dy = char.rig.head.position.y - 1.52; // tiny and tall characters keep their face in frame
     persp.fov = 24;

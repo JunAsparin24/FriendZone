@@ -339,9 +339,10 @@ CEILINGS = {f["id"]: f for f in CATALOG["ceilings"]}
 HOUSE_DOOR = (4, 6)  # the front door's columns (nothing hangs on the wall there)
 LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura", "pet")
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
-               "shoeColor": "clothColors", "eyeColor": "eyeColors"}
-LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds"}
+               "shoeColor": "clothColors", "eyeColor": "eyeColors", "sockColor": "clothColors"}
+LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds", "shoes": "shoeStyles", "socks": "sockStyles"}
 LOOK_EXTRAS = {"pet": "pet_none", "bottom": "bottom_pants", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
+               "shoes": "shoes_sneakers", "socks": "socks_none", "sockColor": "#f5f5f5",
                "height": "height_medium", "build": "build_regular"}
 STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBest", "jackpots", "bossKills", "houseLikes",
              "doodleWins", "bumperWins", "dungeonBest")
@@ -349,7 +350,15 @@ STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBe
 SLOT_SYMBOLS = ["🍒", "🍋", "🔔", "⭐", "💎", "7️⃣"]
 SLOT_WEIGHTS = [30, 25, 20, 13, 8, 4]
 SLOT_TRIPLE = {"🍒": 5, "🍋": 8, "🔔": 12, "⭐": 20, "💎": 40, "7️⃣": 77}
-WHEEL = [0, 1.5, 0, 0, 0.5, 0, 2, 0, 0, 1.5, 0, 0.5, 0, 0, 0, 5]  # multipliers, clockwise from the top (pays back ~69%)
+WHEEL = [0, 1.5, 0, 0, 0.5, 0, 2, 0, 0, 1.5, 0, 0.5, 0, 0, 0, 5]  # multipliers, clockwise from the top
+# The house always wins (eventually): the casino is rigged in its favour. Rough paybacks per coin bet:
+# coin flip 80%, slots ~55%, wheel 50%, blackjack ~81%, roulette ~63%.
+COINFLIP_WIN = 0.4           # chance you call the coin right
+SLOT_PAIR_PAYS = 0.5         # a pair gives back half your bet
+SLOT_NEAR_MISS = 0.35        # a winning line that slips to a near miss at the last reel
+WHEEL_ZERO_WEIGHT = 1.6      # the empty slices come up more often
+BJ_DEALER_LUCK = 0.5         # chance the dealer's busting card is swapped for another
+ROULETTE_HOUSE = 0.35        # chance a spin lands on whatever pays the table least
 MAX_BET = 5000
 BJ_RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 BJ_SUITS = ["♠", "♥", "♦", "♣"]
@@ -593,6 +602,10 @@ def migrate(p):
     p.setdefault("lookSet", False)
     for field, value in LOOK_EXTRAS.items():
         p["look"].setdefault(field, value)
+    # items that were taken out of the game (e.g. the tutu) fall back to the default for their slot
+    for slot, fallback in (("bottom", "bottom_pants"),):
+        if p["look"].get(slot) not in ITEMS:
+            p["look"][slot] = fallback
     p.setdefault("owned", [])
     p.setdefault("fishdex", {})
     p.setdefault("fishbag", [])   # caught fish waiting to be sold at the Fish Market: {id, name, size}
@@ -1541,20 +1554,23 @@ class Game:
             pick = m.get("pick")
             if pick not in ("heads", "tails"):
                 raise GameError("Pick heads or tails.")
-            side = random.choice(["heads", "tails"])
+            other = "tails" if pick == "heads" else "heads"
+            side = pick if random.random() < COINFLIP_WIN else other
             payout = bet * 2 if side == pick else 0
             result = {"side": side}
         elif game == "slots":
             reels = random.choices(SLOT_SYMBOLS, weights=SLOT_WEIGHTS, k=3)
+            if len(set(reels)) == 1 and random.random() < SLOT_NEAR_MISS:
+                reels[2] = random.choice([x for x in SLOT_SYMBOLS if x != reels[0]])  # so close!
             if len(set(reels)) == 1:
                 payout = bet * SLOT_TRIPLE[reels[0]]
             elif len(set(reels)) == 2:
-                payout = bet
+                payout = int(bet * SLOT_PAIR_PAYS)
             else:
                 payout = 0
             result = {"reels": reels}
         elif game == "wheel":
-            index = random.randrange(len(WHEEL))
+            index = random.choices(range(len(WHEEL)), weights=[WHEEL_ZERO_WEIGHT if w == 0 else 1 for w in WHEEL])[0]
             payout = int(bet * WHEEL[index])
             result = {"index": index}
         else:
@@ -1641,12 +1657,14 @@ class Game:
             # the house hits soft 17
             while bj_value(h["dealer"]) < 17 or (bj_value(h["dealer"]) == 17 and bj_soft(h["dealer"])):
                 h["dealer"].append(self.bj_draw(h))
+                if bj_value(h["dealer"]) > 21 and random.random() < BJ_DEALER_LUCK:
+                    h["dealer"][-1] = self.bj_draw(h)  # the dealer's lucky streak
         dv = bj_value(h["dealer"])
         bet = h["bet"]
         if pv > 21:
             result, payout = "bust", 0
         elif natural and not dealer_natural:
-            result, payout = "blackjack", bet + bet * 6 // 5  # blackjack pays 6:5
+            result, payout = "blackjack", bet * 2  # blackjack pays even money here
         elif dealer_natural and not natural:
             result, payout = "dealer_bj", 0
         elif dv > 21:
@@ -2868,7 +2886,7 @@ class Game:
     def on_trade_ask(self, c, m):
         room = c.room
         if c.scene != "tavern":
-            raise GameError("Trading happens in the tavern at the Trading Post.")
+            raise GameError("Trading happens inside the Trading Tavern.")
         key, other = self.find_member(room.zone, m.get("to"))
         cl = room.clients.get(key)
         if not other or key == c.key or not cl or cl.scene != "tavern":
@@ -3005,7 +3023,14 @@ class Game:
         if token != r["id"]:
             return
         r["id"] += 1
-        r.update(state="spinning", result=random.randrange(37), ends=time.monotonic() + ROULETTE_SPIN_T)
+        n = random.randrange(37)
+        bets = [b for mine in r["bets"].values() for b in mine]
+        if bets and random.random() < ROULETTE_HOUSE:
+            # the house nudges the ball onto whichever number pays out the least
+            owed = lambda x: sum(b["amount"] * ROULETTE_PAYS[b["kind"]] for b in bets if roulette_hits(b["kind"], b["v"], x))
+            low = min(owed(x) for x in range(37))
+            n = random.choice([x for x in range(37) if owed(x) == low])
+        r.update(state="spinning", result=n, ends=time.monotonic() + ROULETTE_SPIN_T)
         room.broadcast({"t": "roulette_spin", "n": r["result"], "spin": ROULETTE_SPIN_T}, scene="casino")
         asyncio.get_running_loop().call_later(ROULETTE_SPIN_T, self.roulette_payout, room, r["id"])
 

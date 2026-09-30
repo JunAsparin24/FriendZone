@@ -252,7 +252,7 @@ export function arena(stage) {
   const items = new Map();
   let level = null, mapInfo = null;
   let bullets = [], shotId = 0, lastShot = 0, lastSend = 0, safeUntil = 0, maxHp = 3, feed = [];
-  let firing = false, breakUntil = 0, breakBoard = null, hitMark = 0, bob = 0, recoil = 0;
+  let firing = false, tapped = false, breakUntil = 0, breakBoard = null, hitMark = 0, bob = 0, recoil = 0;
   let jump = { h: 0, v: 0 }, slide = { t: 0, cd: 0, dx: 0, dy: 0 };
   const picking = new Set();
   const AW = () => mapInfo?.w ?? 1200, AH = () => mapInfo?.h ?? 900;
@@ -328,14 +328,19 @@ export function arena(stage) {
   const locked = () => document.pointerLockElement === stage.canvas;
   const grab = () => { if (!locked()) { try { stage.canvas.requestPointerLock()?.catch?.(() => {}); } catch { /* not supported */ } } };
   grab();
-  const onLockChange = () => { if (!locked()) firing = false; }; // letting go of the mouse always stops shooting
+  const onLockChange = () => { if (!locked()) firing = tapped = false; }; // letting go of the mouse always stops shooting
   document.addEventListener('pointerlockchange', onLockChange);
-  const onBlur = () => { firing = false; };
+  const onBlur = () => { firing = tapped = false; };
   window.addEventListener('blur', onBlur);
+  // belt and braces: only shoot while the left button is really held down
+  const onMouseUp = (e) => { if (e.button === 0) firing = false; };
+  const onMouseMove = (e) => { if (firing && e.pointerType !== 'touch' && !(e.buttons & 1)) firing = false; };
+  window.addEventListener('mouseup', onMouseUp, true);
+  window.addEventListener('pointermove', onMouseMove, true);
   stage.onPointer = (type, e) => {
     if (type === 'down') {
       if (!locked() && e?.pointerType === 'mouse') { grab(); return; } // that click only grabs the mouse
-      if (e?.button === 0 || e?.pointerType !== 'mouse') firing = true;
+      if (e?.button === 0 || e?.pointerType !== 'mouse') { firing = true; tapped = true; } // (a quick tap still fires once)
     }
     if (type === 'up') firing = false;
   };
@@ -418,7 +423,7 @@ export function arena(stage) {
       sfx('ko', { vol: m.k === S.me || m.by === S.me ? 1 : 0.5 });
       feed = [{ text: `${nameOf(m.by)} ⚔ ${nameOf(m.k)}`, at: performance.now() }, ...feed].slice(0, 5);
       renderBoard();
-      if (m.k === S.me) { firing = false; stage.banner(`💥 ${esc(nameOf(m.by))} got you! Respawning…`, 1800); }
+      if (m.k === S.me) { firing = tapped = false; stage.banner(`💥 ${esc(nameOf(m.by))} got you! Respawning…`, 1800); }
       else if (m.by === S.me) { stage.banner(`⚔️ You knocked out ${esc(nameOf(m.k))}! +20 🪙`, 1800); hitMark = performance.now() + 400; }
     },
     arena_spawn: (m) => {
@@ -430,7 +435,7 @@ export function arena(stage) {
     },
     arena_round: (m) => {
       sfx(m.winner === S.me ? 'win' : 'cheer');
-      firing = false;
+      firing = tapped = false;
       breakUntil = performance.now() + m.secs * 1000;
       breakBoard = m;
       renderBreak();
@@ -506,8 +511,9 @@ export function arena(stage) {
         net.send('arena_move', { x: mine.x, y: mine.y, a: mine.a, h: jump.h, sl: slide.t > 0 });
       }
       // click or hold to shoot (only while the button is down, never on its own)
-      if (firing && !onBreak && now - lastShot > (has(mine, 'rapid') ? 120 : 240)) {
+      if ((firing || tapped) && !onBreak && now - lastShot > (has(mine, 'rapid') ? 120 : 240)) {
         lastShot = now;
+        tapped = false;
         const id = ++shotId;
         const x = mine.x + Math.cos(mine.a) * 24, y = mine.y + Math.sin(mine.a) * 24;
         if (!inWall(x, y)) {
@@ -625,6 +631,8 @@ export function arena(stage) {
     off();
     document.removeEventListener('pointerlockchange', onLockChange);
     window.removeEventListener('blur', onBlur);
+    window.removeEventListener('mouseup', onMouseUp, true);
+    window.removeEventListener('pointermove', onMouseMove, true);
     if (locked()) document.exitPointerLock();
     for (const b of bullets) stage.scene?.remove(b.mesh);
     for (const id of [...items.keys()]) removeItem(id);

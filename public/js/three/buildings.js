@@ -285,6 +285,38 @@ function crate(g, x, y, z, sz = 0.9, ry = 0) {
 
 // ---- builders ------------------------------------------------------------------
 
+/** Block-letter shapes for C A S I N O (1 unit tall), for the casino's 3D sign. */
+function casinoLetters() {
+  const arc = (cx, cy, ro, ri, a0, a1) => {
+    const sh = new THREE.Shape();
+    sh.absarc(cx, cy, ro, a0, a1, false);
+    sh.absarc(cx, cy, ri, a1, a0, true);
+    sh.closePath();
+    return sh;
+  };
+  const poly = (pts, holes = []) => {
+    const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+    for (const h of holes) sh.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
+    return sh;
+  };
+  const ring = (cx, cy, rx, ry, ix, iy) => {
+    const sh = new THREE.Shape();
+    sh.absellipse(cx, cy, rx, ry, 0, Math.PI * 2, false);
+    const hole = new THREE.Path();
+    hole.absellipse(cx, cy, ix, iy, 0, Math.PI * 2, true);
+    sh.holes.push(hole);
+    return sh;
+  };
+  return [
+    { w: 0.9, shapes: [arc(0.48, 0.5, 0.5, 0.29, 0.75, Math.PI * 2 - 0.75)] },
+    { w: 0.84, shapes: [poly([[0, 0], [0.22, 0], [0.29, 0.22], [0.55, 0.22], [0.62, 0], [0.84, 0], [0.53, 1], [0.31, 1]], [[[0.35, 0.39], [0.49, 0.39], [0.42, 0.64]]])] },
+    { w: 0.78, shapes: [arc(0.39, 0.735, 0.265, 0.09, 0.4, Math.PI * 1.5), arc(0.39, 0.265, 0.265, 0.09, Math.PI + 0.4, Math.PI * 2.5)] },
+    { w: 0.26, shapes: [poly([[0, 0], [0.26, 0], [0.26, 1], [0, 1]])] },
+    { w: 0.76, shapes: [poly([[0, 0], [0.21, 0], [0.21, 0.6], [0.55, 0], [0.76, 0], [0.76, 1], [0.55, 1], [0.55, 0.4], [0.21, 1], [0, 1]])] },
+    { w: 0.88, shapes: [ring(0.44, 0.5, 0.44, 0.5, 0.23, 0.3)] },
+  ];
+}
+
 export const BUILDERS = {
   studio(g, w, d, anim) {
     const h = 4.2;
@@ -568,32 +600,54 @@ export const BUILDERS = {
     const h = 4.8;
     walls(g, w, h, d, '#3a1f5c', stoneTex);
     add(g, new THREE.BoxGeometry(w + 0.6, 0.45, d + 0.6), shiny('#ffc53d'), { p: [0, h + 0.2, 0] });
-    const signW = w * 0.86, signH = 2.4;
-    const signTex = ctx.text(512, 144, (c) => {
-      const grad = c.createLinearGradient(0, 0, 0, 144);
-      grad.addColorStop(0, '#d6334a');
-      grad.addColorStop(1, '#8f1530');
-      c.fillStyle = grad;
-      c.fillRect(0, 0, 512, 144);
-      c.font = '92px "Luckiest Guy", Rubik, sans-serif';
-      c.textAlign = 'center';
-      c.textBaseline = 'middle';
-      c.lineWidth = 14;
-      c.strokeStyle = '#7a0f28';
-      c.strokeText('CASINO', 256, 80);
-      c.fillStyle = '#ffe27a';
-      c.fillText('CASINO', 256, 80);
-    });
-    add(g, new THREE.BoxGeometry(signW, signH, 0.4), [toon('#8f1530'), toon('#8f1530'), toon('#8f1530'), toon('#8f1530'), new THREE.MeshBasicMaterial({ map: signTex }), toon('#8f1530')], { p: [0, h + 1.6, d / 2 - 0.4], outline: true });
-    const on = basic('#fff6b0'), off = basic('#8a6a1a');
+    // the sign: big 3D block letters (glowing faces, red returns) standing on a steel rail on the roof
+    // edge, each one ringed with marquee bulbs that chase round the letters
+    const signW = w * 0.9;
+    const letters = casinoLetters();
+    const units = letters.reduce((n, l) => n + l.w, 0) + 0.18 * (letters.length - 1);
+    const k = Math.min(2.1, signW / units);
+    const sign = new THREE.Group();
+    sign.position.set(-(units * k) / 2, h + 0.45, d / 2 - 0.3);
+    g.add(sign);
+    add(g, new THREE.BoxGeometry(units * k + 0.6, 0.22, 0.5), toon('#23263f'), { p: [0, h + 0.34, d / 2 - 0.15], outline: true });
+    const face = new THREE.MeshToonMaterial({ color: '#fff6e0', emissive: '#ffe9b0', emissiveIntensity: 0.55, gradientMap: toon('#fff').gradientMap });
+    const side = toon('#c21838');
+    const on = basic('#fff6b0'), off = basic('#7a5a1a');
     const bulbs = [];
-    for (let i = 0; i < 16; i++) {
-      const x = -signW / 2 + 0.3 + (i * (signW - 0.6)) / 15;
-      for (const y of [h + 1.6 + signH / 2 - 0.15, h + 1.6 - signH / 2 + 0.15]) {
-        bulbs.push(add(g, new THREE.SphereGeometry(0.1, 8, 6), on, { p: [x, y, d / 2 - 0.17], cast: false }));
+    const bulbGeo = new THREE.SphereGeometry(0.026, 8, 6);
+    let x = 0;
+    for (const l of letters) {
+      const lg = new THREE.Group();
+      lg.position.x = x * k;
+      lg.scale.setScalar(k);
+      sign.add(lg);
+      const geo = new THREE.ExtrudeGeometry(l.shapes, { depth: 0.32, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 1, curveSegments: 18 });
+      add(lg, geo, [face, side], { p: [0, 0, -0.32], outline: true });
+      // bulbs along every edge of the letter (outer outline and holes), just proud of the face
+      for (const sh of l.shapes) {
+        for (const path of [sh, ...sh.holes]) {
+          const len = path.getLength();
+          const n = Math.max(4, Math.round(len / 0.2));
+          path.getSpacedPoints(n).slice(0, n).forEach((pt) => {
+            const bulb = new THREE.Mesh(bulbGeo, on);
+            bulb.position.set(pt.x, pt.y, 0.035);
+            lg.add(bulb);
+            bulbs.push(bulb);
+          });
+        }
       }
+      x += l.w + 0.18;
     }
-    anim.push((t) => bulbs.forEach((b, i) => { b.material = (Math.floor(t * 6) + i) % 3 === 0 ? on : off; }));
+    // soft glow behind the whole sign
+    const halo = new THREE.Sprite(additive(glowTexture, 0xff5d73, 0.35));
+    halo.scale.set(units * k * 1.3, k * 2.2, 1);
+    halo.position.set(0, h + 0.45 + k * 0.5, d / 2 - 0.6);
+    g.add(halo);
+    anim.push((t) => {
+      const step = Math.floor(t * 8);
+      bulbs.forEach((b, i) => { b.material = (step + i) % 3 === 0 ? off : on; });
+      halo.material.opacity = 0.28 + Math.sin(t * 3) * 0.06;
+    });
     add(g, new THREE.BoxGeometry(3, 3.2, 0.2), shiny('#ffc53d'), { p: [0, 1.6, d / 2 + 0.05] });
     for (const s of [-1, 1]) add(g, new THREE.BoxGeometry(1.25, 2.9, 0.24), toon('#8b5cc6', { emissive: '#6b3fa0', emissiveIntensity: 0.4 }), { p: [s * 0.68, 1.5, d / 2 + 0.08] });
     windowPane(g, -w * 0.34, 2.6, d / 2 + 0.06, 1.6, 1.4, '#e57bff');
@@ -620,7 +674,7 @@ export const BUILDERS = {
     const coin = add(g, new THREE.CylinderGeometry(0.55, 0.55, 0.14, 24), shiny('#ffd84d'), { p: [0, ry + 3.1, hz], r: [Math.PI / 2, 0, 0], outline: true });
     add(g, new THREE.CylinderGeometry(0.04, 0.04, 0.6, 6), toon('#5b5f73'), { p: [0, ry + 2.65, hz] });
     anim.push((t) => { coin.rotation.z = t * 1.5; });
-    signBoard(g, ctx, 'TRADING POST', { w: 7.4, h: 1.3, p: [0, h + 0.9, hf + 0.9], bg: ['#4a2e1c', '#2e1b10'], fg: '#ffd84d', frame: '#8b5a2b' });
+    signBoard(g, ctx, 'TRADING TAVERN', { w: 8.2, h: 1.3, p: [0, h + 0.9, hf + 0.9], bg: ['#4a2e1c', '#2e1b10'], fg: '#ffd84d', frame: '#8b5a2b' });
     for (const o of [-3.2, 3.2]) add(g, new THREE.BoxGeometry(0.2, 1.6, 0.2), toon('#4a2e1c'), { p: [o, h + 0.2, hf + 0.8] });
     // stall: counter, posts and a sloped striped awning from the hall to the front
     const wood = toon('#b07a45');

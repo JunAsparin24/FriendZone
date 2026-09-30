@@ -570,9 +570,12 @@ export function buildEnvironment(scene) {
   // follows the time of day (and turns grey in the rain) - see DayNight.
   const cloudMat = new THREE.MeshToonMaterial({ color: '#ffffff', vertexColors: true, gradientMap: toon('#fff').gradientMap });
   const clouds = [];
-  for (let i = 0; i < 34; i++) {
+  for (let i = 0; i < 70; i++) {
+    // a natural mix: lots of small puffs, plenty of medium ones and a few towering giants
+    const kind = rnd();
+    const size = kind < 0.4 ? 0.5 + rnd() * 0.7 : kind < 0.85 ? 1.2 + rnd() * 1.4 : 3.2 + rnd() * 3.5;
     const parts = [];
-    const n = 5 + Math.floor(rnd() * 5);
+    const n = size < 1.2 ? 3 + Math.floor(rnd() * 3) : 5 + Math.floor(rnd() * 6);
     for (let k = 0; k < n; k++) {
       const x = (k - (n - 1) / 2) * 1.5 + (rnd() - 0.5) * 0.6;
       const r = (1.3 + rnd() * 1.1) * (1.25 - Math.abs(x) / (n * 1.1));
@@ -590,10 +593,12 @@ export function buildEnvironment(scene) {
     geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
     geo.computeVertexNormals();
     const cloud = new THREE.Mesh(geo, cloudMat);
-    cloud.position.set((rnd() - 0.5) * 420, 30 + rnd() * 18, (rnd() - 0.5) * 300);
-    cloud.scale.set(1.3 + rnd() * 1.6, 1 + rnd() * 0.6, 1.2 + rnd() * 1.2);
-    cloud.castShadow = true;
-    cloud.userData.speed = 0.8 + rnd() * 1.3;
+    // big clouds sit higher up; small ones drift lower and a bit faster
+    cloud.position.set((rnd() - 0.5) * 460, 24 + size * 5 + rnd() * 14, (rnd() - 0.5) * 340);
+    cloud.scale.set(size * (0.9 + rnd() * 0.5), size * (0.6 + rnd() * 0.4), size * (0.8 + rnd() * 0.5));
+    cloud.rotation.y = rnd() * TAU;
+    cloud.castShadow = size < 3; // (the giants would shade half the town)
+    cloud.userData.speed = (0.6 + rnd() * 1.1) * (size < 1.2 ? 1.4 : size > 3 ? 0.6 : 1);
     scene.add(cloud);
     clouds.push(cloud);
   }
@@ -622,7 +627,7 @@ export function buildEnvironment(scene) {
     for (const fn of anim) fn(t, dt);
     for (const c of clouds) {
       c.position.x += c.userData.speed * dt;
-      if (c.position.x > 220) c.position.x = -220;
+      if (c.position.x > 240) c.position.x = -240;
     }
     for (const b of butterflies) {
       const u = b.userData;

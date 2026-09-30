@@ -10,7 +10,9 @@ import { sfx } from '../sfx.js';
 const SYMBOLS = ['🍒', '🍋', '🔔', '⭐', '💎', '7️⃣'];
 const CELL = 84;
 const WHEEL = [0, 1.5, 0, 0, 0.5, 0, 2, 0, 0, 1.5, 0, 0.5, 0, 0, 0, 5]; // must match server.py
-const WHEEL_COLORS = { 0: '#2b2f4a', 0.5: '#6b7194', 1.5: '#39c6ff', 2: '#6ee7a0', 5: '#ffc53d' };
+// casino colours: the blanks alternate red and black, the prizes are purple, the jackpot is gold
+const wheelColor = (mult, i) => (mult === 0 ? (i % 2 ? '#1a1320' : '#b3122e') : mult === 5 ? '#ffc53d' : mult === 2 ? '#7a2fc0' : '#5b1f8f');
+const wheelInk = (mult) => (mult === 5 ? '#3a2400' : '#ffd84d');
 const rand = () => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
 
 const TITLES = { slots: 'Lucky Slots', wheel: 'Prize Wheel', coinflip: 'Coin Flip', blackjack: 'Blackjack', roulette: 'Roulette' };
@@ -157,13 +159,13 @@ export function casino(body, { game = null } = {}) {
     wctx.rotate(rot);
     WHEEL.forEach((mult, i) => {
       const a0 = -Math.PI / 2 + i * seg;
-      wctx.fillStyle = WHEEL_COLORS[mult];
+      wctx.fillStyle = wheelColor(mult, i);
       wctx.beginPath(); wctx.moveTo(0, 0); wctx.arc(0, 0, WS / 2 - 12, a0, a0 + seg); wctx.closePath(); wctx.fill();
-      wctx.strokeStyle = 'rgba(255,255,255,.3)';
+      wctx.strokeStyle = '#c99700'; wctx.lineWidth = 1.5;
       wctx.stroke();
       wctx.save();
       wctx.rotate(a0 + seg / 2);
-      wctx.fillStyle = mult === 0 ? '#bcd6ff' : mult === 5 ? '#3a2a00' : '#0d1f4a';
+      wctx.fillStyle = wheelInk(mult);
       wctx.font = '800 14px Rubik, sans-serif';
       wctx.textAlign = 'center';
       wctx.fillText(mult === 0 ? '✖' : `×${mult}`, WS / 2 - 38, 5);
@@ -175,7 +177,7 @@ export function casino(body, { game = null } = {}) {
       wctx.beginPath(); wctx.arc(Math.cos(a) * (WS / 2 - 7), Math.sin(a) * (WS / 2 - 7), 3, 0, TAU); wctx.fill();
     }
     wctx.restore();
-    wctx.fillStyle = '#1a3d85';
+    wctx.fillStyle = '#1a1320';
     wctx.beginPath(); wctx.arc(WS / 2, WS / 2, 26, 0, TAU); wctx.fill();
     wctx.strokeStyle = '#ffc53d';
     wctx.lineWidth = 4;

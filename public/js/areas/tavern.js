@@ -1,4 +1,4 @@
-// The Tavern, inside the Trading Post: a medieval inn with timber walls, candle chandeliers, a crackling
+// The Trading Tavern: a medieval inn with timber walls, candle chandeliers, a crackling
 // fireplace, a bard, and long feast tables full of regulars eating and drinking. It's the only place you
 // can trade: walk up to someone and press E to ask them.
 import * as THREE from 'three';
@@ -401,7 +401,7 @@ export function tavernArea(stage) {
   add(nb, new THREE.BoxGeometry(2.6, 1.8, 0.1), toon('#8b5a2b'), { p: [0, 2.0, 0], outline: true });
   ['#fff6d6', '#ffe0b0', '#ffffff', '#fff0f6'].forEach((c, i) => add(nb, new THREE.BoxGeometry(0.6, 0.7, 0.02), toon(c), { p: [-0.9 + i * 0.6, 2.0 + (i % 2 ? 0.2 : -0.15), 0.06], r: [0, 0, (i - 1.5) * 0.08] }));
 
-  sign(g, 'THE TAVERN', { x: 0, z: -4.5, y: 4.3, w: 3.8, h: 0.9, bg: '#8b3a1e' });
+  sign(g, 'TRADING TAVERN', { x: 0, z: -4.5, y: 4.3, w: 4.6, h: 0.9, bg: '#8b3a1e' });
   sign(g, 'TRADE HERE', { x: 8, z: 3.5, y: 4.3, w: 3.0, h: 0.75, bg: '#2f7f5e' });
 
   const walker = openWalker(stage, { w: W, d: D, solids });
@@ -465,6 +465,6 @@ export function tavernArea(stage) {
   });
 
   stage.onFrame((dt, now) => { syncPeople(); for (const fn of anim) fn(now / 1000, dt); });
-  stage.banner('<div class="big">🍺 The Tavern</div>Walk up to a friend and press <kbd>E</kbd> to trade coins, cosmetics and furniture.', 3500);
+  stage.banner('<div class="big">🍺 Trading Tavern</div>Walk up to a friend and press <kbd>E</kbd> to trade coins, cosmetics and furniture.', 3500);
   return () => { off(); clearTimeout(askTimer); ask.remove(); walker.stop(); stage.scene?.remove(g); };
 }

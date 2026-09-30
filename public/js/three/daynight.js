@@ -28,7 +28,7 @@ const NIGHT = { top: C('#050a1f'), mid: C('#0d1a44'), bottom: C('#1e2d5c'), fog:
 const STORM = { top: C('#4d586b'), mid: C('#76808f'), bottom: C('#98a1ad'), fog: C('#8b95a3'), hemiSky: C('#b7c2d0'), hemiGround: C('#4f5f4a') };
 const STORM_NIGHT = { top: C('#0b0f1a'), mid: C('#151c2b'), bottom: C('#222b3b'), fog: C('#1a2130'), hemiSky: C('#56637d'), hemiGround: C('#1a2030') };
 const CLOUD = { day: C('#ffffff'), dusk: C('#ffc2b0'), night: C('#34416b'), storm: C('#7c8595'), stormNight: C('#232a3a') };
-const RAIN_DROPS = 2400, RAIN_BOX = 46, RAIN_H = 30;
+const RAIN_DROPS = 2600, RAIN_BOX = 22, RAIN_H = 16, SPLASHES = 140, WIND = 2.5;
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -60,19 +60,91 @@ export class DayNight {
     // rain: streaks falling in a box that follows you around
     this.rain = false;
     this.storm = 0;
-    const drops = new Float32Array(RAIN_DROPS * 6);
-    this.drops = Array.from({ length: RAIN_DROPS }, () => ({ x: (Math.random() - 0.5) * RAIN_BOX * 2, y: Math.random() * RAIN_H, z: (Math.random() - 0.5) * RAIN_BOX * 2, v: 26 + Math.random() * 10 }));
-    const rg = new THREE.BufferGeometry();
-    rg.setAttribute('position', new THREE.BufferAttribute(drops, 3));
-    this.rainLines = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: '#cfe0ff', transparent: true, opacity: 0, depthWrite: false }));
-    this.rainLines.frustumCulled = false;
-    this.rainLines.visible = false;
-    scene.add(this.rainLines);
+    // streaks: thin glassy rods falling (and slanting in the wind) in a box that follows you around;
+    // each one knows the ground height under it, and splashes when it lands
+    this.groundAt = null; // (x, z) => ground height, set by the world
+    this.drops = Array.from({ length: RAIN_DROPS }, () => ({ x: 0, y: -1, z: 0, g: 0, v: 0, fresh: true }));
+    this.rainMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.014, 0.014, 0.85, 4, 1, true),
+      new THREE.MeshBasicMaterial({ color: '#d8e6ff', transparent: true, opacity: 0, depthWrite: false }), RAIN_DROPS);
+    this.rainMesh.frustumCulled = false;
+    this.rainMesh.visible = false;
+    scene.add(this.rainMesh);
+    // splashes: a ripple ring on the ground plus a little crown of droplets that pops up
+    this.splashes = Array.from({ length: SPLASHES }, () => ({ t: 1, x: 0, y: 0, z: 0 }));
+    this.splashIdx = 0;
+    const ringGeo = new THREE.RingGeometry(0.08, 0.12, 14);
+    ringGeo.rotateX(-Math.PI / 2);
+    this.ringMesh = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ color: '#e8f0ff', transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }), SPLASHES);
+    this.dropletMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.025, 5, 4), new THREE.MeshBasicMaterial({ color: '#e8f0ff', transparent: true, opacity: 0.9, depthWrite: false }), SPLASHES * 3);
+    for (const m of [this.ringMesh, this.dropletMesh]) { m.frustumCulled = false; m.visible = false; scene.add(m); }
+    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3();
+    this._tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.atan2(WIND, 30));
     this.lastNow = null;
     this.cloudCol = new THREE.Color();
   }
 
   setRain(on) { this.rain = !!on; }
+
+  updateRain(center, dt, storm) {
+    const on = storm > 0.02;
+    this.rainMesh.visible = this.ringMesh.visible = this.dropletMesh.visible = on;
+    if (!on) { for (const d of this.drops) d.fresh = true; return; }
+    const ground = (x, z) => (this.groundAt ? this.groundAt(x, z) : 0);
+    // only some of the drops fall in a drizzle; all of them in a downpour
+    const live = Math.floor(RAIN_DROPS * Math.min(1, storm * 1.2));
+    this.rainMesh.count = live;
+    this.rainMesh.material.opacity = 0.55 * Math.min(1, storm * 1.3);
+    const m = this._m, q = this._tilt, sc = this._s.set(1, 1, 1), P = this._p;
+    const respawn = (d, anywhere) => {
+      d.x = center.x + (Math.random() - 0.5) * RAIN_BOX * 2;
+      d.z = center.z + (Math.random() - 0.5) * RAIN_BOX * 2;
+      d.g = ground(d.x, d.z);
+      d.y = d.g + (anywhere ? Math.random() : 1) * RAIN_H;
+      d.v = 24 + Math.random() * 8;
+      d.fresh = false;
+    };
+    for (let i = 0; i < live; i++) {
+      const d = this.drops[i];
+      if (d.fresh || Math.abs(d.x - center.x) > RAIN_BOX * 1.3 || Math.abs(d.z - center.z) > RAIN_BOX * 1.3) respawn(d, true);
+      d.y -= d.v * dt;
+      d.x += WIND * dt;
+      if (d.y <= d.g) {
+        // splash (only near you, where you can see it)
+        const dx = d.x - center.x, dz = d.z - center.z;
+        if (dx * dx + dz * dz < 196 && Math.random() < 0.55) {
+          const sp = this.splashes[this.splashIdx++ % SPLASHES];
+          sp.t = 0; sp.x = d.x; sp.y = d.g + 0.03; sp.z = d.z;
+        }
+        respawn(d, false);
+      }
+      m.compose(P.set(d.x, d.y + 0.42, d.z), q, sc);
+      this.rainMesh.setMatrixAt(i, m);
+    }
+    this.rainMesh.instanceMatrix.needsUpdate = true;
+    // splashes grow and fade in about a third of a second
+    const flat = this._q.identity();
+    let n = 0;
+    for (let i = 0; i < SPLASHES; i++) {
+      const sp = this.splashes[i];
+      sp.t = Math.min(1, sp.t + dt * 3);
+      const k = sp.t;
+      const size = k >= 1 ? 0 : 0.5 + k * 1.9;
+      m.compose(P.set(sp.x, sp.y, sp.z), flat, sc.set(size, 1, size));
+      this.ringMesh.setMatrixAt(i, m);
+      for (let j = 0; j < 3; j++) {
+        const a = j * 2.1 + i;
+        const r = k * 0.22, h = Math.sin(k * Math.PI) * 0.16;
+        const s2 = k >= 1 ? 0 : 1 - k * 0.6;
+        m.compose(P.set(sp.x + Math.cos(a) * r, sp.y + h, sp.z + Math.sin(a) * r), flat, sc.set(s2, s2, s2));
+        this.dropletMesh.setMatrixAt(n++, m);
+      }
+    }
+    sc.set(1, 1, 1);
+    this.ringMesh.material.opacity = 0.55 * storm * (1 - 0.3 * Math.random());
+    this.dropletMesh.material.opacity = 0.85 * storm;
+    this.ringMesh.instanceMatrix.needsUpdate = true;
+    this.dropletMesh.instanceMatrix.needsUpdate = true;
+  }
 
   update(center, now = Date.now()) {
     const phase = dayPhase(now);
@@ -103,7 +175,10 @@ export class DayNight {
     // cloud colours: white by day, peach at dusk, deep blue at night, slate in the rain
     const cc = this.cloudCol.copy(CLOUD.night).lerp(CLOUD.day, day).lerp(CLOUD.dusk, dusk * 0.8);
     cc.lerp(CLOUD.stormNight.clone().lerp(CLOUD.storm, day), storm * 0.9);
-    if (this.env.cloudMat) this.env.cloudMat.color.copy(cc);
+    if (this.env.cloudMat) {
+      this.env.cloudMat.color.copy(cc);
+      this.env.cloudMat.emissive.copy(cc).multiplyScalar(0.3 * (0.3 + day * 0.7)); // (a soft glow keeps them fluffy white, not grey)
+    }
     u.cloudCol.value.copy(cc).lerp(t.top, 0.08);
     u.cloudShade.value.copy(cc).multiplyScalar(0.78).lerp(t.mid, 0.25);
     u.cover.value = 0.4 + storm * 0.5;
@@ -132,23 +207,8 @@ export class DayNight {
     this.stars.material.opacity = (1 - smooth(-0.25, 0.05, elev)) * (1 - storm);
     this.moonDisc.material.opacity *= 1 - storm * 0.9;
 
-    // falling rain around the player
-    this.rainLines.visible = storm > 0.02;
-    if (this.rainLines.visible) {
-      this.rainLines.material.opacity = storm * 0.5;
-      const pos = this.rainLines.geometry.attributes.position;
-      const wind = 3;
-      for (let i = 0; i < RAIN_DROPS; i++) {
-        const d = this.drops[i];
-        d.y -= d.v * dt;
-        d.x += wind * dt;
-        if (d.y < 0) { d.y += RAIN_H; d.x = (Math.random() - 0.5) * RAIN_BOX * 2; d.z = (Math.random() - 0.5) * RAIN_BOX * 2; }
-        const x = center.x + d.x, z = center.z + d.z, y = (center.y ?? 0) + d.y - 4;
-        pos.setXYZ(i * 2, x, y, z);
-        pos.setXYZ(i * 2 + 1, x - wind * 0.03, y + 0.7, z);
-      }
-      pos.needsUpdate = true;
-    }
+    // falling rain around the player, splashing where it lands
+    this.updateRain(center, dt, storm);
     this.stars.visible = this.stars.material.opacity > 0.01;
 
     // every lamp glows the same at night: a lit lantern, a soft halo and a pool of light on the ground

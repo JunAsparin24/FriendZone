@@ -77,7 +77,7 @@ function renderHome(ask = true) {
   $('#noZones').hidden = list.length > 0;
   $('#myZones').innerHTML = list.map((z) => {
     const n = onlineCounts[String(z.code).toUpperCase()];
-    const badge = n == null ? '' : `<span class="zone-online ${n ? 'on' : ''}">${n ? `● ${n} online` : 'nobody online'}</span>`;
+    const badge = n == null ? '' : `<span class="zone-online ${n ? 'on' : ''}"><i class="zo-dot"></i>${n} online</span>`;
     return `
     <li>
       <button class="zone-item" data-code="${esc(z.code)}">

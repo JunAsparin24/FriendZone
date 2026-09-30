@@ -23,7 +23,7 @@ export const EMOTES = { wave: '👋', laugh: '😂', heart: '❤️', fire: '�
 const PLAN_SPOTS = [
   { id: 'doodle', emoji: '🎨', name: 'Doodle Studio', kind: 'studio', x: 2040, y: 1000, w: 260, h: 210 },
   { id: 'shop', emoji: '👕', name: 'Style Shop', kind: 'boutique', x: 2620, y: 1070, w: 330, h: 220 },
-  { id: 'trading', emoji: '💰', name: 'Trading Post', kind: 'market', x: 1830, y: 1440, w: 190, h: 310, face: 'e' },
+  { id: 'trading', emoji: '💰', name: 'Trading Tavern', kind: 'market', x: 1830, y: 1440, w: 190, h: 310, face: 'e' },
   { id: 'racing', emoji: '🏎️', name: 'Race Track', kind: 'garage', x: 2160, y: 200, w: 470, h: 250 },
   { id: 'boss', emoji: '👾', name: 'Boss Cave', kind: 'cave', x: 1140, y: 390, w: 320, h: 230 },
   { id: 'arcade', emoji: '🕹️', name: 'Arcade', kind: 'arcade', x: 3000, y: 640, w: 260, h: 210 },
@@ -173,7 +173,7 @@ const ROADS = [
   { name: 'Highland Road', w: 0.9, lamps: true, ctrl: [edge(-0.75, -0.66), P(2000, 1330), P(1760, 1120), P(1600, 900), P(1440, 740), door('boss')] },
   { name: 'Market Street', w: 1, lamps: true, ctrl: [edge(-1, 0.05), door('trading')] },
   // west out of town: forks off the Highland Road (at one of its control points, so it starts right on
-  // it), passes north of the Trading Post, crosses the creek on the bridge and ends at the archery range
+  // it), passes north of the Trading Tavern, crosses the creek on the bridge and ends at the archery range
   { name: 'Market Street', w: 1, lamps: true, ctrl: [P(2000, 1330), P(1850, 1365), P(1710, 1450), P(1640, 1545), P(1250, 1520), door('archery')] },
   { name: 'Lakeside Walk', w: 0.8, ctrl: [P(1300, 1528), P(1180, 1780), P(1060, 1990), door('fishing')] },
   { name: 'Maple Lane', w: 0.9, lamps: true, ctrl: [edge(0, 1), P(2410, 1900), door('house')] },

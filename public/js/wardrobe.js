@@ -168,7 +168,9 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       content.innerHTML = `<div class="wd2-card">${itemTiles(tab)}${tab === 'pet' ? '<p class="muted small">Buy pets here, or hatch a random one from an egg at the 🐾 Pet Shop in town (cheaper!).</p>' : ''}</div>`
         + (tab === 'hair' ? swatches('Hair color', 'hairColor', CATALOG.hairColors) : '')
         + (tab === 'top' ? topPickers() : '')
-        + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors) + swatches('Shoe color', 'shoeColor', CATALOG.clothColors) : '')
+        + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors)
+          + choices('Shoes', 'shoes', CATALOG.shoeStyles, 'feet') + swatches('Shoe color', 'shoeColor', CATALOG.clothColors)
+          + choices('Socks', 'socks', CATALOG.sockStyles, 'feet') + swatches('Sock color', 'sockColor', CATALOG.clothColors) : '')
         + (tab === 'hat' ? tintPicker('hat', 'hatColor', 'Hat color') : '')
         + (tab === 'back' ? tintPicker('back', 'backColor', 'Color') : '');
     }

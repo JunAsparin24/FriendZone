@@ -149,7 +149,13 @@ class Stage {
       this.drag = null;
       if (e.fzPinch) { this.pointerDown = false; this.onPointer?.('up', e, { moved: true }); return; }
       this.pointerDown = false;
-      if (mouseLooking()) { if (d && !d.moved && d.button === 0) this.near?.use(); return; } // cursor hidden: click uses what's nearby
+      if (mouseLooking()) {
+        // cursor hidden: games still need to hear the button go up (or a held trigger never lets go),
+        // and a plain click uses whatever's nearby
+        this.onPointer?.('up', e, { ...(d ?? {}), moved: true });
+        if (d && !d.moved && d.button === 0) this.near?.use();
+        return;
+      }
       this.onPointer?.('up', e, d);
       if (d && !d.moved && d.button === 0) this.clickInteract();
     });

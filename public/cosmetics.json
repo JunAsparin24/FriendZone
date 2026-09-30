@@ -49,7 +49,21 @@
   "zoneColors": ["#ff5d73", "#ff9f43", "#ffd84d", "#6ee7a0", "#2ed8c3", "#39c6ff", "#3b5bdb", "#7c6bff", "#e57bff", "#ff6fb5", "#f5f5f5", "#6b7194"],
   "eyeStyles": [
     { "id": "eyes_round", "name": "Classic" }, { "id": "eyes_sparkle", "name": "Sparkly" }, { "id": "eyes_lashes", "name": "Lashes" },
-    { "id": "eyes_sleepy", "name": "Sleepy" }, { "id": "eyes_happy", "name": "Happy" }
+    { "id": "eyes_sleepy", "name": "Sleepy" }, { "id": "eyes_happy", "name": "Happy" }, { "id": "eyes_angry", "name": "Angry" },
+    { "id": "eyes_sad", "name": "Sad" }, { "id": "eyes_wink", "name": "Wink" }, { "id": "eyes_surprised", "name": "Surprised" },
+    { "id": "eyes_hearts", "name": "Heart Eyes" }, { "id": "eyes_stars", "name": "Star Eyes" }, { "id": "eyes_dizzy", "name": "Dizzy" },
+    { "id": "eyes_dots", "name": "Beady" }, { "id": "eyes_cat", "name": "Cat" }
+  ],
+  "shoeStyles": [
+    { "id": "shoes_sneakers", "name": "Sneakers" }, { "id": "shoes_hightops", "name": "High-tops" },
+    { "id": "shoes_boots", "name": "Boots" }, { "id": "shoes_dress", "name": "Dress Shoes" },
+    { "id": "shoes_platform", "name": "Platforms" }, { "id": "shoes_sandals", "name": "Sandals" },
+    { "id": "shoes_slides", "name": "Slides" }
+  ],
+  "sockStyles": [
+    { "id": "socks_none", "name": "No Socks" }, { "id": "socks_low", "name": "Low Socks" },
+    { "id": "socks_crew", "name": "Crew Socks" }, { "id": "socks_high", "name": "Knee Socks" },
+    { "id": "socks_stockings", "name": "Stockings" }
   ],
   "heights": [
     { "id": "height_tiny", "name": "Tiny" }, { "id": "height_short", "name": "Short" },
@@ -100,7 +114,6 @@
     { "id": "bottom_skirt", "slot": "bottom", "name": "Skirt", "rarity": "common", "free": true },
     { "id": "bottom_cuffed", "slot": "bottom", "name": "Cuffed Jeans", "rarity": "common", "price": 600, "crate": true },
     { "id": "bottom_cargo", "slot": "bottom", "name": "Cargo Pants", "rarity": "rare", "price": 1500, "crate": true },
-    { "id": "bottom_tutu", "slot": "bottom", "name": "Tutu", "rarity": "rare", "price": 2000, "crate": true },
     { "id": "bottom_jeans", "slot": "bottom", "name": "Jeans", "rarity": "common", "price": 800, "crate": true },
     { "id": "bottom_joggers", "slot": "bottom", "name": "Joggers", "rarity": "common", "price": 900, "crate": true },
     { "id": "bottom_athletic", "slot": "bottom", "name": "Gym Shorts", "rarity": "common", "price": 700, "crate": true },
@@ -154,6 +167,14 @@
     { "id": "face_eyepatch", "slot": "face", "name": "Pirate Patch", "rarity": "rare", "price": 1800, "crate": true },
     { "id": "face_ninja", "slot": "face", "name": "Ninja Mask", "rarity": "rare", "price": 2000, "crate": true },
     { "id": "face_monocle", "slot": "face", "name": "Monocle", "rarity": "epic", "price": 4500, "crate": true },
+    { "id": "face_clownnose", "slot": "face", "name": "Clown Nose", "rarity": "common", "price": 900, "crate": true },
+    { "id": "face_bandaid", "slot": "face", "name": "Band-Aid", "rarity": "common", "price": 700, "crate": true },
+    { "id": "face_3dglasses", "slot": "face", "name": "3D Glasses", "rarity": "rare", "price": 2200, "crate": true },
+    { "id": "face_bandana", "slot": "face", "name": "Bandana Mask", "rarity": "rare", "price": 2400, "crate": true },
+    { "id": "face_heartshades", "slot": "face", "name": "Heart Shades", "rarity": "rare", "price": 2600, "crate": true },
+    { "id": "face_beard", "slot": "face", "name": "Full Beard", "rarity": "epic", "price": 5000, "crate": true },
+    { "id": "face_goggles", "slot": "face", "name": "Aviator Goggles", "rarity": "epic", "price": 5500, "crate": true },
+    { "id": "face_cyber", "slot": "face", "name": "Cyber Visor", "rarity": "legendary", "crate": true },
 
     { "id": "back_none", "slot": "back", "name": "Nothing", "rarity": "common", "free": true },
     { "id": "back_backpack", "slot": "back", "name": "Backpack", "rarity": "common", "price": 1000, "crate": true, "tint": true },

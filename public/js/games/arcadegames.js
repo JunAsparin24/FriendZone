@@ -364,15 +364,22 @@ const HOP = {
   },
   draw(G, ctx) {
     const hue = Math.min(1, G.top / 30000);
-    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, hue > 0.5 ? '#1a1f5e' : '#8fd0ff'); g.addColorStop(1, hue > 0.5 ? '#6a4fd8' : '#ffe0f0');
+    // a deep blue sky (so the white clouds stand out), turning to night the higher you get
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, hue > 0.5 ? '#141a52' : '#2f6fd6'); g.addColorStop(1, hue > 0.5 ? '#4a36a8' : '#6fb4f5');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    const cloud = (x, y, grow) => {
+      ctx.beginPath();
+      ctx.arc(x + 20, y + 6, 12 + grow, 0, TAU); ctx.arc(x + 40, y + 2, 15 + grow, 0, TAU); ctx.arc(x + 60, y + 6, 12 + grow, 0, TAU);
+      ctx.rect(x + 8 - grow, y + 4 - grow, 64 + grow * 2, 12 + grow * 2);
+      ctx.fill();
+    };
     for (const p of G.plats) {
       if (p.gone) continue;
       const y = p.y - G.cam;
-      const c = p.kind === 'b' ? '#d9b26a' : p.kind === 'm' ? '#b8f0ff' : '#ffffff';
-      ctx.fillStyle = c;
-      ctx.beginPath(); ctx.arc(p.x + 20, y + 6, 12, 0, TAU); ctx.arc(p.x + 40, y + 2, 15, 0, TAU); ctx.arc(p.x + 60, y + 6, 12, 0, TAU); ctx.fill();
-      ctx.fillRect(p.x + 8, y + 4, p.w - 16, 12);
+      const c = p.kind === 'b' ? '#e8c27a' : p.kind === 'm' ? '#b8f0ff' : '#ffffff';
+      ctx.fillStyle = INK; cloud(p.x, y, 3);                                // outline
+      ctx.fillStyle = p.kind === 'b' ? '#b8904a' : p.kind === 'm' ? '#7fcbe8' : '#b9d4f5'; cloud(p.x, y + 2, 0); // shaded underside
+      ctx.fillStyle = c; cloud(p.x, y - 2, -1);
       if (p.kind === 'b') { ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p.x + 30, y); ctx.lineTo(p.x + 40, y + 12); ctx.lineTo(p.x + 48, y + 2); ctx.stroke(); }
     }
     const y = G.py - G.cam;

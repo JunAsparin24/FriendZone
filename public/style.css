@@ -12,7 +12,7 @@
   --good: #7ff0b0;
   --bad: #ffd0dc;
   --pixel: 'Luckiest Guy', 'Rubik', sans-serif;
-  --body: 'Rubik', system-ui, sans-serif;
+  --body: 'Fredoka', 'Rubik', system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; scrollbar-width: none; }
@@ -1299,10 +1299,13 @@ html.touch .hud-top { padding-right: 172px; } /* room for the 💬 🔊 ⚙️ b
 .tips-tab { position: absolute; right: 14px; bottom: 14px; display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 8px; pointer-events: auto; z-index: 5; }
 .tips-btn { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--line); background: #0d1f4ad9; font-size: 18px; cursor: pointer; }
 .tips-btn:hover { border-color: var(--accent); }
-.tips-body { max-width: min(420px, calc(100vw - 40px)); font-size: 13px; line-height: 1.45; padding: 10px 14px; margin: 0; display: none; }
+.tips-body { width: min(420px, calc(100vw - 40px)); font-size: 13px; line-height: 1.45; padding: 10px 14px; margin: 0; display: none; }
 .tips-body p { margin: 0; }
 .tips-tab.open .tips-body { display: block; animation: tipsin .2s ease-out; }
 @keyframes tipsin { from { opacity: 0; transform: translateY(6px); } }
 html.touch .tips-tab { bottom: 150px; }
-.zone-online { font-size: 12px; font-weight: 700; color: var(--muted); }
+.zone-online { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #8a8fa8; }
+.zone-online .zo-dot { width: 9px; height: 9px; border-radius: 50%; background: #6b7090; }
 .zone-online.on { color: #6ee7a0; }
+.zone-online.on .zo-dot { background: #3dff8a; box-shadow: 0 0 6px 2px #3dff8a99; animation: zo-glow 1.6s ease-in-out infinite; }
+@keyframes zo-glow { 50% { box-shadow: 0 0 10px 4px #3dff8acc; } }

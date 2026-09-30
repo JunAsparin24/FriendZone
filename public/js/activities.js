@@ -33,7 +33,7 @@ export const ACTIVITIES = {
   journal: { icon: 'fishing', emoji: '📖', name: 'Fish Journal', wide: true, mount: fishJournal },
   fishstand: { icon: 'fishing', emoji: '🐟', name: 'Fish Market', wide: true, mount: fishMarket },
   doodle: { icon: 'doodle', emoji: '🎨', name: 'Doodle', scene: 'doodle', wide: true, mount: doodle },
-  trading: { icon: 'tavern', emoji: '🍺', name: 'Tavern', place: 'The Tavern', scene: 'tavern', area: tavernArea,
+  trading: { icon: 'tavern', emoji: '🍺', name: 'Trading Tavern', place: 'Trading Tavern', scene: 'tavern', area: tavernArea,
     touch: { hint: 'Left thumb: walk · walk up to someone to trade with them' } },
   shop: { icon: 'shop', emoji: '👕', name: 'Style Shop', place: 'Style Shop', scene: 'shop', area: styleShopArea,
     touch: { hint: 'Left thumb: walk · Right thumb: look around · tap things to use them' } },

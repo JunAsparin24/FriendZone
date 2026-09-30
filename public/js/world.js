@@ -97,6 +97,11 @@ export class World {
 
     this.env = buildEnvironment(this.scene);
     this.dayNight = new DayNight(this.scene, this.env, this.hemi, this.sun);
+    // rain splashes land on the terrain (or the lake's surface)
+    this.dayNight.groundAt = (X, Z) => {
+      const mx = X * M.PX + M.CENTER.x, my = Z * M.PX + M.CENTER.y;
+      return M.inLake(mx, my) ? M.LAKE_LEVEL : M.groundAt(mx, my);
+    };
     this.boards = buildLeaderboards(this.scene);
     document.fonts?.ready.then(() => this.env.redrawText());
 

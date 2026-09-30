@@ -124,25 +124,29 @@ function wheelFaceTex() {
 
 const prizeTex = canvasTexture(512, 512, (ctx) => {
   const WHEEL = [0, 1.5, 0, 0, 0.5, 0, 2, 0, 0, 1.5, 0, 0.5, 0, 0, 0, 5];
-  const COL = { 0: '#2b2f4a', 0.5: '#6b7194', 1.5: '#39c6ff', 2: '#6ee7a0', 5: '#ffc53d' };
+  // red and black blanks, purple prizes, a gold jackpot, on a gold rim
   const seg = TAU / WHEEL.length;
   ctx.translate(256, 256);
   ctx.fillStyle = '#ffc53d';
   ctx.beginPath(); ctx.arc(0, 0, 256, 0, TAU); ctx.fill();
   WHEEL.forEach((m, i) => {
     const a0 = -Math.PI / 2 + i * seg;
-    ctx.fillStyle = COL[m];
+    ctx.fillStyle = m === 0 ? (i % 2 ? '#1a1320' : '#b3122e') : m === 5 ? '#ffc53d' : m === 2 ? '#7a2fc0' : '#5b1f8f';
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 232, a0, a0 + seg); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#c99700'; ctx.lineWidth = 3; ctx.stroke();
     ctx.save();
     ctx.rotate(a0 + seg / 2);
-    ctx.fillStyle = m === 5 ? '#3a2a00' : '#fff';
+    ctx.fillStyle = m === 5 ? '#3a2400' : '#ffd84d';
     ctx.font = '900 34px Rubik, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(m ? `×${m}` : '✖', 170, 12);
     ctx.restore();
   });
-  ctx.fillStyle = '#1a3d85';
+  // bulbs round the rim, and a black hub with a gold ring
+  for (let i = 0; i < 32; i++) { const a = (i / 32) * TAU; ctx.fillStyle = i % 2 ? '#fff6c9' : '#ff5d73'; ctx.beginPath(); ctx.arc(Math.cos(a) * 244, Math.sin(a) * 244, 7, 0, TAU); ctx.fill(); }
+  ctx.fillStyle = '#1a1320';
   ctx.beginPath(); ctx.arc(0, 0, 50, 0, TAU); ctx.fill();
+  ctx.strokeStyle = '#ffc53d'; ctx.lineWidth = 8; ctx.stroke();
 });
 
 const signTex = canvasTexture(512, 128, (ctx) => {

@@ -39,6 +39,7 @@ export function doodle(body) {
   const ctx = hiDpiCanvas(canvas, CW, CH);
 
   let view = null, endsAt = 0, lastSecond = -1, word = null;
+  let rounds = 3; // how many times everyone draws (picked on the start screen)
   let strokes = [];                 // { id, c, w, p: [[x,y], ...] } in 0..1 coordinates
   let color = COLORS[0], size = SIZES[1], eraser = false;
   let drawing = null, pending = [], lastFlush = 0, strokeSeq = Math.floor(Math.random() * 1e6);
@@ -226,6 +227,8 @@ export function doodle(body) {
         <h3>Doodle Guess</h3>
         <p>Take turns drawing a secret word while everyone else guesses in the chat. Faster guesses score more, and the artist scores for every correct guess!</p>
         <p class="muted">${players.length} player${players.length === 1 ? '' : 's'} here · you need at least 2</p>
+        <div class="dd-rounds"><span>Rounds</span>${[1, 2, 3, 4, 5, 6].map((n) => `<button class="${n === rounds ? 'on' : ''}" data-rounds="${n}">${n}</button>`).join('')}</div>
+        <p class="muted small">Everyone draws ${rounds} time${rounds === 1 ? '' : 's'} · ${Math.max(2, players.length) * rounds} turns</p>
         <button class="btn primary" data-start ${players.length < 2 ? 'disabled' : ''}>🎨 Start game</button>
         ${players.length < 2 ? '<p class="muted small">Invite friends to the Doodle Studio!</p>' : ''}
       </div>`;
@@ -337,7 +340,9 @@ export function doodle(body) {
   });
 
   overlay.addEventListener('click', (e) => {
-    if (e.target.closest('[data-start]')) net.send('doodle_start');
+    if (e.target.closest('[data-start]')) net.send('doodle_start', { rounds });
+    const r = e.target.closest('[data-rounds]');
+    if (r) { rounds = Number(r.dataset.rounds); sfx('pop', { vol: 0.4 }); renderOverlay(); }
     const pick = e.target.closest('[data-pick]');
     if (pick) net.send('doodle_pick', { i: Number(pick.dataset.pick) });
   });

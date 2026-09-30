@@ -404,6 +404,19 @@ export class World {
     return { vol, pan };
   }
 
+  /** Coming back out of a building: step off the doorstep and don't re-enter on the same key press. */
+  leftBuilding() {
+    this.enterBlockUntil = performance.now() + 700;
+    const spot = this.near && M.SPOTS.find((s) => s.id === this.near.id);
+    const me = this.actors.get(S.me);
+    if (spot && me) {
+      const [dx, dy] = M.doorDir(spot);
+      const x = me.x + dx * 45, y = me.y + dy * 45;
+      if (!this.blocked(x, y)) { me.x = me.tx = x; me.y = me.ty = y; }
+    }
+    this.near = null;
+  }
+
   // ---- input -------------------------------------------------------------------
 
   onKeyDown = (e) => {
@@ -419,6 +432,8 @@ export class World {
     }
     if (key === 'e' && !this.near && this.nearBench) { this.sit(this.nearBench); return; }
     if (key === 'e' && this.near) {
+      // a held-down E (or the press that just took you out of a building) mustn't walk you back in
+      if (e.repeat || performance.now() < (this.enterBlockUntil ?? 0)) return;
       this.hooks.onActivity(this.near.id);
       return;
     }

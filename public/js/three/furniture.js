@@ -129,6 +129,28 @@ const rugTex = canvasTexture(256, 256, (ctx) => {
     ctx.beginPath(); ctx.ellipse(0, -44, 10, 26, 0, 0, TAU); ctx.fill();
   }
 });
+const heartRugTex = canvasTexture(256, 256, (ctx) => {
+  const heart = (s, color) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(128, 128 + 90 * s);
+    ctx.bezierCurveTo(128 - 130 * s, 128 - 10 * s, 128 - 90 * s, 128 - 110 * s, 128, 128 - 50 * s);
+    ctx.bezierCurveTo(128 + 90 * s, 128 - 110 * s, 128 + 130 * s, 128 - 10 * s, 128, 128 + 90 * s);
+    ctx.fill();
+  };
+  heart(1.25, '#ff7ab6');
+  heart(1.05, '#ffffff');
+  heart(0.95, '#ffb3d9');
+  heart(0.5, '#ff8fc7');
+});
+const fluffyRugTex = canvasTexture(256, 256, (ctx) => {
+  ctx.fillStyle = '#ffc2dd';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 3000; i++) {
+    ctx.fillStyle = i % 2 ? 'rgba(255,255,255,.35)' : 'rgba(230,110,160,.18)';
+    ctx.fillRect((i * 37) % 256, (i * 91) % 256, 3, 3);
+  }
+});
 const roundRugTex = canvasTexture(256, 256, (ctx) => {
   for (let r = 128, i = 0; r > 0; r -= 18, i++) {
     ctx.fillStyle = ['#3b5bdb', '#9fd8ff', '#2ed8c3', '#f4f4f4'][i % 4];
@@ -166,6 +188,14 @@ const slotTex = canvasTexture(192, 64, (ctx) => {
 // ---------------------------------------------------------------------------
 // builders
 // ---------------------------------------------------------------------------
+
+/** An open-fronted cabinet (back, sides, top, bottom) so what's on the shelves shows. */
+function carcass(g, w, h, d, z, mat, backMat) {
+  add(g, box(w, h, 0.06), backMat ?? mat, { p: [0, h / 2, z - d / 2 + 0.03] });
+  for (const s of [-1, 1]) add(g, box(0.06, h, d), mat, { p: [s * (w / 2 - 0.03), h / 2, z] });
+  add(g, box(w, 0.06, d), mat, { p: [0, h - 0.03, z] });
+  add(g, box(w, 0.06, d), mat, { p: [0, 0.03, z] });
+}
 
 function pedestal(g) {
   add(g, box(0.62, 0.5, 0.62), toon('#e8e2f4'), { p: [0, 0.25, 0] });
@@ -274,8 +304,7 @@ export const FURNITURE = {
 
   bookshelf(g) {
     const wood = toon(DARK_WOOD);
-    add(g, box(1.9, 2.1, 0.44), toon(WOOD), { p: [0, 1.05, -0.26] });
-    add(g, box(1.78, 1.96, 0.1), wood, { p: [0, 1.05, -0.43], outline: false });
+    carcass(g, 1.9, 2.1, 0.44, -0.26, toon(WOOD), wood);
     const colors = ['#e0463c', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff', '#ff9f43', '#f4f4f4'];
     for (let shelf = 0; shelf < 4; shelf++) {
       const y = 0.12 + shelf * 0.5;
@@ -463,6 +492,168 @@ export const FURNITURE = {
     return { use: () => { spin = 1.5; } };
   },
 
+  sofa_pink(g, A) { return FURNITURE.sofa(g, A, { color: '#ff9fc8' }); },
+  armchair_pink(g, A) { return FURNITURE.sofa(g, A, { color: '#ffb8d6', w: 0.94 }); },
+  beanbag_pink(g, A) {
+    add(g, sph(0.42, 24, 18), toon('#ff8fc7'), { p: [0, 0.3, 0], s: [1, 0.7, 1] });
+    add(g, sph(0.3, 20, 14), toon('#ffb3d9'), { p: [0, 0.48, -0.12], s: [1.1, 0.8, 0.8] });
+    return { use: () => floatEmoji(g, A, '💖', 0.9, 1) };
+  },
+  bed_princess(g, A) {
+    const white = toon('#fff6fb'), pink = toon('#ff9fc8'), rose = toon('#ff7ab6');
+    add(g, box(0.96, 0.3, 1.96), white, { p: [0, 0.2, 0] });
+    add(g, box(0.9, 0.18, 1.86), toon('#fff0f7'), { p: [0, 0.44, 0.02] });
+    add(g, box(0.94, 0.1, 1.25), pink, { p: [0, 0.55, 0.33] });
+    add(g, box(0.96, 0.32, 0.05), pink, { p: [0, 0.42, 0.96], outline: false });
+    for (const x of [-0.22, 0.22]) add(g, sph(0.17), toon('#ffffff'), { p: [x, 0.62, -0.68], s: [1.2, 0.55, 0.9] });
+    add(g, sph(0.12), rose, { p: [0, 0.66, -0.5], s: [1, 0.6, 0.6] });
+    // curved headboard with a heart, and a canopy on four posts
+    add(g, cyl(0.51, 0.51, 0.08, 24, false), white, { p: [0, 0.75, -0.95], r: [Math.PI / 2, 0, 0], s: [1, 1, 1.25] });
+    add(g, sph(0.1), rose, { p: [-0.06, 1.0, -0.9], s: [1, 1, 0.4] });
+    add(g, sph(0.1), rose, { p: [0.06, 1.0, -0.9], s: [1, 1, 0.4] });
+    add(g, cone(0.12, 0.14, 4), rose, { p: [0, 0.9, -0.9], r: [Math.PI, Math.PI / 4, 0], s: [1, 1, 0.4], outline: false });
+    for (const x of [-0.45, 0.45]) for (const z of [-0.93, 0.93]) add(g, cyl(0.03, 0.03, 1.9, 8), white, { p: [x, 0.95, z], outline: false });
+    add(g, box(1.02, 0.06, 2.0), pink, { p: [0, 1.92, 0] });
+    const drape = toon('#ffd6ea', { side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
+    for (const x of [-0.5, 0.5]) add(g, plane(1.9, 0.5), drape, { p: [x, 1.66, 0], r: [0, Math.PI / 2, 0], outline: false, cast: false });
+    return { use: () => floatEmoji(g, A, '💤', 0.9) };
+  },
+  vanity(g, A) {
+    const white = toon('#fff6fb'), pink = toon('#ff9fc8');
+    add(g, box(0.9, 0.08, 0.5), white, { p: [0, 0.74, -0.2] });
+    for (const x of [-0.38, 0.38]) add(g, box(0.1, 0.72, 0.44), white, { p: [x, 0.36, -0.2] });
+    add(g, box(0.4, 0.2, 0.42), pink, { p: [0, 0.6, -0.2] });
+    add(g, sph(0.035, 8, 6), shiny('#ffd84d'), { p: [0, 0.6, 0.02], outline: false });
+    const mirror = new THREE.MeshStandardMaterial({ color: '#dff4ff', roughness: 0.05, metalness: 0.6 });
+    add(g, cyl(0.3, 0.3, 0.04, 28), pink, { p: [0, 1.2, -0.4], r: [Math.PI / 2, 0, 0], s: [1, 1, 1.25] });
+    add(g, cyl(0.25, 0.25, 0.05, 28), mirror, { p: [0, 1.2, -0.38], r: [Math.PI / 2, 0, 0], s: [1, 1, 1.25], outline: false });
+    add(g, cyl(0.04, 0.05, 0.14, 10), toon('#e57bff'), { p: [-0.25, 0.85, -0.1] });
+    add(g, sph(0.05, 10, 8), toon('#ff5d73'), { p: [0.25, 0.83, -0.1] });
+    return { use: () => floatEmoji(g, A, '✨', 1.4, 2) };
+  },
+  shelf_pink(g) {
+    carcass(g, 1.9, 1.5, 0.44, -0.26, toon('#ffd6ea'), toon('#ffb3d9'));
+    const plush = [['#c9955a', 'bear'], ['#ffffff', 'bunny'], ['#ffd84d', 'duck'], ['#b77bff', 'bear'], ['#8fd3ff', 'bunny'], ['#ff8fa3', 'bear']];
+    for (let shelf = 0; shelf < 2; shelf++) {
+      const y = 0.1 + shelf * 0.68;
+      add(g, box(1.8, 0.04, 0.4), toon('#ff9fc8'), { p: [0, y, -0.24], outline: false });
+      for (let k = 0; k < 3; k++) {
+        const [c, kind] = plush[shelf * 3 + k], x = -0.58 + k * 0.58, m = toon(c);
+        add(g, sph(0.15, 14, 10), m, { p: [x, y + 0.17, -0.2], s: [1, 0.95, 0.9] });
+        add(g, sph(0.12, 14, 10), m, { p: [x, y + 0.4, -0.2] });
+        if (kind === 'bunny') for (const s of [-1, 1]) add(g, sph(0.04, 8, 6), m, { p: [x + s * 0.05, y + 0.56, -0.2], s: [0.8, 2.2, 0.6] });
+        else if (kind === 'bear') for (const s of [-1, 1]) add(g, sph(0.045, 8, 6), m, { p: [x + s * 0.09, y + 0.5, -0.2] });
+        else add(g, cone(0.04, 0.08, 8), toon('#ff9f43'), { p: [x, y + 0.38, -0.08], r: [Math.PI / 2, 0, 0], outline: false });
+        for (const s of [-1, 1]) add(g, sph(0.018, 6, 4), basic('#2a1a12'), { p: [x + s * 0.045, y + 0.43, -0.09], outline: false });
+      }
+    }
+  },
+  lamp_pink(g) {
+    add(g, cyl(0.2, 0.24, 0.06), toon('#ffffff'), { p: [0, 0.03, 0] });
+    add(g, cyl(0.025, 0.025, 1.3, 8), toon('#6ee7a0'), { p: [0, 0.68, 0], outline: false });
+    const petal = toon('#ffb3d9', { side: THREE.DoubleSide }).clone();
+    petal.emissive = new THREE.Color('#ff8fc7');
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * TAU;
+      add(g, sph(0.16, 12, 10), petal, { p: [Math.cos(a) * 0.1, 1.42, Math.sin(a) * 0.1], s: [0.7, 1.2, 0.45], r: [Math.sin(a) * 0.35, -a, -Math.cos(a) * 0.35] });
+    }
+    add(g, sph(0.07, 10, 8), toon('#ffd84d'), { p: [0, 1.36, 0], outline: false });
+    const light = new THREE.PointLight(0xffb3d9, 2.2, 5, 1.6);
+    light.position.set(0, 1.3, 0);
+    g.add(light);
+    const glow = new THREE.Sprite(additive(glowTexture, 0xff9fc8, 0.5));
+    glow.scale.setScalar(1.2);
+    glow.position.y = 1.4;
+    g.add(glow);
+    let on = true;
+    const set = () => { light.visible = glow.visible = on; petal.emissiveIntensity = on ? 0.6 : 0; };
+    set();
+    return { use: () => { on = !on; set(); } };
+  },
+  teddy(g, A) {
+    const fur = toon('#c9955a'), light = toon('#f2d3a8');
+    add(g, sph(0.34, 18, 14), fur, { p: [0, 0.34, 0], s: [1, 0.95, 0.9] });
+    add(g, sph(0.2, 14, 10), light, { p: [0, 0.32, 0.2], s: [1, 1.1, 0.6], outline: false });
+    const head = add(g, sph(0.26, 18, 14), fur, { p: [0, 0.82, 0.02] });
+    add(head, sph(0.1, 12, 10), light, { p: [0, -0.06, 0.2], s: [1.2, 0.9, 0.8], outline: false });
+    add(head, sph(0.035, 8, 6), basic('#2a1a12'), { p: [0, -0.02, 0.29], outline: false });
+    for (const s of [-1, 1]) {
+      add(head, sph(0.09, 12, 10), fur, { p: [s * 0.2, 0.2, -0.02] });
+      add(head, sph(0.03, 8, 6), basic('#2a1a12'), { p: [s * 0.09, 0.06, 0.23], outline: false });
+      add(g, sph(0.11, 12, 10), fur, { p: [s * 0.3, 0.44, 0.1], s: [0.8, 1.3, 0.8] }); // arms
+      add(g, sph(0.12, 12, 10), fur, { p: [s * 0.2, 0.1, 0.22], s: [0.9, 0.7, 1.2] }); // feet
+    }
+    add(g, sph(0.08, 10, 8), toon('#ff5d73'), { p: [0, 0.6, 0.2], s: [1.6, 0.8, 0.6] }); // bow
+    return { use: () => floatEmoji(g, A, '💗', 1.2, 2) };
+  },
+  bunny_plush(g, A) {
+    const fur = toon('#ffffff'), pink = toon('#ffb3d9');
+    add(g, sph(0.26, 18, 14), fur, { p: [0, 0.26, 0], s: [1, 0.95, 0.95] });
+    const head = add(g, sph(0.22, 18, 14), fur, { p: [0, 0.62, 0.03] });
+    for (const s of [-1, 1]) {
+      add(head, sph(0.07, 10, 8), fur, { p: [s * 0.09, 0.3, -0.02], s: [0.8, 2.3, 0.5], r: [0, 0, -s * 0.15] });
+      add(head, sph(0.04, 8, 6), pink, { p: [s * 0.09, 0.3, 0.01], s: [0.7, 2, 0.3], r: [0, 0, -s * 0.15], outline: false });
+      add(head, sph(0.03, 8, 6), basic('#2a1a12'), { p: [s * 0.08, 0.03, 0.2], outline: false });
+      add(g, sph(0.09, 10, 8), fur, { p: [s * 0.16, 0.08, 0.16], s: [0.9, 0.6, 1.3] });
+    }
+    add(head, sph(0.03, 8, 6), pink, { p: [0, -0.04, 0.22], outline: false });
+    add(g, sph(0.08, 10, 8), fur, { p: [0, 0.2, -0.26] });
+    return { use: () => floatEmoji(g, A, '💖', 1.0, 2) };
+  },
+  flowers(g) {
+    add(g, cyl(0.12, 0.09, 0.34, 16), toon('#bfe6ff', { transparent: true, opacity: 0.8 }), { p: [0, 0.17, 0] });
+    const cols = ['#ff8fc7', '#ff5d73', '#ffd84d', '#ffb3d9', '#ffffff'];
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * TAU, r = i ? 0.1 : 0;
+      add(g, cyl(0.01, 0.01, 0.4, 5), toon('#3fa34d'), { p: [Math.cos(a) * r * 0.5, 0.45, Math.sin(a) * r * 0.5], r: [Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3], outline: false });
+      add(g, sph(0.08, 10, 8), toon(cols[i % cols.length]), { p: [Math.cos(a) * r, 0.65 + (i % 2) * 0.05, Math.sin(a) * r] });
+    }
+  },
+  cake(g) {
+    add(g, cyl(0.36, 0.36, 0.04, 28), toon('#ffffff'), { p: [0, 0.62, 0] });
+    add(g, cyl(0.06, 0.1, 0.6, 12), toon('#ffffff'), { p: [0, 0.3, 0] });
+    add(g, cyl(0.28, 0.28, 0.2, 28), toon('#ffe3ef'), { p: [0, 0.74, 0] });
+    add(g, cyl(0.2, 0.2, 0.16, 28), toon('#ffb3d9'), { p: [0, 0.92, 0] });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU;
+      add(g, sph(0.045, 10, 8), toon('#ff3d5a'), { p: [Math.cos(a) * 0.14, 1.03, Math.sin(a) * 0.14], s: [1, 1.2, 1] });
+    }
+    add(g, cyl(0.012, 0.012, 0.12, 6), toon('#ffd84d'), { p: [0, 1.08, 0], outline: false });
+  },
+  rug_heart(g) {
+    add(g, plane(1.9, 1.9), new THREE.MeshToonMaterial({ map: heartRugTex, transparent: true, alphaTest: 0.5 }), { p: [0, 0.012, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
+  },
+  rug_fluffy(g) {
+    add(g, geo('fluffyRug', () => new THREE.CircleGeometry(0.92, 40)), new THREE.MeshToonMaterial({ map: fluffyRugTex }), { p: [0, 0.014, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
+  },
+  mirror_heart(g) {
+    const heart = geo('heartShape', () => {
+      const s = new THREE.Shape();
+      s.moveTo(0, -0.35);
+      s.bezierCurveTo(-0.5, 0, -0.4, 0.38, 0, 0.18);
+      s.bezierCurveTo(0.4, 0.38, 0.5, 0, 0, -0.35);
+      return new THREE.ExtrudeGeometry(s, { depth: 0.05, bevelEnabled: false });
+    });
+    add(g, heart, toon('#ff7ab6'), { p: [0, 0, 0], s: [1.15, 1.15, 1] });
+    add(g, heart, new THREE.MeshStandardMaterial({ color: '#e9f6ff', roughness: 0.05, metalness: 0.6 }), { p: [0, 0.02, 0.03], s: [0.9, 0.9, 1], outline: false });
+  },
+  fairy_lights(g, A) {
+    const pts = Array.from({ length: 17 }, (_, i) => new THREE.Vector3(-0.8 + i * 0.1, 0.35 - Math.sin((i / 16) * Math.PI) * 0.22 - Math.abs(Math.sin((i / 8) * Math.PI)) * 0.08, 0.05));
+    add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.016, 5), toon('#3fa34d'), { outline: false });
+    const cols = [0xff8fc7, 0xffd84d, 0xffffff, 0x9fd8ff];
+    const bulbs = [];
+    pts.forEach((p, i) => {
+      if (i % 2) return;
+      const b = add(g, sph(0.055, 10, 8), basic(`#${cols[i % 4].toString(16).padStart(6, '0')}`), { p: [p.x, p.y - 0.04, p.z], outline: false, cast: false });
+      const glow = new THREE.Sprite(additive(glowTexture, cols[i % 4], 0.6));
+      glow.scale.setScalar(0.4);
+      b.add(glow);
+      bulbs.push(glow);
+    });
+    let on = true;
+    A.anim.push((t) => { bulbs.forEach((b, i) => { b.visible = on; b.material.opacity = 0.4 + Math.sin(t * 3 + i) * 0.25; }); });
+    return { use: () => { on = !on; } };
+  },
   fishtank(g, A) {
     add(g, box(1.8, 0.7, 0.62), toon(DARK_WOOD), { p: [0, 0.35, -0.12] });
     const glass = new THREE.MeshStandardMaterial({ color: '#bfefff', transparent: true, opacity: 0.25, roughness: 0.05, metalness: 0.1, depthWrite: false });
@@ -646,6 +837,32 @@ const FLOOR_DRAW = {
       ctx.beginPath(); ctx.arc((i * 71) % 256, (i * 131) % 256, 3, 0, TAU); ctx.fill();
     }
   },
+  floor_blush(ctx) { carpet(ctx, '#ffc2dd', 'rgba(255,255,255,.1)', 'rgba(200,60,120,.08)'); },
+  floor_lavender(ctx) { carpet(ctx, '#cdb8f2', 'rgba(255,255,255,.1)', 'rgba(90,50,160,.08)'); },
+  floor_petal(ctx) {
+    for (let row = 0; row < 8; row++) {
+      const y = row * 32;
+      ctx.fillStyle = row % 2 ? '#f5cfd9' : '#f9dbe3';
+      ctx.fillRect(0, y, 256, 30);
+      ctx.fillStyle = 'rgba(160,70,100,.22)';
+      ctx.fillRect(0, y + 30, 256, 2);
+      ctx.fillRect(((row * 97) % 200) + 20, y, 2, 30);
+    }
+  },
+  floor_rose(ctx) {
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+      ctx.fillStyle = (r + c) % 2 ? '#ffb3d0' : '#ffe6f0';
+      ctx.fillRect(c * 64, r * 64, 64, 64);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.7)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(i * 64, 0); ctx.lineTo(i * 64, 256); ctx.moveTo(0, i * 64); ctx.lineTo(256, i * 64); ctx.stroke(); }
+  },
+  floor_hearts(ctx) {
+    ctx.fillStyle = '#fff0f6';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) heartAt(ctx, c * 64 + 32, r * 64 + 34, 14, (r + c) % 2 ? '#ff9fc8' : '#ffc2dd');
+  },
   floor_marble(ctx) {
     for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
       ctx.fillStyle = (r + c) % 2 ? '#f4f1ec' : '#e6e2dc';
@@ -684,6 +901,48 @@ const WALL_DRAW = {
       }
     }
   },
+  wall_blush(ctx) { plainWall(ctx, '#ffd6e6'); },
+  wall_lavender(ctx) { plainWall(ctx, '#e3d6fb'); },
+  wall_sky(ctx) { plainWall(ctx, '#cfeaff'); },
+  wall_rose(ctx) {
+    for (let i = 0; i < 16; i++) {
+      ctx.fillStyle = i % 2 ? '#ffe6f0' : '#ffc9dd';
+      ctx.fillRect(i * 16, 0, 16, 256);
+    }
+  },
+  wall_polka(ctx) {
+    ctx.fillStyle = '#ffd6e6';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#ffffff';
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { ctx.beginPath(); ctx.arc(c * 32 + (r % 2) * 16 + 8, r * 32 + 16, 6, 0, TAU); ctx.fill(); }
+  },
+  wall_hearts(ctx) {
+    ctx.fillStyle = '#ffe3ee';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) heartAt(ctx, c * 51 + (r % 2) * 25 + 12, r * 51 + 26, 9, (r + c) % 3 ? '#ff9fc8' : '#ff7ab6');
+  },
+  wall_sakura(ctx) {
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, '#ffe6f0');
+    g.addColorStop(1, '#fff6fa');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = '#8b5a4a';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(0, 60); ctx.bezierCurveTo(80, 40, 140, 90, 256, 50); ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(120, 68); ctx.bezierCurveTo(150, 110, 170, 130, 190, 170); ctx.stroke();
+    for (let i = 0; i < 26; i++) {
+      const x = (i * 71) % 256, y = 30 + ((i * 53) % 190);
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * TAU;
+        ctx.fillStyle = i % 3 ? '#ffb3d0' : '#ff8fc0';
+        ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * 5, y + Math.sin(a) * 5, 4.5, 3, a, 0, TAU); ctx.fill();
+      }
+      ctx.fillStyle = '#ffe28a';
+      ctx.beginPath(); ctx.arc(x, y, 2, 0, TAU); ctx.fill();
+    }
+  },
   wall_stars(ctx) {
     ctx.fillStyle = '#1a2456';
     ctx.fillRect(0, 0, 256, 256);
@@ -709,6 +968,73 @@ function plainWall(ctx, color) {
 export const floorTexture = (id) => surface(id, FLOOR_DRAW[id] ?? FLOOR_DRAW.floor_wood);
 export const wallTexture = (id) => surface(id, WALL_DRAW[id] ?? WALL_DRAW.wall_cream);
 
+function carpet(ctx, base, light, dark) {
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2600; i++) {
+    ctx.fillStyle = i % 2 ? light : dark;
+    ctx.fillRect((i * 37) % 256, (i * 91) % 256, 2, 2);
+  }
+}
+
+function heartAt(ctx, x, y, s, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y + s);
+  ctx.bezierCurveTo(x - s * 1.5, y - s * 0.1, x - s, y - s * 1.3, x, y - s * 0.55);
+  ctx.bezierCurveTo(x + s, y - s * 1.3, x + s * 1.5, y - s * 0.1, x, y + s);
+  ctx.fill();
+}
+
+/** A data-URL image of a floor or wallpaper, for the style picker and shop. */
+export function surfaceImage(id) {
+  const tex = FLOOR_DRAW[id] ? floorTexture(id) : wallTexture(id);
+  const img = tex.image;
+  return img?.toDataURL ? img.toDataURL() : '';
+}
+
+// ---- furniture snapshots: a little 3D picture of each piece, for the shop and inventory ----
+const thumbs = new Map();
+let thumbRig = null;
+export function furnitureThumb(id) {
+  if (thumbs.has(id)) return thumbs.get(id);
+  if (!thumbRig) {
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    renderer.setSize(160, 160, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setClearColor(0x000000, 0);
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7aa8, 2.2));
+    const key = new THREE.DirectionalLight(0xfff4e0, 2.2);
+    key.position.set(3, 5, 4);
+    scene.add(key);
+    thumbRig = { renderer, scene, camera: new THREE.PerspectiveCamera(30, 1, 0.05, 50) };
+  }
+  const { renderer, scene, camera } = thumbRig;
+  const item = buildFurniture(id);
+  const g = item.group;
+  g.traverse((o) => { if (o.isPointLight) o.visible = false; });
+  const holder = new THREE.Group();
+  holder.add(g);
+  const flat = ['rug', 'rug_round', 'rug_heart', 'rug_fluffy'].includes(id);
+  holder.rotation.y = flat ? 0 : -0.55;
+  scene.add(holder);
+  holder.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(g, true);
+  const c = bb.getCenter(new THREE.Vector3()), size = bb.getSize(new THREE.Vector3());
+  const r = Math.max(size.x, size.y, size.z) * 0.62 + 0.05;
+  const dist = r / Math.sin((camera.fov * Math.PI) / 360);
+  const dir = flat ? new THREE.Vector3(0, 1, 0.55).normalize() : new THREE.Vector3(0, 0.35, 1).normalize();
+  camera.position.copy(c).addScaledVector(dir, dist);
+  camera.lookAt(c);
+  camera.updateProjectionMatrix();
+  renderer.render(scene, camera);
+  const url = renderer.domElement.toDataURL();
+  scene.remove(holder);
+  thumbs.set(id, url);
+  return url;
+}
 /** Colour swatch for the style picker (CSS background). */
 export const SWATCH = {
   floor_wood: '#c28a52', floor_checker: 'repeating-conic-gradient(#2b2f4a 0 25%, #f4f0ff 0 50%) 0 0/16px 16px',

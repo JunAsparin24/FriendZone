@@ -305,6 +305,9 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .chat ul { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .chat li { background: #0d1f4ab3; border-radius: 8px; padding: 4px 8px; font-size: 13px; width: fit-content; max-width: 100%; overflow-wrap: anywhere; }
 .chat input { background: #0d1f4ad9; padding: 8px 10px; font-size: 14px; }
+.chat li.sys { background: #2a1f5ae6; color: #d9d2ff; font-size: 12px; line-height: 1.45; border-left: 3px solid #b77bff; }
+.chat li.sys.ok { border-left-color: #6ee7a0; color: #d6ffe6; }
+.chat li.sys.error { border-left-color: #ff5d73; color: #ffd6dc; }
 .emote-bar { display: flex; gap: 4px; margin-bottom: 6px; }
 .emote-bar button {
   width: 36px; height: 32px; border-radius: 10px; border: 2px solid var(--line); background: #0d1f4ad9;
@@ -481,7 +484,12 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .furni.locked { opacity: .7; cursor: default; }
 .furni.confirm { border-color: var(--accent); box-shadow: 0 0 14px #ffd84d55; }
 .furni .fem { font-size: 26px; line-height: 1.1; }
-.furni .swatch-em { width: 30px; height: 30px; border-radius: 8px; display: block; border: 2px solid #fff4; }
+.fem-img { width: 56px; height: 56px; object-fit: contain; display: block; margin: 0 auto; filter: drop-shadow(0 2px 2px #0005); }
+.sel-em .fem-img { width: 40px; height: 40px; }
+.furni.previewing, .style-opt.previewing { border-color: #ff8fc7 !important; box-shadow: 0 0 12px #ff8fc766; }
+.preview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; background: #3a1d44; border: 2px solid #ff8fc7; border-radius: 12px; padding: 8px 10px; margin-bottom: 10px; font-size: 13px; }
+.preview-bar span { flex: 1 1 100%; }
+.furni .swatch-em { width: 56px; height: 56px; border-radius: 10px; display: block; margin: 0 auto; border: 2px solid #fff4; }
 .furni .fname { font-weight: 700; line-height: 1.15; }
 .furni .fcount { color: var(--muted); font-size: 11px; }
 .sel-box { background: var(--bg); border: 2px solid var(--accent); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -1165,3 +1173,9 @@ html.touch .hud-top { padding-right: 172px; } /* room for the 💬 🔊 ⚙️ b
   html.touch .hud-me .zone-tag { display: none; }
   html.touch #backLobby { white-space: nowrap; padding: 8px 10px; }
 }
+
+/* doodle: how many rounds */
+.dd-rounds { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 6px 0 2px; }
+.dd-rounds span { font-weight: 700; margin-right: 4px; }
+.dd-rounds button { width: 34px; height: 34px; border-radius: 10px; border: 2px solid #3a6fd0; background: #0d1f4a; color: var(--text); font: 700 15px var(--body); cursor: pointer; }
+.dd-rounds button.on { background: var(--accent); color: #1a1330; border-color: var(--accent); }

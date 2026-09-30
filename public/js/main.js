@@ -334,8 +334,9 @@ $('#emoteBar').onclick = (e) => {
 };
 
 function renderChat() {
-  $('#chatLog').innerHTML = S.chat.slice(-8).map((m) =>
-    `<li><b style="color:${colorOf(m.k)}">${esc(nameOf(m.k))}</b> ${esc(m.text)}</li>`).join('');
+  $('#chatLog').innerHTML = S.chat.slice(-8).map((m) => (m.sys
+    ? `<li class="sys ${m.sys}">${esc(m.text).replace(/\n/g, '<br>')}</li>`
+    : `<li><b style="color:${colorOf(m.k)}">${esc(nameOf(m.k))}</b> ${esc(m.text)}</li>`)).join('');
 }
 
 
@@ -381,6 +382,7 @@ function closeArea() {
   stage.close();
   world.hidden = false;
   world.paused = false;
+  world.leftBuilding();
   music.setContext('main');
   if (activity.scene && screen === 'world') net.send('scene', { scene: 'world' });
 }
@@ -423,11 +425,29 @@ $('#chatForm').onsubmit = (e) => {
   const input = $('#chatInput');
   if (input.value.trim()) net.send('chat', { text: input.value });
   input.value = '';
+  input.type = 'text';
   input.blur();
   if (touch.enabled) $('.chat').classList.remove('open'); // back to playing
 };
 
 // phones: chat + emotes open from the 💬 button (the bottom-left corner is the movement thumb's)
+// hide the password while you type "/admin …"
+$('#chatInput').addEventListener('input', (e) => {
+  const secret = /^\/admin\s/i.test(e.target.value);
+  if ((e.target.type === 'password') !== secret) {
+    const pos = e.target.selectionStart;
+    e.target.type = secret ? 'password' : 'text';
+    try { e.target.setSelectionRange(pos, pos); } catch { /* password inputs can't */ }
+  }
+});
+// replies to chat commands: only you see these
+net.on('sys', (m) => {
+  S.chat = [...S.chat, { k: null, text: m.text, sys: m.kind ?? 'info' }].slice(-40);
+  renderChat();
+  if (m.kind === 'ok' || m.kind === 'error') toast(m.text.split('\n')[0], m.kind === 'error' ? 'error' : undefined);
+});
+net.on('kicked', (m) => { leaveZone(); toast(m.msg, 'error'); });
+
 $('#chatBtn').onclick = () => {
   const open = $('.chat').classList.toggle('open');
   $('#chatBtn').classList.toggle('on', open);

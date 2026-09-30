@@ -365,6 +365,34 @@ def hash_pin(pin, salt):
     return hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(salt), 20_000).hex()
 
 
+# Admin mode: type "/admin <password>" in chat. Only a salted hash of the password lives here; set
+# FZ_ADMIN_PASSWORD in the environment to use a different one.
+ADMIN_SALT = "9f3c1a7e5b2d4c86"
+ADMIN_HASH = "2934a976ed4535a241389018d6ef8bf92946d5a76726cc45855dc8a3f4d59595"
+
+
+def admin_password_ok(pw):
+    if os.environ.get("FZ_ADMIN_PASSWORD"):
+        return hmac.compare_digest(pw.encode(), os.environ["FZ_ADMIN_PASSWORD"].encode())
+    got = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(ADMIN_SALT), 200_000).hex()
+    return hmac.compare_digest(got, ADMIN_HASH)
+
+
+ADMIN_HELP = [
+    "/give <name|me|all> <coins> — give coins",
+    "/take <name|me> <coins> — take coins away",
+    "/setcoins <name|me> <coins> — set someone's coins",
+    "/xp <name|me> <amount> — give XP",
+    "/item <name|me> <item id|all> — give a cosmetic (or every one)",
+    "/furni <name|me> <furniture id|all> [count] — give furniture, floors or wallpaper",
+    "/items [search] — list item ids",
+    "/kick <name> — send someone back to the home screen",
+    "/announce <message> — post to the zone news",
+    "/players — who's here, with coins",
+    "/unadmin — turn admin mode off",
+]
+
+
 def level_for(xp):
     return 1 + int(math.sqrt(xp / 100))
 
@@ -533,6 +561,8 @@ class Client:
         self.pose_extra = {}
         self.cooldowns = {}
         self.failed_pins = 0
+        self.admin = False
+        self.admin_fails = 0
 
     @property
     def player(self):
@@ -977,11 +1007,177 @@ class Game:
 
     def on_chat(self, c, m):
         text = clean(m.get("text"), 140)
+        if text.startswith("/"):
+            # commands are never shown in the chat
+            if c.ready("command", 0.25):
+                self.command(c, text)
+            return
         if not text or not c.ready("chat", 0.4):
             return
         entry = {"k": c.key, "text": text, "ts": int(time.time())}
         c.room.chat = (c.room.chat + [entry])[-40:]
         c.room.broadcast({"t": "chat", **entry})
+
+    # ---- chat commands -------------------------------------------------------
+
+    def sys(self, c, text, kind="info"):
+        c.ws.send({"t": "sys", "text": text, "kind": kind})
+
+    def command(self, c, text):
+        parts = text[1:].split()
+        cmd, args = (parts[0].lower() if parts else ""), parts[1:]
+        if cmd == "admin":
+            if c.admin:
+                return self.sys(c, "You're already an admin. Type /help for commands.")
+            if not args:
+                return self.sys(c, "Type /admin followed by the password.", "error")
+            if c.admin_fails >= 5:
+                return self.sys(c, "Too many wrong passwords. Reconnect to try again.", "error")
+            if not admin_password_ok(" ".join(args)):
+                c.admin_fails += 1
+                return self.sys(c, "Wrong password.", "error")
+            c.admin = True
+            print(f"[admin] {c.player['name']} turned on admin mode in zone {c.room.zone['code']}", flush=True)
+            return self.sys(c, "🛡️ Admin mode on! Type /help to see what you can do.", "ok")
+        if cmd == "help":
+            if not c.admin:
+                return self.sys(c, "Commands: /admin <password>")
+            return self.sys(c, "Admin commands:\n" + "\n".join(ADMIN_HELP))
+        if not c.admin:
+            return self.sys(c, f"Unknown command /{cmd}.", "error")
+        fn = getattr(self, "admin_" + cmd, None) if cmd.isalpha() else None
+        if not fn:
+            return self.sys(c, f"Unknown command /{cmd}. Type /help for the list.", "error")
+        try:
+            fn(c, args)
+        except GameError as e:
+            self.sys(c, str(e), "error")
+        except (ValueError, IndexError):
+            self.sys(c, "That didn't look right. Type /help for how to use it.", "error")
+
+    def _adm_targets(self, c, name):
+        """'me', 'all', or a member's name (spaces allowed) -> list of keys."""
+        low = name.strip().lower()
+        if low in ("me", "myself", ""):
+            return [c.key]
+        if low in ("all", "everyone"):
+            return list(c.room.zone["players"])
+        key, p = self.find_member(c.room.zone, name)
+        if not p:
+            raise GameError(f"Nobody here is called {name}.")
+        return [key]
+
+    def _adm_amount(self, c, args):
+        if len(args) < 2:
+            raise GameError("Give a name and an amount, like /give me 500.")
+        amount = int(args[-1].replace(",", ""))
+        if abs(amount) > 10**9:
+            raise GameError("That's too big a number.")
+        return self._adm_targets(c, " ".join(args[:-1])), amount
+
+    def _adm_touch(self, c, keys):
+        self.store.mark()
+        for k in keys:
+            self.push_player(c.room, k)
+
+    def names(self, c, keys):
+        ps = c.room.zone["players"]
+        return "everyone" if len(keys) > 1 else ps[keys[0]]["name"]
+
+    def admin_give(self, c, args):
+        keys, amount = self._adm_amount(c, args)
+        for k in keys:
+            p = c.room.zone["players"][k]
+            p["coins"] = max(0, p["coins"] + amount)
+        self._adm_touch(c, keys)
+        self.sys(c, f"Gave {amount:,} coins to {self.names(c, keys)}.", "ok")
+
+    def admin_take(self, c, args):
+        keys, amount = self._adm_amount(c, args)
+        self.admin_give(c, args[:-1] + [str(-abs(amount))])
+
+    def admin_setcoins(self, c, args):
+        keys, amount = self._adm_amount(c, args)
+        for k in keys:
+            c.room.zone["players"][k]["coins"] = max(0, amount)
+        self._adm_touch(c, keys)
+        self.sys(c, f"{self.names(c, keys)} now has {max(0, amount):,} coins.", "ok")
+
+    def admin_xp(self, c, args):
+        keys, amount = self._adm_amount(c, args)
+        for k in keys:
+            p = c.room.zone["players"][k]
+            p["xp"] = max(0, p["xp"] + amount)
+        self._adm_touch(c, keys)
+        self.sys(c, f"Gave {amount:,} XP to {self.names(c, keys)}.", "ok")
+
+    def admin_item(self, c, args):
+        if len(args) < 2:
+            raise GameError("Like: /item me hat_crown (or /item me all). /items lists ids.")
+        item_id = args[-1].lower()
+        keys = self._adm_targets(c, " ".join(args[:-1]))
+        ids = [i["id"] for i in CATALOG["items"]] if item_id == "all" else [item_id]
+        if item_id != "all" and item_id not in ITEMS:
+            raise GameError(f"No item called {item_id}. Try /items {item_id.split('_')[0]}")
+        for k in keys:
+            owned = c.room.zone["players"][k]["owned"]
+            owned.extend(i for i in ids if i not in owned)
+        self._adm_touch(c, keys)
+        self.sys(c, f"Gave {'every cosmetic' if item_id == 'all' else ITEMS[item_id]['name']} to {self.names(c, keys)}.", "ok")
+
+    def admin_furni(self, c, args):
+        if len(args) < 2:
+            raise GameError("Like: /furni me sofa_pink 2 (or /furni me all).")
+        count = 1
+        if args[-1].isdigit() and len(args) >= 3:
+            count = max(1, min(20, int(args[-1])))
+            args = args[:-1]
+        fid = args[-1].lower()
+        keys = self._adm_targets(c, " ".join(args[:-1]))
+        every = {**FURN, **FLOORS, **WALLS}
+        if fid != "all" and fid not in every:
+            raise GameError(f"No furniture called {fid}. Try /items {fid.split('_')[0]}")
+        ids = list(every) if fid == "all" else [fid]
+        for k in keys:
+            inv = c.room.zone["players"][k]["furni"]
+            for i in ids:
+                limit = FURN[i].get("max", 10) if i in FURN else 1
+                inv[i] = min(limit, inv.get(i, 0) + count)
+        self._adm_touch(c, keys)
+        self.sys(c, f"Gave {'all the furniture' if fid == 'all' else every[fid]['name']} to {self.names(c, keys)}.", "ok")
+
+    def admin_items(self, c, args):
+        q = " ".join(args).lower()
+        ids = [i["id"] for i in CATALOG["items"]] + list(FURN) + list(FLOORS) + list(WALLS)
+        hits = [i for i in ids if q in i][:60]
+        self.sys(c, (", ".join(hits) or "Nothing matches.") + (" …" if len(hits) == 60 else ""))
+
+    def admin_kick(self, c, args):
+        keys = self._adm_targets(c, " ".join(args))
+        if keys == [c.key] or len(keys) != 1:
+            raise GameError("Name one other person to kick.")
+        target = c.room.clients.get(keys[0])
+        if not target:
+            raise GameError("They aren't online right now.")
+        target.ws.send({"t": "kicked", "msg": "An admin sent you back to the home screen."})
+        self.leave(target)
+        self.sys(c, f"Kicked {self.names(c, keys)}.", "ok")
+
+    def admin_announce(self, c, args):
+        msg = clean(" ".join(args), 120)
+        if not msg:
+            raise GameError("Like: /announce Party at the fountain!")
+        self.post_feed(c.room, f"📣 {msg}")
+        self.sys(c, "Announced.", "ok")
+
+    def admin_players(self, c, args):
+        ps = c.room.zone["players"]
+        rows = [f"{p['name']}{' (online)' if k in c.room.clients else ''}: {p['coins']:,} coins, level {level_for(p['xp'])}" for k, p in ps.items()]
+        self.sys(c, "\n".join(rows))
+
+    def admin_unadmin(self, c, args):
+        c.admin = False
+        self.sys(c, "Admin mode off.")
 
     def on_emote(self, c, m):
         if c.scene == "world" and m.get("e") in EMOTES and c.ready("emote", 1):
@@ -2036,7 +2232,11 @@ class Game:
         if len(players) < 2:
             raise GameError("You need at least 2 players to start. Invite someone!")
         random.shuffle(players)
-        rounds = 2 if len(players) <= 3 else 1
+        # how many times everyone gets to draw: the starter picks (1-6), or it's more with fewer players
+        try:
+            rounds = max(1, min(6, int(m.get("rounds"))))
+        except (TypeError, ValueError):
+            rounds = 4 if len(players) <= 2 else 3 if len(players) <= 4 else 2
         d.update(queue=players * rounds, turn=-1, scores={k: 0 for k in players}, ranking=[])
         self.post_feed(room, f"🎨 {c.player['name']} started a Doodle Guess game! Come draw.")
         self.doodle_next(room, d["id"])

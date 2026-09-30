@@ -8,7 +8,7 @@ import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
-import { buildFurniture, floorTexture, wallTexture, SWATCH } from '../three/furniture.js';
+import { buildFurniture, floorTexture, wallTexture, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
 import { iconSvg } from '../icons.js';
 
@@ -22,7 +22,10 @@ const kindOf = (id) => FURN[id]?.kind ?? 'floor';
 const owned = (id) => me().furni?.[id] ?? 0;
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
 // where you sit on things (in tiles above the floor)
-const SEATS = { chair: 0.5, armchair: 0.42, sofa: 0.42, beanbag: 0.3, bed: 0.55 };
+const SEATS = { chair: 0.5, armchair: 0.42, sofa: 0.42, beanbag: 0.3, bed: 0.55, sofa_pink: 0.42, armchair_pink: 0.42, beanbag_pink: 0.3, bed_princess: 0.55 };
+// pictures of the real thing: a 3D snapshot of furniture, the actual texture for floors and walls
+const furniImg = (id) => `<img class="fem-img" src="${furnitureThumb(id)}" alt="">`;
+const decoBg = (id) => `background:url(${surfaceImage(id)}) center/cover, ${SWATCH[id] ?? '#888'}`;
 
 /** Footprint cells of a placed item, keyed by layer so rugs can sit under furniture. */
 function cellsOf(it) {
@@ -174,6 +177,10 @@ export function house(stage) {
 
   let viewKey = null, home = null, edit = false, placing = null, selected = -1, tab = 'visit', sideOpen = false;
   let confirmBuy = null, saveTimer = 0, echoes = 0, ghost = null, seated = null;
+  let preview = {};        // { floor?, wall? }: ones you're trying on before buying
+  const trying = () => Object.keys(preview).length > 0;
+  const isTrying = (id) => Object.values(preview).includes(id);
+  let buyThenUse = null;   // put this up as soon as the purchase goes through
   let entries = [];           // built items: { group, use, A, it, bounce, inter }
   const mine = () => viewKey === S.me;
   const payload = () => ({ floor: home.floor, wall: home.wall, items: home.items.map(({ id, x, y, r }) => ({ id, x, y, r })) });
@@ -224,14 +231,29 @@ export function house(stage) {
       if (o.isPointLight) { o.castShadow = false; if (++lights > 4) o.intensity = 0; else o.distance *= T; }
       if (o.isMesh && !o.userData.outline) o.castShadow = true;
     });
-    room.floorMat.map = floorTexture(home.floor);
+    applySurfaces();
+    renderSelection();
+  }
+
+  /** Floor + wallpaper on the room, showing a previewed (not yet bought) one if you're trying it on. */
+  function applySurfaces() {
+    if (!home) return;
+    const floor = preview.floor ?? home.floor;
+    const wall = preview.wall ?? home.wall;
+    room.floorMat.map = floorTexture(floor);
     room.floorMat.map.repeat.set(N / 2, N / 2);
     room.floorMat.needsUpdate = true;
-    const wt = wallTexture(home.wall);
+    const wt = wallTexture(wall);
     wt.repeat.set(N / 2, WALL_H / 2);
     room.wallMat.map = wt;
     room.wallMat.needsUpdate = true;
-    renderSelection();
+  }
+  /** Try on a floor/wall (id), or stop trying one on (id null). No field: stop trying everything. */
+  function setPreview(field, id = null) {
+    if (!field) preview = {};
+    else if (id) preview[field] = id;
+    else delete preview[field];
+    applySurfaces();
   }
 
   // ---- sitting ------------------------------------------------------------------------
@@ -538,14 +560,14 @@ export function house(stage) {
     const sel = selected >= 0 ? home?.items[selected] : null;
     const ownedList = CATALOG.furniture.filter((f) => owned(f.id) > 0);
     panel.innerHTML = `
-      ${sel ? `<div class="sel-box"><span class="sel-em">${FURN[sel.id].emoji}</span><b>${esc(FURN[sel.id].name)}</b>
+      ${sel ? `<div class="sel-box"><span class="sel-em">${furniImg(sel.id)}</span><b>${esc(FURN[sel.id].name)}</b>
         <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''}>⟳ Rotate</button>
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div></div>` : ''}
       <p class="muted small">Pick something to place it:</p>
       <div class="furni-grid">${ownedList.map((f) => {
         const left = owned(f.id) - placedCount(f.id);
         return `<button class="furni ${left ? '' : 'used'}" data-place="${f.id}" ${left ? '' : 'disabled'} title="${esc(f.name)}">
-          <span class="fem">${f.emoji}</span><span class="fname">${esc(f.name)}</span><span class="fcount">${left}/${owned(f.id)} left</span></button>`;
+          <span class="fem">${furniImg(f.id)}</span><span class="fname">${esc(f.name)}</span><span class="fcount">${left}/${owned(f.id)} left</span></button>`;
       }).join('')}</div>
       ${ownedList.length ? '' : '<p class="muted">Nothing yet! Buy furniture in the Shop, or win trophies around the zone.</p>'}`;
   }
@@ -556,11 +578,11 @@ export function house(stage) {
     const max = deco ? 1 : item.max ?? 10;
     let foot;
     if (item.free) foot = 'Free';
-    else if (item.price) foot = have >= max ? (deco ? 'Owned' : `Max ${max}`) : confirmBuy === item.id ? `Buy for ${fmt(item.price)}?` : `🪙 ${fmt(item.price)}`;
+    else if (item.price) foot = have >= max ? (deco ? 'Owned' : `Max ${max}`) : confirmBuy === item.id ? `Buy for ${fmt(item.price)}?` : `🪙 ${fmt(item.price)}${deco ? ' · tap to try' : ''}`;
     else foot = have ? 'Owned ✓' : item.unlock ? `🔒 ${esc(item.unlock.hint)}` : item.drop ? `👾 Beat the ${esc(item.drop)}` : '';
-    const emoji = deco ? `<span class="fem swatch-em" style="background:${SWATCH[item.id] ?? '#888'}"></span>` : `<span class="fem">${item.emoji}</span>`;
+    const emoji = deco ? `<span class="fem swatch-em" style="${decoBg(item.id)}"></span>` : `<span class="fem">${furniImg(item.id)}</span>`;
     const buyable = item.price && have < max;
-    return `<button class="furni ${buyable ? '' : 'locked'} ${confirmBuy === item.id ? 'confirm' : ''}" ${buyable ? `data-buy="${item.id}"` : ''} title="${esc(item.name)}">
+    return `<button class="furni ${buyable ? '' : 'locked'} ${confirmBuy === item.id ? 'confirm' : ''} ${isTrying(item.id) ? 'previewing' : ''}" ${buyable ? `data-buy="${item.id}"` : ''} ${buyable && deco ? `data-kind="${kind}"` : ''} title="${esc(item.name)}">
       ${emoji}<span class="fname">${esc(item.name)}</span><span class="fcount">${!deco && have ? `own ${have} · ` : ''}${foot}</span></button>`;
   }
 
@@ -577,20 +599,33 @@ export function house(stage) {
 
   function renderStyle() {
     const pick = (list, field) => list.map((d) => `
-      <button class="style-opt ${home?.[field] === d.id ? 'on' : ''} ${ownsDeco(d) ? '' : 'locked'}" data-style="${field}:${d.id}" title="${esc(d.name)}">
-        <span class="style-sw" style="background:${SWATCH[d.id] ?? '#888'}"></span><span>${esc(d.name)}</span>
-        <small>${ownsDeco(d) ? (home?.[field] === d.id ? '✓ Using' : '') : `🪙 ${fmt(d.price)}`}</small></button>`).join('');
-    panel.innerHTML = `<div class="wd-label">Floor</div><div class="style-grid">${pick(CATALOG.floors, 'floor')}</div>
+      <button class="style-opt ${home?.[field] === d.id && !preview[field] ? 'on' : ''} ${isTrying(d.id) ? 'previewing' : ''} ${ownsDeco(d) ? '' : 'locked'}" data-style="${field}:${d.id}" title="${esc(d.name)}">
+        <span class="style-sw" style="${decoBg(d.id)}"></span><span>${esc(d.name)}</span>
+        <small>${ownsDeco(d) ? (home?.[field] === d.id ? '✓ Using' : '') : isTrying(d.id) ? '👀 Trying on' : `🪙 ${fmt(d.price)}`}</small></button>`).join('');
+    const all = [...CATALOG.floors, ...CATALOG.walls];
+    const bar = Object.entries(preview).map(([field, id]) => {
+      const pd = all.find((x) => x.id === id);
+      return pd ? `<div class="preview-bar"><span>👀 Trying on <b>${esc(pd.name)}</b> ${field === 'floor' ? 'floor' : 'wallpaper'}</span>
+        <button class="btn primary small" data-preview-buy="${field}">Buy · 🪙 ${fmt(pd.price)}</button><button class="btn ghost small" data-preview-stop="${field}">Put back</button></div>` : '';
+    }).join('');
+    panel.innerHTML = `${bar}<div class="wd-label">Floor</div><div class="style-grid">${pick(CATALOG.floors, 'floor')}</div>
       <div class="wd-label">Wallpaper</div><div class="style-grid">${pick(CATALOG.walls, 'wall')}</div>`;
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style]');
+    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop]');
     if (!t) return;
     const ds = t.dataset;
+    if (ds.previewBuy != null) {
+      const id = preview[ds.previewBuy];
+      if (id) { buyThenUse = { field: ds.previewBuy, id }; net.send('house_buy', { id }); }
+      return;
+    }
+    if (ds.previewStop != null) { setPreview(ds.previewStop, null); renderPanel(); return; }
     if (ds.tab) {
       tab = ds.tab;
       confirmBuy = null;
+      if (trying()) setPreview(null);
       if (tab !== 'visit' && mine() && !edit) setEdit(true);
       renderAll();
     } else if (ds.visits != null) {
@@ -616,19 +651,23 @@ export function house(stage) {
       if (!edit) setEdit(true);
       startPlacing(ds.place);
     } else if (ds.buy) {
-      if (confirmBuy === ds.buy) { net.send('house_buy', { id: ds.buy }); confirmBuy = null; }
+      // floors and wallpapers go up on your walls while you decide
+      if (ds.kind) setPreview(ds.kind, ds.buy);
+      if (confirmBuy === ds.buy) { net.send('house_buy', { id: ds.buy }); confirmBuy = null; if (ds.kind) buyThenUse = { field: ds.kind, id: ds.buy }; }
       else confirmBuy = ds.buy;
       renderPanel();
     } else if (ds.style) {
       const [field, id] = ds.style.split(':');
       const d = [...CATALOG.floors, ...CATALOG.walls].find((x) => x.id === id);
-      if (!ownsDeco(d)) { confirmBuy = id; tab = 'shop'; renderAll(); return; }
-      if (home[field] !== id) { home[field] = id; commit('paint'); }
+      if (!ownsDeco(d)) { setPreview(field, id); sfx('pop', { vol: 0.4 }); renderPanel(); return; }
+      if (preview[field]) setPreview(field, null);
+      if (home[field] !== id) { home[field] = id; commit('paint'); } else renderPanel();
     }
   });
 
   function setEdit(on) {
     edit = on && mine();
+    if (!edit && trying()) setPreview(null);
     room.grid.visible = edit;
     if (edit) { sideOpen = true; if (tab === 'visit') tab = 'items'; if (seated) standUp(); }
     else {
@@ -670,6 +709,16 @@ export function house(stage) {
   // ---- network ------------------------------------------------------------------------
 
   const off = [
+    net.on('player', (m) => {
+      if (m.p.key !== S.me || !buyThenUse || !home || !mine()) return;
+      const d = [...CATALOG.floors, ...CATALOG.walls].find((x) => x.id === buyThenUse.id);
+      if (!d || !ownsDeco(d)) return;
+      const { field, id } = buyThenUse;
+      buyThenUse = null;
+      delete preview[field];
+      home[field] = id;
+      commit('paint');
+    }),
     // the owner of the house you're in left the zone: back to your own
     net.on('member_left', (m) => { if (m.k === viewKey) visit(S.me); else if (sideOpen && tab === 'visit') renderVisit(); }),
     net.on('house', (m) => {

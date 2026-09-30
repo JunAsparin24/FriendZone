@@ -8,6 +8,7 @@ import { S, me, esc } from '../state.js';
 import { CATALOG, RARITY } from '../catalog.js';
 import { toon, basic } from '../three/materials.js';
 import { groundRing } from '../three/fx.js';
+import { buildFishModel, fishThumb } from '../three/fishmodels.js';
 import { sfx } from '../sfx.js';
 import { $, TAU, clamp, listen, hiDpiCanvas, confetti } from './util.js';
 
@@ -417,7 +418,7 @@ export class Fishing {
     const card = $(this.el, '.fish-result');
     card.style.setProperty('--r', r.color);
     card.innerHTML = `${m.first ? '<span class="tag">NEW!</span>' : m.record ? '<span class="tag rec">RECORD!</span>' : ''}
-      <div class="fr-emoji">${f.emoji}</div><div class="fr-rar">${r.label}</div><div class="fr-name">${esc(f.name)}</div>
+      <div class="fr-emoji"><img class="fish-img" src="${fishThumb(f)}" alt=""></div><div class="fr-rar">${r.label}</div><div class="fr-name">${esc(f.name)}</div>
       <div class="muted">${f.size} inches</div><div class="fr-coins">+${f.coins + m.treasure} 🪙${m.treasure ? ` (🎁 +${m.treasure})` : ''}</div>
       <small class="muted">click to cast again</small>`;
     sfx('catch', { rarity: f.rarity });
@@ -425,6 +426,21 @@ export class Fishing {
     if (['rare', 'epic', 'legendary'].includes(f.rarity)) confetti(this.el, { colors: [r.color, '#fff', '#ffd84d'] });
     this.actor.char.emote('gg');
     net.send('pose', { pose: 'catch' });
+    // hold the catch up over your head for a moment
+    const trophy = buildFishModel(f);
+    const scale = f.rarity === 'junk' ? 0.9 : Math.min(2.2, 0.8 + f.size / 60);
+    trophy.scale.setScalar(scale);
+    trophy.position.set(0, 2.9, 0);
+    this.actor.char.root.add(trophy);
+    const born = performance.now();
+    const spin = () => {
+      const t = (performance.now() - born) / 1000;
+      if (t > 3 || !trophy.parent) { trophy.parent?.remove(trophy); return; }
+      trophy.rotation.y = t * 2.2;
+      trophy.position.y = 2.9 + Math.sin(t * 5) * 0.08 + Math.min(1, t * 4) * 0.2;
+      requestAnimationFrame(spin);
+    };
+    spin();
   }
 
   stop() {
@@ -459,11 +475,11 @@ export function fishJournal(body) {
         const d = dex[f.name];
         const r = RARITY[f.rarity];
         return `<div class="jcard ${d ? '' : 'unknown'}" style="--r:${r.color}">
-          <div class="jemoji">${d ? f.emoji : '❓'}</div><div class="jname">${d ? esc(f.name) : '???'}</div>
+          <div class="jemoji">${d ? `<img class="fish-img" src="${fishThumb(f)}" alt="">` : '❓'}</div><div class="jname">${d ? esc(f.name) : '???'}</div>
           <div class="jrar">${r.label}</div>${d ? `<div class="jmeta">×${d.n} · best ${d.best}"</div>` : ''}</div>`;
       }).join('')}</div>
       <h3>🏆 Pond records (biggest catches in the zone)</h3>
-      <ol class="records">${records.slice(0, 8).map((x) => `<li><span>${x.f.emoji} ${esc(x.f.name)}</span><b>${x.best}"</b><small>${esc(x.p.name)}</small></li>`).join('') || '<li class="muted">Nobody has caught anything yet!</li>'}</ol>`;
+      <ol class="records">${records.slice(0, 8).map((x) => `<li><span><img class="fish-img sm" src="${fishThumb(x.f)}" alt=""> ${esc(x.f.name)}</span><b>${x.best}"</b><small>${esc(x.p.name)}</small></li>`).join('') || '<li class="muted">Nobody has caught anything yet!</li>'}</ol>`;
   };
   render();
   return listen({ player: render });

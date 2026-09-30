@@ -7,8 +7,12 @@ import { toon, outlineMaterial } from './materials.js';
 
 const OUT = outlineMaterial(0.03);
 const BOARDS = [
-  { spot: 'boss', title: 'DEEPEST DUNGEON', stat: 'dungeonBest', unit: (v) => `Floor ${v}`, color: '#7c6bff', side: 1 },
-  { spot: 'archery', title: 'ARCHERY LEGENDS', stat: 'archeryBest', unit: (v) => `${v}/50`, color: '#37c871', side: -1 },
+  { spot: 'dungeon', title: 'DEEPEST DUNGEON', stat: 'dungeonBest', unit: (v) => `Floor ${v}`, color: '#7c6bff' },
+  { spot: 'archery', title: 'ARCHERY LEGENDS', stat: 'archeryBest', unit: (v) => `${v}/50`, color: '#37c871' },
+  { spot: 'race', title: 'RACE CHAMPIONS', stat: 'raceWins', unit: (v) => `${v} wins`, color: '#e0463c' },
+  { spot: 'arenaWins', title: 'ARENA VICTORIES', stat: 'arenaWins', unit: (v) => `${v} wins`, color: '#ff9f43' },
+  { spot: 'arenaKills', title: 'ARENA KNOCKOUTS', stat: 'elims', unit: (v) => `${v} KOs`, color: '#d6334a' },
+  { spot: 'fish', title: 'MASTER ANGLERS', stat: 'fish', unit: (v) => `${v} fish`, color: '#3b82f6' },
 ];
 
 function mesh(parent, geo, mat, p, outline = true) {
@@ -23,12 +27,12 @@ function mesh(parent, geo, mat, p, outline = true) {
 export function buildLeaderboards(scene) {
   const list = BOARDS.map((b) => {
     // beside the door, a little out in front, turned slightly towards the path
-    const { x: px, y: py, dx, dy } = M.BOARD_SPOTS.find((s) => s.id === b.spot);
+    const { x: px, y: py, face: facing } = M.BOARD_SPOTS.find((s) => s.id === b.spot);
     const g = new THREE.Group();
     const p = M.to3(px, py);
     g.position.set(p.x, M.groundAt(px, py), p.z);
-    g.rotation.y = Math.atan2(dx, dy) - b.side * 0.35;
-    g.scale.setScalar(1.45);
+    g.rotation.y = facing;
+    g.scale.setScalar(1.9);
     scene.add(g);
     const wood = toon('#8b5a2b'), dark = toon('#5a3a1e');
     for (const x of [-1.6, 1.6]) mesh(g, new THREE.BoxGeometry(0.22, 4.2, 0.22), dark, [x, 2.1, 0]);

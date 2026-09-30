@@ -654,6 +654,126 @@ export const FURNITURE = {
     A.anim.push((t) => { bulbs.forEach((b, i) => { b.visible = on; b.material.opacity = 0.4 + Math.sin(t * 3 + i) * 0.25; }); });
     return { use: () => { on = !on; } };
   },
+  // ---- hanging from the ceiling (built downwards from y = 0, the ceiling) ----
+  chandelier(g, A) {
+    const gold = shiny('#ffc53d', { metalness: 0.7 });
+    add(g, cyl(0.02, 0.02, 0.5, 6), gold, { p: [0, -0.25, 0], outline: false });
+    add(g, geo('chanRing', () => new THREE.TorusGeometry(0.42, 0.03, 8, 32)), gold, { p: [0, -0.62, 0], r: [Math.PI / 2, 0, 0] });
+    add(g, sph(0.1, 12, 10), gold, { p: [0, -0.58, 0] });
+    const flames = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU, x = Math.cos(a) * 0.42, z = Math.sin(a) * 0.42;
+      add(g, cyl(0.035, 0.035, 0.14, 8), toon('#fff6e0'), { p: [x, -0.53, z], outline: false });
+      const f = new THREE.Sprite(additive(glowTexture, 0xffd27a, 0.9));
+      f.scale.setScalar(0.25);
+      f.position.set(x, -0.42, z);
+      g.add(f);
+      flames.push(f);
+    }
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; add(g, geo('crystal', () => new THREE.OctahedronGeometry(0.04)), toon('#dff4ff', { transparent: true, opacity: 0.8 }), { p: [Math.cos(a) * 0.3, -0.74, Math.sin(a) * 0.3], s: [1, 2, 1], outline: false }); }
+    const light = new THREE.PointLight(0xffd79a, 3, 7, 1.5);
+    light.position.y = -0.7;
+    g.add(light);
+    let on = true;
+    const set = () => { light.visible = on; flames.forEach((f) => { f.visible = on; }); };
+    return { use: () => { on = !on; set(); } };
+  },
+  ceiling_fan(g, A) {
+    add(g, cyl(0.03, 0.03, 0.35, 6), toon('#6e4424'), { p: [0, -0.18, 0], outline: false });
+    add(g, cyl(0.14, 0.12, 0.14, 16), toon('#6e4424'), { p: [0, -0.4, 0] });
+    const blades = new THREE.Group();
+    blades.position.y = -0.44;
+    g.add(blades);
+    for (let i = 0; i < 4; i++) add(blades, box(0.75, 0.02, 0.16), toon('#a8723f'), { p: [Math.cos((i / 4) * TAU) * 0.45, 0, Math.sin((i / 4) * TAU) * 0.45], r: [0, -(i / 4) * TAU, 0.08] });
+    add(g, sph(0.1, 12, 10), toon('#fff3c4', { emissive: '#ffd27a', emissiveIntensity: 0.5 }), { p: [0, -0.54, 0], outline: false });
+    let spin = true;
+    A.anim.push((t, dt) => { if (spin) blades.rotation.y += dt * 5; return false; });
+    return { use: () => { spin = !spin; } };
+  },
+  pendant(g) {
+    add(g, cyl(0.01, 0.01, 0.8, 5), toon('#23263f'), { p: [0, -0.4, 0], outline: false });
+    const shade = toon('#ffb13b', { side: THREE.DoubleSide }).clone();
+    shade.emissive = new THREE.Color('#ffcf6b');
+    shade.emissiveIntensity = 0.4;
+    add(g, cone(0.25, 0.3, 20), shade, { p: [0, -0.9, 0] });
+    const bulb = add(g, sph(0.07, 10, 8), basic('#fff6c9'), { p: [0, -1.03, 0], outline: false });
+    const light = new THREE.PointLight(0xffd79a, 2, 5, 1.6);
+    light.position.y = -1.1;
+    g.add(light);
+    let on = true;
+    return { use: () => { on = !on; light.visible = bulb.visible = on; shade.emissiveIntensity = on ? 0.4 : 0; } };
+  },
+  hanging_plant(g) {
+    for (const a of [0, 2.1, 4.2]) add(g, cyl(0.006, 0.006, 0.6, 4), toon('#e8dcc8'), { p: [Math.cos(a) * 0.08, -0.3, Math.sin(a) * 0.08], r: [Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25], outline: false });
+    add(g, sph(0.2, 16, 10, ), toon('#c96b2c'), { p: [0, -0.68, 0], s: [1, 0.7, 1] });
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * TAU;
+      add(g, sph(0.1, 10, 8), toon(i % 2 ? '#3fa34d' : '#56c262'), { p: [Math.cos(a) * 0.2, -0.62 - (i % 3) * 0.15, Math.sin(a) * 0.2], s: [0.7, 1.6, 0.5], outline: false });
+    }
+  },
+  disco_ball(g, A) {
+    add(g, cyl(0.01, 0.01, 0.4, 5), toon('#c0c6d4'), { p: [0, -0.2, 0], outline: false });
+    const ball = add(g, geo('disco', () => new THREE.IcosahedronGeometry(0.3, 2)), new THREE.MeshStandardMaterial({ color: '#dfe6f5', metalness: 0.95, roughness: 0.15, flatShading: true }), { p: [0, -0.7, 0] });
+    const lights = ['#ff5d73', '#39c6ff', '#6ee7a0', '#ffd84d'].map((c, i) => {
+      const l = new THREE.PointLight(c, 1.4, 6, 1.5);
+      g.add(l);
+      return l;
+    });
+    let on = true;
+    A.anim.push((t) => {
+      ball.rotation.y = t * 0.8;
+      lights.forEach((l, i) => { const a = t * 1.2 + (i * TAU) / 4; l.position.set(Math.cos(a) * 1.4, -1.2, Math.sin(a) * 1.4); l.visible = on; });
+      return false;
+    });
+    return { use: () => { on = !on; } };
+  },
+  paper_lanterns(g, A) {
+    add(g, cyl(0.008, 0.008, 1.9, 4), toon('#3a2a1a'), { p: [0, -0.25, 0], r: [0, 0, Math.PI / 2], outline: false });
+    const cols = ['#ff5d73', '#ffd84d', '#ff9f43', '#e57bff'];
+    const lan = [];
+    for (let i = 0; i < 4; i++) {
+      const x = -0.72 + i * 0.48;
+      const m = toon(cols[i]).clone();
+      m.emissive = new THREE.Color(cols[i]);
+      m.emissiveIntensity = 0.45;
+      lan.push(add(g, sph(0.15, 14, 12), m, { p: [x, -0.46 - (i % 2) * 0.08, 0], s: [1, 1.25, 1] }));
+      add(g, cyl(0.06, 0.06, 0.04, 10), toon('#3a2a1a'), { p: [x, -0.28 - (i % 2) * 0.08, 0], outline: false });
+    }
+    A.anim.push((t) => { lan.forEach((l, i) => { l.rotation.z = Math.sin(t * 1.3 + i) * 0.08; }); return false; });
+  },
+  star_mobile(g, A) {
+    add(g, cyl(0.008, 0.008, 0.3, 4), toon('#c0c6d4'), { p: [0, -0.15, 0], outline: false });
+    const arm = new THREE.Group();
+    arm.position.y = -0.3;
+    g.add(arm);
+    add(arm, cyl(0.01, 0.01, 0.9, 4), toon('#c0c6d4'), { r: [0, 0, Math.PI / 2], outline: false });
+    const star = geo('mobileStar', () => { const sh = new THREE.Shape(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, r = i % 2 ? 0.05 : 0.12; sh[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); } return new THREE.ExtrudeGeometry(sh, { depth: 0.03, bevelEnabled: false }); });
+    [['#ffd84d', -0.42, -0.3], ['#fff6c9', 0.42, -0.4], ['#8fd3ff', 0, -0.55]].forEach(([c, x, y]) => {
+      add(arm, cyl(0.004, 0.004, Math.abs(y), 4), toon('#c0c6d4'), { p: [x, y / 2, 0], outline: false });
+      add(arm, star, toon(c, { emissive: c, emissiveIntensity: 0.3 }), { p: [x, y, 0] });
+    });
+    A.anim.push((t) => { arm.rotation.y = Math.sin(t * 0.5) * 1.2; return false; });
+  },
+  // ---- more for the walls ----
+  bookshelf_wall(g) {
+    add(g, box(1.8, 0.05, 0.28), toon(WOOD), { p: [0, -0.25, 0.14] });
+    add(g, box(1.8, 0.05, 0.28), toon(WOOD), { p: [0, 0.25, 0.14] });
+    const colors = ['#e0463c', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff', '#ff9f43'];
+    for (const y of [-0.22, 0.28]) for (let k = 0; k < 9; k++) add(g, box(0.08, 0.3, 0.2), toon(colors[(k + Math.round(y * 10)) % colors.length]), { p: [-0.7 + k * 0.17, y + 0.15, 0.13], r: [0, 0, k % 4 === 3 ? 0.25 : 0], outline: false });
+  },
+  tv_wall(g, A) {
+    add(g, box(1.8, 1.05, 0.06), shiny('#15131f', { metalness: 0.3 }), { p: [0, 0, 0.03] });
+    const screen = liveScreen(160, 90, (ctx, t, on) => {
+      if (!on) { ctx.fillStyle = '#0b0a14'; ctx.fillRect(0, 0, 160, 90); return; }
+      const hue = (t * 30) % 360;
+      ctx.fillStyle = `hsl(${hue},70%,45%)`; ctx.fillRect(0, 0, 160, 90);
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(80 + Math.sin(t) * 50, 45 + Math.cos(t * 1.3) * 25, 12, 0, TAU); ctx.fill();
+    });
+    add(g, plane(1.66, 0.93), new THREE.MeshBasicMaterial({ map: screen.tex }), { p: [0, 0, 0.065], outline: false, cast: false });
+    let on = true;
+    A.anim.push((t) => { screen.redraw(t, on); return false; });
+    return { use: () => { on = !on; } };
+  },
   fishtank(g, A) {
     add(g, box(1.8, 0.7, 0.62), toon(DARK_WOOD), { p: [0, 0.35, -0.12] });
     const glass = new THREE.MeshStandardMaterial({ color: '#bfefff', transparent: true, opacity: 0.25, roughness: 0.05, metalness: 0.1, depthWrite: false });
@@ -875,6 +995,55 @@ const FLOOR_DRAW = {
     ctx.fillRect(0, 0, 256, 256);
     for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) heartAt(ctx, c * 64 + 32, r * 64 + 34, 14, (r + c) % 2 ? '#ff9fc8' : '#ffc2dd');
   },
+  floor_dark(ctx) {
+    for (let row = 0; row < 8; row++) {
+      const y = row * 32;
+      ctx.fillStyle = row % 2 ? '#5a3a24' : '#664329';
+      ctx.fillRect(0, y, 256, 30);
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.fillRect(0, y + 30, 256, 2);
+      ctx.fillRect(((row * 97) % 200) + 20, y, 2, 30);
+    }
+  },
+  floor_herring(ctx) {
+    ctx.fillStyle = '#b98049';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let y = -64; y < 320; y += 32) for (let x = 0; x < 256; x += 64) {
+      for (const [dx, a] of [[0, 1], [32, -1]]) {
+        ctx.save(); ctx.translate(x + dx, y + (dx ? 16 : 0)); ctx.rotate(a * Math.PI / 4);
+        ctx.fillStyle = ((x + y + dx) / 32) % 2 ? '#c9935c' : '#a8723f'; ctx.fillRect(0, 0, 44, 20);
+        ctx.strokeStyle = 'rgba(70,40,10,.35)'; ctx.strokeRect(0, 0, 44, 20); ctx.restore();
+      }
+    }
+  },
+  floor_terrazzo(ctx) {
+    ctx.fillStyle = '#f1ece4';
+    ctx.fillRect(0, 0, 256, 256);
+    const cols = ['#ff8fa3', '#8fd3ff', '#ffd84d', '#6ee7a0', '#b8b2cf'];
+    for (let i = 0; i < 240; i++) { ctx.fillStyle = cols[i % cols.length]; ctx.beginPath(); ctx.ellipse((i * 53) % 256, (i * 97) % 256, 2 + (i % 4), 1.5 + (i % 3), i, 0, TAU); ctx.fill(); }
+  },
+  floor_tatami(ctx) {
+    ctx.fillStyle = '#c9c07a';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = 'rgba(80,70,20,.25)';
+    for (let y = 0; y < 256; y += 4) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke(); }
+    ctx.fillStyle = '#2f5a3a';
+    ctx.fillRect(0, 0, 256, 8); ctx.fillRect(0, 124, 256, 8); ctx.fillRect(124, 0, 8, 256);
+  },
+  floor_neon(ctx) {
+    ctx.fillStyle = '#120a2a';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = '#ff4fd8'; ctx.lineWidth = 3;
+    for (let i = 0; i <= 256; i += 64) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke(); }
+    ctx.strokeStyle = '#39e6ff'; ctx.lineWidth = 1.5;
+    for (let i = 32; i < 256; i += 64) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke(); }
+  },
+  floor_sand(ctx) {
+    ctx.fillStyle = '#ecd9a8';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 2500; i++) { ctx.fillStyle = i % 3 ? 'rgba(160,120,60,.14)' : 'rgba(255,255,255,.3)'; ctx.fillRect((i * 37) % 256, (i * 91) % 256, 2, 2); }
+    ctx.fillStyle = '#ffb3c7'; ctx.beginPath(); ctx.arc(180, 70, 6, 0, TAU); ctx.fill();
+  },
   floor_marble(ctx) {
     for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
       ctx.fillStyle = (r + c) % 2 ? '#f4f1ec' : '#e6e2dc';
@@ -955,6 +1124,47 @@ const WALL_DRAW = {
       ctx.beginPath(); ctx.arc(x, y, 2, 0, TAU); ctx.fill();
     }
   },
+  wall_navy(ctx) { plainWall(ctx, '#2a3566'); },
+  wall_sage(ctx) { plainWall(ctx, '#b9d3b0'); },
+  wall_panels(ctx) {
+    ctx.fillStyle = '#a8723f';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 32) { ctx.fillStyle = (x / 32) % 2 ? '#b07a45' : '#9c6a3c'; ctx.fillRect(x, 0, 30, 256); ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x + 30, 0, 2, 256); }
+  },
+  wall_diamond(ctx) {
+    ctx.fillStyle = '#fff1d6';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#e57bff';
+    for (let y = 0; y < 256; y += 64) for (let x = 0; x < 256; x += 64) {
+      ctx.beginPath(); ctx.moveTo(x + 32, y); ctx.lineTo(x + 64, y + 32); ctx.lineTo(x + 32, y + 64); ctx.lineTo(x, y + 32); ctx.fill();
+    }
+  },
+  wall_waves(ctx) {
+    ctx.fillStyle = '#cfeaff';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = '#39a0ff'; ctx.lineWidth = 6;
+    for (let y = 20; y < 256; y += 42) { ctx.beginPath(); for (let x = 0; x <= 256; x += 8) ctx.lineTo(x, y + Math.sin((x / 256) * TAU * 2) * 8); ctx.stroke(); }
+  },
+  wall_gamer(ctx) {
+    ctx.fillStyle = '#141024';
+    ctx.fillRect(0, 0, 256, 256);
+    const cols = ['#ff4fd8', '#39e6ff', '#6ee7a0'];
+    cols.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(0, 60 + i * 60, 256, 6); });
+    ctx.fillStyle = 'rgba(255,255,255,.06)';
+    for (let i = 0; i < 40; i++) ctx.fillRect((i * 67) % 256, (i * 29) % 256, 8, 8);
+  },
+  wall_jungle(ctx) {
+    ctx.fillStyle = '#e6f5de';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 14; i++) {
+      const x = (i * 71) % 256, y = (i * 113) % 256, a = i * 0.9;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+      ctx.fillStyle = i % 2 ? '#3f9a4a' : '#56c262';
+      ctx.beginPath(); ctx.ellipse(0, 0, 30, 12, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#2f7f3a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-28, 0); ctx.lineTo(28, 0); ctx.stroke();
+      ctx.restore();
+    }
+  },
   wall_stars(ctx) {
     ctx.fillStyle = '#1a2456';
     ctx.fillRect(0, 0, 256, 256);
@@ -977,6 +1187,41 @@ function plainWall(ctx, color) {
   for (let x = 0; x < 256; x += 32) ctx.fillRect(x, 0, 2, 256);
 }
 
+const CEIL_DRAW = {
+  ceil_plain(ctx) { plainWall(ctx, '#fbf8f2'); },
+  ceil_beams(ctx) {
+    ctx.fillStyle = '#f4ecd8';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 64) { ctx.fillStyle = '#8b5a2b'; ctx.fillRect(x, 0, 18, 256); ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.fillRect(x + 14, 0, 4, 256); }
+  },
+  ceil_sky(ctx) {
+    ctx.fillStyle = '#8fd0ff';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#ffffff';
+    for (const [x, y, r] of [[60, 70, 26], [90, 64, 20], [190, 170, 30], [215, 160, 22], [150, 40, 16]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+  },
+  ceil_stars(ctx) { WALL_DRAW.wall_stars(ctx); },
+  ceil_pink(ctx) {
+    const g = ctx.createLinearGradient(0, 0, 256, 256);
+    g.addColorStop(0, '#ffd6ea'); g.addColorStop(1, '#d6ecff');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+  },
+  ceil_coffered(ctx) {
+    ctx.fillStyle = '#e8e2d4';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let y = 0; y < 256; y += 64) for (let x = 0; x < 256; x += 64) { ctx.fillStyle = '#d4ccb8'; ctx.fillRect(x + 8, y + 8, 48, 48); ctx.fillStyle = '#c8bfa8'; ctx.fillRect(x + 14, y + 14, 36, 36); }
+  },
+  ceil_glow(ctx) {
+    ctx.fillStyle = '#23285a';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 30; i++) {
+      ctx.fillStyle = ['#c8ff8a', '#fff6b0', '#8fe3ff'][i % 3];
+      const x = (i * 83) % 256, y = (i * 47) % 256;
+      ctx.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + (k * Math.PI) / 5, r = k % 2 ? 2.5 : 6; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } ctx.fill();
+    }
+  },
+};
+export const ceilingTexture = (id) => surface(id, CEIL_DRAW[id] ?? CEIL_DRAW.ceil_plain);
 export const floorTexture = (id) => surface(id, FLOOR_DRAW[id] ?? FLOOR_DRAW.floor_wood);
 export const wallTexture = (id) => surface(id, WALL_DRAW[id] ?? WALL_DRAW.wall_cream);
 
@@ -1000,7 +1245,7 @@ function heartAt(ctx, x, y, s, color) {
 
 /** A data-URL image of a floor or wallpaper, for the style picker and shop. */
 export function surfaceImage(id) {
-  const tex = FLOOR_DRAW[id] ? floorTexture(id) : wallTexture(id);
+  const tex = FLOOR_DRAW[id] ? floorTexture(id) : CEIL_DRAW[id] ? ceilingTexture(id) : wallTexture(id);
   const img = tex.image;
   return img?.toDataURL ? img.toDataURL() : '';
 }

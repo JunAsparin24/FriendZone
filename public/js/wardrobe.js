@@ -111,10 +111,14 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
   }
 
   // colors come in rows of shades (lightest to darkest), so the grid lines families up
-  function swatches(label, field, colors) {
-    return `<div class="wd2-card"><div class="wd-label">${label} <i class="wd2-chip" style="--c:${draft[field]}"></i></div><div class="swatches palette">${colors.map((c) =>
-      `<button type="button" class="swatch ${draft[field] === c ? 'on' : ''}" data-field="${field}" data-color="${c}" style="--c:${c}" title="${c}"></button>`).join('')}</div></div>`;
+  function swatches(label, field, colors, { original = false } = {}) {
+    const cur = draft[field] ?? '';
+    return `<div class="wd2-card"><div class="wd-label">${label} ${cur ? `<i class="wd2-chip" style="--c:${cur}"></i>` : ''}</div><div class="swatches palette">${
+      original ? `<button type="button" class="swatch orig ${cur ? '' : 'on'}" data-field="${field}" data-color="" title="Original colour">↺</button>` : ''}${colors.map((c) =>
+      `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-field="${field}" data-color="${c}" style="--c:${c}" title="${c}"></button>`).join('')}</div></div>`;
   }
+  // hats and back items marked "tint" can be recoloured from the full palette
+  const tintPicker = (slot, field, label) => (ITEMS[draft[slot]]?.tint ? swatches(`${label} (${esc(ITEMS[draft[slot]].name)})`, field, CATALOG.clothColors, { original: true }) : '');
 
   // body options (height, build, eye style): always free, previewed on your own character
   function choices(label, field, options, zoom = 'body') {
@@ -155,7 +159,9 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       content.innerHTML = `<div class="wd2-card">${itemTiles(tab)}${tab === 'pet' ? '<p class="muted small">Buy pets here, or hatch a random one from an egg at the 🐾 Pet Shop in town (cheaper!).</p>' : ''}</div>`
         + (tab === 'hair' ? swatches('Hair color', 'hairColor', CATALOG.hairColors) : '')
         + (tab === 'top' ? swatches('Shirt color', 'topColor', CATALOG.clothColors) : '')
-        + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors) + swatches('Shoe color', 'shoeColor', CATALOG.clothColors) : '');
+        + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors) + swatches('Shoe color', 'shoeColor', CATALOG.clothColors) : '')
+        + (tab === 'hat' ? tintPicker('hat', 'hatColor', 'Hat color') : '')
+        + (tab === 'back' ? tintPicker('back', 'backColor', 'Color') : '');
     }
     content.querySelectorAll('.tile').forEach((t) => {
       const field = t.dataset.choice ?? tab;
@@ -251,9 +257,9 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
         <div class="crate-box"><div class="crate-lid"></div><div class="crate-body">?</div></div>
         <div class="crate-reel hidden"><div class="crate-strip"></div><div class="crate-marker"></div></div>
         <div class="crate-reveal hidden"></div>
-        <button class="btn primary" id="openCrate" ${left ? '' : 'disabled'}>${left ? `Open a crate · 🪙 ${price}` : 'You own every crate item!'}</button>
+        <button class="btn primary" id="openCrate">Open a crate · 🪙 ${price}</button>
         <div class="odds">${RARITY_ORDER.map((r) => `<span style="color:${RARITY[r].color}">${RARITY[r].label} ${Math.round((w[r] / total) * 100)}%</span>`).join(' · ')}</div>
-        <p class="muted small">${left} crate items left to find. You never get a duplicate.</p>
+        <p class="muted small">${left} crate items left to find. Get one you already own and you get half your coins back.</p>
       </div>`;
     $(content, '#openCrate').onclick = () => {
       if (opening) return;
@@ -265,6 +271,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
     };
   }
 
+  let lastDupe = 0;
   function spinCrate(wonId) {
     const pool = CATALOG.items.filter((i) => i.crate);
     const weights = CATALOG.crate.weights;
@@ -309,6 +316,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
     box.style.setProperty('--r', r.color);
     sfx('reveal', { rarity: it.rarity });
     box.innerHTML = `<div class="rv-art"></div><div class="rv-rarity">${r.label}</div><div class="rv-name">${esc(it.name)}</div>
+      ${lastDupe ? `<div class="rv-dupe">Duplicate! You got <b>🪙 ${fmt(lastDupe)}</b> back.</div>` : ''}
       <div class="row center"><button class="btn primary" id="equipWon">Wear it</button><button class="btn" id="again">Open another</button></div>`;
     portraitInto(box.querySelector('.rv-art'), { ...draft, [it.slot]: id }, 120, 130, { zoom: zoomFor(it.slot) });
     if (it.rarity !== 'common') confetti(box.parentElement, { count: it.rarity === 'legendary' ? 180 : 90, colors: [r.color, '#fff', '#ffd84d'] });
@@ -335,7 +343,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
     unlock: (m) => {
       if (ITEMS[m.id] && m.source === 'shop') { draft[ITEMS[m.id].slot] = m.id; sfx('buy'); }
     },
-    crate_result: (m) => spinCrate(m.id),
+    crate_result: (m) => { lastDupe = m.dupe ? m.refund : 0; spinCrate(m.id); },
     error: (m) => {
       if (!['look', 'buy', 'crate'].includes(m.for)) return;
       if (m.for === 'crate') { opening = false; renderCrates(); }

@@ -342,10 +342,20 @@ $('#emoteBar').onclick = (e) => {
   if (b) world.emote(b.dataset.emote);
 };
 
+// chat lines fade away after a while (they all come back while you're typing)
+const CHAT_SHOW_MS = 15000;
+let lastChatHtml = '';
+setInterval(() => { if (S.chat?.length) renderChat(); }, 2000);
 function renderChat() {
-  $('#chatLog').innerHTML = S.chat.slice(-8).map((m) => (m.sys
-    ? `<li class="sys ${m.sys}">${esc(m.text).replace(/\n/g, '<br>')}</li>`
-    : `<li><b style="color:${colorOf(m.k)}">${esc(nameOf(m.k))}</b> ${esc(m.text)}</li>`)).join('');
+  const now = Date.now();
+  for (const m of S.chat) m.seenAt ??= (m.ts && !m.sys ? Math.min(now, m.ts * 1000) : now);
+  const html = S.chat.slice(-8).map((m) => {
+    const old = now - m.seenAt > CHAT_SHOW_MS ? ' old' : '';
+    return m.sys
+      ? `<li class="sys ${m.sys}${old}">${esc(m.text).replace(/\n/g, '<br>')}</li>`
+      : `<li class="${old}"><b style="color:${colorOf(m.k)}">${esc(nameOf(m.k))}</b> ${esc(m.text)}</li>`;
+  }).join('');
+  if (html !== lastChatHtml) { lastChatHtml = html; $('#chatLog').innerHTML = html; }
 }
 
 

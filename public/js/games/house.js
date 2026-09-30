@@ -8,7 +8,7 @@ import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
-import { buildFurniture, floorTexture, wallTexture, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
+import { buildFurniture, floorTexture, wallTexture, ceilingTexture, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
 import { iconSvg } from '../icons.js';
 
@@ -35,7 +35,7 @@ function cellsOf(it) {
   const kind = kindOf(it.id);
   if (kind === 'wall') {
     const start = it.r % 2 === 0 ? it.x : it.y;
-    return Array.from({ length: f.w }, (_, i) => `wall:${it.r % 2}:${start + i}`);
+    return Array.from({ length: f.w }, (_, i) => `wall:${it.r % 4}:${start + i}`);
   }
   const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
   const out = [];
@@ -47,6 +47,7 @@ function fits(it) {
   const f = FURN[it.id];
   if (kindOf(it.id) === 'wall') {
     const start = it.r % 2 === 0 ? it.x : it.y;
+    if (it.r % 4 === 2 && start < DOOR.x1 && start + f.w > DOOR.x0) return false; // not over the door
     return start >= 0 && start + f.w <= N;
   }
   const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
@@ -106,11 +107,39 @@ function buildRoom() {
     post.position.set(x, DOOR.h / 2, N);
     front.add(post);
   }
+  // the front door itself (closed: walk up to it to go outside)
+  const doorMat = toon('#7a4a28');
+  const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(DOOR.x1 - DOOR.x0 - 0.14, DOOR.h - 0.04, 0.12), doorMat);
+  doorPanel.position.set(N / 2, DOOR.h / 2, N - 0.02);
+  front.add(doorPanel);
+  for (const y of [0.55, 1.45]) {
+    const inset = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.65, 0.04), toon('#8b5a2b'));
+    inset.position.set(N / 2, y, N - 0.09);
+    front.add(inset);
+  }
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), toon('#ffc53d'));
+  knob.position.set(N / 2 + 0.7, 1.05, N - 0.12);
+  front.add(knob);
+  const ceilingMat = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide });
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(N, N), ceilingMat);
+  ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.set(N / 2, WALL_H, N / 2);
+  g.add(ceiling);
+  // a pitched roof on top (seen from outside while decorating)
+  const roof = new THREE.Group();
+  const rise = 2.2;
+  const roofShape = new THREE.Shape();
+  roofShape.moveTo(-N / 2 - 0.4, 0); roofShape.lineTo(N / 2 + 0.4, 0); roofShape.lineTo(0, rise); roofShape.closePath();
+  const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: N + 0.8, bevelEnabled: false });
+  const roofMesh = new THREE.Mesh(roofGeo, toon('#b3403a'));
+  roofMesh.position.set(N / 2, WALL_H + 0.02, -0.4);
+  roof.add(roofMesh);
+  g.add(roof);
   const mat = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), toon('#b3203a'));
   mat.rotation.x = -Math.PI / 2;
   mat.position.set(N / 2, 0.01, N - 0.45);
   g.add(mat);
-  walls.front = { grp: front };
+  walls.front = { grp: front, faces: [fl.face, fr.face, ft.face] };
   // outside: a lawn with a path to the door, so the doorway never looks into a void
   const lawn = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), toon('#5fae55'));
   lawn.rotation.x = -Math.PI / 2;
@@ -146,7 +175,7 @@ function buildRoom() {
   const items = new THREE.Group();
   g.add(items);
   g.traverse((o) => { if (o.isMesh && o !== floor && o !== lawn) o.castShadow = true; });
-  return { group: g, floor, floorMat, wallMat, walls, grid, marker, items };
+  return { group: g, floor, floorMat, wallMat, ceiling, ceilingMat, roof, walls, grid, marker, items };
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +190,7 @@ export function house(stage) {
 
   const solids = [];
   const walker = stage.walker({
-    spawn: { x: W / 2, z: W - 1.2 }, speed: 5, solids,
+    spawn: { x: W / 2, z: W - 4.2 }, speed: 5, solids,
     bounds: { minX: 0.1, maxX: W - 0.1, minZ: 0.1, maxZ: W - 0.1 },
     orbit: { yaw: 0, pitch: 0.72, dist: 11, minDist: 5, maxDist: 20 },
     ceiling: WALL_H * T - 0.3,
@@ -185,19 +214,22 @@ export function house(stage) {
   let buyThenUse = null;   // put this up as soon as the purchase goes through
   let entries = [];           // built items: { group, use, A, it, bounce, inter }
   const mine = () => viewKey === S.me;
-  const payload = () => ({ floor: home.floor, wall: home.wall, items: home.items.map(({ id, x, y, r }) => ({ id, x, y, r })) });
+  const payload = () => ({ floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', items: home.items.map(({ id, x, y, r }) => ({ id, x, y, r })) });
 
   // ---- building the furniture ------------------------------------------------------
 
   function placeGroup(g, it) {
     const f = FURN[it.id];
     if (kindOf(it.id) === 'wall') {
-      if (it.r % 2 === 0) { g.position.set(it.x + f.w / 2, WALL_Y, 0); g.rotation.y = 0; }
-      else { g.position.set(0, WALL_Y, it.y + f.w / 2); g.rotation.y = Math.PI / 2; }
+      const r = it.r % 4;
+      if (r === 0) { g.position.set(it.x + f.w / 2, WALL_Y, 0); g.rotation.y = 0; }
+      else if (r === 1) { g.position.set(0, WALL_Y, it.y + f.w / 2); g.rotation.y = Math.PI / 2; }
+      else if (r === 2) { g.position.set(it.x + f.w / 2, WALL_Y, N); g.rotation.y = Math.PI; }
+      else { g.position.set(N, WALL_Y, it.y + f.w / 2); g.rotation.y = -Math.PI / 2; }
       return;
     }
     const [w, d] = footprint(it);
-    g.position.set(it.x + w / 2, 0, it.y + d / 2);
+    g.position.set(it.x + w / 2, kindOf(it.id) === 'ceiling' ? WALL_H : 0, it.y + d / 2);
     g.rotation.y = it.r * (Math.PI / 2);
   }
 
@@ -214,8 +246,9 @@ export function house(stage) {
       const entry = { ...built, it, bounce: 1 };
       const kind = kindOf(it.id);
       const [w, d] = footprint(it);
-      const cx = kind === 'wall' ? (it.r % 2 ? 0.6 : it.x + FURN[it.id].w / 2) : it.x + w / 2;
-      const cz = kind === 'wall' ? (it.r % 2 ? it.y + FURN[it.id].w / 2 : 0.6) : it.y + d / 2;
+      const wr = it.r % 4, half = FURN[it.id].w / 2;
+      const cx = kind === 'wall' ? [it.x + half, 0.6, it.x + half, N - 0.6][wr] : it.x + w / 2;
+      const cz = kind === 'wall' ? [0.6, it.y + half, N - 0.6, it.y + half][wr] : it.y + d / 2;
       if (kind === 'floor') solids.push({ x: cx * T, z: cz * T, w: w * T - 0.15, d: d * T - 0.15 });
       const f = FURN[it.id];
       const seat = SEATS[it.id] != null;
@@ -249,6 +282,10 @@ export function house(stage) {
     wt.repeat.set(N / 2, WALL_H / 2);
     room.wallMat.map = wt;
     room.wallMat.needsUpdate = true;
+    const ct = ceilingTexture(preview.ceiling ?? home.ceiling ?? 'ceil_plain');
+    ct.repeat.set(N / 2, N / 2);
+    room.ceilingMat.map = ct;
+    room.ceilingMat.needsUpdate = true;
   }
   /** Try on a floor/wall (id), or stop trying one on (id null). No field: stop trying everything. */
   function setPreview(field, id = null) {
@@ -346,13 +383,16 @@ export function house(stage) {
     m.visible = true;
     if (kindOf(placing.id) === 'wall') {
       m.scale.set(f.w, 1.1, 1);
-      if (it.r % 2 === 0) { m.rotation.set(0, 0, 0); m.position.set(it.x + f.w / 2, WALL_Y, 0.02); }
-      else { m.rotation.set(0, Math.PI / 2, 0); m.position.set(0.02, WALL_Y, it.y + f.w / 2); }
+      const r = it.r % 4;
+      if (r === 0) { m.rotation.set(0, 0, 0); m.position.set(it.x + f.w / 2, WALL_Y, 0.02); }
+      else if (r === 1) { m.rotation.set(0, Math.PI / 2, 0); m.position.set(0.02, WALL_Y, it.y + f.w / 2); }
+      else if (r === 2) { m.rotation.set(0, Math.PI, 0); m.position.set(it.x + f.w / 2, WALL_Y, N - 0.02); }
+      else { m.rotation.set(0, -Math.PI / 2, 0); m.position.set(N - 0.02, WALL_Y, it.y + f.w / 2); }
     } else {
       const [w, d] = footprint(it);
       m.rotation.set(-Math.PI / 2, 0, 0);
       m.scale.set(w, d, 1);
-      m.position.set(it.x + w / 2, 0.02, it.y + d / 2);
+      m.position.set(it.x + w / 2, 0.02, it.y + d / 2); // (ceiling items: marked on the floor right below)
     }
   }
 
@@ -367,11 +407,14 @@ export function house(stage) {
     const f = FURN[placing.id];
     stage.raycaster.setFromCamera(stage.mouse, stage.camera);
     if (kindOf(placing.id) === 'wall') {
-      const h = stage.raycaster.intersectObjects([room.walls.back.face, room.walls.left.face])[0];
+      const faces = [room.walls.back.face, room.walls.left.face, ...room.walls.front.faces, room.walls.right.face];
+      const h = stage.raycaster.intersectObjects(faces.filter((o) => o.parent.visible && o.parent.parent.visible !== false))[0];
       if (!h) { placing.x = -1; return; }
       const local = room.group.worldToLocal(h.point.clone());
-      if (h.object === room.walls.back.face) { placing.r = 0; placing.y = 0; placing.x = Math.max(0, Math.min(N - f.w, Math.round(local.x - f.w / 2))); }
-      else { placing.r = 1; placing.x = 0; placing.y = Math.max(0, Math.min(N - f.w, Math.round(local.z - f.w / 2))); }
+      const r = h.object === room.walls.back.face ? 0 : h.object === room.walls.left.face ? 1 : h.object === room.walls.right.face ? 3 : 2;
+      placing.r = r;
+      if (r % 2 === 0) { placing.y = 0; placing.x = Math.max(0, Math.min(N - f.w, Math.round(local.x - f.w / 2))); }
+      else { placing.x = 0; placing.y = Math.max(0, Math.min(N - f.w, Math.round(local.z - f.w / 2))); }
       return;
     }
     const p = stage.pointerOnPlane(0);
@@ -509,7 +552,7 @@ export function house(stage) {
     side.classList.toggle('hidden', !sideOpen);
     if (sideOpen) { renderTabs(); renderPanel(); }
     hint.innerHTML = !home ? 'Knocking on the door…'
-      : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point at the back or left wall' : ''}`
+      : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point at any wall' : kindOf(placing.id) === 'ceiling' ? ' · it hangs from the ceiling above the green square' : ''}`
         : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
           : 'Walk around with <kbd>WASD</kbd> · <kbd>E</kbd> uses furniture (sit on chairs!) · head to the front door to leave';
   }
@@ -599,6 +642,7 @@ export function house(stage) {
       <div class="wd-label">Furniture</div><div class="furni-grid">${furn.map((f) => shopTile(f, 'furni')).join('')}</div>
       <div class="wd-label">Floors</div><div class="furni-grid">${CATALOG.floors.filter((d) => !d.free).map((d) => shopTile(d, 'floor')).join('')}</div>
       <div class="wd-label">Wallpaper</div><div class="furni-grid">${CATALOG.walls.filter((d) => !d.free).map((d) => shopTile(d, 'wall')).join('')}</div>
+      <div class="wd-label">Ceilings</div><div class="furni-grid">${CATALOG.ceilings.filter((d) => !d.free).map((d) => shopTile(d, 'ceiling')).join('')}</div>
       <div class="wd-label">Earn these around the zone</div><div class="furni-grid">${earn.map((f) => shopTile(f, 'furni')).join('')}</div>`;
   }
 
@@ -607,14 +651,15 @@ export function house(stage) {
       <button class="style-opt ${home?.[field] === d.id && !preview[field] ? 'on' : ''} ${isTrying(d.id) ? 'previewing' : ''} ${ownsDeco(d) ? '' : 'locked'}" data-style="${field}:${d.id}" title="${esc(d.name)}">
         <span class="style-sw" style="${decoBg(d.id)}"></span><span>${esc(d.name)}</span>
         <small>${ownsDeco(d) ? (home?.[field] === d.id ? '✓ Using' : '') : isTrying(d.id) ? '👀 Trying on' : `🪙 ${fmt(d.price)}`}</small></button>`).join('');
-    const all = [...CATALOG.floors, ...CATALOG.walls];
+    const all = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings];
     const bar = Object.entries(preview).map(([field, id]) => {
       const pd = all.find((x) => x.id === id);
-      return pd ? `<div class="preview-bar"><span>👀 Trying on <b>${esc(pd.name)}</b> ${field === 'floor' ? 'floor' : 'wallpaper'}</span>
+      return pd ? `<div class="preview-bar"><span>👀 Trying on <b>${esc(pd.name)}</b> ${field === 'floor' ? 'floor' : field === 'ceiling' ? 'ceiling' : 'wallpaper'}</span>
         <button class="btn primary small" data-preview-buy="${field}">Buy · 🪙 ${fmt(pd.price)}</button><button class="btn ghost small" data-preview-stop="${field}">Put back</button></div>` : '';
     }).join('');
     panel.innerHTML = `${bar}<div class="wd-label">Floor</div><div class="style-grid">${pick(CATALOG.floors, 'floor')}</div>
-      <div class="wd-label">Wallpaper</div><div class="style-grid">${pick(CATALOG.walls, 'wall')}</div>`;
+      <div class="wd-label">Wallpaper</div><div class="style-grid">${pick(CATALOG.walls, 'wall')}</div>
+      <div class="wd-label">Ceiling</div><div class="style-grid">${pick(CATALOG.ceilings, 'ceiling')}</div>`;
   }
 
   stage.hud.addEventListener('click', (e) => {
@@ -663,7 +708,7 @@ export function house(stage) {
       renderPanel();
     } else if (ds.style) {
       const [field, id] = ds.style.split(':');
-      const d = [...CATALOG.floors, ...CATALOG.walls].find((x) => x.id === id);
+      const d = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings].find((x) => x.id === id);
       if (!ownsDeco(d)) { setPreview(field, id); sfx('pop', { vol: 0.4 }); renderPanel(); return; }
       if (preview[field]) setPreview(field, null);
       if (home[field] !== id) { home[field] = id; commit('paint'); } else renderPanel();
@@ -701,7 +746,7 @@ export function house(stage) {
     while (room.items.children.length) room.items.remove(room.items.children[0]);
     stage.interactables = stage.interactables.filter((i) => !i.house);
     solids.length = 0;
-    Object.assign(walker.me, { x: W / 2, z: W - 1.2, heading: Math.PI });
+    Object.assign(walker.me, { x: W / 2, z: W - 4.2, heading: Math.PI });
     net.send('scene', { scene: `house:${k}` });
     net.send('house_get', { k });
     sfx('knock');
@@ -717,7 +762,7 @@ export function house(stage) {
   const off = [
     net.on('player', (m) => {
       if (m.p.key !== S.me || !buyThenUse || !home || !mine()) return;
-      const d = [...CATALOG.floors, ...CATALOG.walls].find((x) => x.id === buyThenUse.id);
+      const d = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings].find((x) => x.id === buyThenUse.id);
       if (!d || !ownsDeco(d)) return;
       const { field, id } = buyThenUse;
       buyThenUse = null;
@@ -734,7 +779,7 @@ export function house(stage) {
         if (echoes > 0 || saveTimer) { home.likes = m.house.likes; renderHeader(); return; }
       }
       const fresh = !home;
-      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, items: m.house.items });
+      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', items: m.house.items });
       const newLikes = home && m.house.likes.length > home.likes.length;
       if (same) home.likes = m.house.likes;
       else {
@@ -748,7 +793,7 @@ export function house(stage) {
     }),
     net.on('house_bought', (m) => {
       sfx('buy');
-      const item = FURN[m.id] ?? [...CATALOG.floors, ...CATALOG.walls].find((d) => d.id === m.id);
+      const item = FURN[m.id] ?? [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings].find((d) => d.id === m.id);
       toast(`🛒 Bought ${item?.name ?? 'it'}!${FURN[m.id] ? ' Find it in 🛋️ Items.' : ' Pick it in 🎨 Style.'}`);
     }),
     net.on('player', (m) => {
@@ -790,9 +835,10 @@ export function house(stage) {
         e.group.scale.set(1 + k * 0.25, 1 - k * 0.3, 1 + k * 0.25);
       }
     }
-    if (ghost?.visible) ghost.position.y = (kindOf(placing.id) === 'wall' ? WALL_Y : 0) + Math.sin(t * 6) * 0.03;
+    if (ghost?.visible) ghost.position.y = (kindOf(placing.id) === 'wall' ? WALL_Y : kindOf(placing.id) === 'ceiling' ? WALL_H : 0) + Math.sin(t * 6) * 0.03;
     // hide the walls between the camera and the room
     const c = stage.camera.position;
+    room.ceiling.visible = room.roof.visible = !edit;
     room.walls.front.grp.visible = c.z < W - 0.2;
     room.walls.back.grp.visible = c.z > 0.2;
     room.walls.left.grp.visible = c.x > 0.2;

@@ -280,7 +280,7 @@ function lighthouse(anim) {
 export function buildTown(scene, layout, anim, waterMat) {
   const group = new THREE.Group();
   scene.add(group);
-  for (const c of M.COTTAGES) group.add(cottage(c));
+  const cottages = M.COTTAGES.map((c) => { const g = cottage(c); group.add(g); return g; });
   for (const s of M.STALLS) group.add(stall(s));
   const place = (obj, { x, y }, ry = 0) => { const p = p3(x, y); obj.position.set(p.x, p.y, p.z); obj.rotation.y = ry; group.add(obj); return obj; };
   place(windmill(anim), M.LANDMARKS.windmill, 0.6);
@@ -378,5 +378,5 @@ export function buildTown(scene, layout, anim, waterMat) {
   // cottage windows glow in the evening
   const windows = [];
   group.traverse((o) => { if (o.userData.window) windows.push(o.material); });
-  return { group, windows: [...new Set(windows)] };
+  return { group, windows: [...new Set(windows)], cottages };
 }

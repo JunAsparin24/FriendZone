@@ -292,6 +292,9 @@ export function archery(stage) {
     reticle.classList.toggle('drawing', drawing);
     reticle.classList.toggle('shaky', drawing && drawT > 2.4);
     reticle.classList.toggle('hidden', round.done);
+    // between rounds, give the mouse pointer back so you can press Shoot again / Leave
+    const cur = round.done ? '' : 'none';
+    if (stage.canvas.style.cursor !== cur) stage.canvas.style.cursor = cur;
     const size = `${20 + s.amp * 1.2}px`;
     reticle.querySelector('i').style.width = reticle.querySelector('i').style.height = size;
     reticle.querySelector('.arch-meter b').style.width = `${Math.min(1, drawT / 0.8) * 100}%`;

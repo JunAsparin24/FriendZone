@@ -65,6 +65,78 @@ const SONGS = [
     ],
     form: [[4, 'hca'], [8, 'khpbcal'], [8, 'kshpbcal'], [4, 'ca'], [8, 'kshpbcal'], [4, 'khbca']],
   },
+  // ---- more daytime tracks ----
+  {
+    name: 'Arcade Sunrise', bpm: 128, root: 57, scale: 'minor', chords: ['6', '4', '1', '5'],
+    drums: { ...HOUSE, o: '......x.......x.' }, bass: 'x..xx..xx..xx..x', bassType: 'square', chordRhythm: 'x.......x.......', chordType: 'pad',
+    arp: 'xxxxxxxxxxxxxxxx', leadType: 'square',
+    lead: [
+      '6 . q . w . e . w . q . 6 . 5 .', '4 . 6 . q . - . 6 . 4 . 3 . - .', '1 . 3 . 5 . q . 5 . 3 . 5 . 6 .', '5 . 7 . w . - . 7 . 5 . 2 . - .',
+      'e . - . w . e . t . e . w . q .', 'q . - . 6 . q . w . q . 6 . 4 .', '3 . 5 . q . 5 . 3 . 5 . q . w .', 'w . - . 7 . - . 5 . - . 7 . - .',
+    ],
+    form: [[4, 'kha'], [8, 'kshbca'], [8, 'kshobcal'], [4, 'hca'], [8, 'kshobcal'], [4, 'khbc']],
+  },
+  {
+    name: 'Picnic Swing', bpm: 104, root: 62, scale: 'major', chords: ['1', '6', '2', '5'],
+    drums: { k: 'x.....x...x.....', s: '....x.......x...', h: 'x..xx..xx..xx..x' }, bass: 'x...5...x...5...', bassType: 'soft',
+    chordRhythm: '..x...x...x...x.', chordType: 'pluck', arp: null, leadType: 'keys', leadOct: 12,
+    lead: [
+      '3 . - 5 . - q . 7 . 6 . 5 . - .', '6 . - q . - w . q . 6 . 5 . - .', '4 . - 6 . - q . 6 . 4 . 2 . - .', '5 . - 7 . - w . - . 7 . 5 . - .',
+      'q . - w . - e . w . q . 6 . 5 .', '6 . 5 . 6 . q . w . - . q . - .', '4 . 5 . 6 . 4 . 2 . 4 . 6 . 7 .', 'q . - . - . 5 . q . - . - . . .',
+    ],
+    form: [[4, 'hc'], [8, 'kshbcl'], [8, 'kshbcl'], [4, 'hcl'], [8, 'kshbcl'], [4, 'hbc']],
+  },
+  {
+    name: 'Skyline Groove', bpm: 116, root: 53, scale: 'mixo', chords: ['1', '4', '7', '4'],
+    drums: { k: 'x..x..x...x..x..', s: '....x.......x...', h: '.x.x.x.x.x.x.x.x' }, bass: 'x.xox.x.x.xox.x.', chordRhythm: '.x.x...x.x...x..', chordType: 'stab',
+    arp: null, leadType: 'bell', leadOct: 12,
+    lead: [
+      '5 . - . 3 . 5 . q . - . 7 . 5 .', '6 . - . 4 . 6 . q . - . w . q .', '7 . - . 5 . 7 . w . - . q . 7 .', '6 . 5 . 4 . 3 . 4 . - . - . . .',
+      'q . - . 5 . q . w . - . e . w .', 'q . - . 6 . 4 . 6 . - . q . - .', '7 . - . w . 7 . 5 . - . 7 . w .', 'q . - . - . 5 . - . - . . . . .',
+    ],
+    form: [[4, 'khb'], [8, 'kshbcl'], [8, 'kshbcl'], [4, 'kbcl'], [8, 'kshbcl'], [4, 'khbc']],
+  },
+  // ---- night tracks: slow, soft and lo-fi ----
+  {
+    name: 'Moonlit Walk', night: true, bpm: 78, root: 57, scale: 'minor', chords: ['1', '6', '3', '7'],
+    drums: { k: 'x.........x.....', s: '....x.......x...', h: '..x...x...x...x.' }, drumSoft: true, bass: 'x.......x.......', bassType: 'soft',
+    chordRhythm: 'x...............', chordType: 'pad', arp: null, leadType: 'keys', leadOct: 12,
+    lead: [
+      '5 . - . - . 3 . 1 . - . - . . .', '3 . - . 5 . - . 6 . - . - . . .', '5 . - . 3 . - . 2 . 3 . - . . .', '2 . - . - . 7 . 2 . - . - . . .',
+      '5 . - . 6 . 5 . 3 . - . - . . .', '6 . - . q . - . 6 . 5 . - . . .', '5 . - . 3 . - . 5 . 6 . - . . .', '7 . - . - . 5 . - . - . . . . .',
+    ],
+    form: [[4, 'c'], [8, 'khbc'], [8, 'kshbcl'], [4, 'cl'], [8, 'kshbcl'], [4, 'bc']],
+  },
+  {
+    name: 'Fireflies', night: true, bpm: 84, root: 60, scale: 'major', chords: ['4', '1', '6', '5'],
+    drums: { k: 'x.....x.........', s: '....x.......x...', h: 'x.x.x.x.x.x.x.x.' }, drumSoft: true, bass: 'x.......x...x...', bassType: 'soft',
+    chordRhythm: 'x.......x.......', chordType: 'pad', arp: '..x...x...x...x.', leadType: 'bell', leadOct: 12,
+    lead: [
+      '6 . - . 5 . - . 3 . - . - . . .', '5 . - . 3 . - . 1 . 2 . 3 . . .', '3 . - . 5 . - . 6 . - . - . . .', '7 . - . 6 . - . 5 . - . - . . .',
+      'q . - . 7 . - . 6 . - . 5 . . .', '5 . - . 6 . - . q . - . - . . .', '6 . - . 5 . 3 . 5 . - . - . . .', '5 . - . - . 2 . - . - . . . . .',
+    ],
+    form: [[4, 'ca'], [8, 'khbca'], [8, 'kshbcal'], [4, 'cal'], [8, 'kshbcal'], [4, 'ca']],
+  },
+  {
+    name: 'Rainy Window', night: true, bpm: 72, root: 55, scale: 'minor', chords: ['1', '4', '6', '5'],
+    drums: { k: 'x.......x.x.....', s: '....x.......x...', h: '..x...x...x...x.' }, drumSoft: true, bass: 'x...........x...', bassType: 'soft',
+    chordRhythm: 'x.........x.....', chordType: 'pluck', arp: null, leadType: 'keys', leadOct: 12,
+    lead: [
+      '3 . - . 2 . 1 . - . - . 5 . - .', '4 . - . 3 . 4 . 6 . - . - . . .', '6 . - . 5 . 3 . - . 1 . - . . .', '2 . - . 3 . 5 . - . - . . . . .',
+      '3 . 5 . 6 . - . 5 . 3 . - . . .', '4 . 6 . q . - . 6 . 4 . - . . .', '3 . - . 1 . - . 6 . - . 5 . . .', '5 . - . - . 7 . - . - . . . . .',
+    ],
+    form: [[4, 'c'], [8, 'khbc'], [8, 'kshbcl'], [4, 'cl'], [8, 'kshbcl'], [4, 'c']],
+  },
+  {
+    name: 'Stargazing', night: true, bpm: 80, root: 62, scale: 'major', chords: ['1', '5', '6', '4'],
+    drums: { k: 'x.........x.....', s: '....x.......x...', h: '' }, drumSoft: true, bass: 'x.......x.......', bassType: 'soft',
+    chordRhythm: 'x...............', chordType: 'pad', arp: 'x...x...x...x...', leadType: 'bell', leadOct: 12,
+    lead: [
+      '3 . - . - . 5 . q . - . - . . .', '7 . - . - . 5 . 2 . - . - . . .', '6 . - . - . 3 . q . - . - . . .', '4 . - . 5 . 6 . 4 . - . - . . .',
+      'q . - . - . w . e . - . - . . .', 'w . - . - . 7 . 5 . - . - . . .', '6 . - . q . - . 6 . 5 . - . . .', '4 . - . - . 3 . - . - . . . . .',
+    ],
+    form: [[4, 'ca'], [8, 'kbca'], [8, 'ksbcal'], [4, 'cal'], [8, 'ksbcal'], [4, 'ca']],
+  },
   // ---- battle tracks ----
   {
     name: 'Boss Rumble', battle: true, bpm: 152, root: 52, scale: 'minor', chords: ['1', '6', '7', '1'],
@@ -89,7 +161,8 @@ const SONGS = [
 ];
 
 const PLAYLISTS = {
-  main: SONGS.filter((s) => !s.battle),
+  main: SONGS.filter((s) => !s.battle && !s.night),
+  night: SONGS.filter((s) => s.night),
   battle: SONGS.filter((s) => s.battle),
 };
 const FILL = '....x...x.x.xxxx';
@@ -170,6 +243,15 @@ const DRUMS = {
 };
 
 const LEADS = {
+  // a soft electric-piano: sine with a bell-ish overtone and gentle tremolo
+  keys: (A, d, t, f, dur) => {
+    voice(A, d, t, { type: 'sine', f, dur, vol: 0.12, attack: 0.01, release: 0.4, vib: 2 });
+    voice(A, d, t, { type: 'sine', f: f * 2, dur: dur * 0.3, vol: 0.03, attack: 0.005, release: 0.25 });
+  },
+  bell: (A, d, t, f) => {
+    voice(A, d, t, { type: 'sine', f, dur: 0.02, vol: 0.11, release: 0.9 });
+    voice(A, d, t, { type: 'sine', f: f * 3.01, dur: 0.01, vol: 0.025, release: 0.4 });
+  },
   square: (A, d, t, f, dur) => voice(A, d, t, { type: 'square', f, dur, vol: 0.055, lp: 3600, vib: 5, release: 0.08 }),
   saw: (A, d, t, f, dur) => {
     voice(A, d, t, { type: 'sawtooth', f, dur, vol: 0.05, lp: 2600, q: 2, vib: 4, release: 0.08 });
@@ -217,18 +299,22 @@ function holdLength(tokens, i) {
 let cur = null;              // the song that's playing
 let timer = 0;
 let context = 'main';
-const queue = { main: [], battle: [] };
+const queue = { main: [], battle: [], night: [] };
+let nightMode = false;
+// in town, night time swaps the daytime playlist for the chill one
+const effective = () => (context === 'main' && nightMode ? 'night' : context);
 const listeners = new Set();
 
 function nextSong() {
-  const list = PLAYLISTS[context];
-  if (!queue[context].length) {
+  const ctx = effective();
+  const list = PLAYLISTS[ctx];
+  if (!queue[ctx].length) {
     // reshuffle, never repeating the song that just ended
     const order = [...list].sort(() => Math.random() - 0.5);
     if (order.length > 1 && order[0] === cur?.song) order.push(order.shift());
-    queue[context] = order;
+    queue[ctx] = order;
   }
-  return queue[context].shift();
+  return queue[ctx].shift();
 }
 
 function play(song) {
@@ -306,7 +392,7 @@ function scheduleStep(c, t) {
     let pat = song.drums[k];
     if (k === 's' && c.sectionBar === bars - 1 && bars > 2) pat = FILL;
     const ch = pat?.[step];
-    if (ch === 'x' || ch === 'X') DRUMS[k](A, d, t, ch === 'X' || step % 4 === 0);
+    if (ch === 'x' || ch === 'X') DRUMS[k](A, d, t, !song.drumSoft && (ch === 'X' || step % 4 === 0));
   }
 
   if (has('b')) {
@@ -384,6 +470,12 @@ export const music = {
     if (ctx === context || !PLAYLISTS[ctx]) return;
     context = ctx;
     if (cur) play(nextSong());
+  },
+  /** Night falls / day breaks: switch to the chill (or daytime) playlist at the next song boundary… or now. */
+  setNight(on) {
+    if (on === nightMode) return;
+    nightMode = on;
+    if (cur && context === 'main') play(nextSong());
   },
   skip() {
     if (settings.musicOn && !settings.muted) play(nextSong());

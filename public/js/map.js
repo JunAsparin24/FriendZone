@@ -320,9 +320,13 @@ export const LANDMARKS = Object.fromEntries(Object.entries({
 }).map(([k, [x, y]]) => [k, { x: x * K, y: y * K }]));
 
 /** Where the leaderboard signs stand: beside the door of the Boss Cave and the Archery Range. */
-export const BOARD_SPOTS = [['boss', 1], ['archery', -1]].map(([id, side]) => {
-  const spot = SPOTS.find((s) => s.id === id), door = doorOf(spot), [dx, dy] = doorDir(spot);
-  return { id, x: door.x + dx * 70 - dy * 170 * side, y: door.y + dy * 70 + dx * 170 * side, dx, dy };
+// Leaderboard signs stand beside a building's door and face the people walking up to it
+export const BOARD_SPOTS = [['dungeon', 'boss', 1], ['archery', 'archery', -1], ['race', 'racing', 1], ['arenaWins', 'arena', -1],
+  ['arenaKills', 'arena', 1], ['fish', 'fishing', 1]].map(([id, spotId, side]) => {
+  const spot = SPOTS.find((s) => s.id === spotId), door = doorOf(spot), [dx, dy] = doorDir(spot);
+  const x = door.x + dx * 110 - dy * 230 * side, y = door.y + dy * 110 + dx * 230 * side;
+  const tx = door.x + dx * 420, ty = door.y + dy * 420; // where visitors come from
+  return { id, x, y, dx, dy, face: Math.atan2(tx - x, ty - y) };
 });
 
 /** Is this point clear of the square, buildings, streets, water and props (for scattering things)? */
@@ -488,6 +492,11 @@ const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
 
   const archery = SPOTS.find((s) => s.id === 'archery');
   const targets = [{ x: archery.x - 170, y: archery.y + 90 }, { x: archery.x - 220, y: archery.y + 250 }, { x: archery.x - 170, y: archery.y + 410 }];
+  // no tree grows into a lamp post
+  for (let i = trees.length - 1; i >= 0; i--) {
+    const t = trees[i];
+    if (lamps.some((l) => Math.hypot(l.x - t.x, l.y - t.y) < 30 + t.size * 1.4)) trees.splice(i, 1);
+  }
   return { trees, border, lamps, benches, targets, fences, solids };
 }
 

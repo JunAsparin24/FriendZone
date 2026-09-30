@@ -7,6 +7,10 @@ export const $ = (root, sel) => root.querySelector(sel);
 export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 /** Subscribe to several message types at once; returns one unsubscribe. */
+const CROSS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g fill="none" stroke-linecap="round"><circle cx="16" cy="16" r="9" stroke="#1a1330" stroke-width="5"/><path d="M16 2v8M16 22v8M2 16h8M22 16h8" stroke="#1a1330" stroke-width="5"/><circle cx="16" cy="16" r="9" stroke="#fff" stroke-width="2.5"/><path d="M16 2v8M16 22v8M2 16h8M22 16h8" stroke="#fff" stroke-width="2.5"/></g><circle cx="16" cy="16" r="2.2" fill="#ff5d73" stroke="#1a1330" stroke-width="1"/></svg>`;
+/** CSS cursor value for aiming games (falls back to the system crosshair). */
+export const CROSSHAIR = `url("data:image/svg+xml,${encodeURIComponent(CROSS_SVG)}") 16 16, crosshair`;
+
 export function listen(map) {
   const offs = Object.entries(map).map(([t, fn]) => net.on(t, fn));
   return () => offs.forEach((off) => off());

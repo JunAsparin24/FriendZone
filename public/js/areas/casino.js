@@ -123,7 +123,7 @@ function wheelFaceTex() {
 }
 
 const prizeTex = canvasTexture(512, 512, (ctx) => {
-  const WHEEL = [0, 1.5, 0, 2, 0, 0.5, 0, 2, 0, 1.5, 0, 0.5, 0, 2, 0, 5];
+  const WHEEL = [0, 1.5, 0, 0, 0.5, 0, 2, 0, 0, 1.5, 0, 0.5, 0, 0, 0, 5];
   const COL = { 0: '#2b2f4a', 0.5: '#6b7194', 1.5: '#39c6ff', 2: '#6ee7a0', 5: '#ffc53d' };
   const seg = TAU / WHEEL.length;
   ctx.translate(256, 256);

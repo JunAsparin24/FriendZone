@@ -10,7 +10,7 @@ import { ITEMS, CATALOG } from '../catalog.js';
 import { toon, basic, canvasTexture, outlineMaterial, additive, glowTexture, flameTexture, TAU } from '../three/materials.js';
 import { Sparks, FloatText, orb, groundRing, groundDisc } from '../three/fx.js';
 import { sfx, ambient } from '../sfx.js';
-import { listen, confetti } from './util.js';
+import { listen, confetti, CROSSHAIR } from './util.js';
 
 const W = 900, H = 600, K = 20, PR = 14, BULLET_SPEED = 680, BULLET_LIFE = 1.1, MOVE_SPEED = 250;
 const DASH_TIME = 0.18, DASH_SPEED = 820, DASH_COOLDOWN = 1.2;
@@ -553,7 +553,7 @@ export function boss(stage) {
     myHpEl.querySelector('i').style.width = `${Math.max(0, Math.min(100, (f.hp / max) * 100))}%`;
     myHpEl.querySelector('b').textContent = f.hp > 0 ? `❤ ${Math.ceil(f.hp)} / ${max}${poisoned ? '  ☠ poisoned' : ''}` : '💫 down';
   }
-  stage.canvas.style.cursor = 'crosshair';
+  stage.canvas.style.cursor = CROSSHAIR;
 
   const fighters = new Map();
   const mobs = new Map();

@@ -557,5 +557,5 @@ export function buildEnvironment(scene) {
     }
   }
 
-  return { update, groundCanvas, buildings, ground, redrawText, sky, sunGlow, lit, windows: town.windows };
+  return { update, groundCanvas, buildings, solidsForCamera: [...buildings, ...town.cottages], ground, redrawText, sky, sunGlow, lit, windows: town.windows };
 }

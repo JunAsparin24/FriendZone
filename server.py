@@ -74,10 +74,32 @@ RACE_PRIZES = [(150, 40), (80, 25), (50, 15)]  # (coins, xp) by place
 RACE_PRIZE_REST = (25, 10)
 RACE_PRIZE_SOLO = (40, 15)
 
-ARENA_W, ARENA_H = 900, 600
+ARENA_W, ARENA_H = 1200, 900     # every map is this size (arena px; 20 px = 1 world unit)
 ARENA_HP = 3
-ARENA_TARGET = 5
-ARENA_SPAWNS = [(70, 70), (830, 70), (70, 530), (830, 530), (450, 60), (450, 540), (60, 300), (840, 300)]
+ARENA_TARGET = 7
+ARENA_BREAK = 10                   # seconds between rounds (the scoreboard shows)
+# The maps rotate every round. Walls are (x, y, w, h) rectangles, full height in 3D.
+ARENA_MAPS = [
+    {"id": "colosseum", "name": "Colosseum", "theme": "sand",
+     "walls": [(250, 180, 90, 90), (860, 180, 90, 90), (250, 630, 90, 90), (860, 630, 90, 90), (540, 400, 120, 100),
+               (560, 120, 80, 30), (560, 750, 80, 30)],
+     "spawns": [(80, 80), (1120, 80), (80, 820), (1120, 820), (600, 60), (600, 840), (60, 450), (1140, 450)]},
+    {"id": "maze", "name": "Hedge Maze", "theme": "hedge",
+     "walls": [(180, 0, 40, 330), (180, 570, 40, 330), (980, 0, 40, 330), (980, 570, 40, 330), (380, 200, 440, 40),
+               (380, 660, 440, 40), (380, 240, 40, 160), (780, 500, 40, 160), (580, 380, 40, 140), (0, 430, 120, 40),
+               (1080, 430, 120, 40)],
+     "spawns": [(90, 90), (1110, 90), (90, 810), (1110, 810), (600, 110), (600, 790), (300, 450), (900, 450)]},
+    {"id": "docks", "name": "Crate Docks", "theme": "docks",
+     "walls": [(200, 150, 80, 80), (280, 150, 80, 80), (840, 150, 80, 80), (840, 230, 80, 80), (520, 300, 160, 80),
+               (520, 520, 160, 80), (200, 670, 80, 80), (920, 670, 80, 80), (840, 670, 80, 80), (100, 400, 60, 100),
+               (1040, 400, 60, 100), (380, 420, 60, 60), (760, 420, 60, 60)],
+     "spawns": [(70, 70), (1130, 70), (70, 830), (1130, 830), (600, 60), (600, 840), (450, 250), (750, 650)]},
+    {"id": "cross", "name": "Crossroads", "theme": "stone",
+     "walls": [(0, 0, 360, 260), (840, 0, 360, 260), (0, 640, 360, 260), (840, 640, 360, 260), (560, 390, 80, 120),
+               (440, 430, 80, 40), (680, 430, 80, 40), (160, 400, 60, 100), (980, 400, 60, 100), (560, 120, 80, 60),
+               (560, 720, 80, 60)],
+     "spawns": [(600, 60), (600, 840), (60, 450), (1140, 450), (420, 320), (780, 580), (420, 580), (780, 320)]},
+]
 
 # Dungeon (Boss Cave): a co-op climb. Every run starts on floor 1: clear the monsters on each floor,
 # everyone picks an upgrade, and the group goes deeper. Every third floor is a boss. The run ends
@@ -145,7 +167,6 @@ UPGRADES = {
     "venom": {"name": "Venom Rounds", "emoji": "🧪", "desc": "Hits poison enemies; poison stacks up to 5 times", "max": 3},
 }
 
-ARENA_PILLARS = [(200, 140, 70, 60), (630, 140, 70, 60), (200, 400, 70, 60), (630, 400, 70, 60), (405, 265, 90, 70)]
 ARENA_ITEMS = ("heal", "rapid", "shield", "speed")
 ARENA_ITEM_EVERY = 6
 ARENA_MAX_ITEMS = 3
@@ -227,6 +248,8 @@ RODS = {r["id"]: r for r in CATALOG["rods"]}
 FURN = {f["id"]: f for f in CATALOG["furniture"]}
 FLOORS = {f["id"]: f for f in CATALOG["floors"]}
 WALLS = {f["id"]: f for f in CATALOG["walls"]}
+CEILINGS = {f["id"]: f for f in CATALOG["ceilings"]}
+HOUSE_DOOR = (4, 6)  # the front door's columns (nothing hangs on the wall there)
 LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura", "pet")
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
                "shoeColor": "clothColors", "eyeColor": "eyeColors"}
@@ -239,7 +262,7 @@ STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBe
 SLOT_SYMBOLS = ["🍒", "🍋", "🔔", "⭐", "💎", "7️⃣"]
 SLOT_WEIGHTS = [30, 25, 20, 13, 8, 4]
 SLOT_TRIPLE = {"🍒": 5, "🍋": 8, "🔔": 12, "⭐": 20, "💎": 40, "7️⃣": 77}
-WHEEL = [0, 1.5, 0, 2, 0, 0.5, 0, 2, 0, 1.5, 0, 0.5, 0, 2, 0, 5]  # multipliers, clockwise from the top
+WHEEL = [0, 1.5, 0, 0, 0.5, 0, 2, 0, 0, 1.5, 0, 0.5, 0, 0, 0, 5]  # multipliers, clockwise from the top (pays back ~69%)
 MAX_BET = 5000
 BJ_RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 BJ_SUITS = ["♠", "♥", "♦", "♣"]
@@ -508,7 +531,7 @@ def owns(p, item_id):
 
 def owns_deco(p, deco_id):
     """Floors and wallpapers: free ones, or bought (stored in the furniture inventory)."""
-    deco = FLOORS.get(deco_id) or WALLS.get(deco_id)
+    deco = FLOORS.get(deco_id) or WALLS.get(deco_id) or CEILINGS.get(deco_id)
     return bool(deco) and (deco.get("free") or p["furni"].get(deco_id, 0) > 0)
 
 
@@ -520,9 +543,11 @@ def met(p, cond):
 
 def clean_house(p, data):
     """Validate a house layout from the client: ownership, bounds and overlaps."""
-    floor, wall = data.get("floor"), data.get("wall")
+    floor, wall, ceiling = data.get("floor"), data.get("wall"), data.get("ceiling") or "ceil_plain"
     if floor not in FLOORS or not owns_deco(p, floor) or wall not in WALLS or not owns_deco(p, wall):
         raise GameError("You don't own that floor or wallpaper yet.")
+    if ceiling not in CEILINGS or not owns_deco(p, ceiling):
+        raise GameError("You don't own that ceiling yet.")
     items = data.get("items")
     if not isinstance(items, list) or len(items) > HOUSE_MAX_ITEMS:
         raise GameError(f"A house can hold up to {HOUSE_MAX_ITEMS} things.")
@@ -537,13 +562,14 @@ def clean_house(p, data):
             raise GameError(f"You don't have another {f['name']}.")
         kind = f.get("kind", "floor")
         if kind == "wall":
-            # r 0: on the back wall at column x; r 1: on the left wall at row y
-            r %= 2
-            start = x if r == 0 else y
-            x, y = (x, 0) if r == 0 else (0, y)
+            # which wall: r 0 back (column x), 1 left (row y), 2 front (column x), 3 right (row y)
+            start = x if r % 2 == 0 else y
+            x, y = (x, 0) if r % 2 == 0 else (0, y)
             cells = {("wall", r, start + i) for i in range(f["w"])}
             if start < 0 or start + f["w"] > HOUSE_SIZE:
                 raise GameError("That doesn't fit on the wall.")
+            if r == 2 and start < HOUSE_DOOR[1] and start + f["w"] > HOUSE_DOOR[0]:
+                raise GameError("That's where the door is.")
         else:
             w, d = (f["w"], f["d"]) if r % 2 == 0 else (f["d"], f["w"])
             if x < 0 or y < 0 or x + w > HOUSE_SIZE or y + d > HOUSE_SIZE:
@@ -553,12 +579,12 @@ def clean_house(p, data):
             raise GameError("Things can't overlap.")
         taken |= cells
         clean_items.append({"id": f["id"], "x": x, "y": y, "r": r})
-    return {"floor": floor, "wall": wall, "items": clean_items}
+    return {"floor": floor, "wall": wall, "ceiling": ceiling, "items": clean_items}
 
 
 def house_view(p):
     h = p["house"]
-    return {"floor": h["floor"], "wall": h["wall"], "items": h["items"], "likes": h["likes"]}
+    return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "items": h["items"], "likes": h["likes"]}
 
 
 def public(p, client):
@@ -609,6 +635,8 @@ class Room:
         self.feed = []
         self.race = {"id": 0, "state": "idle", "racers": {}, "order": [], "field": 0, "last": {}}
         self.arena = {}  # player key -> fighter state
+        self.arena_map = 0          # index into ARENA_MAPS
+        self.arena_break = 0.0      # while now < this, it's the scoreboard break between rounds
         self.boss = {"fighters": {}, "b": None, "task": None, "state": "lobby", "floor": 0, "ends": 0.0, "mobs": {},
                      "mob_id": 0, "queue": [], "spawn_at": 0.0, "dmg": {}, "ran": set(), "last": None}
         self.arena_items = {}
@@ -885,6 +913,12 @@ class Game:
             if look.get(field) not in {o["id"] for o in CATALOG[options]}:
                 raise GameError("Unknown body option.")
             new[field] = look[field]
+        for field in ("hatColor", "backColor"):  # optional: recolour a hat / back item
+            col = look.get(field) or ""
+            if col and col not in CATALOG["clothColors"]:
+                raise GameError("Unknown color.")
+            if col:
+                new[field] = col
         for slot in LOOK_SLOTS:
             item = ITEMS.get(look.get(slot))
             if not item or item["slot"] != slot:
@@ -914,15 +948,21 @@ class Game:
             raise GameError(f"A crate costs {price} coins.")
         if not c.ready("crate", 1.5):
             raise GameError("Hang on, still opening the last one!")
-        pool = [i for i in CATALOG["items"] if i.get("crate") and i["id"] not in p["owned"]]
-        if not pool:
-            raise GameError("You've already collected every crate item!")
+        # anything in the crate can come out, even things you already have: a duplicate
+        # gives you half the crate's price back instead
+        pool = [i for i in CATALOG["items"] if i.get("crate")]
         weights = {r: w for r, w in CATALOG["crate"]["weights"].items() if any(i["rarity"] == r for i in pool)}
         rarity = random.choices(list(weights), weights=list(weights.values()))[0]
         item = random.choice([i for i in pool if i["rarity"] == rarity])
         p["coins"] -= price
-        c.ws.send({"t": "crate_result", "id": item["id"]})
-        self.grant(c, item, "crate")
+        dupe = item["id"] in p["owned"]
+        refund = price // 2 if dupe else 0
+        c.ws.send({"t": "crate_result", "id": item["id"], "dupe": dupe, "refund": refund})
+        if dupe:
+            p["coins"] += refund
+            self.store.mark()
+        else:
+            self.grant(c, item, "crate")
         self.push_player(c.room, c.key)
 
     def on_pet_egg(self, c, m):
@@ -1246,7 +1286,7 @@ class Game:
         self.push_player(c.room, c.key)
 
     def on_archery(self, c, m):
-        if not c.ready("archery", 4):
+        if not c.ready("archery", 2):
             raise GameError("Catch your breath before the next round.")
         score = int(num(m.get("score", 0), 0, 50))
         best = c.player["stats"].get("archeryBest", 0)
@@ -1365,22 +1405,25 @@ class Game:
         natural = pv == 21 and len(h["player"]) == 2
         dealer_natural = bj_value(h["dealer"]) == 21 and len(h["dealer"]) == 2
         if pv <= 21 and not natural and not dealer_natural:
-            while bj_value(h["dealer"]) < 17:
+            # the house hits soft 17
+            while bj_value(h["dealer"]) < 17 or (bj_value(h["dealer"]) == 17 and bj_soft(h["dealer"])):
                 h["dealer"].append(self.bj_draw(h))
         dv = bj_value(h["dealer"])
         bet = h["bet"]
         if pv > 21:
             result, payout = "bust", 0
         elif natural and not dealer_natural:
-            result, payout = "blackjack", bet + bet * 3 // 2
+            result, payout = "blackjack", bet + bet * 6 // 5  # blackjack pays 6:5
         elif dealer_natural and not natural:
             result, payout = "dealer_bj", 0
         elif dv > 21:
             result, payout = "dealer_bust", bet * 2
         elif pv > dv:
             result, payout = "win", bet * 2
-        elif pv == dv:
+        elif pv == dv and pv >= 20:
             result, payout = "push", bet
+        elif pv == dv:
+            result, payout = "lose", 0  # the house wins ties below 20
         else:
             result, payout = "lose", 0
         h.update(done=True, result=result, payout=payout)
@@ -1529,29 +1572,39 @@ class Game:
     # ---- arena ---------------------------------------------------------------
 
     @staticmethod
+    def arena_map(room):
+        return ARENA_MAPS[room.arena_map % len(ARENA_MAPS)]
+
+    @staticmethod
     def arena_spawn_point(room, key):
         """The spawn point farthest from every other living fighter."""
+        spawns = Game.arena_map(room)["spawns"]
         others = [(f["x"], f["y"]) for k, f in room.arena.items() if k != key and f["hp"] > 0]
         if not others:
-            return random.choice(ARENA_SPAWNS)
-        return max(ARENA_SPAWNS, key=lambda s: min(math.dist(s, o) for o in others) + random.random())
+            return random.choice(spawns)
+        return max(spawns, key=lambda s: min(math.dist(s, o) for o in others) + random.random())
 
     @staticmethod
     def fighter_view(f):
-        return {"x": f["x"], "y": f["y"], "a": f["a"], "hp": f["hp"], "score": f["score"]}
+        return {"x": f["x"], "y": f["y"], "a": f["a"], "hp": f["hp"], "score": f["score"], "deaths": f["deaths"]}
+
+    def arena_view(self, room):
+        mp = self.arena_map(room)
+        return {"t": "arena", "players": {k: self.fighter_view(f) for k, f in room.arena.items()},
+                "target": ARENA_TARGET, "hp": ARENA_HP, "items": list(room.arena_items.values()),
+                "map": {"id": mp["id"], "name": mp["name"], "theme": mp["theme"], "walls": mp["walls"], "w": ARENA_W, "h": ARENA_H},
+                "brk": round(max(0.0, room.arena_break - time.monotonic()), 2)}
 
     def arena_join(self, c):
         room = c.room
         x, y = self.arena_spawn_point(room, c.key)
-        room.arena[c.key] = {"x": x, "y": y, "a": 0, "hp": ARENA_HP, "score": 0,
+        room.arena[c.key] = {"x": x, "y": y, "a": 0, "hp": ARENA_HP, "score": 0, "deaths": 0,
                              "spawn": time.monotonic(), "hits": set()}
-        players = {k: self.fighter_view(f) for k, f in room.arena.items()}
-        c.ws.send({"t": "arena", "players": players, "target": ARENA_TARGET, "hp": ARENA_HP,
-                   "items": list(room.arena_items.values())})
+        c.ws.send(self.arena_view(room))
         if not room.arena_spawning:
             room.arena_spawning = True
             asyncio.get_running_loop().call_later(3, self.arena_item_tick, room)
-        room.broadcast({"t": "arena_add", "k": c.key, **players[c.key]}, scene="arena", exclude=c)
+        room.broadcast({"t": "arena_add", "k": c.key, **self.fighter_view(room.arena[c.key])}, scene="arena", exclude=c)
 
     def arena_leave(self, c):
         if c.room.arena.pop(c.key, None) is not None:
@@ -1567,7 +1620,7 @@ class Game:
 
     def on_arena_shoot(self, c, m):
         f = c.room.arena.get(c.key)
-        if not f or f["hp"] <= 0 or not c.ready("shoot", 0.22):
+        if not f or f["hp"] <= 0 or not c.ready("shoot", 0.1) or time.monotonic() < c.room.arena_break:
             return
         c.room.broadcast({"t": "arena_shot", "k": c.key, "id": int(num(m["id"], 0, 1e9)),
                           "x": num(m["x"], 0, ARENA_W), "y": num(m["y"], 0, ARENA_H), "a": num(m["a"], -7, 7)},
@@ -1579,7 +1632,7 @@ class Game:
         by = str(m.get("by", ""))
         victim, shooter = room.arena.get(c.key), room.arena.get(by)
         hit_id = (by, m.get("id"))
-        if not victim or not shooter or by == c.key or victim["hp"] <= 0:
+        if not victim or not shooter or by == c.key or victim["hp"] <= 0 or time.monotonic() < room.arena_break:
             return
         if time.monotonic() - victim["spawn"] < 1.5 or hit_id in victim["hits"]:
             return
@@ -1591,28 +1644,51 @@ class Game:
         if victim["hp"] > 0:
             return
         shooter["score"] += 1
+        victim["deaths"] += 1
         killer = room.clients.get(by)
         if killer:
             self.reward(killer, coins=20, xp=15, elims=1)
-        room.broadcast({"t": "arena_ko", "k": c.key, "by": by, "score": shooter["score"]}, scene="arena")
-        asyncio.get_running_loop().call_later(2, self.arena_respawn, room, c.key)
+        room.broadcast({"t": "arena_ko", "k": c.key, "by": by, "score": shooter["score"], "deaths": victim["deaths"]}, scene="arena")
         if shooter["score"] >= ARENA_TARGET:
-            for f in room.arena.values():
-                f["score"] = 0
-            if killer:
-                self.reward(killer, coins=200, xp=100, wins=1, arenaWins=1)
-                self.post_feed(room, f"⚔️ {killer.player['name']} won an Arena round!")
-            room.broadcast({"t": "arena_round", "winner": by}, scene="arena")
+            self.arena_round_over(room, by)
+        else:
+            asyncio.get_running_loop().call_later(2, self.arena_respawn, room, c.key)
+
+    def arena_round_over(self, room, winner):
+        """A round is won: everyone sees the kills/deaths board for ARENA_BREAK seconds, then a new map."""
+        killer = room.clients.get(winner)
+        if killer:
+            self.reward(killer, coins=200, xp=100, wins=1, arenaWins=1)
+            self.post_feed(room, f"⚔️ {killer.player['name']} won an Arena round!")
+        board = sorted(({"k": k, "kills": f["score"], "deaths": f["deaths"]} for k, f in room.arena.items()),
+                       key=lambda e: (-e["kills"], e["deaths"]))
+        room.arena_break = time.monotonic() + ARENA_BREAK
+        nxt = ARENA_MAPS[(room.arena_map + 1) % len(ARENA_MAPS)]
+        room.broadcast({"t": "arena_round", "winner": winner, "board": board, "secs": ARENA_BREAK, "next": nxt["name"]}, scene="arena")
+        asyncio.get_running_loop().call_later(ARENA_BREAK, self.arena_next_round, room)
+
+    def arena_next_round(self, room):
+        room.arena_map = (room.arena_map + 1) % len(ARENA_MAPS)
+        room.arena_items.clear()
+        now = time.monotonic()
+        for k in list(room.arena):
+            f = room.arena[k]
+            f.update(hp=ARENA_HP, score=0, deaths=0, spawn=now, hits=set())
+            f["x"], f["y"] = -999, -999
+        for k in list(room.arena):
+            room.arena[k]["x"], room.arena[k]["y"] = self.arena_spawn_point(room, k)
+        room.broadcast(self.arena_view(room), scene="arena")
 
     def arena_item_tick(self, room):
         if not room.arena:
             room.arena_spawning = False
             room.arena_items.clear()
             return
-        if len(room.arena_items) < ARENA_MAX_ITEMS:
-            for _ in range(20):
-                x, y = random.uniform(60, ARENA_W - 60), random.uniform(80, ARENA_H - 50)
-                if not any(px - 30 < x < px + pw + 30 and py - 30 < y < py + ph + 50 for px, py, pw, ph in ARENA_PILLARS):
+        walls = self.arena_map(room)["walls"]
+        if len(room.arena_items) < ARENA_MAX_ITEMS and time.monotonic() >= room.arena_break:
+            for _ in range(40):
+                x, y = random.uniform(80, ARENA_W - 80), random.uniform(80, ARENA_H - 80)
+                if not any(px - 40 < x < px + pw + 40 and py - 40 < y < py + ph + 40 for px, py, pw, ph in walls):
                     break
             room.arena_item_seq += 1
             item = {"id": room.arena_item_seq, "kind": random.choice(ARENA_ITEMS), "x": round(x), "y": round(y)}
@@ -1634,7 +1710,7 @@ class Game:
 
     def arena_respawn(self, room, key):
         f = room.arena.get(key)
-        if not f or f["hp"] > 0:
+        if not f or f["hp"] > 0 or time.monotonic() < room.arena_break:
             return
         f["x"], f["y"] = self.arena_spawn_point(room, key)
         f["hp"], f["spawn"] = ARENA_HP, time.monotonic()
@@ -2779,7 +2855,7 @@ class Game:
     def on_house_buy(self, c, m):
         p = c.player
         item_id = str(m.get("id", ""))
-        item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id)
+        item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id) or CEILINGS.get(item_id)
         if not item or "price" not in item:
             raise GameError("That isn't for sale.")
         have = p["furni"].get(item_id, 0)

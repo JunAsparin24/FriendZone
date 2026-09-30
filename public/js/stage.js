@@ -385,9 +385,9 @@ class Stage {
       let t = 1;
       if (dx > 0) t = Math.min(t, (room.maxX - m - o.cur.x) / dx); else if (dx < 0) t = Math.min(t, (room.minX + m - o.cur.x) / dx);
       if (dz > 0) t = Math.min(t, (room.maxZ - m - o.cur.z) / dz); else if (dz < 0) t = Math.min(t, (room.minZ + m - o.cur.z) / dz);
-      if (dy > 0) t = Math.min(t, (room.maxY - o.cur.y) / dy);
       t = Math.max(0.12, t);
-      dx *= t; dy *= t; dz *= t;
+      dx *= t; dz *= t;
+      dy = Math.min(dy, room.maxY - o.cur.y); // stay under the ceiling (just flatter, not closer)
     }
     this.camera.position.set(o.cur.x + dx, Math.max(0.5, o.cur.y + dy), o.cur.z + dz);
     this.camera.lookAt(o.cur.x, o.cur.y + Math.max(0, LOW - o.pitch) * o.dist * 1.1, o.cur.z);

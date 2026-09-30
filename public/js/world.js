@@ -7,6 +7,7 @@ import * as M from './map.js';
 import { Character } from './three/character.js';
 import { buildEnvironment } from './three/environment.js';
 import { buildLeaderboards } from './three/leaderboards.js';
+import { music } from './music.js';
 import { DayNight, timeOfDay, dayPhase } from './three/daynight.js';
 import { puffTexture, basic } from './three/materials.js';
 import { sfx, ambient } from './sfx.js';
@@ -809,9 +810,23 @@ export class World {
     // below a low orbit the camera stays near the ground and tilts its gaze upwards instead, so you can
     // look up at tall buildings (but never straight up)
     const c = this.camTarget, orbit = Math.max(this.pitch, PITCH_LOW), cp = Math.cos(orbit);
-    const cx = c.x + Math.sin(this.yaw) * cp * this.dist, cz = c.z + Math.cos(this.yaw) * cp * this.dist;
+    let cx = c.x + Math.sin(this.yaw) * cp * this.dist, cz = c.z + Math.cos(this.yaw) * cp * this.dist;
     let cy = c.y + Math.sin(orbit) * this.dist;
     cy = Math.max(cy, M.groundAt(M.CENTER.x + cx * M.PX, M.CENTER.y + cz * M.PX) + 0.6);
+    // keep buildings from getting between you and the camera: pull in in front of any wall in the way
+    const want = new THREE.Vector3(cx, cy, cz), from = new THREE.Vector3(c.x, c.y + 0.4, c.z);
+    const toCam = want.clone().sub(from), full = toCam.length();
+    if ((this.camRayT = (this.camRayT ?? 0) + dt) > 0.05 || this.camBlock == null) {
+      this.camRayT = 0;
+      this.raycaster.set(from, toCam.clone().normalize());
+      this.raycaster.camera = this.camera; // (sprites need it)
+      this.raycaster.far = full;
+      const hit = this.raycaster.intersectObjects(this.env.solidsForCamera ?? this.env.buildings, true).find((h) => h.object.visible && !h.object.isSprite);
+      this.raycaster.far = Infinity;
+      this.camBlock = hit ? Math.max(1.2, hit.distance - 0.4) : full;
+    }
+    this.camLen = this.camLen == null ? this.camBlock : this.camLen + (Math.min(this.camBlock, full) - this.camLen) * Math.min(1, dt * (this.camBlock < this.camLen ? 18 : 4));
+    if (this.camLen < full - 0.01) { const k = this.camLen / full; cx = from.x + toCam.x * k; cy = from.y + toCam.y * k; cz = from.z + toCam.z * k; }
     this.camera.position.set(cx, cy, cz);
     const lift = Math.max(0, PITCH_LOW - this.pitch) * this.dist * 1.1;
     this.camera.lookAt(c.x, c.y + lift, c.z);
@@ -821,6 +836,7 @@ export class World {
       const tod = timeOfDay(dn.phase);
       this.clockEl.textContent = `${tod.icon} ${tod.clock}`;
       this.clockEl.classList.toggle('night', tod.night);
+      music.setNight(!!tod.night && settings.dayNight !== false); // chill music after dark
     }
   }
 

@@ -5,7 +5,7 @@ import { S, esc, nameOf, colorOf, fmt } from '../state.js';
 import { portraitInto } from '../avatar.js';
 import { iconSvg } from '../icons.js';
 import { sfx } from '../sfx.js';
-import { $, listen, hiDpiCanvas, loop, confetti } from './util.js';
+import { $, listen, hiDpiCanvas, loop, confetti, CROSSHAIR } from './util.js';
 
 const CW = 800, CH = 540;
 const COLORS = ['#1a1330', '#ffffff', '#8a8fa8', '#e0463c', '#ff9f43', '#ffd84d', '#6ee7a0', '#2f9e44', '#39c6ff', '#3b5bdb', '#b77bff', '#ff5dac', '#8b5a2b', '#f6c9a0'];
@@ -168,7 +168,7 @@ export function doodle(body) {
     tools.querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('on', !eraser && b.dataset.color === color));
     tools.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('on', Number(b.dataset.size) === size));
     tools.querySelector('[data-tool=eraser]').classList.toggle('primary', eraser);
-    canvas.style.cursor = amDrawer() ? (eraser ? 'cell' : 'crosshair') : 'default';
+    canvas.style.cursor = amDrawer() ? (eraser ? 'cell' : CROSSHAIR) : 'default';
   }
 
   // ---- chat -------------------------------------------------------------------------

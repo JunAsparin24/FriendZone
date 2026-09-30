@@ -9,13 +9,13 @@ import { sfx } from '../sfx.js';
 
 const SYMBOLS = ['🍒', '🍋', '🔔', '⭐', '💎', '7️⃣'];
 const CELL = 84;
-const WHEEL = [0, 1.5, 0, 2, 0, 0.5, 0, 2, 0, 1.5, 0, 0.5, 0, 2, 0, 5]; // must match server.py
+const WHEEL = [0, 1.5, 0, 0, 0.5, 0, 2, 0, 0, 1.5, 0, 0.5, 0, 0, 0, 5]; // must match server.py
 const WHEEL_COLORS = { 0: '#2b2f4a', 0.5: '#6b7194', 1.5: '#39c6ff', 2: '#6ee7a0', 5: '#ffc53d' };
 const rand = () => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
 
 const TITLES = { slots: 'Lucky Slots', wheel: 'Prize Wheel', coinflip: 'Coin Flip', blackjack: 'Blackjack', roulette: 'Roulette' };
 const BJ_RESULTS = {
-  blackjack: ['🃏 BLACKJACK! Pays 3 to 2', 'win'], win: ['You win!', 'win'], dealer_bust: ['Dealer busts, you win!', 'win'],
+  blackjack: ['🃏 BLACKJACK! Pays 6 to 5', 'win'], win: ['You win!', 'win'], dealer_bust: ['Dealer busts, you win!', 'win'],
   push: ['Push: your bet comes back.', ''], lose: ['Dealer wins.', 'lose'], bust: ['Bust! Over 21.', 'lose'], dealer_bj: ['Dealer has blackjack.', 'lose'],
 };
 const RED = new Set(['♥', '♦']);
@@ -62,7 +62,7 @@ export function casino(body, { game = null } = {}) {
           <button class="btn hidden" id="bjStand">Stand</button>
           <button class="btn hidden" id="bjDouble">Double</button>
         </div>
-        <p class="muted small center">Get closer to 21 than the dealer without going over. Dealer stands on 17. Blackjack pays 3 to 2.</p>
+        <p class="muted small center">Get closer to 21 than the dealer without going over. Dealer hits soft 17, blackjack pays 6 to 5, and the house wins ties under 20.</p>
       </div>
       <div data-pane="roulette" class="hidden"></div>
     </div>

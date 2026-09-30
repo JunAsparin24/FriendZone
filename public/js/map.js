@@ -26,7 +26,7 @@ const PLAN_SPOTS = [
   { id: 'trading', emoji: '💰', name: 'Trading Post', kind: 'market', x: 1830, y: 1440, w: 190, h: 310, face: 'e' },
   { id: 'racing', emoji: '🏎️', name: 'Race Track', kind: 'garage', x: 2160, y: 200, w: 470, h: 250 },
   { id: 'boss', emoji: '👾', name: 'Boss Cave', kind: 'cave', x: 1140, y: 390, w: 320, h: 230 },
-  { id: 'bumper', emoji: '💥', name: 'Bumper Dome', kind: 'dome', x: 3000, y: 640, w: 260, h: 210 },
+  { id: 'arcade', emoji: '🕹️', name: 'Arcade', kind: 'arcade', x: 3000, y: 640, w: 260, h: 210 },
   { id: 'arena', emoji: '⚔️', name: 'Arena', kind: 'colosseum', x: 3480, y: 420, w: 470, h: 290 },
   { id: 'casino', emoji: '🎰', name: 'Casino', kind: 'casino', x: 3920, y: 1400, w: 250, h: 340, face: 'w' },
   { id: 'archery', emoji: '🏹', name: 'Archery Range', kind: 'range', x: 640, y: 1310, w: 220, h: 320, face: 'e' },
@@ -154,7 +154,7 @@ function closedSpline(ctrl, step = 22) {
 }
 const door = (id) => { const d = doorOf(SPOTS.find((s) => s.id === id)); return [d.x, d.y]; };
 const C = CENTER;
-const edge = (dx, dy) => [C.x + dx * (PLAZA_R + 20), C.y + dy * (PLAZA_R + 20)]; // a point just off the square
+const edge = (dx, dy) => { const l = Math.hypot(dx, dy) || 1; return [C.x + (dx / l) * (PLAZA_R - 40), C.y + (dy / l) * (PLAZA_R - 40)]; }; // starts under the brick square, so streets run right into it
 const ROADS = [
   { name: 'Main Street', w: 1.1, lamps: true, ctrl: [edge(1, 0.1), P(2950, 1640), P(3420, 1600), door('casino')] },
   { name: 'Speedway Road', w: 1, lamps: true, ctrl: [edge(0, -1), P(2410, 1250), P(2380, 800), door('racing')] },
@@ -166,7 +166,7 @@ const ROADS = [
   { name: 'Lakeside Walk', w: 0.8, ctrl: [P(1300, 1528), P(1180, 1780), P(1060, 1990), door('fishing')] },
   { name: 'Maple Lane', w: 0.9, lamps: true, ctrl: [edge(0, 1), P(2410, 1900), door('house')] },
   { name: 'Maple Lane', w: 0.85, ctrl: [P(1640, 2190), P(2050, 2200), P(2420, 2215), P(2850, 2210), P(3280, 2240), P(3560, 2330)] },
-  { name: 'Stadium Way', w: 0.9, lamps: true, ctrl: [P(2950, 1640), P(3060, 1260), door('bumper')] },
+  { name: 'Stadium Way', w: 0.9, lamps: true, ctrl: [P(2950, 1640), P(3060, 1260), door('arcade')] },
   { name: 'Stadium Way', w: 0.85, ctrl: [P(3060, 1260), P(3420, 1070), door('arena')] },
   { name: 'Pet Walk', w: 0.7, ctrl: [P(3370, 1618), door('pets')] },
   { name: 'Studio Walk', w: 0.7, ctrl: [door('doodle'), P(2190, 1420), edge(-0.62, -0.78)] },
@@ -319,6 +319,12 @@ export const LANDMARKS = Object.fromEntries(Object.entries({
   lighthouse: [470, 2640],
 }).map(([k, [x, y]]) => [k, { x: x * K, y: y * K }]));
 
+/** Where the leaderboard signs stand: beside the door of the Boss Cave and the Archery Range. */
+export const BOARD_SPOTS = [['boss', 1], ['archery', -1]].map(([id, side]) => {
+  const spot = SPOTS.find((s) => s.id === id), door = doorOf(spot), [dx, dy] = doorDir(spot);
+  return { id, x: door.x + dx * 70 - dy * 170 * side, y: door.y + dy * 70 + dx * 170 * side, dx, dy };
+});
+
 /** Is this point clear of the square, buildings, streets, water and props (for scattering things)? */
 export function openGround(p, pad = 10) {
   if (Math.hypot(p.x - CENTER.x, p.y - CENTER.y) < PLAZA_R + 40) return false;
@@ -330,6 +336,7 @@ export function openGround(p, pad = 10) {
   const c = creekInfo(p.x, p.y);
   if (c && c.d < c.w + BANK_SLOPE + pad) return false;
   if (lakeDist(p.x, p.y) < 40 + pad) return false;
+  if (BOARD_SPOTS.some((b) => Math.hypot(p.x - b.x, p.y - b.y) < 110 + pad)) return false;
   return !nearPath(p, 38);
 }
 

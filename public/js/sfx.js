@@ -360,7 +360,12 @@ const SOUNDS = {
   revive: () => { tone({ f: 300, to: 1200, dur: 0.5, vol: 0.08 }); sparkle(0.3, 1, 7); },
   enrage: () => { SOUNDS.roar(); SOUNDS.warn(); tone({ type: 'square', f: 440, dur: 0.1, vol: 0.04, at: 0.3 }); },
 
-  // ---- bumper brawl ----
+  // ---- arcade ----
+  boing: () => { tone({ type: 'triangle', f: 300, to: 900, dur: 0.14, vol: 0.08 }); },
+  start: () => { seq([72, 76, 79, 84], { step: 0.07, dur: 0.12, type: 'square', vol: 0.05 }); },
+  tick: () => { tone({ type: 'square', f: 1200, dur: 0.02, vol: 0.04, lp: 4000 }); },
+
+  // ---- bumps and boosts (racing, arena) ----
   bonk: (o) => {
     const k = Math.min(1, (o.power ?? 1));
     tone({ type: 'triangle', f: 160 + k * 60, to: 420 + k * 200, dur: 0.12, vol: 0.12 + k * 0.1 });

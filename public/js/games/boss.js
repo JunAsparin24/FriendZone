@@ -19,12 +19,17 @@ const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 const THEMES = {
   slime: { floor: ['#3d7050', '#1b3a2a'], crystal: '#8dff9a', rock: '#3f6b4c', orb: '#3fcf5a', fog: '#10261a' },
   golem: { floor: ['#66637e', '#302e45'], crystal: '#ffb45a', rock: '#6d6a85', orb: '#ff8c2e', fog: '#1a1826' },
+  venom: { floor: ['#3d4a2a', '#141a0c'], crystal: '#9dff5a', rock: '#4a5a2e', orb: '#7dff3a', fog: '#0e140a' },
   lich: { floor: ['#34485a', '#0e1820'], crystal: '#7dffd0', rock: '#3b4a58', orb: '#5dffb0', fog: '#081418' },
   dragon: { floor: ['#4a2b66', '#170b26'], crystal: '#c77dff', rock: '#4b2d66', orb: '#d23cff', fog: '#140820' },
 };
-const BOSS_EMOJI = { slime: '🟢', golem: '🗿', lich: '💀', dragon: '🐉' };
-const UPGRADE_EMOJI = { dmg: '💥', rate: '⚡', multi: '🔱', speed: '👟', heart: '❤️', heal: '🩹', crit: '🍀', pierce: '🏹', dash: '💨', shield: '🫧', regen: '🍗', revive: '🌀', big: '🔵' };
-const UPGRADE_NAME = { dmg: 'Power Shot', rate: 'Rapid Fire', multi: 'Split Shot', speed: 'Swift Boots', heart: 'Extra Life', heal: 'Full Heal', crit: 'Lucky Shots', pierce: 'Piercing Rounds', dash: 'Quick Dash', shield: 'Bubble Shield', regen: 'Second Breakfast', revive: 'Second Wind', big: 'Big Bullets' };
+const BOSS_EMOJI = { slime: '🟢', golem: '🗿', venom: '🕷️', lich: '💀', dragon: '🐉' };
+const POISON = '#8dff3a';
+// elemental rounds: bullet colour, and the tint an enemy takes while it's burning / chilled / poisoned
+const FX_COLOR = { burn: '#ff7a2e', chill: '#8fe3ff', venom: '#8dff3a' };
+const bulletColor = (u, fallback) => (u.fire ? '#ff7a2e' : u.ice ? '#8fe3ff' : u.venom ? '#8dff3a' : fallback);
+const UPGRADE_EMOJI = { antidote: '🧪', dmg: '💥', rate: '⚡', multi: '🔱', speed: '👟', heart: '❤️', heal: '🩹', crit: '🍀', pierce: '🏹', dash: '💨', shield: '🫧', regen: '🍗', revive: '🌀', big: '🔵' };
+const UPGRADE_NAME = { dmg: 'Power Shot', rate: 'Rapid Fire', multi: 'Split Shot', speed: 'Swift Boots', heart: 'Vitality', antidote: 'Antidote', heal: 'Full Heal', crit: 'Lucky Shots', pierce: 'Piercing Rounds', dash: 'Quick Dash', shield: 'Bubble Shield', regen: 'Second Breakfast', revive: 'Second Wind', big: 'Big Bullets' };
 const to3 = (x, y) => [(x - W / 2) / K, (y - H / 2) / K];
 const OUT = outlineMaterial(0.05);
 
@@ -158,6 +163,46 @@ function buildSlime(r) {
       const sq = Math.sin(t * 5) * 0.05 + o.squash;
       body.scale.set(1 + sq, 1 - sq, 1 + sq);
       mat.color.set(o.enraged ? '#ff6b5d' : '#55d86a');
+    },
+  };
+}
+
+function buildVenom(r) {
+  const g = new THREE.Group();
+  const body = new THREE.Group();
+  g.add(body);
+  const shell = new THREE.MeshToonMaterial({ color: '#6a2f8a' });
+  const glow = new THREE.MeshBasicMaterial({ color: POISON });
+  add(body, new THREE.SphereGeometry(r * 0.75, 28, 20), shell, { p: [0, r * 1.0, -r * 0.55], s: [1, 0.85, 1.2] });
+  for (let i = 0; i < 4; i++) add(body, new THREE.SphereGeometry(r * 0.12, 10, 8), glow, { p: [(i % 2 ? 1 : -1) * r * 0.25, r * (1.35 + (i > 1 ? 0.2 : 0)), -r * (0.35 + i * 0.15)], s: [1, 0.5, 1], outline: false });
+  add(body, new THREE.SphereGeometry(r * 0.5, 24, 18), shell, { p: [0, r * 0.95, r * 0.4] });
+  const crown = toon('#8dff3a');
+  for (let i = 0; i < 3; i++) add(body, new THREE.ConeGeometry(r * 0.08, r * 0.3, 6), crown, { p: [(i - 1) * r * 0.18, r * 1.5, r * 0.4] });
+  eyes(body, r * 1.05, r * 0.82, r * 0.18, r * 0.12, '#1a0a20');
+  for (const s of [-1, 1]) add(body, new THREE.ConeGeometry(r * 0.07, r * 0.35, 6), toon('#e8e0ff'), { p: [s * r * 0.14, r * 0.62, r * 0.82], r: [Math.PI, 0, 0], outline: false });
+  const legs = [];
+  for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
+    const leg = new THREE.Group();
+    leg.position.set(s * r * 0.35, r * 0.95, r * (0.55 - i * 0.3));
+    leg.rotation.y = s * (0.3 - i * 0.35);
+    body.add(leg);
+    add(leg, new THREE.CylinderGeometry(r * 0.06, r * 0.05, r * 0.9, 8), new THREE.MeshToonMaterial({ color: '#3a1a4a' }), { p: [s * r * 0.35, r * 0.1, 0], r: [0, 0, s * -1.1] });
+    add(leg, new THREE.CylinderGeometry(r * 0.05, r * 0.02, r * 1.0, 8), new THREE.MeshToonMaterial({ color: '#3a1a4a' }), { p: [s * r * 0.82, -r * 0.45, 0], r: [0, 0, s * 0.35] });
+    legs.push({ leg, i, s });
+  }
+  const aura = new THREE.Sprite(additive(glowTexture, 0x8dff3a, 0.35));
+  aura.scale.setScalar(r * 0.09);
+  aura.position.set(0, r * 1.1, -r * 0.5);
+  body.add(aura);
+  return {
+    g, mats: [shell],
+    tick(t, o) {
+      const walk = o.moving ? 12 : 3;
+      legs.forEach(({ leg, i, s }) => { leg.rotation.x = Math.sin(t * walk + i * 1.7 + (s > 0 ? Math.PI : 0)) * 0.25; });
+      const sq = Math.sin(t * 3) * 0.03 + o.squash;
+      body.scale.set(1 + sq, 1 - sq, 1 + sq);
+      shell.color.set(o.enraged ? '#a8307a' : '#6a2f8a');
+      aura.material.opacity = 0.25 + Math.sin(t * 4) * 0.1;
     },
   };
 }
@@ -303,14 +348,14 @@ function buildLich(r) {
   };
 }
 
-const BUILD = { slime: buildSlime, golem: buildGolem, dragon: buildDragon, lich: buildLich };
+const BUILD = { slime: buildSlime, golem: buildGolem, venom: buildVenom, dragon: buildDragon, lich: buildLich };
 
 // ---------------------------------------------------------------------------
 // monsters (feet at the origin, facing +Z)
 // ---------------------------------------------------------------------------
 
-const MOB_R = { bat: 14, slimelet: 16, skeleton: 15, archer: 15, wisp: 16, brute: 24 };
-const MOB_NAME = { bat: 'Bat', slimelet: 'Slimelet', skeleton: 'Skeleton', archer: 'Skeleton Archer', wisp: 'Wisp', brute: 'Brute' };
+const MOB_R = { bat: 14, slimelet: 16, skeleton: 15, archer: 15, wisp: 16, brute: 24, toad: 17 };
+const MOB_NAME = { bat: 'Bat', slimelet: 'Slimelet', skeleton: 'Skeleton', archer: 'Skeleton Archer', wisp: 'Wisp', brute: 'Brute', toad: 'Poison Toad' };
 
 function skeletonBody(g, hood) {
   const bone = toon('#f1ead8');
@@ -394,6 +439,21 @@ function buildMob(kind) {
       arms[0].rotation.x = -w * 0.4;
       arms[1].rotation.x = hood ? -1.3 : -0.6 + w * 0.3;
     };
+  } else if (kind === 'toad') {
+    const body = new THREE.Group();
+    g.add(body);
+    const skin = new THREE.MeshToonMaterial({ color: '#5fbf3a' });
+    mats.push(skin);
+    add(body, new THREE.SphereGeometry(0.55, 16, 12), skin, { p: [0, 0.5, 0], s: [1.1, 0.75, 1] });
+    add(body, new THREE.SphereGeometry(0.42, 14, 10), toon('#e8f5a0'), { p: [0, 0.38, 0.22], s: [1, 0.6, 0.8], outline: false });
+    for (const s of [-1, 1]) {
+      add(body, new THREE.SphereGeometry(0.17, 12, 10), skin, { p: [s * 0.25, 0.9, 0.2] });
+      add(body, new THREE.SphereGeometry(0.1, 10, 8), basic('#ffffff'), { p: [s * 0.25, 0.94, 0.33], outline: false });
+      add(body, new THREE.SphereGeometry(0.06, 8, 6), basic('#1a0a20'), { p: [s * 0.25, 0.94, 0.41], outline: false });
+      add(body, new THREE.SphereGeometry(0.16, 10, 8), skin, { p: [s * 0.45, 0.2, -0.1], s: [1, 0.5, 1.6] });
+    }
+    for (let i = 0; i < 5; i++) add(body, new THREE.SphereGeometry(0.07, 8, 6), toon('#9b3ad8'), { p: [Math.cos(i * 2) * 0.35, 0.82, Math.sin(i * 2) * 0.3 - 0.1], outline: false });
+    tick = (t) => { body.position.y = Math.abs(Math.sin(t * 4.5)) * 0.35; body.scale.y = 1 - Math.abs(Math.cos(t * 4.5)) * 0.08; };
   } else if (kind === 'wisp') {
     const core = new THREE.Group();
     core.position.y = 1.3;
@@ -473,12 +533,26 @@ export function boss(stage) {
     <div class="hud-panel dg-floor"></div>
     <div class="hud-panel boss-bar hidden"><div class="bb-name"></div><div class="bb-track"><i class="lag"></i><i class="hp"></i><b></b></div></div>
     <div class="hud-panel arena-scores boss-meter"></div>
-    <div class="hud-panel arena-bottom"><div class="meter"><i></i><span>DASH</span></div><div class="dg-ups"></div></div>
+    <div class="hud-panel arena-bottom"><div class="dg-myhp"><i></i><b></b></div><div class="meter"><i></i><span>DASH</span></div><div class="dg-ups"></div></div>
     <div class="hud-panel dg-panel hidden"></div>
     <p class="hud-panel arena-help">WASD move · mouse aim · click/hold shoot · <kbd>Space</kbd>/<kbd>Shift</kbd> dash (can't be hit mid-dash) · stand by a downed friend to revive them</p>`;
   const $h = (sel) => stage.hud.querySelector(sel);
   const barEl = $h('.boss-bar'), meterEl = $h('.boss-meter'), dashEl = $h('.meter'), floorEl = $h('.dg-floor');
-  const panelEl = $h('.dg-panel'), upsEl = $h('.dg-ups');
+  const panelEl = $h('.dg-panel'), upsEl = $h('.dg-ups'), myHpEl = $h('.dg-myhp');
+  let myHpKey = '';
+  /** Your own health, big and clear at the bottom of the screen. */
+  function renderMyHp(now) {
+    const f = fighters.get(S.me);
+    if (!f) return;
+    const max = f.max ?? 100, poisoned = (f.poisonUntil ?? 0) > now;
+    const key = `${f.hp}|${max}|${poisoned}`;
+    if (key === myHpKey) return;
+    myHpKey = key;
+    myHpEl.classList.toggle('poison', poisoned);
+    myHpEl.classList.toggle('low', f.hp > 0 && f.hp / max < 0.3);
+    myHpEl.querySelector('i').style.width = `${Math.max(0, Math.min(100, (f.hp / max) * 100))}%`;
+    myHpEl.querySelector('b').textContent = f.hp > 0 ? `❤ ${Math.ceil(f.hp)} / ${max}${poisoned ? '  ☠ poisoned' : ''}` : '💫 down';
+  }
   stage.canvas.style.cursor = 'crosshair';
 
   const fighters = new Map();
@@ -502,11 +576,11 @@ export function boss(stage) {
   };
   const up = (k = S.me) => fighters.get(k)?.up ?? {};
   const moveSpeed = () => MOVE_SPEED * (1 + 0.15 * (up().speed ?? 0));
-  const shotGap = () => 230 * Math.pow(0.8, up().rate ?? 0);
+  const shotGap = () => 230 * Math.pow(0.86, up().rate ?? 0);
   const dashCooldown = () => DASH_COOLDOWN * Math.pow(0.7, up().dash ?? 0);
   const bulletR = (k) => 5 * (1 + 0.5 * (up(k).big ?? 0));
   /** Floors come in bands of three, each themed after the boss waiting at the end of it. */
-  const bandTheme = (floor) => ['slime', 'golem', 'lich', 'dragon'][Math.floor(Math.max(0, floor - 1) / 3) % 4];
+  const bandTheme = (floor) => ['slime', 'golem', 'venom', 'lich', 'dragon'][Math.floor(Math.max(0, floor - 1) / 3) % 5];
 
   function addFighter(k, f) {
     const p = stage.person(k);
@@ -588,7 +662,7 @@ export function boss(stage) {
       const here = [...fighters.keys()];
       html = `<h3>🏰 The Dungeon</h3>
         <p>Start on <b>floor 1</b> and climb as high as your group can. Clear the monsters on each floor, then everyone picks an upgrade. Every 3rd floor is a boss!</p>
-        <p class="muted small">Downed friends can be revived (they come back with 1 heart). If everyone goes down, the run is over.</p>
+        <p class="muted small">Downed friends can be revived (they come back with 30 HP). If everyone goes down, the run is over.</p>
         <p>Zone record: <b>floor ${run.best}</b>${run.last ? ` · last run reached floor ${run.last.floor}` : ''}</p>
         <div class="dg-here">${here.map((k) => `<span style="--c:${colorOf(k)}"><i class="dot"></i>${esc(nameOf(k))}</span>`).join('')}</div>
         <button class="btn primary" data-start>⚔️ Start run${here.length > 1 ? ` (${here.length} players)` : ''}</button>`;
@@ -598,7 +672,8 @@ export function boss(stage) {
         html = `<h3>✨ Floor ${run.floor} cleared!</h3><p class="muted">Pick an upgrade · ${left}s</p>
           <div class="dg-cards">${run.choices.map((c) => `<button class="dg-card" data-pick="${esc(c.id)}">
             <span class="dg-emoji">${c.emoji}</span><b>${esc(c.name)}</b><span>${esc(c.desc)}</span>${c.lvl ? `<em>Level ${c.lvl} → ${c.lvl + 1}</em>` : '<em>New!</em>'}
-          </button>`).join('')}</div>`;
+          </button>`).join('')}</div>
+          <button class="btn ghost small" data-pick="skip">Skip · next floor</button>`;
       } else {
         html = `<h3>✨ Floor ${run.floor} cleared!</h3><p>Waiting for the others to pick… (${done}/${total})</p><p class="muted">Next floor in ${left}s</p>`;
       }
@@ -656,13 +731,19 @@ export function boss(stage) {
   }
 
   /** You got caught by something: tell the server (it applies i-frames, shields and HP). */
-  function hurt() {
+  function hurt(src = 'shot') {
     const mine = fighters.get(S.me);
     const now = performance.now();
-    if (!mine || mine.hp <= 0 || now < safeUntil || dash.t > 0 || run.state !== 'fight') return;
+    if (!mine || mine.hp <= 0 || dash.t > 0 || run.state !== 'fight') return;
+    if (now < safeUntil) {
+      // standing in a poison puddle keeps you poisoned even while you can't be hit
+      if (src === 'puddle' && now > (puddleSent ?? 0) + 500) { puddleSent = now; net.send('boss_hurt', { src }); }
+      return;
+    }
     safeUntil = now + 900;
-    net.send('boss_hurt');
+    net.send('boss_hurt', { src });
   }
+  let puddleSent = 0;
   const meInside = (x, y, r) => {
     const mine = fighters.get(S.me);
     return mine && mine.hp > 0 && Math.hypot(mine.x - x, mine.y - y) < r + PR * 0.4;
@@ -673,16 +754,26 @@ export function boss(stage) {
     for (let i = 0; i < n; i++) {
       const aa = a + (i - (n - 1) / 2) * spread;
       const r = bulletR(owner);
-      const mesh = orb(colorOf(owner), 0.14 * (r / 5), 4);
+      const mesh = orb(bulletColor(up(owner), colorOf(owner)), 0.14 * (r / 5), 4);
       stage.scene.add(mesh);
       bullets.push({ owner, x, y, vx: Math.cos(aa) * BULLET_SPEED, vy: Math.sin(aa) * BULLET_SPEED, life: BULLET_LIFE, mesh, r, hit: new Set(), pierce: !!up(owner).pierce });
     }
   }
-  function enemyShot(x, y, a, sp, color = th.orb, size = 0.3) {
-    const mesh = orb(color, size, 3.2);
+  function enemyShot(x, y, a, sp, color = th.orb, size = 0.3, poison = false) {
+    const mesh = orb(poison ? POISON : color, size, 3.2);
     stage.scene.add(mesh);
-    shots.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: size * 33, life: 4.5, mesh });
+    shots.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: size * 33, life: 4.5, mesh, poison });
   }
+  /** A pool of poison that sits on the floor for a while; standing in it keeps you poisoned. */
+  function puddle(x, y, r, until) {
+    const [X, Z] = to3(x, y);
+    const g = new THREE.Group();
+    g.position.set(X, 0.03, Z);
+    g.add(groundDisc(r / K, POISON, 0.35), groundRing(r / K - 0.1, r / K, '#c8ff8a', 0.6));
+    stage.scene.add(g);
+    puddles.push({ x, y, r, until, mesh: g });
+  }
+  let puddles = [];
 
   // ---- attacks -----------------------------------------------------------------
   function zone(x, y, r, start, fire, { rock = false, color = '#ff3b50' } = {}) {
@@ -717,7 +808,21 @@ export function boss(stage) {
         stage.shake(m.mob ? 0.3 : m.kind === 'slam' ? 0.8 : 0.5);
         for (const [x, y] of m.c) {
           burstAt(x, y, m.kind === 'rocks' ? '#b8b2cf' : m.kind === 'curse' ? '#c77dff' : th.crystal, 18, 0.3, 7);
-          if (meInside(x, y, m.r)) hurt();
+          if (meInside(x, y, m.r)) hurt(m.mob ? 'brute' : m.kind);
+        }
+      });
+      return;
+    }
+    if (m.kind === 'puddles') {
+      sfx('warn');
+      if (boss) boss.chargeUntil = fire;
+      for (const [x, y] of m.c) zone(x, y, m.r, now, fire, { color: POISON });
+      later(fire, () => {
+        sfx('splash', { vol: 0.8 });
+        for (const [x, y] of m.c) {
+          burstAt(x, y, POISON, 16, 0.4, 5);
+          puddle(x, y, m.r, fire + m.linger * 1000);
+          if (meInside(x, y, m.r)) hurt('puddle');
         }
       });
       return;
@@ -732,7 +837,7 @@ export function boss(stage) {
           sfx('volley', { vol: m.kind === 'spiral' ? 0.6 : 1 });
           for (let i = 0; i < m.n; i++) {
             const a = m.off + w * m.rot + (i * TAU) / m.n;
-            enemyShot(boss.x + Math.cos(a) * boss.r * 0.6, boss.y + Math.sin(a) * boss.r * 0.6, a, m.sp);
+            enemyShot(boss.x + Math.cos(a) * boss.r * 0.6, boss.y + Math.sin(a) * boss.r * 0.6, a, m.sp, th.orb, 0.3, !!m.p);
           }
         });
       }
@@ -773,7 +878,7 @@ export function boss(stage) {
         stage.shake(1);
         const [X, Z] = to3(m.tx, m.ty);
         sparks.burst(X, 0.3, Z, th.crystal, { n: 30, speed: 9, up: 1 });
-        if (meInside(m.tx, m.ty, m.r)) hurt();
+        if (meInside(m.tx, m.ty, m.r)) hurt('hop');
       });
     }
   }
@@ -782,7 +887,8 @@ export function boss(stage) {
     const mine = m.k === S.me;
     if (!mine && !m.crit) return;
     const [X, Z] = to3(x, y);
-    texts.add(m.crit ? `CRIT ${m.d}!` : `${m.d}`, X + (Math.random() - 0.5) * 1.5, h, Z, m.crit ? '#ffd84d' : mine ? '#ffffff' : colorOf(m.k), m.crit ? 1.1 : 0.8);
+    const color = m.fx ? FX_COLOR[m.fx] : m.crit ? '#ffd84d' : mine ? '#ffffff' : colorOf(m.k);
+    texts.add(m.crit ? `CRIT ${m.d}!` : `${m.d}`, X + (Math.random() - 0.5) * 1.5, h, Z, color, m.crit ? 1.1 : m.fx ? 0.6 : 0.8);
   }
 
   // ---- network ------------------------------------------------------------------
@@ -864,7 +970,9 @@ export function boss(stage) {
     boss_dmg: (m) => {
       if (!boss) return;
       boss.hp = m.hp;
-      boss.hurtAt = performance.now();
+      if (!m.fx) boss.hurtAt = performance.now();
+      boss.st2 = m.st ?? boss.st2;
+      boss.stAt = performance.now();
       dmgBy[m.k] = (dmgBy[m.k] ?? 0) + m.d;
       renderMeter();
       damageText(boss.x, boss.y, (boss.r / K) * 2.2 + airHeight() / K, m);
@@ -879,7 +987,9 @@ export function boss(stage) {
       const mob = mobs.get(m.id);
       if (!mob) return;
       mob.hp = m.hp;
-      mob.hurtAt = performance.now();
+      if (!m.fx) mob.hurtAt = performance.now();
+      mob.st2 = m.st ?? mob.st2;
+      mob.stAt = performance.now();
       dmgBy[m.k] = (dmgBy[m.k] ?? 0) + m.d;
       renderMeter();
       damageText(mob.x, mob.y, 2, m);
@@ -897,7 +1007,7 @@ export function boss(stage) {
     },
     mob_shot: (m) => {
       for (const s of m.s) {
-        for (let i = 0; i < s.n; i++) enemyShot(s.x, s.y, s.a + (i * TAU) / s.n, s.sp, s.n > 1 ? '#7dfcff' : '#f1ead8', 0.22);
+        for (let i = 0; i < s.n; i++) enemyShot(s.x, s.y, s.a + (i * TAU) / s.n, s.sp, s.n > 1 ? '#7dfcff' : '#f1ead8', s.p ? 0.26 : 0.22, !!s.p);
       }
       sfx('arrow', { vol: 0.35 });
     },
@@ -911,9 +1021,13 @@ export function boss(stage) {
     boss_hp: (m) => {
       const f = fighters.get(m.k);
       if (!f) return;
+      const tick = m.poison > 0 && f.hp - m.hp <= 6 && (f.poisonUntil ?? 0) > performance.now();
       f.hp = m.hp;
+      if (m.poison > 0) f.poisonUntil = performance.now() + m.poison * 1000;
+      if (m.d) { const [X, Z] = to3(f.x, f.y); texts.add(`-${m.d}`, X, 2.6, Z, m.poison > 0 ? POISON : '#ff5d73', tick ? 0.5 : 0.8); }
+      if (tick) return; // a poison tick: just the number
       f.hurt = performance.now();
-      burstAt(f.x, f.y, '#ffffff', 10, 1.2);
+      burstAt(f.x, f.y, m.poison > 0 ? POISON : '#ffffff', 10, 1.2);
       if (m.k === S.me) { stage.shake(0.5); sfx('hurt'); } else sfx('hit', { vol: 0.4 });
     },
     boss_shield: (m) => {
@@ -934,7 +1048,7 @@ export function boss(stage) {
       if (m.k === S.me) {
         sfx('down');
         const wind = up().revive && !f.windUsed;
-        if (!alone) stage.banner(`💫 You're down! ${wind ? 'Second Wind will pick you up in 4s…' : 'A friend can revive you (you\'ll come back with 1 heart).'}`, 3500);
+        if (!alone) stage.banner(`💫 You're down! ${wind ? 'Second Wind will pick you up in 4s…' : 'A friend can revive you (you\'ll come back with 30 HP).'}`, 3500);
       } else { sfx('down', { vol: 0.5 }); stage.banner(`💫 ${esc(nameOf(m.k))} is down! Stand next to them to revive.`, 2400); }
     },
     boss_up: (m) => {
@@ -1051,8 +1165,16 @@ export function boss(stage) {
       p.char.aiming = f.hp > 0;
       const blink = f.hurt && now - f.hurt < 250 && Math.floor(now / 50) % 2;
       p.visible = !blink;
-      const max = f.max ?? 5;
-      p.sub.textContent = f.hp > 0 ? `${f.shield ? '🫧' : ''}${'❤'.repeat(Math.max(0, f.hp))}${'♡'.repeat(Math.max(0, max - f.hp))}` : (k === S.me ? '💫 down' : '💫 REVIVE ME');
+      const max = f.max ?? 100;
+      const poisoned = (f.poisonUntil ?? 0) > now;
+      if (k === S.me) renderMyHp(now);
+      const hpKey = `${f.hp}|${max}|${f.shield}|${poisoned}`;
+      if (hpKey !== f.hpKey) {
+        f.hpKey = hpKey;
+        p.sub.innerHTML = f.hp > 0
+          ? `<span class="dg-hp ${poisoned ? 'poison' : ''}">${f.shield ? '🫧' : ''}<i style="width:${Math.max(0, Math.min(100, (f.hp / max) * 100)).toFixed(0)}%"></i><b>${Math.max(0, Math.ceil(f.hp))}${poisoned ? ' ☠' : ''}</b></span>`
+          : (k === S.me ? '💫 down' : '💫 REVIVE ME');
+      }
       // shield bubble
       if (f.shield && f.hp > 0) {
         if (!f.bubble) {
@@ -1105,7 +1227,13 @@ export function boss(stage) {
       }
       mob.model.tick(t + mob.id, { moving, windup: now < mob.windUntil });
       const flash = now - mob.hurtAt < 90;
-      for (const m of mob.model.mats) m.emissive?.setScalar(flash ? 0.5 : 0);
+      const st = now - (mob.stAt ?? 0) < 3000 ? mob.st2 : null;
+      for (const m of mob.model.mats) {
+        if (flash) m.emissive?.setScalar(0.5);
+        else if (st?.length) m.emissive?.set(FX_COLOR[st[0]]).multiplyScalar(0.35 + Math.sin(now / 120) * 0.1);
+        else m.emissive?.setScalar(0);
+      }
+      if (st?.length && Math.random() < 0.15) sparks.puff(...(() => { const [X, Z] = to3(mob.x, mob.y); return [X, 1.4, Z]; })(), FX_COLOR[st[Math.floor(Math.random() * st.length)]], 0.5, 0.4);
       if (mob.hp < mob.max) {
         mob.model.bar.visible = true;
         mob.model.bar.quaternion.copy(stage.camera.quaternion);
@@ -1114,7 +1242,7 @@ export function boss(stage) {
         mob.model.fill.scale.x = k;
         mob.model.fill.position.x = -0.43 * (1 - k);
       }
-      if (run.state === 'fight' && grow >= 1 && meInside(mob.x, mob.y, mob.r * 0.8)) hurt();
+      if (run.state === 'fight' && grow >= 1 && meInside(mob.x, mob.y, mob.r * 0.8)) hurt(mob.kind === 'brute' ? 'brute' : 'touch');
     }
 
     if (boss && model) {
@@ -1125,7 +1253,7 @@ export function boss(stage) {
       boss.moving = Math.abs(boss.x - bx) > 0.2;
       lagHp += (boss.hp - lagHp) * Math.min(1, dt * 3);
       const lift = airHeight(now);
-      if (boss.st === 'fight' && !lift && meInside(boss.x, boss.y, boss.r * 0.85)) hurt();
+      if (boss.st === 'fight' && !lift && meInside(boss.x, boss.y, boss.r * 0.85)) hurt('boss');
       const [X, Z] = to3(boss.x, boss.y);
       let scale = 1;
       if (boss.st === 'intro') scale = 0.3 + Math.min(1, (now - boss.spawnAt) / 1500) * 0.7;
@@ -1142,7 +1270,12 @@ export function boss(stage) {
       const squash = boss.hop ? (now < boss.hop.t0 ? 0.18 : now < boss.hop.t1 ? -0.12 : Math.max(0, 0.2 - (now - boss.hop.t1) / 1500)) : 0;
       model.tick(t, { enraged: boss.enraged, squash, lift, charging: now < boss.chargeUntil, moving: boss.moving });
       const flash = now - boss.hurtAt < 90;
-      for (const m of model.mats) m.emissive?.setScalar(flash ? 0.45 : 0);
+      const bst = now - (boss.stAt ?? 0) < 3000 ? boss.st2 ?? [] : [];
+      for (const m of model.mats) {
+        if (flash) m.emissive?.setScalar(0.45);
+        else if (bst.length) m.emissive?.set(FX_COLOR[bst[0]]).multiplyScalar(0.25);
+        else m.emissive?.setScalar(0);
+      }
       bossShadow.visible = model.g.visible;
       bossShadow.position.set(X, 0.03, Z);
       bossShadow.scale.setScalar(Math.max(0.1, (boss.r / K) * 1.1 * (1 - lift / 400)));
@@ -1192,12 +1325,20 @@ export function boss(stage) {
       let dead = s.life <= 0 || s.x < -20 || s.x > W + 20 || s.y < -20 || s.y > H + 20;
       const m2 = fighters.get(S.me);
       if (!dead && m2 && m2.hp > 0 && Math.hypot(m2.x - s.x, m2.y - s.y) < s.r + PR - 2 && dash.t <= 0 && now >= safeUntil) {
-        hurt();
-        sparks.burst(X, 1.1, Z, th.orb, { n: 8 });
+        hurt(s.poison ? 'poison' : 'shot');
+        sparks.burst(X, 1.1, Z, s.poison ? POISON : th.orb, { n: 8 });
         dead = true;
       }
       if (dead) stage.scene.remove(s.mesh);
       return !dead;
+    });
+    puddles = puddles.filter((p) => {
+      const left = p.until - now;
+      p.mesh.children.forEach((c) => { c.material.opacity = Math.min(0.4, left / 1500) * (0.85 + Math.sin(now / 200) * 0.15); });
+      if (left > 0 && meInside(p.x, p.y, p.r * 0.85)) hurt('puddle');
+      if (left > 0) return true;
+      stage.scene.remove(p.mesh);
+      return false;
     });
     zones = zones.filter((z) => {
       const k = Math.min(1, (now - z.start) / Math.max(1, z.fire - z.start));

@@ -759,6 +759,18 @@ export const FURNITURE = {
     }
     return { use: () => floatEmoji(g, A, '🐉', 1.5, 2) };
   },
+  trophy_venom(g, A) {
+    pedestal(g);
+    const body = toon('#6a2f8a'), glow = basic('#8dff5a');
+    add(g, sph(0.2, 16, 12), body, { p: [0, 0.78, -0.05], s: [1, 0.8, 1.2] });
+    add(g, sph(0.13, 14, 10), body, { p: [0, 0.8, 0.17] });
+    for (const s of [-1, 1]) {
+      add(g, sph(0.03, 8, 6), glow, { p: [s * 0.05, 0.84, 0.28], outline: false });
+      for (let i = 0; i < 3; i++) add(g, cyl(0.018, 0.012, 0.32, 6), toon('#3a1a4a'), { p: [s * 0.2, 0.72, -0.1 + i * 0.12], r: [0, 0, s * 0.9], outline: false });
+    }
+    add(g, sph(0.05, 10, 8), glow, { p: [0, 0.97, -0.08], outline: false });
+    return { use: () => floatEmoji(g, A, '🫧', 1.3, 3) };
+  },
   trophy_lich(g, A) {
     pedestal(g);
     const robe = toon('#3a2a5c'), bone = toon('#f1ead8');

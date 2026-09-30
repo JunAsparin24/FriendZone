@@ -1,3 +1,4 @@
+import './keybinds.js'; // first, so custom keybinds are translated before any game sees a key
 // App shell: zone selection, sign-in, lobby, world HUD, chat and activity modal.
 import { actionHint, touch } from './touch.js';
 import './glyphs.js'; // swaps emoji in the interface for drawn icons
@@ -214,7 +215,7 @@ function renderProfile() {
       <li><span>👾</span><b>${fmt(s.bossKills ?? 0)}</b> Bosses Beaten</li>
       <li><span>🏠</span><b>${fmt(s.houseLikes ?? 0)}</b> House Likes</li>
       <li><span>🎨</span><b>${fmt(s.doodleWins ?? 0)}</b> Doodle Wins</li>
-      <li><span>💥</span><b>${fmt(s.bumperWins ?? 0)}</b> Bumper Wins</li>
+      <li><span>🏰</span><b>${fmt(s.dungeonBest ?? 0)}</b> Best Dungeon Floor</li>
     </ul>
     <div class="row">${isMe ? `<button class="btn small" data-customize>✨ Customize</button>${daily}` : '<button class="btn ghost small" data-mine>← Back to my profile</button>'}</div>`;
   portraitInto(card.querySelector('.pf-av'), p.look, 96, 124);
@@ -312,13 +313,21 @@ function leaveZone() {
 // World HUD, chat and activities
 // ---------------------------------------------------------------------------
 
+/** A thin bar showing progress to the next level (with the numbers on hover). */
+function xpBar(p) {
+  const lo = xpForLevel(p.level), hi = xpForLevel(p.level + 1);
+  const pct = Math.max(0, Math.min(100, ((p.xp - lo) / (hi - lo)) * 100));
+  return `<div class="hud-xp" title="${fmt(p.xp - lo)} / ${fmt(hi - lo)} XP to level ${p.level + 1}"><i style="width:${pct.toFixed(1)}%"></i><small>${fmt(p.xp - lo)} / ${fmt(hi - lo)} XP</small></div>`;
+}
+
 function renderHud() {
   if (screen !== 'world' || !S.zone) return;
   const p = me();
   $('#hudMe').innerHTML = `
     <span class="dot" style="--c:${p.color}"></span><b>${esc(p.name)}</b>
     <span class="pill">Lv ${p.level}</span><span class="pill">🪙 ${fmt(p.coins)}</span>
-    <span class="muted zone-tag">${esc(S.zone.name)}</span>`;
+    <span class="muted zone-tag">${esc(S.zone.name)}</span>
+    ${xpBar(p)}`;
   const online = Object.values(S.players).filter((x) => x.online);
   $('#hudOnline').innerHTML = `<h3>ONLINE: ${online.length}</h3>` + online.map((x) =>
     `<div class="ho" data-k="${esc(x.key)}"><span class="hav"></span>${esc(x.name)}<small>${sceneLabel(x.scene, x.key) ?? ''}</small></div>`).join('');
@@ -387,6 +396,7 @@ function closeArea() {
   if (activity.scene && screen === 'world') net.send('scene', { scene: 'world' });
 }
 stage.openPanel = (activity) => openModal(activity);
+stage.closePanel = () => closeModal();
 
 function openModal(activity, { locked = false } = {}) {
   if (modal) return;
@@ -460,7 +470,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (modal) closeModal();
     else if (isTyping()) document.activeElement.blur();
-    else if (area) closeArea();
+    // (Esc never takes you out of a game or building: use the Leave / Lobby buttons)
     else if (world.fishing) world.stopActivity();
   } else if (e.key === 'Enter' && (screen === 'world' || area) && !modal && !isTyping()) {
     e.preventDefault();
@@ -488,6 +498,7 @@ net.on('welcome', (m) => {
   S.chat = m.chat;
   S.feed = m.feed;
   S.race = m.race;
+  S.arcade = m.arcade ?? {};
   session = { code: m.zone.code, name: me().name, token: m.token };
   rememberZone({ ...session, zoneName: m.zone.name });
   for (const form of [$('#createForm'), $('#joinForm')]) {
@@ -538,6 +549,7 @@ net.on('chat', (m) => {
   renderChat();
 });
 
+net.on('arcade_board', (m) => { S.arcade = { ...(S.arcade ?? {}), [m.g]: m.board }; });
 net.on('feed', (m) => {
   S.feed = [...S.feed, m].slice(-25);
   toast(m.text, 'feed');

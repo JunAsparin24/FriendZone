@@ -1,4 +1,5 @@
 // Touch controls for phones and tablets.
+import { keyOf, keyLabel } from './keybinds.js';
 //   Left half of the screen: an invisible, floating stick. Put your thumb down anywhere on the left
 //   and drag to move (push further to run). There's no joystick drawn; it follows your thumb.
 //   Right half: the camera, as before. Drag to look around, pinch to zoom, tap to walk/click/aim.
@@ -170,7 +171,7 @@ export function setTouchButtons(buttons = []) {
 }
 
 /** "Press E or click to …" on a computer, "Tap to …" on a phone. */
-export const actionHint = () => (touch.enabled ? 'Tap to' : 'Press <kbd>E</kbd> or click to');
+export const actionHint = () => (touch.enabled ? 'Tap to' : `Press <kbd>${keyLabel(keyOf('interact'))}</kbd> or click to`);
 
 /** Vertical field of view that never shows less side-to-side than a 4:3 screen would at `base`
  *  degrees, so arenas and the world still fit when a phone is held upright. */

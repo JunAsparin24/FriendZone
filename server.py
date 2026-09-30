@@ -53,8 +53,8 @@ PIN_RE = re.compile(r"^\d{4,6}$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 MAX_MEMBERS = 50
 
-SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "bumper", "archery", "shop", "petshop"}
-AREA_SCENES = {"casino", "shop", "petshop"}  # 3D rooms you walk around in; positions are relayed to everyone inside
+SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "archery", "shop", "petshop", "arcade", "tavern"}
+AREA_SCENES = {"casino", "shop", "petshop", "arcade", "tavern"}  # 3D rooms you walk around in; positions are relayed to everyone inside
 
 
 def is_area(scene):
@@ -85,7 +85,12 @@ ARENA_SPAWNS = [(70, 70), (830, 70), (70, 530), (830, 530), (450, 60), (450, 540
 # monsters and bosses; clients dodge and report their own hits, like the arena.
 BOSS_W, BOSS_H = 900, 600
 BOSS_TICK = 0.05         # 20 updates a second, so monsters move smoothly
-BOSS_PLAYER_HP = 5
+BOSS_PLAYER_HP = 100     # health, not hearts: every attack does its own amount of damage
+BOSS_REVIVE_HP = 30      # what you get back up with (revived by a friend, Second Wind, or the next floor)
+# damage each kind of hit does on floor 1 (it grows a little every floor); "poison" also poisons you
+HIT_DMG = {"shot": 12, "slam": 22, "rocks": 18, "curse": 16, "hop": 26, "boss": 20, "touch": 10, "brute": 18,
+           "poison": 8, "puddle": 6}
+POISON_T, POISON_DPS = 4.0, 6  # how long poison lasts and how much it drains per second
 BOSS_IFRAMES = 0.9       # seconds of invulnerability after taking a hit
 BOSS_REVIVE_R = 60       # stand this close to a downed friend to revive them
 BOSS_REVIVE_T = 2.0      # seconds it takes; revived players always come back with one heart
@@ -101,6 +106,9 @@ BOSSES = [
      "attacks": ["hop", "volley", "summon", "slam", "hop"], "minions": ["slimelet"], "loot": "trophy_slime"},
     {"id": "golem", "name": "Stone Golem", "hp": 2400, "r": 56, "speed": 58,
      "attacks": ["slam", "rocks", "charge", "volley"], "loot": "trophy_golem", "drop": ("hat_horns", 0.25)},
+    {"id": "venom", "name": "Venom Queen", "hp": 2300, "r": 52, "speed": 75, "poison": True,
+     "attacks": ["puddles", "volley", "summon", "puddles", "charge", "spiral"], "minions": ["toad", "toad", "bat"],
+     "loot": "trophy_venom"},
     {"id": "lich", "name": "Bone Lich", "hp": 2200, "r": 46, "speed": 70,
      "attacks": ["summon", "volley", "curse", "blink", "summon", "spiral"], "minions": ["bat", "archer", "skeleton"],
      "loot": "trophy_lich"},
@@ -115,22 +123,26 @@ MOBS = {
     "archer": {"hp": 45, "r": 15, "speed": 70, "range": 240, "every": 2.4},
     "wisp": {"hp": 60, "r": 16, "speed": 40, "every": 3.4},
     "brute": {"hp": 140, "r": 24, "speed": 52, "every": 4.2},
+    "toad": {"hp": 70, "r": 17, "speed": 80, "range": 200, "every": 2.8},  # spits poison
 }
-MOB_UNLOCK = [(1, "bat"), (1, "slimelet"), (2, "skeleton"), (3, "archer"), (5, "wisp"), (7, "brute")]
+MOB_UNLOCK = [(1, "bat"), (1, "slimelet"), (2, "skeleton"), (3, "archer"), (4, "toad"), (5, "wisp"), (7, "brute")]
 UPGRADES = {
-    "dmg": {"name": "Power Shot", "emoji": "💥", "desc": "+30% damage", "max": 8},
-    "rate": {"name": "Rapid Fire", "emoji": "⚡", "desc": "Shoot 20% faster", "max": 5},
-    "multi": {"name": "Split Shot", "emoji": "🔱", "desc": "+1 bullet per shot", "max": 3},
+    "dmg": {"name": "Power Shot", "emoji": "💥", "desc": "+18% damage", "max": 8},
+    "rate": {"name": "Rapid Fire", "emoji": "⚡", "desc": "Shoot 14% faster", "max": 5},
+    "multi": {"name": "Split Shot", "emoji": "🔱", "desc": "+1 bullet per shot (split bullets hit a bit softer)", "max": 3},
     "speed": {"name": "Swift Boots", "emoji": "👟", "desc": "Move 15% faster", "max": 4},
-    "heart": {"name": "Extra Life", "emoji": "❤️", "desc": "+1 max heart, and heal it", "max": 6},
-    "heal": {"name": "Full Heal", "emoji": "🩹", "desc": "Restore all your hearts", "max": 99},
-    "crit": {"name": "Lucky Shots", "emoji": "🍀", "desc": "+10% chance to crit for double damage", "max": 5},
+    "heart": {"name": "Vitality", "emoji": "❤️", "desc": "+25 max HP, and heal 25 HP", "max": 6},
+    "crit": {"name": "Lucky Shots", "emoji": "🍀", "desc": "+7% chance to crit for double damage", "max": 5},
     "pierce": {"name": "Piercing Rounds", "emoji": "🏹", "desc": "Bullets fly through monsters", "max": 1},
     "dash": {"name": "Quick Dash", "emoji": "💨", "desc": "Dash cooldown -30%", "max": 2},
     "shield": {"name": "Bubble Shield", "emoji": "🫧", "desc": "Block the first hit on every floor", "max": 1},
-    "regen": {"name": "Second Breakfast", "emoji": "🍗", "desc": "Heal 1 heart after every floor", "max": 2},
-    "revive": {"name": "Second Wind", "emoji": "🌀", "desc": "Once per run, get back up on your own", "max": 1},
+    "regen": {"name": "Second Breakfast", "emoji": "🍗", "desc": "Heal 20 HP after every floor", "max": 2},
+    "antidote": {"name": "Antidote", "emoji": "🧪", "desc": "Poison hurts half as much and wears off twice as fast", "max": 1},
+    "revive": {"name": "Second Wind", "emoji": "🌀", "desc": "Once per run, get back up on your own (30 HP)", "max": 1},
     "big": {"name": "Big Bullets", "emoji": "🔵", "desc": "Bigger bullets, easier hits", "max": 2},
+    "fire": {"name": "Fire Rounds", "emoji": "🔥", "desc": "Hits set enemies on fire: they burn for 3s", "max": 3},
+    "ice": {"name": "Frost Rounds", "emoji": "❄️", "desc": "Hits chill enemies, slowing them for 2s", "max": 2},
+    "venom": {"name": "Venom Rounds", "emoji": "🧪", "desc": "Hits poison enemies; poison stacks up to 5 times", "max": 3},
 }
 
 ARENA_PILLARS = [(200, 140, 70, 60), (630, 140, 70, 60), (200, 400, 70, 60), (630, 400, 70, 60), (405, 265, 90, 70)]
@@ -161,9 +173,6 @@ diamond, coin, piggy bank, slot machine, dice, cards, chess, puzzle, yo-yo, tedd
 """.split(",") if w.strip()]
 
 # Bumper Brawl: knock everyone off a shrinking ice rink. Clients run their own car physics.
-BUMPER_SPAWN_R = 150
-BUMPER_ROUND_MAX = 75
-BUMPER_START_DELAY = 2.5
 
 # Roulette: one shared table in the casino, a new spin every ~30s.
 ROULETTE_BET_T, ROULETTE_SPIN_T, ROULETTE_PAUSE_T = 20, 6, 4
@@ -364,6 +373,20 @@ class Store:
 def hash_pin(pin, salt):
     return hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(salt), 20_000).hex()
 
+
+# the arcade cabinets: highest believable score, coins per point, and the most coins one run can pay
+ARCADE_GAMES = {
+    "snake": {"name": "Snake", "max": 2000, "pay": 1.0, "cap": 60},
+    "breakout": {"name": "Brick Breaker", "max": 20000, "pay": 0.06, "cap": 60},
+    "flappy": {"name": "Flappy Friend", "max": 2000, "pay": 2.0, "cap": 60},
+    "blocks": {"name": "Block Drop", "max": 500000, "pay": 0.02, "cap": 80},
+    "merge": {"name": "2048", "max": 400000, "pay": 0.01, "cap": 80},
+    "hop": {"name": "Sky Hop", "max": 100000, "pay": 0.03, "cap": 60},
+    "second": {"name": "One Second", "max": 1000, "pay": 0.06, "cap": 60},
+    "memory": {"name": "Memory Match", "max": 5000, "pay": 0.03, "cap": 50},
+}
+# what a slot goes back to if you trade away the thing you're wearing
+TRADE_FALLBACK = {"hair": "hair_short", "top": "top_tee", "bottom": "bottom_pants", "pet": "pet_none"}
 
 # Admin mode: type "/admin <password>" in chat. Only a salted hash of the password lives here; set
 # FZ_ADMIN_PASSWORD in the environment to use a different one.
@@ -593,8 +616,8 @@ class Room:
         self.arena_spawning = False
         self.doodle = {"id": 0, "state": "idle", "queue": [], "turn": -1, "drawer": None, "word": None, "choices": [],
                        "ends": 0.0, "dur": 0, "guessed": {}, "scores": {}, "strokes": [], "shown": set(), "ranking": []}
-        self.bumper = {"id": 0, "state": "waiting", "alive": set(), "round": set(), "fighters": {}, "start": 0.0,
-                       "ends": 0.0, "wins": {}}
+        self.trades = {}      # id -> a live trade between two people in the tavern
+        self.trade_seq = 0
         self.roulette = {"id": 0, "state": "idle", "ends": 0.0, "bets": {}, "history": [], "result": None}
 
     def in_scene(self, scene):
@@ -613,12 +636,12 @@ class Room:
 
 PRE_AUTH = {"create", "join", "resume"}
 IN_ZONE = {
-    "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "gift", "rename", "quit_zone",
+    "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
     "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "area_move", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
-    "bumper_move", "bumper_out", "roulette_bet", "roulette_clear", "roulette_sync",
+    "arcade_score", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
     "house_get", "house_save", "house_buy", "house_like",
 }
 
@@ -732,7 +755,7 @@ class Game:
             "t": "welcome", "you": key, "token": token,
             "zone": {"code": code, "name": room.zone["name"], "owner": room.zone["owner"]},
             "players": [public(p, room.clients.get(k)) for k, p in room.zone["players"].items()],
-            "chat": room.chat, "feed": room.feed, "race": self.race_view(room),
+            "chat": room.chat, "feed": room.feed, "race": self.race_view(room), "arcade": room.zone.get("arcade", {}),
         })
         self.check_unlocks(c)
         self.push_player(room, key)
@@ -948,8 +971,8 @@ class Game:
         if prev == "doodle" and scene != "doodle":
             c.scene = scene
             self.doodle_leave(room, c.key)
-        if prev == "bumper" and scene != "bumper":
-            self.bumper_leave(c)
+        if prev == "tavern" and scene != "tavern":
+            self.trade_drop(room, c.key, "left the tavern")
         c.scene = scene
         if scene is None:
             return
@@ -967,8 +990,6 @@ class Game:
             self.boss_join(c)
         elif scene == "doodle":
             self.doodle_join(c)
-        elif scene == "bumper":
-            self.bumper_join(c)
         elif scene == "casino":
             self.roulette_join(c)
         if is_area(scene):
@@ -1377,20 +1398,6 @@ class Game:
         p["lastDaily"] = now
         self.reward(c, coins=DAILY_BONUS)
 
-    def on_gift(self, c, m):
-        target_key, target = self.find_member(c.room.zone, m.get("to"))
-        amount = int(num(m.get("amount", 0), 0, 10**9))
-        if not target or target is c.player:
-            raise GameError("Pick a friend to send coins to.")
-        if amount < 1 or amount > c.player["coins"]:
-            raise GameError("You don't have that many coins.")
-        c.player["coins"] -= amount
-        target["coins"] += amount
-        self.store.mark()
-        self.push_player(c.room, c.key)
-        self.push_player(c.room, target_key)
-        self.post_feed(c.room, f"💰 {c.player['name']} sent {amount:,} coins to {target['name']}.")
-
     # ---- racing ------------------------------------------------------------
 
     # Kart racing: every driver simulates their own kart (so steering feels instant) and streams its
@@ -1672,7 +1679,7 @@ class Game:
     def new_fighter():
         x, y = random.choice(BOSS_SPAWNS)
         return {"x": x, "y": y, "a": -math.pi / 2, "hp": BOSS_PLAYER_HP, "max": BOSS_PLAYER_HP, "down": 0, "rev": 0.0,
-                "hurt": time.monotonic(), "up": {}, "shield": False, "wind": False, "picked": False, "choices": []}
+                "hurt": time.monotonic(), "up": {}, "shield": False, "wind": False, "picked": False, "choices": [], "poison": 0.0, "ptick": 0.0}
 
     def boss_join(self, c):
         room, bs = c.room, c.room.boss
@@ -1735,9 +1742,10 @@ class Game:
         bs.update(state="intro", ends=now + DUNGEON_INTRO_T, mobs={}, queue=[], b=None, spawn_at=now + DUNGEON_INTRO_T)
         for f in bs["fighters"].values():
             if f["hp"] <= 0:
-                f["hp"] = 1  # downed friends get back up between floors, with one heart
+                f["hp"] = BOSS_REVIVE_HP  # downed friends get back up between floors
             elif f["up"].get("regen"):
-                f["hp"] = min(f["max"], f["hp"] + f["up"]["regen"])
+                f["hp"] = min(f["max"], f["hp"] + 20 * f["up"]["regen"])
+            f["poison"] = 0.0
             f.update(shield=bool(f["up"].get("shield")), picked=False, choices=[], rev=0.0, hurt=now)
         if floor % DUNGEON_BOSS_EVERY == 0:
             self.boss_spawn(room, now)
@@ -1752,8 +1760,6 @@ class Game:
 
     def dungeon_choices(self, f):
         pool = [u for u, spec in UPGRADES.items() if f["up"].get(u, 0) < spec["max"]]
-        if f["hp"] >= f["max"] or f["hp"] <= 0:
-            pool.remove("heal")
         weights = [2 if u in ("heart", "dmg") else 1 for u in pool]
         picks = []
         while pool and len(picks) < 3:
@@ -1768,11 +1774,9 @@ class Game:
     def dungeon_apply(f, u):
         f["up"][u] = f["up"].get(u, 0) + 1
         if u == "heart":
-            f["max"] += 1
+            f["max"] += 25
             if f["hp"] > 0:
-                f["hp"] += 1
-        elif u == "heal" and f["hp"] > 0:
-            f["hp"] = f["max"]
+                f["hp"] = min(f["max"], f["hp"] + 25)
         elif u == "shield":
             f["shield"] = True
 
@@ -1780,7 +1784,8 @@ class Game:
         bs = room.boss
         bs.update(state="pick", ends=now + DUNGEON_PICK_T)
         for f in bs["fighters"].values():
-            f.update(picked=False, choices=self.dungeon_choices(f))
+            choices = self.dungeon_choices(f)
+            f.update(picked=not choices, choices=choices)  # nothing left to pick: don't hold anyone up
         room.broadcast({"t": "boss_clear", "floor": bs["floor"]}, scene="boss")
         self.dungeon_sync(room)
 
@@ -1788,9 +1793,10 @@ class Game:
         bs = c.room.boss
         f = bs["fighters"].get(c.key)
         u = str(m.get("id", ""))
-        if bs["state"] != "pick" or not f or f["picked"] or u not in f["choices"]:
+        if bs["state"] != "pick" or not f or f["picked"] or (u not in f["choices"] and u != "skip"):
             return
-        self.dungeon_apply(f, u)
+        if u != "skip":
+            self.dungeon_apply(f, u)
         f["picked"] = True
         c.room.broadcast({"t": "boss_picked", "k": c.key, "id": u, "f": self.boss_fighter_view(f)}, scene="boss")
 
@@ -1845,7 +1851,21 @@ class Game:
             if b:
                 b.update(st="fight", next=now + 1.2)
             room.broadcast({"t": "boss_phase", "st": "fight"}, scene="boss")
-        # downed players: a friend standing close revives them (with one heart)
+        # poison drains health a little at a time
+        for k, f in fighters.items():
+            if f["hp"] <= 0 or f.get("poison", 0) <= now:
+                continue
+            f["ptick"] = f.get("ptick", 0.0) + dt
+            if f["ptick"] < 0.5:
+                continue
+            f["ptick"] = 0.0
+            drain = max(1, round(POISON_DPS * 0.5 * (0.5 if f["up"].get("antidote") else 1) * self.dungeon_scale(bs)))
+            f["hp"] = max(0, f["hp"] - drain)
+            room.broadcast({"t": "boss_hp", "k": k, "hp": f["hp"], "poison": round(f["poison"] - now, 2), "d": drain}, scene="boss")
+            if f["hp"] <= 0:
+                f["down"], f["rev"], f["poison"] = now, 0.0, 0.0
+                room.broadcast({"t": "boss_down", "k": k}, scene="boss")
+        # downed players: a friend standing close revives them
         for k, f in fighters.items():
             if f["hp"] > 0:
                 continue
@@ -1856,12 +1876,13 @@ class Game:
             if f["rev"] >= BOSS_REVIVE_T or wind:
                 if wind and f["rev"] < BOSS_REVIVE_T:
                     f["wind"] = True
-                f["hp"], f["rev"], f["hurt"] = 1, 0.0, now
-                room.broadcast({"t": "boss_up", "k": k, "hp": 1, "helped": helped, "wind": bool(wind and not helped)}, scene="boss")
+                f["hp"], f["rev"], f["hurt"], f["poison"] = BOSS_REVIVE_HP, 0.0, now, 0.0
+                room.broadcast({"t": "boss_up", "k": k, "hp": BOSS_REVIVE_HP, "helped": helped, "wind": bool(wind and not helped)}, scene="boss")
         if st == "fight":
             if fighters and all(f["hp"] <= 0 for f in fighters.values()):
                 self.dungeon_wipe(room, now)
                 return
+            self.dungeon_dots(room, dt, now)
             cap = min(DUNGEON_MAX_MOBS, 5 + bs["floor"] // 2 + len(fighters))
             if bs["queue"] and now >= bs["spawn_at"] and len(bs["mobs"]) < cap:
                 n = min(len(bs["queue"]), 3, cap - len(bs["mobs"]))
@@ -1886,7 +1907,7 @@ class Game:
 
     def spawn_mobs(self, room, kinds, near=None):
         bs = room.boss
-        mult = 1 + 0.15 * (bs["floor"] - 1)
+        mult = 1 + 0.24 * (bs["floor"] - 1) + 0.012 * (bs["floor"] - 1) ** 2  # monsters toughen up as you climb
         players = [(f["x"], f["y"]) for f in bs["fighters"].values()] or [(BOSS_W / 2, BOSS_H / 2)]
         now = time.monotonic()
         out = []
@@ -1934,6 +1955,11 @@ class Game:
                 s = 1 if d > want + 40 else -1 if d < want - 60 else 0
                 side = math.sin(m["t"] * 0.7)
                 vx, vy = ux * s - uy * side * 0.6, uy * s + ux * side * 0.6
+            elif kind == "toad":  # hops about at a distance
+                hop = m["t"] % 1.4 < 0.5
+                s = 1 if d > spec["range"] + 30 else -0.6 if d < spec["range"] - 50 else 0.3
+                side = math.sin(m["t"] * 0.9)
+                vx, vy = ((ux * s - uy * side) * 2.0, (uy * s + ux * side) * 2.0) if hop else (0.0, 0.0)
             elif kind == "wisp":  # drifts about
                 vx, vy = ux * 0.5 + math.cos(m["t"]) * 0.8, uy * 0.5 + math.sin(m["t"] * 1.3) * 0.8
             else:  # skeletons and brutes walk straight at you
@@ -1948,12 +1974,14 @@ class Game:
                 if 0 < od < lim:
                     vx += ox / od * (lim - od) / lim * 1.5
                     vy += oy / od * (lim - od) / lim * 1.5
-            sp = spec["speed"] * m["fast"]
+            sp = spec["speed"] * m["fast"] * (1 - m["chill"]["slow"] if m.get("chill") and m["chill"]["until"] > now else 1)
             m["x"] = min(BOSS_W - m["r"], max(m["r"], m["x"] + vx * sp * dt))
             m["y"] = min(BOSS_H - m["r"], max(m["r"], m["y"] + vy * sp * dt))
             if "every" in spec and now >= m["next"]:
                 m["next"] = now + spec["every"] * random.uniform(0.85, 1.2)
-                if kind == "archer" and d < spec["range"] + 160:
+                if kind == "toad" and d < spec["range"] + 180:
+                    shots.append({"x": round(m["x"]), "y": round(m["y"]), "a": round(math.atan2(dy, dx), 3), "n": 1, "sp": 190, "p": 1})
+                elif kind == "archer" and d < spec["range"] + 160:
                     shots.append({"x": round(m["x"]), "y": round(m["y"]), "a": round(math.atan2(dy, dx), 3), "n": 1, "sp": 250})
                 elif kind == "wisp":
                     shots.append({"x": round(m["x"]), "y": round(m["y"]), "a": round(random.uniform(0, math.tau), 3), "n": 6, "sp": 165})
@@ -1974,7 +2002,7 @@ class Game:
         spec = BOSSES[idx % len(BOSSES)]
         tier = idx // len(BOSSES)
         n = max(1, len(bs["fighters"]))
-        base = int(spec["hp"] * (1 + 0.35 * tier) * (1 + 0.05 * (bs["floor"] - 1)))
+        base = int(spec["hp"] * (1 + 0.45 * tier) * (1 + 0.12 * (bs["floor"] - 1)))
         hp = int(base * (1 + 0.65 * (n - 1)))
         bs["b"] = {"spec": spec, "id": spec["id"], "name": spec["name"], "tier": tier, "x": BOSS_W / 2, "y": 170.0,
                    "hp": hp, "max": hp, "base": base, "r": spec["r"], "st": "intro", "next": now + 99, "target": None,
@@ -2003,7 +2031,8 @@ class Game:
         d = math.hypot(dx, dy)
         keep = b["r"] + 70 + (120 if b["id"] == "lich" else 0)  # the lich hangs back behind its minions
         if d > keep:
-            step = min(d - keep, b["spec"]["speed"] * (1.35 if b["enraged"] else 1) * dt)
+            chill = 1 - b["chill"]["slow"] * 0.6 if b.get("chill") and b["chill"]["until"] > now else 1  # bosses shrug off some of it
+            step = min(d - keep, b["spec"]["speed"] * (1.35 if b["enraged"] else 1) * chill * dt)
             b["x"] += dx / d * step
             b["y"] += dy / d * step
         b["x"] = min(BOSS_W - b["r"], max(b["r"], b["x"]))
@@ -2024,14 +2053,24 @@ class Game:
             targets = alive if rage else random.sample(alive, min(len(alive), 2))
             spots = [(f["x"], f["y"]) for f in targets] or [(x, y + 130)]
             msg.update(c=[[round(sx), round(sy)] for sx, sy in spots], r=85, d=1.1)
+        elif kind == "puddles":
+            # blobs of poison that splash down and linger on the floor
+            spots = [(f["x"] + random.uniform(-30, 30), f["y"] + random.uniform(-30, 30)) for f in alive]
+            spots += [(random.uniform(80, BOSS_W - 80), random.uniform(80, BOSS_H - 80)) for _ in range(4 if rage else 2)]
+            msg.update(c=[[round(sx), round(sy)] for sx, sy in spots], r=64, d=1.1, linger=5.5 if rage else 4.5)
+            busy = 0.8
         elif kind in ("rocks", "curse"):
             spots = [(f["x"], f["y"]) for f in alive]
             spots += [(random.uniform(60, BOSS_W - 60), random.uniform(60, BOSS_H - 60)) for _ in range(5 if rage else 3)]
             msg.update(c=[[round(sx), round(sy)] for sx, sy in spots], r=62 if kind == "rocks" else 72, d=1.3 if kind == "rocks" else 1.2)
         elif kind == "volley":
+            if b["spec"].get("poison"):
+                msg["p"] = 1
             msg.update(x=round(x), y=round(y), n=18 if rage else 12, sp=240 if rage else 205,
                        off=round(random.uniform(0, math.tau), 3), d=0.55, waves=2 if rage else 1, gap=0.4, rot=0.13)
         elif kind == "spiral":
+            if b["spec"].get("poison"):
+                msg["p"] = 1
             waves = 11 if rage else 8
             msg.update(x=round(x), y=round(y), n=6, sp=215, off=round(random.uniform(0, math.tau), 3), d=0.5,
                        waves=waves, gap=0.16, rot=0.3 * random.choice((-1, 1)))
@@ -2097,34 +2136,81 @@ class Game:
         if bs["state"] != "fight" or not f or f["hp"] <= 0 or not c.ready("boss_hit", 0.02):
             return
         up = f["up"]
-        crit = random.random() < 0.08 + 0.1 * up.get("crit", 0)
-        dmg = int(DUNGEON_DMG * (1 + 0.3 * up.get("dmg", 0)) * (2 if crit else 1))
+        crit = random.random() < 0.06 + 0.07 * up.get("crit", 0)
+        # upgrades help, but gently: a volley of split shots is worth ~60% more per extra bullet, not 100%
+        n = 1 + up.get("multi", 0)
+        dmg = int(DUNGEON_DMG * (1 + 0.18 * up.get("dmg", 0)) * ((1 + 0.6 * (n - 1)) / n) * (2 if crit else 1))
         if m.get("id") is not None:
-            mob = bs["mobs"].get(int(num(m["id"], 0, 1e9)))
-            if not mob:
+            target = bs["mobs"].get(int(num(m["id"], 0, 1e9)))
+            if not target:
                 return
-            dmg = min(dmg, mob["hp"])
-            bs["dmg"][c.key] = bs["dmg"].get(c.key, 0) + dmg
-            mob["hp"] -= dmg
-            if mob["hp"] <= 0:
-                del bs["mobs"][mob["id"]]
-                room.broadcast({"t": "mob_die", "id": mob["id"], "k": c.key, "d": dmg, "crit": crit}, scene="boss")
-            else:
-                room.broadcast({"t": "mob_dmg", "id": mob["id"], "hp": mob["hp"], "k": c.key, "d": dmg, "crit": crit}, scene="boss")
+        else:
+            target = bs["b"]
+            if not target or target["st"] != "fight":
+                return
+        self.dungeon_status(target, up, c.key, time.monotonic())
+        self.dungeon_damage(room, target, c.key, dmg, crit=crit)
+
+    @staticmethod
+    def dungeon_status(target, up, key, now):
+        """Elemental rounds: set it burning, chill it, or add a stack of poison."""
+        if up.get("fire"):
+            target["burn"] = {"until": now + 3.0, "dps": 4 + 4 * up["fire"], "k": key}
+        if up.get("ice"):
+            target["chill"] = {"until": now + 2.0, "slow": 0.2 + 0.15 * up["ice"]}
+        if up.get("venom"):
+            v = target.get("venom")
+            stacks = min(5, (v["n"] if v and v["until"] > now else 0) + 1)
+            target["venom"] = {"until": now + 4.0, "n": stacks, "dps": (2 + 1.5 * up["venom"]) * stacks, "k": key}
+
+    def dungeon_damage(self, room, target, key, dmg, crit=False, fx=None):
+        """Damage a monster or the boss (whichever `target` is) on behalf of player `key`."""
+        bs = room.boss
+        dmg = max(0, min(int(dmg), int(target["hp"])))
+        if dmg <= 0:
             return
-        b = bs["b"]
-        if not b or b["st"] != "fight":
+        target["hp"] -= dmg
+        bs["dmg"][key] = bs["dmg"].get(key, 0) + dmg
+        now = time.monotonic()
+        status = [k for k in ("burn", "chill", "venom") if target.get(k) and target[k]["until"] > now]
+        if target is bs["b"]:
+            b = target
+            b["dmg"][key] = b["dmg"].get(key, 0) + dmg
+            room.broadcast({"t": "boss_dmg", "k": key, "d": dmg, "hp": b["hp"], "crit": crit, "fx": fx, "st": status}, scene="boss")
+            if not b["enraged"] and b["hp"] <= b["max"] / 2:
+                b["enraged"] = True
+                room.broadcast({"t": "boss_phase", "st": "enraged"}, scene="boss")
+            if b["hp"] <= 0:
+                self.boss_defeat(room, b)
             return
-        dmg = min(dmg, b["hp"])
-        b["hp"] -= dmg
-        b["dmg"][c.key] = b["dmg"].get(c.key, 0) + dmg
-        bs["dmg"][c.key] = bs["dmg"].get(c.key, 0) + dmg
-        room.broadcast({"t": "boss_dmg", "k": c.key, "d": dmg, "hp": b["hp"], "crit": crit}, scene="boss")
-        if not b["enraged"] and b["hp"] <= b["max"] / 2:
-            b["enraged"] = True
-            room.broadcast({"t": "boss_phase", "st": "enraged"}, scene="boss")
-        if b["hp"] <= 0:
-            self.boss_defeat(room, b)
+        mob = target
+        if mob["hp"] <= 0:
+            bs["mobs"].pop(mob["id"], None)
+            room.broadcast({"t": "mob_die", "id": mob["id"], "k": key, "d": dmg, "crit": crit, "fx": fx}, scene="boss")
+        else:
+            room.broadcast({"t": "mob_dmg", "id": mob["id"], "hp": mob["hp"], "k": key, "d": dmg, "crit": crit, "fx": fx, "st": status}, scene="boss")
+
+    def dungeon_dots(self, room, dt, now):
+        """Burning and poisoned monsters (and bosses) take damage every half second."""
+        bs = room.boss
+        targets = list(bs["mobs"].values()) + ([bs["b"]] if bs["b"] and bs["b"]["st"] == "fight" else [])
+        for t in targets:
+            for kind in ("burn", "venom"):
+                st = t.get(kind)
+                if not st or st["until"] <= now:
+                    continue
+                st["acc"] = st.get("acc", 0.0) + dt
+                if st["acc"] < 0.5:
+                    continue
+                st["acc"] -= 0.5
+                self.dungeon_damage(room, t, st["k"], max(1, round(st["dps"] * 0.5)), fx=kind)
+                if t["hp"] <= 0:
+                    break
+
+    @staticmethod
+    def dungeon_scale(bs):
+        """Monsters hit a little harder on every floor."""
+        return 1 + 0.045 * max(0, bs["floor"] - 1)
 
     def on_boss_hurt(self, c, m):
         """Sent by a player who got caught by an attack; friends are trusted to be honest."""
@@ -2132,15 +2218,23 @@ class Game:
         f = bs["fighters"].get(c.key)
         now = time.monotonic()
         if bs["state"] != "fight" or not f or f["hp"] <= 0 or now - f["hurt"] < BOSS_IFRAMES:
+            if f and f["hp"] > 0 and m.get("src") == "puddle" and bs["state"] == "fight":
+                f["poison"] = max(f["poison"], now + POISON_T * (0.5 if f["up"].get("antidote") else 1))  # still keeps you poisoned
             return
         f["hurt"] = now
         if f["shield"]:
             f["shield"] = False
             room.broadcast({"t": "boss_shield", "k": c.key}, scene="boss")
             return
-        f["hp"] -= 1
-        room.broadcast({"t": "boss_hp", "k": c.key, "hp": f["hp"]}, scene="boss")
+        src = str(m.get("src", "shot"))
+        dmg = max(1, round(HIT_DMG.get(src, HIT_DMG["shot"]) * self.dungeon_scale(bs)))
+        if src in ("poison", "puddle"):
+            f["poison"] = now + POISON_T * (0.5 if f["up"].get("antidote") else 1)
+        f["hp"] = max(0, f["hp"] - dmg)
+        room.broadcast({"t": "boss_hp", "k": c.key, "hp": f["hp"], "d": dmg,
+                        "poison": round(max(0.0, f["poison"] - now), 2)}, scene="boss")
         if f["hp"] <= 0:
+            f["poison"] = 0.0
             f["down"], f["rev"] = now, 0.0
             room.broadcast({"t": "boss_down", "k": c.key}, scene="boss")
 
@@ -2385,124 +2479,172 @@ class Game:
                 c.ws.send({"t": "doodle_close", "text": text})
             room.broadcast({"t": "doodle_msg", "k": c.key, "text": text}, scene="doodle")
 
-    # ---- bumper brawl ----------------------------------------------------------------
+    # ---- arcade ------------------------------------------------------------------
+    # Each cabinet is a little 2D game played in your browser; the server keeps a top-10 board per game
+    # for the zone and pays a few coins for a good run.
 
-    def bumper_view(self, room):
-        b = room.bumper
-        now = time.monotonic()
-        return {"t": "bumper", "state": b["state"], "id": b["id"], "alive": list(b["alive"]),
-                "fighters": b["fighters"], "elapsed": round(now - b["start"], 2) if b["state"] == "fight" else 0,
-                "left": round(max(0.0, b["ends"] - now), 2), "wins": b["wins"], "shrink": BUMPER_ROUND_MAX - 15}
-
-    def bumper_join(self, c):
-        room, b = c.room, c.room.bumper
-        b["fighters"][c.key] = {"x": 450, "y": 300, "vx": 0, "vy": 0}
-        c.ws.send(self.bumper_view(room))
-        room.broadcast({"t": "bumper_add", "k": c.key}, scene="bumper", exclude=c)
-        self.bumper_maybe_start(room)
-
-    def bumper_leave(self, c):
-        room, b = c.room, c.room.bumper
-        b["fighters"].pop(c.key, None)
-        was_alive = c.key in b["alive"]
-        b["alive"].discard(c.key)
-        room.broadcast({"t": "bumper_del", "k": c.key}, scene="bumper")
-        if was_alive and b["state"] == "fight" and len(b["alive"]) <= 1:
-            self.bumper_end(room, b["id"])
-        elif b["state"] in ("starting", "countdown") and len(room.in_scene("bumper")) < 2:
-            b["id"] += 1
-            b.update(state="waiting", alive=set())
-            room.broadcast(self.bumper_view(room), scene="bumper")
-
-    def bumper_maybe_start(self, room):
-        b = room.bumper
-        if b["state"] != "waiting" or len(room.in_scene("bumper")) < 2:
+    def on_arcade_score(self, c, m):
+        game = str(m.get("g", ""))
+        cfg = ARCADE_GAMES.get(game)
+        if not cfg or c.scene != "arcade":
             return
-        b["id"] += 1
-        b.update(state="starting", ends=time.monotonic() + BUMPER_START_DELAY)
-        room.broadcast(self.bumper_view(room), scene="bumper")
-        asyncio.get_running_loop().call_later(BUMPER_START_DELAY, self.bumper_countdown, room, b["id"])
+        score = int(num(m.get("s", 0), 0, cfg["max"]))
+        if not c.ready("arcade", 3):
+            return
+        boards = c.room.zone.setdefault("arcade", {})
+        board = boards.setdefault(game, [])
+        mine = next((e for e in board if e["k"] == c.key), None)
+        best = score > (mine["s"] if mine else -1)
+        if best:
+            if mine:
+                board.remove(mine)
+            board.append({"k": c.key, "s": score, "ts": int(time.time())})
+            board.sort(key=lambda e: (-e["s"], e["ts"]))
+            del board[10:]
+        top = bool(board) and board[0]["k"] == c.key and best and score > 0
+        coins = min(cfg["cap"], int(score * cfg["pay"]))
+        self.reward(c, coins=coins, xp=min(40, coins // 2))
+        c.ws.send({"t": "arcade_result", "g": game, "s": score, "coins": coins, "best": best})
+        if best:
+            self.store.mark()
+            c.room.broadcast({"t": "arcade_board", "g": game, "board": board})
+        if top and len(board) > 1:
+            self.post_feed(c.room, f"🕹️ {c.player['name']} set a new {cfg['name']} high score: {score:,}!")
 
-    def bumper_countdown(self, room, token):
-        b = room.bumper
-        if token != b["id"] or b["state"] != "starting":
-            return
-        players = room.in_scene("bumper")
-        if len(players) < 2:
-            b.update(state="waiting")
-            room.broadcast(self.bumper_view(room), scene="bumper")
-            return
-        random.shuffle(players)
-        spawns = {}
-        for i, k in enumerate(players):
-            a = i / len(players) * math.tau
-            spawns[k] = [round(450 + math.cos(a) * BUMPER_SPAWN_R), round(300 + math.sin(a) * BUMPER_SPAWN_R * 0.95)]
-            b["fighters"][k] = {"x": spawns[k][0], "y": spawns[k][1], "vx": 0, "vy": 0}
-        b["id"] += 1
-        b.update(state="countdown", alive=set(players), round=set(players), ends=time.monotonic() + 3)
-        room.broadcast({**self.bumper_view(room), "spawns": spawns}, scene="bumper")
-        asyncio.get_running_loop().call_later(3, self.bumper_fight, room, b["id"])
+    # ---- trading (only in the tavern) ----------------------------------------------
+    # Walk up to someone in the tavern and ask to trade. Both put coins, cosmetics and furniture on
+    # the table; once both press Ready, the swap happens all at once.
 
-    def bumper_fight(self, room, token):
-        b = room.bumper
-        if token != b["id"] or b["state"] != "countdown":
-            return
-        b.update(state="fight", start=time.monotonic(), ends=time.monotonic() + BUMPER_ROUND_MAX)
-        room.broadcast(self.bumper_view(room), scene="bumper")
-        asyncio.get_running_loop().call_later(BUMPER_ROUND_MAX, self.bumper_end, room, b["id"])
+    def tradable_item(self, item_id):
+        it = ITEMS.get(item_id)
+        return bool(it) and not it.get("free") and "unlock" not in it and "achievement" not in it
 
-    def on_bumper_move(self, c, m):
-        b = c.room.bumper
-        f = b["fighters"].get(c.key)
-        if not f:
-            return
-        f.update(x=round(num(m["x"], -200, 1100), 1), y=round(num(m["y"], -200, 800), 1),
-                 vx=round(num(m["vx"], -2000, 2000), 1), vy=round(num(m["vy"], -2000, 2000), 1),
-                 h=round(num(m.get("h", 0), -1e4, 1e4), 3))
-        c.room.broadcast({"t": "bumper_pos", "k": c.key, **f, "d": bool(m.get("d"))}, scene="bumper", exclude=c)
+    def trade_of(self, room, key):
+        return next((t for t in room.trades.values() if key in t["who"]), None)
 
-    def on_bumper_out(self, c, m):
-        room, b = c.room, c.room.bumper
-        if b["state"] != "fight" or c.key not in b["alive"]:
-            return
-        b["alive"].discard(c.key)
-        by = str(m.get("by") or "")
-        by = by if by != c.key and by in b["round"] and by in room.clients else None
-        room.broadcast({"t": "bumper_out", "k": c.key, "by": by}, scene="bumper")
-        if by:
-            self.reward(room.clients[by], coins=10, xp=5)
-        if len(b["alive"]) <= 1:
-            self.bumper_end(room, b["id"])
+    def trade_view(self, t):
+        return {"t": "trade", "id": t["id"], "who": t["who"], "offers": t["offers"], "ready": t["ready"]}
 
-    def bumper_end(self, room, token):
-        b = room.bumper
-        if token != b["id"] or b["state"] != "fight":
-            return
-        winner = next(iter(b["alive"]), None) if len(b["alive"]) == 1 else None
-        b["id"] += 1
-        b.update(state="done", ends=time.monotonic() + 4)
-        for k in b["round"]:
-            c = room.clients.get(k)
-            if not c or c.scene != "bumper":
-                continue
-            if k == winner:
-                self.reward(c, coins=120, xp=60, bumperWins=1, wins=1)
-            else:
-                self.reward(c, coins=15, xp=10)
-        if winner:
-            b["wins"][winner] = b["wins"].get(winner, 0) + 1
-            if len(b["round"]) >= 3:
-                self.post_feed(room, f"💥 {room.zone['players'][winner]['name']} won a round of Bumper Brawl!")
-        room.broadcast({**self.bumper_view(room), "winner": winner}, scene="bumper")
-        asyncio.get_running_loop().call_later(4, self.bumper_reset, room, b["id"])
+    def trade_send(self, room, t, msg=None):
+        for k in t["who"]:
+            cl = room.clients.get(k)
+            if cl:
+                cl.ws.send(msg or self.trade_view(t))
 
-    def bumper_reset(self, room, token):
-        b = room.bumper
-        if token != b["id"] or b["state"] != "done":
+    def trade_drop(self, room, key, why):
+        t = self.trade_of(room, key)
+        if t:
+            room.trades.pop(t["id"], None)
+            self.trade_send(room, t, {"t": "trade_closed", "id": t["id"], "why": f"{room.zone['players'].get(key, {}).get('name', 'They')} {why}."})
+
+    def on_trade_ask(self, c, m):
+        room = c.room
+        if c.scene != "tavern":
+            raise GameError("Trading happens in the tavern at the Trading Post.")
+        key, other = self.find_member(room.zone, m.get("to"))
+        cl = room.clients.get(key)
+        if not other or key == c.key or not cl or cl.scene != "tavern":
+            raise GameError("They need to be here in the tavern to trade.")
+        if self.trade_of(room, c.key) or self.trade_of(room, key):
+            raise GameError("One of you is already trading.")
+        if not c.ready("trade_ask", 3):
+            raise GameError("Hang on a moment before asking again.")
+        cl.ws.send({"t": "trade_asked", "from": c.key})
+        self.sys(c, f"Asked {other['name']} to trade…")
+
+    def on_trade_answer(self, c, m):
+        room = c.room
+        key, other = self.find_member(room.zone, m.get("from"))
+        asker = room.clients.get(key)
+        if not other or not asker:
             return
-        b.update(state="waiting", alive=set(), round=set())
-        room.broadcast(self.bumper_view(room), scene="bumper")
-        self.bumper_maybe_start(room)
+        if not m.get("yes"):
+            return self.sys(asker, f"{c.player['name']} said no thanks.")
+        if c.scene != "tavern" or asker.scene != "tavern":
+            raise GameError("You both need to be in the tavern.")
+        if self.trade_of(room, c.key) or self.trade_of(room, key):
+            raise GameError("One of you is already trading.")
+        room.trade_seq += 1
+        empty = lambda: {"coins": 0, "items": [], "furni": {}}
+        t = {"id": room.trade_seq, "who": [key, c.key], "offers": {key: empty(), c.key: empty()}, "ready": {key: False, c.key: False}}
+        room.trades[t["id"]] = t
+        self.trade_send(room, t)
+
+    def check_offer(self, p, offer):
+        """Make sure someone still has everything they put on the table."""
+        if offer["coins"] > p["coins"]:
+            raise GameError(f"{p['name']} doesn't have {offer['coins']:,} coins.")
+        for i in offer["items"]:
+            if i not in p["owned"] or not self.tradable_item(i):
+                raise GameError(f"{p['name']} can't trade that item.")
+        placed = {}
+        for it in p["house"]["items"]:
+            placed[it["id"]] = placed.get(it["id"], 0) + 1
+        for fid, n in offer["furni"].items():
+            if fid not in FURN or "price" not in FURN[fid] or p["furni"].get(fid, 0) - placed.get(fid, 0) < n:
+                raise GameError(f"{p['name']} doesn't have that furniture free to trade (put it away first).")
+
+    def on_trade_offer(self, c, m):
+        room = c.room
+        t = self.trade_of(room, c.key)
+        if not t:
+            return
+        offer = {
+            "coins": int(num(m.get("coins", 0), 0, 10**9)),
+            "items": [str(i) for i in list(m.get("items") or [])[:24]],
+            "furni": {str(k): int(num(v, 1, 20)) for k, v in dict(m.get("furni") or {}).items() if int(num(v, 0, 20)) > 0},
+        }
+        offer["items"] = list(dict.fromkeys(offer["items"]))
+        self.check_offer(c.player, offer)
+        t["offers"][c.key] = offer
+        t["ready"] = {k: False for k in t["who"]}  # any change means both look again
+        self.trade_send(room, t)
+
+    def on_trade_ready(self, c, m):
+        room = c.room
+        t = self.trade_of(room, c.key)
+        if not t:
+            return
+        t["ready"][c.key] = bool(m.get("on", True))
+        if not all(t["ready"].values()):
+            return self.trade_send(room, t)
+        a, b = t["who"]
+        pa, pb = room.zone["players"][a], room.zone["players"][b]
+        oa, ob = t["offers"][a], t["offers"][b]
+        try:
+            self.check_offer(pa, oa)
+            self.check_offer(pb, ob)
+            for i in oa["items"]:
+                if i in pb["owned"]:
+                    raise GameError(f"{pb['name']} already has {ITEMS[i]['name']}.")
+            for i in ob["items"]:
+                if i in pa["owned"]:
+                    raise GameError(f"{pa['name']} already has {ITEMS[i]['name']}.")
+        except GameError as e:
+            t["ready"] = {k: False for k in t["who"]}
+            self.trade_send(room, t, {**self.trade_view(t), "error": str(e)})
+            return
+        for giver, taker, offer in ((pa, pb, oa), (pb, pa, ob)):
+            giver["coins"] -= offer["coins"]
+            taker["coins"] += offer["coins"]
+            for i in offer["items"]:
+                giver["owned"].remove(i)
+                taker["owned"].append(i)
+                slot = ITEMS[i]["slot"]
+                if giver["look"].get(slot) == i:
+                    giver["look"][slot] = TRADE_FALLBACK.get(slot, f"{slot}_none")
+            for fid, n in offer["furni"].items():
+                giver["furni"][fid] -= n
+                taker["furni"][fid] = taker["furni"].get(fid, 0) + n
+        room.trades.pop(t["id"], None)
+        self.store.mark()
+        self.push_player(room, a)
+        self.push_player(room, b)
+        self.trade_send(room, t, {"t": "trade_done", "id": t["id"]})
+        self.post_feed(room, f"🤝 {pa['name']} and {pb['name']} made a trade at the tavern.")
+
+    def on_trade_cancel(self, c, m):
+        self.trade_drop(c.room, c.key, "cancelled the trade")
 
     # ---- roulette -------------------------------------------------------------------
 

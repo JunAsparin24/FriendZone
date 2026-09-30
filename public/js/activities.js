@@ -5,13 +5,13 @@
 // `icon` names an SVG badge from icons.js; `battle` switches the music to the fight playlist.
 import { fishJournal } from './games/fishing.js';
 import { archery } from './games/archery.js';
-import { trading } from './games/trading.js';
 import { racing } from './games/racing.js';
 import { arena } from './games/arena.js';
 import { boss } from './games/boss.js';
 import { house } from './games/house.js';
 import { doodle } from './games/doodle.js';
-import { bumper } from './games/bumper.js';
+import { arcadeArea } from './areas/arcade.js';
+import { tavernArea } from './areas/tavern.js';
 import { casinoArea } from './areas/casino.js';
 import { styleShopArea, petShopArea } from './areas/store.js';
 import { wardrobe } from './wardrobe.js';
@@ -23,8 +23,8 @@ export const ACTIVITIES = {
     touch: { aim: true, buttons: [{ icon: '💨', label: 'Dash', key: ' ', code: 'Space' }], hint: 'Left thumb: move · Right thumb: touch where to shoot · <b>Dash</b> to dodge' } },
   boss: { icon: 'boss', emoji: '👾', name: 'Boss', place: 'Boss Cave', scene: 'boss', battle: true, area: boss,
     touch: { aim: true, buttons: [{ icon: '💨', label: 'Dash', key: ' ', code: 'Space' }], hint: 'Left thumb: move · Right thumb: touch where to shoot · <b>Dash</b> to dodge' } },
-  bumper: { icon: 'bumper', emoji: '💥', name: 'Bumper', place: 'Bumper Dome', scene: 'bumper', battle: true, area: bumper,
-    touch: { buttons: [{ icon: '🚀', label: 'Boost', key: ' ', code: 'Space' }], hint: 'Left thumb: drive any way · <b>Boost</b> to ram!' } },
+  arcade: { icon: 'arcade', emoji: '🕹️', name: 'Arcade', place: 'The Arcade', scene: 'arcade', area: arcadeArea,
+    touch: { hint: 'Left thumb: walk · Right thumb: look around · tap a cabinet to play' } },
   archery: { icon: 'archery', emoji: '🏹', name: 'Archery', place: 'Archery Range', scene: 'archery', area: archery,
     touch: { stick: false, hint: '<b>Hold</b> to draw the bow, drag to aim, let go to shoot' } },
   casino: { icon: 'casino', emoji: '🎰', name: 'Casino', place: 'The Casino', scene: 'casino', area: casinoArea,
@@ -32,7 +32,8 @@ export const ACTIVITIES = {
   fishing: { icon: 'fishing', emoji: '🎣', name: 'Fishing', world: 'fishing' },
   journal: { icon: 'fishing', emoji: '📖', name: 'Fish Journal', wide: true, mount: fishJournal },
   doodle: { icon: 'doodle', emoji: '🎨', name: 'Doodle', scene: 'doodle', wide: true, mount: doodle },
-  trading: { icon: 'trading', emoji: '💰', name: 'Trading', mount: trading },
+  trading: { icon: 'tavern', emoji: '🍺', name: 'Tavern', place: 'The Tavern', scene: 'tavern', area: tavernArea,
+    touch: { hint: 'Left thumb: walk · walk up to someone to trade with them' } },
   shop: { icon: 'shop', emoji: '👕', name: 'Style Shop', place: 'Style Shop', scene: 'shop', area: styleShopArea,
     touch: { hint: 'Left thumb: walk · Right thumb: look around · tap things to use them' } },
   pets: { icon: 'pets', emoji: '🐾', name: 'Pet Shop', place: 'Pet Shop', scene: 'petshop', area: petShopArea,

@@ -1,5 +1,5 @@
 // Full-screen 3D "areas" you teleport into from the world: the race track, arena, casino floor,
-// boss cave, bumper dome and archery range. There is one shared renderer; each area builds its
+// boss cave, arcade and archery range. There is one shared renderer; each area builds its
 // scene into the stage and gets helpers for characters, name tags, input, cameras and prompts.
 import * as THREE from 'three';
 import { registerLook, mouseLooking } from './mouselook.js';
@@ -216,6 +216,7 @@ class Stage {
     try { this.cleanup?.(); } catch (e) { console.error(e); }
     this.cleanup = null;
     this.active = null;
+    this.camRoom = null;
     this.keys.clear();
     const chat = document.querySelector('.chat.chat-float');
     if (chat) { chat.classList.remove('chat-float'); document.querySelector('#world')?.append(chat); }
@@ -376,7 +377,19 @@ class Stage {
     o.cur.lerp(goal, 1 - Math.exp(-dt * 9));
     // below a low orbit the camera stays off the floor and tilts its gaze up instead (never straight up)
     const LOW = 0.08, orbit = Math.max(o.pitch, LOW), cp = Math.cos(orbit);
-    this.camera.position.set(o.cur.x + Math.sin(o.yaw) * cp * o.dist, Math.max(0.5, o.cur.y + Math.sin(orbit) * o.dist), o.cur.z + Math.cos(o.yaw) * cp * o.dist);
+    let dx = Math.sin(o.yaw) * cp * o.dist, dy = Math.sin(orbit) * o.dist, dz = Math.cos(o.yaw) * cp * o.dist;
+    const room = this.camRoom;
+    if (room && !room.off) {
+      // shorten the arm so the camera stops just inside the walls and under the wall tops
+      const m = 0.35;
+      let t = 1;
+      if (dx > 0) t = Math.min(t, (room.maxX - m - o.cur.x) / dx); else if (dx < 0) t = Math.min(t, (room.minX + m - o.cur.x) / dx);
+      if (dz > 0) t = Math.min(t, (room.maxZ - m - o.cur.z) / dz); else if (dz < 0) t = Math.min(t, (room.minZ + m - o.cur.z) / dz);
+      if (dy > 0) t = Math.min(t, (room.maxY - o.cur.y) / dy);
+      t = Math.max(0.12, t);
+      dx *= t; dy *= t; dz *= t;
+    }
+    this.camera.position.set(o.cur.x + dx, Math.max(0.5, o.cur.y + dy), o.cur.z + dz);
     this.camera.lookAt(o.cur.x, o.cur.y + Math.max(0, LOW - o.pitch) * o.dist * 1.1, o.cur.z);
   }
 
@@ -429,7 +442,9 @@ class Stage {
    * Let the player walk around a room with WASD/click-to-walk, with others in the same scene
    * synced through area_move. solids: [{ x, z, w, d }] boxes (centre + size) or [{ x, z, r }] circles.
    */
-  walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {} }) {
+  walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {}, ceiling = 4.6 }) {
+    // keep the camera inside the room: it can zoom out only as far as the walls (and stays under their top)
+    this.camRoom = bounds ? { ...bounds, maxY: ceiling, off: false } : null;
     const me = this.person(S.me);
     Object.assign(me, { x: spawn.x, z: spawn.z, heading: Math.PI });
     const o = this.useOrbit({ target: new THREE.Vector3(), yaw: 0, pitch: 0.62, dist: 11, minDist: 5, maxDist: 20, minPitch: -0.45, ...orbit });

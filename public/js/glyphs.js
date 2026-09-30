@@ -115,6 +115,11 @@ const ICONS = {
   splash: `<path d="M12 3c3 4.5 5 7.5 5 10a5 5 0 0 1-10 0c0-2.5 2-5.5 5-10z" fill="#39c6ff" ${O}/><path d="M4 18c1-1 2-1 3 0M17 18c1-1 2-1 3 0" stroke="#39c6ff" stroke-width="1.8" stroke-linecap="round"/>`,
   leaf: `<path d="M4 20C4 10 10 4 20 4c0 10-6 16-16 16z" fill="#6ee7a0" ${O}/><path d="M4 20L14 10" stroke="#2f9e44" stroke-width="1.6" stroke-linecap="round"/>`,
   cross: `<path d="M9 3.5h6v5.5h5.5v6H15v5.5H9V15H3.5V9H9z" fill="#ff5d73" ${O}/>`,
+  potion: `<path d="M9 3h6v5l4.5 8a3 3 0 0 1-2.6 4.5H7.1A3 3 0 0 1 4.5 16L9 8z" fill="#8dff3a" ${O}/><path d="M9 3h6" ${O}/><path d="M6.5 14h11" stroke="#fff" stroke-width="1.2" opacity=".7"/><circle cx="10" cy="17" r="1.2" fill="#fff" opacity=".8"/>`,
+  spider: `<ellipse cx="12" cy="14" rx="5" ry="4.5" fill="#6a2f8a" ${O}/><circle cx="12" cy="8.5" r="3" fill="#6a2f8a" ${O}/><circle cx="10.8" cy="8.2" r=".9" fill="#8dff3a"/><circle cx="13.2" cy="8.2" r=".9" fill="#8dff3a"/><path ${W('M7.5 12L3 9M7.5 14.5L2.5 14M7.8 16.5L3.5 20M16.5 12L21 9M16.5 14.5L21.5 14M16.2 16.5L20.5 20', 1.5)}/>`,
+  mug: `<path d="M5 6h11v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" fill="#ffd84d" ${O}/><path d="M16 9h2.5a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H16" fill="none" ${O}/><path d="M4.5 6.5c0-3 12-3 12 0 0 1.5-2 1-3 2-1-1-3-.5-4-1-1 1-5 1.5-5-1z" fill="#fff" ${O}/>`,
+  joystick: `<rect x="3.5" y="14" width="17" height="6.5" rx="2" fill="#7c6bff" ${O}/><path d="M12 14V7" ${O}/><circle cx="12" cy="6" r="3.2" fill="#ff5d73" ${O}/><circle cx="17" cy="17.2" r="1.3" fill="#ffd84d"/>`,
+  snow: `${[0, 60, 120].map((a) => `<path d="M12 2.5v19M12 6l-2.5-2M12 6l2.5-2M12 18l-2.5 2M12 18l2.5 2" transform="rotate(${a} 12 12)" stroke="#8fe3ff" stroke-width="2.2" stroke-linecap="round" fill="none"/>`).join('')}<circle cx="12" cy="12" r="2" fill="#fff" ${O}/>`,
   sleep: `<text x="4" y="14" font-size="10" font-weight="900" fill="#7c6bff" stroke="${INK}" stroke-width=".8" font-family="Rubik,sans-serif">Z</text><text x="12" y="20" font-size="7" font-weight="900" fill="#7c6bff" stroke="${INK}" stroke-width=".6" font-family="Rubik,sans-serif">z</text>`,
 };
 
@@ -134,6 +139,7 @@ const MAP = {
   '🪄': 'wand', '😡': 'angry', '💫': 'dizzy', '🔱': 'trident', '🐉': 'dragon', '🗿': 'moai', '🎡': 'ferris', '🔔': 'bell',
   '🍒': 'cherry', '💎': 'gem', '🍋': 'lemon', '🦅': 'eagle', '❗': 'exclaim', '💦': 'splash', '🍃': 'leaf', '🩺': 'cross',
   '💤': 'sleep', '🐟': 'fish', '🐠': 'fish',
+  '🧪': 'potion', '❄': 'snow', '🕷': 'spider', '🍺': 'mug', '🕹': 'joystick', '🤝': 'wave', '📣': 'bell',
 };
 
 /** An icon as an inline SVG string (1em square, sits on the text line). */

@@ -22,6 +22,7 @@ const kindOf = (id) => FURN[id]?.kind ?? 'floor';
 const owned = (id) => me().furni?.[id] ?? 0;
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
 // where you sit on things (in tiles above the floor)
+const BEDS = new Set(['bed', 'bed_princess']);
 const SEATS = { chair: 0.5, armchair: 0.42, sofa: 0.42, beanbag: 0.3, bed: 0.55, sofa_pink: 0.42, armchair_pink: 0.42, beanbag_pink: 0.3, bed_princess: 0.55 };
 // pictures of the real thing: a 3D snapshot of furniture, the actual texture for floors and walls
 const furniImg = (id) => `<img class="fem-img" src="${furnitureThumb(id)}" alt="">`;
@@ -163,6 +164,7 @@ export function house(stage) {
     spawn: { x: W / 2, z: W - 1.2 }, speed: 5, solids,
     bounds: { minX: 0.1, maxX: W - 0.1, minZ: 0.1, maxZ: W - 0.1 },
     orbit: { yaw: 0, pitch: 0.72, dist: 11, minDist: 5, maxDist: 20 },
+    ceiling: WALL_H * T - 0.3,
   });
   const walkPointer = stage.onPointer;
   const orbit = stage.orbit;
@@ -219,7 +221,7 @@ export function house(stage) {
       const seat = SEATS[it.id] != null;
       entry.inter = stage.interactable({
         x: cx * T, z: cz * T, r: Math.max(w, d) * T * 0.5 + 1.1, obj: built.group,
-        label: seat ? `sit on the ${f.name.toLowerCase()}` : f.action === 'wardrobe' ? 'open your wardrobe' : `use the ${f.name.toLowerCase()}`,
+        label: seat ? `${BEDS.has(it.id) ? 'lie on' : 'sit on'} the ${f.name.toLowerCase()}` : f.action === 'wardrobe' ? 'open your wardrobe' : `use the ${f.name.toLowerCase()}`,
         use: () => { if (!edit) useItem(entry); },
       });
       entry.inter.house = true;
@@ -265,10 +267,11 @@ export function house(stage) {
     seated = entry;
     p.x = (it.x + w / 2) * T;
     p.z = (it.y + d / 2) * T;
-    p.y = SEATS[it.id] * T - 0.42;
+    const bed = BEDS.has(it.id);
+    p.y = bed ? SEATS[it.id] * T - 0.5 : SEATS[it.id] * T - 0.42;
     p.heading = it.r * (Math.PI / 2);
-    p.char.setPose('sit');
-    sfx('squish');
+    p.char.setPose(bed ? 'lie' : 'sit');
+    sfx(bed ? 'snore' : 'squish');
   }
   function standUp() {
     if (!seated) return;
@@ -292,6 +295,7 @@ export function house(stage) {
   function useItem(entry) {
     entry.bounce = 0;
     const f = FURN[entry.it.id];
+    if (seated) { standUp(); return; } // E again gets you up
     if (SEATS[entry.it.id] != null) { sit(entry); return; }
     entry.use?.();
     if (f?.use) sfx(f.use);
@@ -481,7 +485,8 @@ export function house(stage) {
   stage.onKey = (e, down) => {
     if (!down) return;
     const k = e.key.toLowerCase();
-    if (seated && ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) standUp();
+    // once you sit down you stay put until you press E again
+    if (seated && k === 'e' && !e.repeat && !stage.near) { standUp(); return; } // (if nothing else caught the E)
     if (edit && mine()) {
       if (k === 'r') { stage.keys.delete('r'); if (!e.repeat) rotate(); } // R turns furniture instead of the camera
       else if ((k === 'delete' || k === 'backspace') && selected >= 0) { e.preventDefault(); storeSelected(); }
@@ -667,6 +672,7 @@ export function house(stage) {
 
   function setEdit(on) {
     edit = on && mine();
+    if (stage.camRoom) stage.camRoom.off = edit; // decorating gets the bird's-eye view over the walls
     if (!edit && trying()) setPreview(null);
     room.grid.visible = edit;
     if (edit) { sideOpen = true; if (tab === 'visit') tab = 'items'; if (seated) standUp(); }

@@ -4,6 +4,7 @@ import { settings, setSetting, DEFAULTS } from './settings.js';
 import { music } from './music.js';
 import { iconSvg } from './icons.js';
 import { sfx } from './sfx.js';
+import { ACTIONS, keyOf, keyLabel, bind, resetBinds, bindable, captureNextKey } from './keybinds.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -23,11 +24,9 @@ const TOGGLES = {
   names: 'Name tags in the world',
   dayNight: 'Day and night cycle',
 };
-const CONTROLS = [
-  ['Move', 'WASD / arrows, or click the ground'], ['Run', 'Hold Shift'], ['Turn camera', 'Drag, or Q / R'],
-  ['Zoom', 'Scroll wheel'], ['Enter a building', 'E or click it'], ['Chat', 'Enter'], ['Emotes', '1 – 6'],
-  ['Close a window', 'Esc'], ['Mouse look (hide cursor)', 'Tap Ctrl'], ['Big map', 'M'],
-];
+// keys that can't be changed, shown under the keybinds
+const FIXED = [['Also move', 'Arrow keys, or click the ground'], ['Turn camera', 'Drag'], ['Zoom', 'Scroll wheel'], ['Emotes', '1 – 6'], ['Close a window', 'Esc']];
+let waiting = null; // the action waiting for a new key
 
 let el = null;
 
@@ -65,8 +64,12 @@ function render() {
           ${toggle('shake')}${toggle('names')}${toggle('dayNight')}
         </section>
       </div>
-      <details class="keys"><summary>⌨️ Controls cheat sheet</summary>
-        <ul>${CONTROLS.map(([a, b]) => `<li><b>${a}</b><span>${b}</span></li>`).join('')}</ul></details>
+      <details class="keys" ${waiting ? 'open' : ''}><summary>⌨️ Keybinds</summary>
+        <p class="muted small">Click a key, then press the new key you want (Esc to cancel). Taking a key that's already used swaps the two.</p>
+        <ul class="binds">${ACTIONS.map((a) => `<li><b>${a.label}</b>
+          <button class="bind-key ${waiting === a.id ? 'wait' : ''} ${keyOf(a.id) !== a.def ? 'custom' : ''}" data-bind="${a.id}">${waiting === a.id ? 'Press a key…' : keyLabel(keyOf(a.id))}</button></li>`).join('')}
+          ${FIXED.map(([a, b]) => `<li class="fixed"><b>${a}</b><span>${b}</span></li>`).join('')}</ul>
+        <button class="btn ghost small" data-resetkeys>Reset keybinds</button></details>
       <div class="row between"><button class="btn ghost small" data-reset>Reset to defaults</button><button class="btn primary" data-close>Done</button></div>
     </div>`;
 }
@@ -95,8 +98,21 @@ function onClick(e) {
     sfx('click');
   }
   if (e.target.closest('[data-skip]')) { music.skip(); sfx('click'); }
+  const b = e.target.closest('[data-bind]');
+  if (b) {
+    waiting = b.dataset.bind;
+    render();
+    captureNextKey((key) => {
+      const id = waiting;
+      waiting = null;
+      if (key && bindable(key)) { bind(id, key); sfx('pop'); } else if (key) sfx('error');
+      render();
+    });
+    return;
+  }
+  if (e.target.closest('[data-resetkeys]')) { resetBinds(); render(); sfx('pop'); return; }
   if (e.target.closest('[data-reset]')) {
-    setSetting({ ...DEFAULTS });
+    setSetting({ ...DEFAULTS, keys: settings.keys });
     render();
     sfx('pop');
   }

@@ -14,7 +14,7 @@ import { sfx } from '../sfx.js';
 import { $, listen, confetti } from '../games/util.js';
 
 const OUT = outlineMaterial(0.035);
-function add(parent, geo, mat, { p = [0, 0, 0], r = null, s = null, outline = false, cast = true } = {}) {
+export function add(parent, geo, mat, { p = [0, 0, 0], r = null, s = null, outline = false, cast = true } = {}) {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(...p);
   if (r) m.rotation.set(...r);
@@ -27,7 +27,7 @@ function add(parent, geo, mat, { p = [0, 0, 0], r = null, s = null, outline = fa
 }
 
 /** A shop room: floor, walls (the ones between you and the camera hide), a doorway, lights. */
-function room(stage, { w, d, floor, wall, trim, motif = null }) {
+export function room(stage, { w, d, floor, wall, trim, motif = null }) {
   const g = new THREE.Group();
   const floorTex = canvasTexture(256, 256, (c) => {
     for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
@@ -96,7 +96,7 @@ function room(stage, { w, d, floor, wall, trim, motif = null }) {
  * A hanging sign that names an area of the shop (readable from both sides), on two chains from
  * the ceiling. Returns the group.
  */
-function sign(g, text, { x, z, y = 3.6, ry = 0, w = 3.2, h = 0.8, bg = '#2ed8c3', fg = '#ffffff', hang = true } = {}) {
+export function sign(g, text, { x, z, y = 3.6, ry = 0, w = 3.2, h = 0.8, bg = '#2ed8c3', fg = '#ffffff', hang = true } = {}) {
   // hung up near the ceiling so they don't block your view of the room
   if (hang) y = Math.max(y, 4.25);
   w *= 0.82; h *= 0.82;
@@ -128,7 +128,7 @@ function sign(g, text, { x, z, y = 3.6, ry = 0, w = 3.2, h = 0.8, bg = '#2ed8c3'
   return s;
 }
 
-function shopkeeper(g, look, x, z, anim) {
+export function shopkeeper(g, look, x, z, anim) {
   const c = new Character({ ...DEFAULT_LOOK, ...look });
   c.root.position.set(x, 0, z);
   g.add(c.root);
@@ -136,13 +136,13 @@ function shopkeeper(g, look, x, z, anim) {
   return c;
 }
 
-function counter(g, x, z, w, color) {
+export function counter(g, x, z, w, color) {
   add(g, new THREE.BoxGeometry(w, 1.1, 0.9), toon(color), { p: [x, 0.55, z], outline: true });
   add(g, new THREE.BoxGeometry(w + 0.2, 0.1, 1.1), toon('#ffffff'), { p: [x, 1.12, z] });
   add(g, new THREE.BoxGeometry(0.5, 0.4, 0.4), toon('#2b2f4a'), { p: [x + w / 2 - 0.5, 1.37, z] }); // till
 }
 
-function openWalker(stage, { w, d, solids }) {
+export function openWalker(stage, { w, d, solids }) {
   const walker = stage.walker({
     spawn: { x: 0, z: d / 2 - 2.5 }, speed: 5, solids,
     bounds: { minX: -w / 2, maxX: w / 2, minZ: -d / 2, maxZ: d / 2 },

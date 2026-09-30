@@ -193,6 +193,7 @@
     { "id": "target", "name": "Archery Target", "emoji": "🎯", "w": 1, "d": 1, "max": 1, "unlock": { "stat": "archeryBest", "min": 30, "hint": "Score 30+ at archery" }, "use": "thud" },
     { "id": "trophy_slime", "name": "King Slime Statue", "emoji": "🟢", "w": 1, "d": 1, "max": 1, "drop": "King Slime", "use": "squish" },
     { "id": "trophy_golem", "name": "Stone Golem Statue", "emoji": "🗿", "w": 1, "d": 1, "max": 1, "drop": "Stone Golem", "use": "slam" },
+    { "id": "trophy_venom", "name": "Venom Queen Statue", "emoji": "🕷️", "w": 1, "d": 1, "max": 1, "drop": "Venom Queen", "use": "squish" },
     { "id": "trophy_lich", "name": "Bone Lich Statue", "emoji": "💀", "w": 1, "d": 1, "max": 1, "drop": "Bone Lich", "use": "slam" },
     { "id": "trophy_dragon", "name": "Shadow Dragon Statue", "emoji": "🐉", "w": 1, "d": 1, "max": 1, "drop": "Shadow Dragon", "use": "roar" }
   ],

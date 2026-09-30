@@ -1200,6 +1200,15 @@ export class Character {
       elbows.forEach((e) => { e.rotation.x = -0.95; });
       body.position.set(0, 0, 0);
       body.rotation.set(-0.05, 0, 0);
+    } else if (this.pose === 'lie') {
+      // flat on your back, head towards -Z (the pillow end), feet towards +Z, gently breathing
+      legs.forEach((l) => { l.rotation.x = 0; l.rotation.z = 0; });
+      knees.forEach((k) => { k.rotation.x = 0.05; });
+      arms.forEach((a, i) => { a.rotation.x = 0; a.rotation.z = (i ? 1 : -1) * 0.18; });
+      elbows.forEach((e) => { e.rotation.set(-0.15, 0, 0); });
+      body.rotation.set(-Math.PI / 2, 0, 0);
+      body.position.set(0, 0.2, 0.85 + Math.sin(time * 1.3) * 0.004);
+      head.rotation.set(0.1, 0, 0);
     } else if (this.pose === 'sit') {
       legs.forEach((l) => { l.rotation.x = -1.45; });
       knees.forEach((k) => { k.rotation.x = 1.45; });

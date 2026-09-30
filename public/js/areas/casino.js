@@ -357,6 +357,7 @@ export function casinoArea(stage) {
     bounds: { minX: -RW / 2, maxX: RW / 2, minZ: -RD / 2, maxZ: RD / 2 },
     solids,
     orbit: { yaw: 0, pitch: 0.7, dist: 12, maxDist: 18 },
+    ceiling: WALL_H - 0.4,
   });
   walker.me.heading = Math.PI;
 

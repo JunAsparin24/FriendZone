@@ -321,44 +321,62 @@ export const BUILDERS = {
     }
   },
 
-  dome(g, w, d, anim) {
-    const r = Math.min(w, d) / 2 - 0.4;
-    add(g, new THREE.CylinderGeometry(r + 0.35, r + 0.55, 0.9, 48), toon('#3b5bdb'), { p: [0, 0.45, 0], outline: true });
-    add(g, new THREE.CylinderGeometry(r, r, 0.08, 48), toon('#dff4ff'), { p: [0, 0.93, 0], cast: false });
-    const ring = new THREE.MeshBasicMaterial({ color: '#ff5dac' });
-    add(g, new THREE.TorusGeometry(r + 0.42, 0.07, 8, 64), ring, { p: [0, 0.7, 0], r: [Math.PI / 2, 0, 0], cast: false });
-    const glass = new THREE.MeshStandardMaterial({ color: '#bfefff', transparent: true, opacity: 0.22, roughness: 0.05, metalness: 0.2, depthWrite: false, side: THREE.DoubleSide });
-    add(g, new THREE.SphereGeometry(r, 40, 20, 0, TAU, 0, Math.PI / 2), glass, { p: [0, 0.9, 0], outline: false, cast: false });
-    const rib = toon('#ffffff');
-    for (let i = 0; i < 4; i++) {
-      add(g, new THREE.TorusGeometry(r, 0.06, 6, 40, Math.PI), rib, { p: [0, 0.9, 0], r: [0, (i / 4) * Math.PI, 0], cast: false });
+  arcade(g, w, d, anim, ctx) {
+    // a neon-trimmed games hall: dark purple walls, a marquee sign with chasing bulbs, a big pixel
+    // invader on the roof and glowing windows showing cabinets inside
+    const h = 5.2;
+    walls(g, w, h, d, '#3b2a6e');
+    add(g, new THREE.BoxGeometry(w + 0.6, 0.4, d + 0.6), toon('#221845'), { p: [0, h + 0.2, 0], outline: true });
+    const neon = (c) => basic(c);
+    for (const [y, c] of [[h - 0.15, '#ff4fd8'], [0.7, '#39e6ff']]) {
+      add(g, new THREE.BoxGeometry(w + 0.08, 0.12, 0.08), neon(c), { p: [0, y, d / 2 + 0.05], cast: false });
     }
-    add(g, new THREE.SphereGeometry(0.35, 12, 10), shiny('#ffc53d'), { p: [0, r + 0.95, 0] });
-    // bumper cars circling inside
-    const cars = ['#ff5d73', '#ffd84d', '#6ee7a0'].map((c) => {
-      const car = new THREE.Group();
-      add(car, new THREE.CylinderGeometry(0.55, 0.6, 0.35, 20), toon(c), { p: [0, 0.2, 0], outline: true });
-      add(car, new THREE.TorusGeometry(0.62, 0.1, 8, 24), toon('#2b2f4a'), { p: [0, 0.15, 0], r: [Math.PI / 2, 0, 0] });
-      add(car, new THREE.SphereGeometry(0.22, 12, 10), toon('#f6c9a0'), { p: [0, 0.65, 0] });
-      car.position.y = 0.95;
-      g.add(car);
-      return car;
+    for (const x of [-w / 2 - 0.04, w / 2 + 0.04]) add(g, new THREE.BoxGeometry(0.1, h, 0.1), neon('#ff4fd8'), { p: [x, h / 2, d / 2 + 0.05], cast: false });
+    // door + glowing windows with little cabinets
+    door(g, 0, d / 2 + 0.08, 2.0, 3.0, '#ff4fd8');
+    for (const x of [-w * 0.3, w * 0.3]) {
+      add(g, new THREE.BoxGeometry(2.6, 1.9, 0.12), toon('#1a1330'), { p: [x, 2.3, d / 2 + 0.06] });
+      add(g, new THREE.BoxGeometry(2.4, 1.7, 0.14), toon('#6a4fd8', { emissive: '#8b6bff', emissiveIntensity: 0.6 }), { p: [x, 2.3, d / 2 + 0.07], cast: false });
+      for (const o of [-0.6, 0, 0.6]) add(g, new THREE.BoxGeometry(0.4, 1.0, 0.05), toon(['#ff5d73', '#39c6ff', '#ffd84d'][(o + 0.6) / 0.6 | 0]), { p: [x + o, 1.95, d / 2 + 0.16], cast: false });
+    }
+    // marquee with chasing bulbs
+    const signW = 8, signH = 1.6;
+    const tex = ctx.text(1024, 205, (c) => {
+      const grd = c.createLinearGradient(0, 0, 0, 205);
+      grd.addColorStop(0, '#2a1a5e'); grd.addColorStop(1, '#140c33');
+      c.fillStyle = grd; c.fillRect(0, 0, 1024, 205);
+      c.font = '130px "Luckiest Guy", Rubik, sans-serif';
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.shadowColor = '#ff4fd8'; c.shadowBlur = 30;
+      c.fillStyle = '#ffffff'; c.fillText('ARCADE', 512, 115);
     });
-    anim.push((t) => {
-      const hue = (t * 0.15) % 1;
-      ring.color.setHSL(hue, 0.9, 0.62);
-      cars.forEach((car, i) => {
-        const a = t * (0.7 + i * 0.15) + i * 2.1;
-        const rr = (r - 1.1) * (0.6 + 0.4 * Math.sin(t * 0.9 + i));
-        car.position.x = Math.cos(a) * rr;
-        car.position.z = Math.sin(a) * rr;
-        car.rotation.y = -a;
-        car.position.y = 0.95 + Math.abs(Math.sin(t * 6 + i)) * 0.05;
-      });
-    });
-    // entrance arch + neon sign
-    add(g, new THREE.BoxGeometry(2.4, 2.6, 0.5), toon('#3b5bdb'), { p: [0, 1.3, r + 0.25], outline: true });
-    add(g, new THREE.BoxGeometry(1.6, 2.1, 0.55), basic('#0e1535'), { p: [0, 1.05, r + 0.27] });
+    add(g, new THREE.BoxGeometry(signW, signH, 0.3), [toon('#140c33'), toon('#140c33'), toon('#140c33'), toon('#140c33'), new THREE.MeshBasicMaterial({ map: tex }), toon('#140c33')], { p: [0, h + 1.3, d / 2 - 0.3], outline: true });
+    const bulbs = [];
+    const on = basic('#fff6b0'), off = basic('#6a5a2a');
+    for (let i = 0; i < 20; i++) {
+      const x = -signW / 2 + 0.25 + (i * (signW - 0.5)) / 19;
+      for (const y of [h + 1.3 + signH / 2 + 0.08, h + 1.3 - signH / 2 - 0.08]) bulbs.push(add(g, new THREE.SphereGeometry(0.09, 8, 6), on, { p: [x, y, d / 2 - 0.12], cast: false }));
+    }
+    anim.push((t) => { const k = Math.floor(t * 8); bulbs.forEach((b, i) => { b.material = (i + k) % 3 ? on : off; }); });
+    // a pixel space invader on the roof that bobs about
+    const inv = new THREE.Group();
+    inv.position.set(-w * 0.28, h + 0.4, -d * 0.1);
+    g.add(inv);
+    const px = ['0010000100', '0001001000', '0011111100', '0110110110', '1111111111', '1011111101', '1010000101', '0001101100'];
+    const pm = basic('#6ee7a0');
+    px.forEach((row, r) => [...row].forEach((ch, cI) => {
+      if (ch === '1') add(inv, new THREE.BoxGeometry(0.28, 0.28, 0.28), pm, { p: [(cI - 4.5) * 0.28, (7 - r) * 0.28 + 0.2, 0], cast: false });
+    }));
+    anim.push((t) => { inv.position.y = h + 0.4 + Math.abs(Math.sin(t * 2)) * 0.25; inv.rotation.y = Math.sin(t * 0.8) * 0.4; });
+    // a giant joystick by the door
+    const js = new THREE.Group();
+    js.position.set(w / 2 + 1.2, 0, d / 2 + 0.8);
+    g.add(js);
+    add(js, new THREE.BoxGeometry(1.2, 0.5, 1.2), toon('#221845'), { p: [0, 0.25, 0], outline: true });
+    const stick = add(js, new THREE.CylinderGeometry(0.08, 0.08, 1.2, 10), toon('#c0c6d4'), { p: [0, 1.0, 0] });
+    add(stick, new THREE.SphereGeometry(0.28, 16, 12), toon('#ff5d73'), { p: [0, 0.65, 0], outline: true });
+    anim.push((t) => { stick.rotation.z = Math.sin(t * 1.3) * 0.25; stick.rotation.x = Math.cos(t * 1.1) * 0.2; });
+    add(js, new THREE.CylinderGeometry(0.2, 0.2, 0.1, 16), toon('#39c6ff'), { p: [-0.35, 0.55, 0.35], outline: true });
   },
 
   garage(g, w, d, anim, ctx) {

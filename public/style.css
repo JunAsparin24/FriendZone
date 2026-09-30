@@ -261,7 +261,10 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   background: #0d1f4ad9; border: 2px solid var(--line); backdrop-filter: blur(6px);
   box-shadow: 0 6px 0 #0003;
 }
-.hud-me { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-radius: 12px; flex-wrap: wrap; }
+.hud-me { display: flex; gap: 8px; align-items: center; padding: 8px 12px 10px; border-radius: 12px; flex-wrap: wrap; }
+.hud-xp { position: relative; flex: 1 1 100%; height: 14px; border-radius: 99px; background: #0a1838; border: 2px solid #3a6fd0; overflow: hidden; margin-top: 2px; }
+.hud-xp i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #6ee7a0, #39c6ff); border-radius: 99px; transition: width .4s; }
+.hud-xp small { position: relative; display: block; text-align: center; font-size: 10px; line-height: 10px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000a; }
 .pill { background: var(--bg-2); border-radius: 8px; padding: 2px 8px; font-size: 13px; }
 .zone-tag { font-size: 13px; }
 .hud-online {
@@ -300,7 +303,12 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .activity-bar button:hover { border-color: var(--accent); color: var(--text); transform: translateY(-2px); }
 .activity-bar .em { font-size: 22px; }
 .chat { position: absolute; left: 12px; bottom: 14px; width: min(320px, calc(100% - 24px)); }
-.chat.chat-float { position: fixed; z-index: 14; } /* over an open area (shops, games, houses) */
+/* over an open area (shops, games, houses): messages float above the game's own bottom panels, and
+   the text box only shows while you're typing (press Enter) */
+.chat.chat-float { position: fixed; z-index: 14; bottom: 150px; width: min(300px, calc(100% - 24px)); pointer-events: none; }
+.chat.chat-float ul { opacity: .9; }
+.chat.chat-float form { position: absolute; left: 0; right: 0; top: 100%; margin-top: 4px; opacity: 0; pointer-events: none; transition: opacity .15s; }
+.chat.chat-float:focus-within form { opacity: 1; pointer-events: auto; }
 .chat.chat-float .emote-bar { display: none; } /* emotes are a town thing */
 .chat ul { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .chat li { background: #0d1f4ab3; border-radius: 8px; padding: 4px 8px; font-size: 13px; width: fit-content; max-width: 100%; overflow-wrap: anywhere; }
@@ -566,6 +574,12 @@ body.no-names .wl-tag { display: none; }
 .keys ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px; font-size: 13px; }
 .keys li { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid #ffffff14; padding: 3px 0; }
 .keys li span { color: var(--muted); }
+.keys li { align-items: center; }
+.bind-key { min-width: 64px; padding: 4px 10px; border-radius: 8px; border: 2px solid #3a6fd0; background: #0d1f4a; color: var(--text); font: 700 13px var(--body); cursor: pointer; }
+.bind-key:hover { border-color: var(--accent); }
+.bind-key.custom { border-color: #6ee7a0; }
+.bind-key.wait { border-color: var(--accent); background: #3a2a00; animation: glow 1s infinite; }
+.keys li.fixed b { font-weight: 600; color: var(--muted); }
 @media (max-width: 760px) { .set-grid { grid-template-columns: 1fr; } .keys ul { grid-template-columns: 1fr; } }
 
 /* ---------- 3D areas ---------- */
@@ -1179,3 +1193,51 @@ html.touch .hud-top { padding-right: 172px; } /* room for the 💬 🔊 ⚙️ b
 .dd-rounds span { font-weight: 700; margin-right: 4px; }
 .dd-rounds button { width: 34px; height: 34px; border-radius: 10px; border: 2px solid #3a6fd0; background: #0d1f4a; color: var(--text); font: 700 15px var(--body); cursor: pointer; }
 .dd-rounds button.on { background: var(--accent); color: #1a1330; border-color: var(--accent); }
+
+/* ---------- arcade cabinet panel ---------- */
+.arc { display: grid; grid-template-columns: minmax(0, 480px) 1fr; gap: 16px; align-items: start; }
+.arc-screen { position: relative; border-radius: 16px; overflow: hidden; border: 4px solid var(--c); box-shadow: 0 0 28px color-mix(in srgb, var(--c) 45%, transparent); background: #000; }
+.arc-screen canvas { display: block; width: 100%; height: auto; aspect-ratio: 480 / 560; max-height: calc(100vh - 220px); object-fit: contain; touch-action: none; }
+.arc-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #0a0620cc; text-align: center; padding: 20px; }
+.arc-title { font-family: var(--pixel); font-size: 44px; text-shadow: -2px 3px 0 #000; }
+.arc-final { font-size: 18px; }
+.arc-side h2 { margin: 0 0 4px; }
+.arc-side h3 { margin: 14px 0 6px; font-family: var(--pixel); font-weight: 400; color: #ffd27a; }
+.arc-controls { font-size: 13px; background: #0d1f4a88; border-radius: 10px; padding: 8px 10px; }
+.arc-board { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.arc-board li { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; align-items: center; background: #0d1f4a88; border-radius: 8px; padding: 5px 10px; font-size: 14px; }
+.arc-board li.me { outline: 2px solid var(--accent); }
+.arc-board li.muted { display: block; }
+.arc-board em { font-style: normal; font-weight: 700; color: #ffd84d; }
+@media (max-width: 760px) { .arc { grid-template-columns: 1fr; } }
+
+/* ---------- tavern trading ---------- */
+.trade { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.tr-side { background: #0d1f4a88; border: 2px solid #3a6fd066; border-radius: 16px; padding: 12px; min-width: 0; transition: border-color .2s, box-shadow .2s; }
+.tr-side.ready { border-color: #6ee7a0; box-shadow: 0 0 16px #6ee7a066; }
+.tr-side h3 { margin: 0 0 8px; font-family: var(--pixel); font-weight: 400; color: #ffd27a; }
+.tr-coins { display: flex; align-items: center; gap: 6px; }
+.tr-coins input { width: 120px; }
+.tr-pick { display: flex; flex-wrap: wrap; gap: 6px; max-height: 190px; overflow: auto; }
+.tr-chip { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 88px; max-width: 110px; padding: 6px; border-radius: 10px; border: 2px solid #3a6fd0; border-left: 5px solid var(--r, #3a6fd0); background: #0d1f4a; color: var(--text); font: 600 12px var(--body); cursor: pointer; }
+.tr-chip small { color: var(--muted); font-weight: 500; }
+.tr-chip.on { border-color: #6ee7a0; background: #16384a; }
+.tr-chip:disabled { cursor: default; opacity: 1; }
+.tr-chip.furn img { width: 44px; height: 44px; object-fit: contain; }
+.tr-coinline { width: 100%; font-size: 16px; }
+.tr-ready.on { background: #3fb356; }
+.trade-ask { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 10px 14px; z-index: 3; }
+@media (max-width: 760px) { .trade { grid-template-columns: 1fr; } }
+
+/* dungeon: health bars under everyone's name */
+.dg-hp { position: relative; display: inline-flex; align-items: center; gap: 3px; min-width: 80px; height: 13px; border-radius: 99px; background: #1a0f24cc; border: 2px solid #ffffffaa; overflow: hidden; vertical-align: middle; }
+.dg-hp i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ff5d73, #ff9f43); transition: width .25s; }
+.dg-hp.poison i { background: linear-gradient(90deg, #5fbf3a, #8dff3a); }
+.dg-hp b { position: relative; flex: 1; text-align: center; font-size: 9px; line-height: 9px; color: #fff; text-shadow: 0 1px 2px #000; }
+
+.dg-myhp { position: relative; width: 240px; height: 22px; border-radius: 99px; background: #1a0f24; border: 3px solid #fff; overflow: hidden; margin-bottom: 6px; }
+.dg-myhp i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ff5d73, #ff9f43); transition: width .25s; }
+.dg-myhp.poison i { background: linear-gradient(90deg, #5fbf3a, #8dff3a); }
+.dg-myhp.low { animation: glow 0.8s infinite; }
+.dg-myhp b { position: relative; display: block; text-align: center; font-size: 13px; line-height: 16px; color: #fff; text-shadow: 0 1px 2px #000; }
+.arena-bottom:has(.dg-myhp) { bottom: 64px; }

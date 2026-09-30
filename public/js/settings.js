@@ -16,6 +16,7 @@ export const DEFAULTS = {
   names: true,      // name tags over players in the world
   dayNight: true,   // the world goes through day and night (off: always daytime)
   nowPlaying: true, // pop up the song name when the music changes
+  keys: {},         // custom keybinds: action id -> key (see keybinds.js)
 };
 
 function load() {

@@ -87,11 +87,17 @@ const GLYPHS = {
       <path d="M28 40 L34 51 L40 40 Z" fill="#f6c9a0" ${S}/>
       <path d="M32 47 L34 51 L36 47 Z" fill="${INK}"/>
     </g>`],
-  bumper: ['#9fd8ff', '#3b6fd0', `
-    <ellipse cx="32" cy="46" rx="26" ry="10" fill="#dff4ff" ${S}/>
-    <circle cx="20" cy="36" r="12" fill="#ff5d73" ${S}/><circle cx="20" cy="36" r="6" fill="#fff" opacity=".5"/>
-    <circle cx="45" cy="30" r="12" fill="#ffd84d" ${S}/><circle cx="45" cy="30" r="6" fill="#fff" opacity=".5"/>
-    <path d="M32 14 l2.5 6 6 1 -4.5 4 1.5 6 -5.5 -3 -5.5 3 1.5 -6 -4.5 -4 6 -1 Z" fill="#fff" ${S} stroke-width="2"/>`],
+  arcade: ['#b77bff', '#5a2fd0', `
+    <rect x="16" y="8" width="32" height="48" rx="4" fill="#fff" ${S}/>
+    <rect x="20" y="13" width="24" height="17" rx="2" fill="#2b1f5e" ${S} stroke-width="2"/>
+    <path d="M25 26 h3 v-3 h3 v3 h2 v-3 h3 v3 h3" stroke="#6ee7a0" stroke-width="2.5" fill="none"/>
+    <circle cx="26" cy="41" r="4" fill="#ff5d73" ${S} stroke-width="2"/>
+    <circle cx="38" cy="38" r="2.6" fill="#ffd84d" ${S} stroke-width="2"/><circle cx="41" cy="44" r="2.6" fill="#39c6ff" ${S} stroke-width="2"/>`],
+  tavern: ['#ffc46b', '#b0662a', `
+    <path d="M18 18 h22 v32 a4 4 0 0 1 -4 4 h-14 a4 4 0 0 1 -4 -4 Z" fill="#ffd84d" ${S}/>
+    <path d="M40 24 h5 a5 5 0 0 1 5 5 v8 a5 5 0 0 1 -5 5 h-5" fill="none" ${S} stroke-width="3.5"/>
+    <path d="M16 18 c0 -8 26 -8 26 0 c0 5 -6 3 -8 6 c-3 -3 -6 -1 -9 -3 c-3 2 -9 3 -9 -3 Z" fill="#fff" ${S}/>
+    <path d="M24 30 v18 M31 30 v18" stroke="#e0a020" stroke-width="2.5" stroke-linecap="round"/>`],
   roulette: ['#5fdf8f', '#1f7a47', `
     <circle cx="32" cy="33" r="22" fill="#8b5a2b" ${S}/>
     <circle cx="32" cy="33" r="16" fill="none" stroke="#e0463c" stroke-width="10" stroke-dasharray="6.28 6.28"/>

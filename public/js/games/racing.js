@@ -415,6 +415,157 @@ function buildTrack() {
     palm.position.set(x, 0, z);
     g.add(palm);
   }
+  // ---- more to look at: a thick instanced forest, two little villages, a farm, wind turbines,
+  // trackside billboards and hay bales. Everything keeps clear of the road, the lake and the tunnel hill.
+  const free = (x, z, pad) => distToTrack(x, z) > TW / 2 + pad && !(z > 90 && z < 118 && x > -24 && x < 84)
+    && Math.hypot(x - lakeAt.x, z - lakeAt.z) > 58 && Math.hypot(x - mid.x, z - mid.z) > 42;
+  const taken = [];
+  const clearOf = (x, z, r) => !taken.some((t) => Math.hypot(t.x - x, t.z - z) < t.r + r);
+
+  // villages and a farm first, so the forest grows around them
+  const findPlace = (r, pad, tries = 400) => {
+    for (let i = 0; i < tries; i++) {
+      const x = (rnd() - 0.5) * 420, z = (rnd() - 0.5) * 360;
+      if (free(x, z, pad + r) && clearOf(x, z, r)) { taken.push({ x, z, r }); return { x, z }; }
+    }
+    return null;
+  };
+  const roofShape = new THREE.Shape();
+  roofShape.moveTo(-1, 0); roofShape.lineTo(1, 0); roofShape.lineTo(0, 0.8); roofShape.closePath();
+  const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
+  const walls = ['#fff1d6', '#ffd6e0', '#d6f0ff', '#e6ffd6', '#fff6b0', '#f0e0ff'];
+  const roofs = ['#e0463c', '#3b6fd0', '#2f7f5e', '#8b5a2b', '#b77bff'];
+  const cottage = (x, z, ry, k) => {
+    const h = new THREE.Group();
+    const w = 5 + (k % 3), d = 4 + (k % 2), hh = 3 + (k % 2) * 1.2;
+    add(h, new THREE.BoxGeometry(w, hh, d), toon(walls[k % walls.length]), [0, hh / 2, 0], null, { outline: true });
+    const roof = add(h, roofGeo, toon(roofs[k % roofs.length]), [0, hh, 0], [0, Math.PI / 2, 0], { outline: true });
+    roof.scale.set(d / 2 + 0.4, 2.2, w + 0.6);
+    add(h, new THREE.BoxGeometry(1, 1.8, 0.1), toon('#6b4226'), [0, 0.9, d / 2 + 0.05]);
+    for (const sx of [-1, 1]) add(h, new THREE.BoxGeometry(0.9, 0.8, 0.1), basic('#ffe9a8'), [sx * w * 0.3, hh * 0.6, d / 2 + 0.05], null, { cast: false });
+    add(h, new THREE.BoxGeometry(0.6, 1.4, 0.6), toon('#8a8599'), [w * 0.25, hh + 1.2, -d * 0.1]);
+    h.position.set(x, 0, z);
+    h.rotation.y = ry;
+    g.add(h);
+  };
+  for (let v = 0; v < 2; v++) {
+    const c = findPlace(26, 10);
+    if (!c) continue;
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * TAU + rnd() * 0.3, r = 10 + rnd() * 12;
+      const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
+      if (free(x, z, 8)) cottage(x, z, -a + Math.PI / 2, k + v * 3);
+    }
+    // a little church with a steeple in the middle
+    add(g, new THREE.BoxGeometry(4, 5, 7), toon('#f4f0e6'), [c.x, 2.5, c.z], null, { outline: true });
+    add(g, new THREE.BoxGeometry(2.4, 5, 2.4), toon('#f4f0e6'), [c.x, 6, c.z + 2], null, { outline: true });
+    add(g, new THREE.ConeGeometry(2, 4, 4), toon('#3b6fd0'), [c.x, 10.5, c.z + 2], [0, Math.PI / 4, 0], { outline: true });
+  }
+  // the farm: a red barn, silos, fenced fields of crops
+  const farm = findPlace(30, 10);
+  if (farm) {
+    const barn = new THREE.Group();
+    barn.position.set(farm.x, 0, farm.z);
+    g.add(barn);
+    add(barn, new THREE.BoxGeometry(10, 6, 8), toon('#c0392b'), [0, 3, 0], null, { outline: true });
+    const br = add(barn, roofGeo, toon('#5a3a2a'), [0, 6, 0], [0, Math.PI / 2, 0], { outline: true });
+    br.scale.set(4.6, 4, 10.6);
+    add(barn, new THREE.BoxGeometry(3.4, 4, 0.2), toon('#ffffff'), [0, 2, 4.05]);
+    add(barn, new THREE.BoxGeometry(3, 3.6, 0.22), toon('#8b1e1e'), [0, 1.8, 4.1]);
+    for (const [sx, sh] of [[7.5, 11], [10.5, 9]]) {
+      add(barn, new THREE.CylinderGeometry(1.6, 1.6, sh, 16), toon('#d8dde8'), [sx, sh / 2, -1], null, { outline: true });
+      add(barn, new THREE.SphereGeometry(1.6, 16, 8, 0, TAU, 0, Math.PI / 2), toon('#8a93a8'), [sx, sh, -1]);
+    }
+    const crops = ['#e8c64a', '#6fbf4a', '#8b5a2b', '#a8d86a'];
+    for (let f = 0; f < 4; f++) {
+      const fx = farm.x - 14 + (f % 2) * 16, fz = farm.z + 12 + Math.floor(f / 2) * 12;
+      if (!free(fx, fz, 8)) continue;
+      add(g, new THREE.PlaneGeometry(14, 10), toon(crops[f]), [fx, 0.03, fz], [-Math.PI / 2, 0, 0], { cast: false });
+      for (let r = 0; r < 6; r++) add(g, new THREE.BoxGeometry(13, 0.35, 0.5), toon(new THREE.Color(crops[f]).multiplyScalar(0.8).getStyle()), [fx, 0.2, fz - 4 + r * 1.6], null, { cast: false });
+    }
+    for (let k = 0; k < 8; k++) add(g, new THREE.CylinderGeometry(0.8, 0.8, 1.2, 14), toon('#e8c96a'), [farm.x - 8 + k * 2.2, 0.8, farm.z - 7], [0, 0, Math.PI / 2], { outline: true });
+  }
+  // wind turbines on the far side
+  const turbines = [];
+  for (let k = 0; k < 4; k++) {
+    const c = findPlace(8, 20);
+    if (!c) continue;
+    add(g, new THREE.CylinderGeometry(0.4, 0.7, 26, 10), toon('#f4f6fb'), [c.x, 13, c.z], null, { outline: true });
+    const hub = new THREE.Group();
+    hub.position.set(c.x, 26, c.z + 0.8);
+    g.add(hub);
+    add(hub, new THREE.SphereGeometry(0.8, 12, 8), toon('#f4f6fb'), [0, 0, 0]);
+    for (let b = 0; b < 3; b++) add(hub, new THREE.BoxGeometry(0.7, 11, 0.2), toon('#ffffff'), [Math.sin((b / 3) * TAU) * 5.5, Math.cos((b / 3) * TAU) * 5.5, 0], [0, 0, -(b / 3) * TAU], { outline: true });
+    hub.rotation.y = rnd() * TAU;
+    turbines.push(hub);
+  }
+
+  // trackside billboards, facing the road
+  const ads = [['FRIENDZONE GP', '#e0463c'], ['ZOOM COLA', '#39c6ff'], ['TURBO TACOS', '#ff9f43'], ['GO GO GO!', '#6ee7a0'], ['KART MART', '#b77bff'], ['DRIFT KING', '#ff4fd8']];
+  let adN = 0;
+  for (let f = 0.03; f < 1; f += 0.075) {
+    if (inRange(f, TUNNEL) || inRange(f, BRIDGE) || inRange(f, CITY)) continue;
+    const side = adN % 2 ? 1 : -1;
+    const q = track(L * f, side * (TW / 2 + 7));
+    if (!free(q.x, q.z, 5)) continue;
+    const [label, col] = ads[adN++ % ads.length];
+    const bb = new THREE.Group();
+    bb.position.set(q.x, 0, q.z);
+    bb.rotation.y = q.heading + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+    g.add(bb);
+    for (const x of [-3, 3]) add(bb, new THREE.BoxGeometry(0.3, 5, 0.3), toon('#5b5f73'), [x, 2.5, 0]);
+    add(bb, new THREE.BoxGeometry(8.4, 3.2, 0.3), toon('#23263f'), [0, 5, 0], null, { outline: true });
+    const face = new THREE.MeshBasicMaterial({ map: bannerTex(label, col) });
+    add(bb, new THREE.PlaneGeometry(8, 2.8), face, [0, 5, 0.17], null, { cast: false });
+    add(bb, new THREE.PlaneGeometry(8, 2.8), face, [0, 5, -0.17], [0, Math.PI, 0], { cast: false });
+    taken.push({ x: q.x, z: q.z, r: 5 });
+  }
+
+  // hay bales stacked on a few corners, outside the walls
+  for (let f = 0.02; f < 1; f += 0.11) {
+    if (inRange(f, TUNNEL) || inRange(f, BRIDGE) || inRange(f, CITY)) continue;
+    const q = track(L * f, -(TW / 2 + 4));
+    if (!free(q.x, q.z, 2)) continue;
+    for (let k = 0; k < 3; k++) add(g, new THREE.BoxGeometry(2.2, 1.1, 1.2), toon('#e8c96a'), [q.x + q.dx * (k - 1) * 2.3, 0.55, q.z + q.dz * (k - 1) * 2.3], [0, q.heading, 0], { outline: true });
+  }
+
+  // the forest: instanced, so there can be lots of it
+  const spotsT = [];
+  for (let i = 0; i < 9000 && spotsT.length < 1400; i++) {
+    const x = (rnd() - 0.5) * 560, z = (rnd() - 0.5) * 480;
+    if (!free(x, z, 10) || !clearOf(x, z, 3) || (x > 90 && z < -110)) continue;
+    spotsT.push({ x, z, s: 0.8 + rnd() * 0.7, kind: rnd() < 0.5 ? 0 : rnd() < 0.7 ? 1 : 2, c: rnd() });
+  }
+  const inst = (geo, mat, list, y, sy = 1) => {
+    const m = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
+    const o = new THREE.Object3D();
+    list.forEach((t, i) => { o.position.set(t.x, y * t.s, t.z); o.scale.set(t.s, t.s * sy, t.s); o.rotation.y = t.c * TAU; o.updateMatrix(); m.setMatrixAt(i, o.matrix); });
+    m.count = list.length;
+    m.castShadow = true;
+    g.add(m);
+    return m;
+  };
+  const pines = spotsT.filter((t) => t.kind === 0), oaks = spotsT.filter((t) => t.kind === 1), bushes = spotsT.filter((t) => t.kind === 2);
+  inst(new THREE.CylinderGeometry(0.25, 0.35, 2, 6), toon('#7a4a28'), [...pines, ...oaks], 1);
+  inst(new THREE.ConeGeometry(1.9, 5, 8), toon('#2f7f5e'), pines.filter((t) => t.c < 0.5), 3.9);
+  inst(new THREE.ConeGeometry(1.9, 5, 8), toon('#23744a'), pines.filter((t) => t.c >= 0.5), 3.9);
+  inst(new THREE.IcosahedronGeometry(2.1, 0), toon('#3fa34d'), oaks.filter((t) => t.c < 0.5), 3.1);
+  inst(new THREE.IcosahedronGeometry(2.1, 0), toon('#2f8a44'), oaks.filter((t) => t.c >= 0.5), 3.1);
+  inst(new THREE.IcosahedronGeometry(1.2, 0), toon('#4fb35a'), bushes, 0.7, 0.8);
+  // the desert corner: cacti, red rocks and a few dunes
+  const sand = [];
+  for (let i = 0; i < 5000 && sand.length < 260; i++) {
+    const x = 90 + rnd() * 200, z = -110 - rnd() * 140;
+    if (!free(x, z, 8) || !clearOf(x, z, 3)) continue;
+    sand.push({ x, z, s: 0.7 + rnd() * 0.9, kind: rnd(), c: rnd() });
+  }
+  inst(new THREE.CapsuleGeometry(0.5, 2.6, 4, 8), toon('#3f9a4a'), sand.filter((t) => t.kind < 0.4), 1.8);
+  inst(new THREE.DodecahedronGeometry(1.6, 0), toon('#c9683a'), sand.filter((t) => t.kind >= 0.4 && t.kind < 0.75), 0.8);
+  inst(new THREE.DodecahedronGeometry(1.1, 0), toon('#e0955a'), sand.filter((t) => t.kind >= 0.75), 0.5);
+  for (let k = 0; k < 6; k++) {
+    const x = 120 + rnd() * 160, z = -130 - rnd() * 110;
+    if (free(x, z, 14)) add(g, new THREE.SphereGeometry(10, 16, 8, 0, TAU, 0, Math.PI / 2), toon('#e8c98a'), [x, -2, z], null, { cast: false }).scale.set(1.6, 0.35, 1);
+  }
   const balloons = [0, 1, 2, 3].map((i) => {
     const b = new THREE.Group();
     add(b, new THREE.SphereGeometry(4, 16, 12), toon(['#ff5d73', '#ffd84d', '#39c6ff', '#b77bff'][i]), [0, 5, 0], null, { outline: true });
@@ -427,7 +578,7 @@ function buildTrack() {
     const a = (i / 16) * TAU, h = 50 + (i % 4) * 16;
     add(g, new THREE.ConeGeometry(h * 0.9, h, 7), toon('#7e93b8'), [Math.cos(a) * 380, h / 2 - 4, Math.sin(a) * 330]);
   }
-  return { group: g, lamps, cheer, pads, boxes, balloons };
+  return { group: g, lamps, cheer, pads, boxes, balloons, turbines };
 }
 
 function buildKart(color) {
@@ -954,6 +1105,7 @@ export function racing(stage) {
       b.m.position.y = 1.2 + Math.sin(t * 2 + b.x) * 0.2;
     }
     for (const p of env.pads) p.m.material.opacity = 0.7 + Math.sin(t * 8) * 0.3;
+    env.turbines.forEach((h, i) => { h.rotation.z = t * (0.8 + i * 0.15); });
     env.balloons.forEach((b, i) => { b.position.y = 40 + i * 6 + Math.sin(t * 0.3 + i) * 3; b.position.x += Math.sin(t * 0.1 + i) * 0.02; });
 
     // countdown lights on the gantry

@@ -6,6 +6,7 @@ import { S, isTyping, esc } from './state.js';
 import * as M from './map.js';
 import { Character } from './three/character.js';
 import { buildEnvironment } from './three/environment.js';
+import { buildLeaderboards } from './three/leaderboards.js';
 import { DayNight, timeOfDay, dayPhase } from './three/daynight.js';
 import { puffTexture, basic } from './three/materials.js';
 import { sfx, ambient } from './sfx.js';
@@ -29,7 +30,7 @@ const R = 12;                 // collision radius in map px
 const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown', 'hat_horns']);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const SPOT_COLORS = {
-  racing: '#ff5d73', doodle: '#e57bff', boss: '#7c6bff', bumper: '#39c6ff', arena: '#ff9f43', archery: '#37c871',
+  racing: '#ff5d73', doodle: '#e57bff', boss: '#7c6bff', arcade: '#b77bff', arena: '#ff9f43', archery: '#37c871',
   casino: '#ffd84d', fishing: '#3b82f6', trading: '#ffc53d', shop: '#ff6fb5', house: '#2ed8c3', pets: '#ff8fc7',
 };
 /** 0 at night .. 1 in full daylight (for dimming the minimap). */
@@ -97,6 +98,7 @@ export class World {
 
     this.env = buildEnvironment(this.scene);
     this.dayNight = new DayNight(this.scene, this.env, this.hemi, this.sun);
+    this.boards = buildLeaderboards(this.scene);
     document.fonts?.ready.then(() => this.env.redrawText());
 
     this.doorRing = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.45, 48), basic('#ffd84d', { transparent: true, opacity: 0.8, depthWrite: false }));
@@ -426,8 +428,9 @@ export class World {
       if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) this.fishing.press(); return; }
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'e'].includes(key)) { this.stopActivity(); if (key === 'e') return; }
     }
-    if (this.seated && ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'e', ' '].includes(key)) {
-      this.standUp();
+    // on a bench you stay seated until you press E again
+    if (this.seated) {
+      if (key === 'e' && !e.repeat) this.standUp();
       if (key === 'e' || key === ' ') return;
     }
     if (key === 'e' && !this.near && this.nearBench) { this.sit(this.nearBench); return; }
@@ -497,7 +500,7 @@ export class World {
   };
 
   clickAt(cx, cy) {
-    if (this.seated) { this.standUp(); return; }
+    if (this.seated) return; // press E to get up
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
@@ -735,6 +738,7 @@ export class World {
     } else this.targetRing.visible = false;
 
     this.env.update(dt, t);
+    if ((this.boardT = (this.boardT ?? 0) + dt) > 1) { this.boardT = 0; this.boards.refresh(); } // leaderboard signs
     this.updateCamera(dt, me);
     this.updateAmbience(dt, me);
   }

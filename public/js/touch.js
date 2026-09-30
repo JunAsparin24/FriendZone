@@ -151,7 +151,7 @@ const sendKey = (type, key, code) => window.dispatchEvent(new KeyboardEvent(type
 
 /** buttons: [{ label, icon (emoji), key, code }] — each one holds its key down while pressed. */
 export function setTouchButtons(buttons = []) {
-  bar.innerHTML = buttons.map((b, i) => `<button type="button" data-i="${i}"><span>${b.icon ?? ''}</span><small>${b.label}</small></button>`).join('');
+  bar.innerHTML = buttons.map((b, i) => `<button type="button" data-i="${i}" class="${b.big ? 'big' : ''}"><span>${b.icon ?? ''}</span><small>${b.label}</small></button>`).join('');
   bar.querySelectorAll('button').forEach((el) => {
     const b = buttons[+el.dataset.i];
     let held = false;

@@ -34,7 +34,11 @@ const PLAN_SPOTS = [
   { id: 'fishstand', emoji: '🐟', name: 'Fish Market', kind: 'fishstand', x: 1255, y: 2330, w: 130, h: 90, face: 'n' },
   { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 2230, y: 2330, w: 380, h: 270, face: 'n' },
   { id: 'pets', emoji: '🐾', name: 'Pet Shop', kind: 'petshop', x: 3230, y: 1720, w: 280, h: 210, face: 'n' },
+  // the portal to Coral Cove, the beach town, just off the square
+  { id: 'portal', emoji: '🌀', name: 'Portal to Coral Cove', kind: 'portal', x: 2530, y: 1745, w: 100, h: 60, face: 'n' },
 ];
+/** The towns: this one (the map above), and the beach town through the portal. */
+export const TOWN_NAME = 'Maplewood';
 // ---- the lake -----------------------------------------------------------------------------------
 // A natural shoreline: a smooth closed curve through these plan points, with coves and a bulge on
 // the northeast shore where the creek flows in. The dock sits at its northernmost point.
@@ -181,6 +185,7 @@ const ROADS = [
   { name: 'Stadium Way', w: 0.9, lamps: true, ctrl: [P(2950, 1640), P(3060, 1260), door('arcade')] },
   { name: 'Stadium Way', w: 0.85, ctrl: [P(3060, 1260), P(3420, 1070), door('arena')] },
   { name: 'Pet Walk', w: 0.7, ctrl: [P(3370, 1618), door('pets')] },
+  { name: 'Portal Walk', w: 0.7, ctrl: [edge(0.62, 0.78), door('portal')] },
   { name: 'Studio Walk', w: 0.7, ctrl: [door('doodle'), P(2190, 1420), edge(-0.62, -0.78)] },
   { name: 'Shop Walk', w: 0.7, ctrl: [door('shop'), P(2700, 1400), edge(0.62, -0.78)] },
 ];

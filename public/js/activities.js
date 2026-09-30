@@ -14,13 +14,14 @@ import { arcadeArea } from './areas/arcade.js';
 import { tavernArea } from './areas/tavern.js';
 import { casinoArea } from './areas/casino.js';
 import { styleShopArea, petShopArea } from './areas/store.js';
+import { beachArea } from './areas/beach.js';
 import { wardrobe } from './wardrobe.js';
 
 export const ACTIVITIES = {
   racing: { icon: 'racing', emoji: '🏎️', name: 'Racing', place: 'Race Track', scene: 'race', area: racing,
     touch: { buttons: [{ icon: '🌀', label: 'Drift', key: ' ', code: 'Space' }, { icon: '🎁', label: 'Item', key: 'Shift', code: 'ShiftLeft' }], hint: 'Left thumb: push up to drive, left/right to steer · hold <b>Drift</b> through corners' } },
   arena: { icon: 'arena', emoji: '⚔️', name: 'Arena', place: 'The Arena', scene: 'arena', battle: true, area: arena,
-    touch: { aim: true, buttons: [{ icon: '💨', label: 'Dash', key: ' ', code: 'Space' }], hint: 'Left thumb: move · Right thumb: touch where to shoot · <b>Dash</b> to dodge' } },
+    touch: { buttons: [{ icon: '🔫', label: 'Fire', key: 'f', code: 'KeyF', big: true }, { icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }, { icon: '💨', label: 'Slide', key: 'Shift', code: 'ShiftLeft' }], hint: 'Left thumb: move · Right thumb: drag to look · hold <b>Fire</b> to shoot' } },
   boss: { icon: 'boss', emoji: '👾', name: 'Boss', place: 'Boss Cave', scene: 'boss', battle: true, area: boss,
     touch: { aim: true, buttons: [{ icon: '💨', label: 'Dash', key: ' ', code: 'Space' }], hint: 'Left thumb: move · Right thumb: touch where to shoot · <b>Dash</b> to dodge' } },
   arcade: { icon: 'arcade', emoji: '🕹️', name: 'Arcade', place: 'The Arcade', scene: 'arcade', area: arcadeArea,
@@ -39,6 +40,8 @@ export const ACTIVITIES = {
     touch: { hint: 'Left thumb: walk · Right thumb: look around · tap things to use them' } },
   pets: { icon: 'pets', emoji: '🐾', name: 'Pet Shop', place: 'Pet Shop', scene: 'petshop', area: petShopArea,
     touch: { hint: 'Left thumb: walk · Right thumb: look around · tap things to use them' } },
+  portal: { icon: 'portal', emoji: '🌴', name: 'Coral Cove', place: 'Coral Cove', scene: 'beach', area: beachArea,
+    touch: { buttons: [{ icon: '⛏️', label: 'Dig', key: 'f', code: 'KeyF' }], hint: 'Left thumb: walk · Right thumb: look around · <b>Dig</b> where the detector beeps fastest' } },
   wardrobe: { icon: 'wardrobe', emoji: '🪞', name: 'Wardrobe', wide: true, mount: (body) => wardrobe(body) },
   house: { icon: 'house', emoji: '🏠', name: 'Houses', place: 'Houses', scene: 'house', area: house,
     touch: { buttons: [{ icon: '🔄', label: 'Rotate', key: 'r', code: 'KeyR' }], hint: 'Left thumb: walk · Right thumb: look around · tap to place furniture' } },

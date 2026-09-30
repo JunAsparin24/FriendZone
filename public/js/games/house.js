@@ -26,8 +26,8 @@ const ownsDeco = (d) => d.free || owned(d.id) > 0;
 const BEDS = new Set(['bed', 'bed_princess']);
 // top: the height of the cushion/mattress; front: how far its front edge is from the middle (model units)
 const SEATS = {
-  chair: { top: 0.525, front: 0.25 }, armchair: { top: 0.53, front: 0.41 }, sofa: { top: 0.53, front: 0.41 },
-  beanbag: { top: 0.5, front: 0.3 }, bed: { top: 0.6, front: 0 }, sofa_pink: { top: 0.53, front: 0.41 },
+  chair: { top: 0.525, front: 0.25 }, armchair: { top: 0.53, front: 0.41 }, sofa: { top: 0.53, front: 0.41, n: 2 },
+  beanbag: { top: 0.5, front: 0.3 }, bed: { top: 0.6, front: 0 }, sofa_pink: { top: 0.53, front: 0.41, n: 2 },
   armchair_pink: { top: 0.53, front: 0.41 }, beanbag_pink: { top: 0.5, front: 0.3 }, bed_princess: { top: 0.6, front: 0 },
 };
 // pictures of the real thing: a 3D snapshot of furniture, the actual texture for floors and walls
@@ -271,6 +271,7 @@ export function house(stage) {
     });
     applySurfaces();
     renderSelection();
+    applyAllSeats();
   }
 
   /** Floor + wallpaper on the room, showing a previewed (not yet bought) one if you're trying it on. */
@@ -306,11 +307,35 @@ export function house(stage) {
 
   // ---- sitting ------------------------------------------------------------------------
 
+  // who's sitting where: key -> [item index, seat] (seats are side by side, e.g. a sofa's two cushions)
+  const seatsTaken = new Map();
+  const seatCount = (id) => SEATS[id]?.n ?? 1;
+  const takenBy = (i, s) => [...seatsTaken].find(([k, v]) => k !== S.me && v && v[0] === i && v[1] === s)?.[0];
+
+  /** Sit down on the nearest free seat of a piece (E again stands you up). */
   function sit(entry) {
-    const it = entry.it;
-    const [w, d] = footprint(it);
+    const i = entries.indexOf(entry), n = seatCount(entry.it.id);
+    const free = [...Array(n).keys()].filter((s) => takenBy(i, s) == null);
+    if (!free.length) { toast(n > 1 ? "It's full! Every seat is taken." : "Someone's already sitting there!"); return; }
     const p = walker.me;
+    const pick = free.sort((a, b) => seatSpot(entry.it, a).dist(p) - seatSpot(entry.it, b).dist(p))[0];
     seated = entry;
+    entry.seat = pick;
+    entry.at = placeOnSeat(p, entry.it, pick);
+    seatsTaken.set(S.me, [i, pick]);
+    net.send('area_sit', { seat: [i, pick] });
+    net.send('area_move', { x: +p.x.toFixed(2), z: +p.z.toFixed(2), h: +p.heading.toFixed(2) });
+    sfx(BEDS.has(entry.it.id) ? 'snore' : 'squish');
+  }
+  /** Where seat s of a piece is, across its width (in world units, before any perching forward). */
+  function seatSpot(it, s) {
+    const [w, d] = footprint(it), n = seatCount(it.id);
+    const h = it.r * (Math.PI / 2), off = (s - (n - 1) / 2) * (FURN[it.id].w / n) * T;
+    const x = (it.x + w / 2) * T + Math.cos(h) * off, z = (it.y + d / 2) * T - Math.sin(h) * off;
+    return { x, z, dist: (p) => Math.hypot(p.x - x, p.z - z) };
+  }
+  /** Pose person p on seat s of a piece; returns where they ended up. */
+  function placeOnSeat(p, it, s) {
     const seat = SEATS[it.id], bed = BEDS.has(it.id);
     const heading = it.r * (Math.PI / 2), fx = Math.sin(heading), fz = Math.cos(heading);
     p.heading = heading;
@@ -331,12 +356,28 @@ export function house(stage) {
     } else lowest = hipY - 0.12;
     // sitting, you perch near the front so your knees reach the edge and the shins hang down in front
     const fwd = bed ? 0 : Math.max(0, seat.front * T - 0.2 * (hipY / 0.46) + 0.1);
-    p.x = (it.x + w / 2) * T + fx * fwd;
-    p.z = (it.y + d / 2) * T + fz * fwd;
+    const spot = seatSpot(it, s);
+    p.x = spot.x + fx * fwd;
+    p.z = spot.z + fz * fwd;
     p.y = seat.top * T - lowest + 0.01;
-    entry.at = { x: p.x, y: p.y, z: p.z, heading };
-    sfx(bed ? 'snore' : 'squish');
+    return { x: p.x, y: p.y, z: p.z, heading };
   }
+  /** Show someone else sitting (or getting up), from what the server told us. */
+  function applyOtherSeat(k) {
+    const p = stage.people.get(k);
+    if (!p || k === S.me) return;
+    const v = seatsTaken.get(k), entry = v && entries[v[0]];
+    if (entry && SEATS[entry.it.id] != null && v[1] < seatCount(entry.it.id)) {
+      const at = placeOnSeat(p, entry.it, v[1]);
+      p.tx = at.x; p.tz = at.z;
+      p.sitting = true;
+    } else if (p.sitting) {
+      p.sitting = false;
+      p.y = 0;
+      p.char.setPose('idle');
+    }
+  }
+  const applyAllSeats = () => { for (const k of seatsTaken.keys()) applyOtherSeat(k); };
   function standUp() {
     if (!seated) return;
     const it = seated.it;
@@ -354,6 +395,8 @@ export function house(stage) {
     p.y = 0;
     p.char.setPose('idle');
     seated = null;
+    seatsTaken.delete(S.me);
+    net.send('area_sit', { seat: null });
   }
 
   function useItem(entry) {
@@ -799,6 +842,18 @@ export function house(stage) {
       home[field] = id;
       commit('paint');
     }),
+    net.on('area', (m) => {
+      seatsTaken.clear();
+      for (const q of m.others) if (q.seat) seatsTaken.set(q.k, q.seat);
+      setTimeout(applyAllSeats, 0); // (after the walker has added everyone)
+    }),
+    net.on('area_sit', (m) => {
+      if (m.seat) seatsTaken.set(m.k, m.seat); else seatsTaken.delete(m.k);
+      applyOtherSeat(m.k);
+    }),
+    net.on('area_del', (m) => seatsTaken.delete(m.k)),
+    // beaten to the seat by someone else
+    net.on('error', (m) => { if (m.for === 'area_sit' && seated) { const s = seated; seated = null; seatsTaken.delete(S.me); walker.me.y = 0; walker.me.char.setPose('idle'); s.at = null; } }),
     // the owner of the house you're in left the zone: back to your own
     net.on('member_left', (m) => { if (m.k === viewKey) visit(S.me); else if (sideOpen && tab === 'visit') renderVisit(); }),
     net.on('house', (m) => {

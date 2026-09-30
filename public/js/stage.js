@@ -2,6 +2,7 @@
 // boss cave, arcade and archery range. There is one shared renderer; each area builds its
 // scene into the stage and gets helpers for characters, name tags, input, cameras and prompts.
 import * as THREE from 'three';
+import { watchContext } from './gfxguard.js';
 import { registerLook, mouseLooking } from './mouselook.js';
 import { net } from './net.js';
 import { S, esc, isTyping } from './state.js';
@@ -59,7 +60,8 @@ class Stage {
     this.fade = el.querySelector('.area-fade');
     el.querySelector('.area-exit').onclick = () => this.onExit?.();
 
-    const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
+    const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: settings.quality !== 'low', powerPreference: settings.quality === 'low' ? 'default' : 'high-performance' });
+    watchContext(this.canvas);
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -120,8 +122,9 @@ class Stage {
         // in aiming games a finger on the screen aims, it doesn't turn the camera
         const aiming = e.pointerType === 'touch' && this.active?.touch?.aim;
         if (d.moved && this.orbit && !this.orbit.fixed && !aiming) {
-          this.orbit.yaw -= dx * 0.0055 * settings.camSens;
-          this.orbit.pitch = clamp(this.orbit.pitch + dy * 0.0035 * settings.camSens * (settings.invertY ? -1 : 1), this.orbit.minPitch ?? 0.25, this.orbit.maxPitch ?? 1.3);
+          const fk = this.orbit.fps && e.pointerType === 'touch' ? 1.5 : 1; // first person on a phone: turn faster
+          this.orbit.yaw -= dx * 0.0055 * settings.camSens * fk;
+          this.orbit.pitch = clamp(this.orbit.pitch + dy * 0.0035 * fk * settings.camSens * (settings.invertY ? -1 : 1), this.orbit.minPitch ?? 0.25, this.orbit.maxPitch ?? 1.3);
         }
         d.x = e.clientX;
         d.y = e.clientY;
@@ -187,6 +190,8 @@ class Stage {
     // keep the town chat on top of the area, so you can talk in shops, games and houses too
     const chat = document.querySelector('#world .chat');
     if (chat) { chat.classList.add('chat-float'); document.body.append(chat); }
+    const chatInput = document.querySelector('#chatInput');
+    if (chatInput && !chatInput.dataset.townHint) { chatInput.dataset.townHint = chatInput.placeholder; chatInput.placeholder = touch.enabled ? 'Say something…' : 'Enter to chat'; }
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) document.activeElement.blur(); // so E works straight away
     this.shakeAmt = 0;
     this.title.innerHTML = `${iconSvg(activity.icon) || activity.emoji} ${esc(activity.place ?? activity.name)}`;
@@ -227,6 +232,8 @@ class Stage {
     this.keys.clear();
     const chat = document.querySelector('.chat.chat-float');
     if (chat) { chat.classList.remove('chat-float'); document.querySelector('#world')?.append(chat); }
+    const chatInput = document.querySelector('#chatInput');
+    if (chatInput?.dataset.townHint) { chatInput.placeholder = chatInput.dataset.townHint; delete chatInput.dataset.townHint; }
     setTouchButtons([]);
     document.body.classList.remove('in-area');
     for (const k of [...this.people.keys()]) this.removePerson(k);

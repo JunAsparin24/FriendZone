@@ -5,6 +5,7 @@ import { net } from '../net.js';
 import { S, esc, fmt, nameOf } from '../state.js';
 import { sfx } from '../sfx.js';
 import { listen } from './util.js';
+import { touch } from '../touch.js';
 
 const W = 480, H = 560;
 const TAU = Math.PI * 2;
@@ -38,7 +39,7 @@ function hud(G, extra = '') {
 // ---------------------------------------------------------------------------------------------
 const SNAKE = {
   id: 'snake', name: 'Snake', color: '#6ee7a0', blurb: 'Eat the apples, grow longer, don\'t bite yourself.',
-  controls: 'Arrows / WASD to turn',
+  controls: 'Arrows / WASD to turn', touch: 'swipe', touchHelp: 'Swipe to turn',
   init(G) {
     G.cols = 20; G.rows = 22; G.cell = 24; G.oy = 32;
     G.snake = [{ x: 8, y: 11 }, { x: 7, y: 11 }, { x: 6, y: 11 }];
@@ -89,7 +90,7 @@ const SNAKE = {
 // ---------------------------------------------------------------------------------------------
 const BREAKOUT = {
   id: 'breakout', name: 'Brick Breaker', color: '#ff9f43', blurb: 'Bounce the ball and smash every brick. Clear the wall for a faster one.',
-  controls: 'Mouse or ← → to move · Space to launch',
+  controls: 'Mouse or ← → to move · Space to launch', touchHelp: 'Drag to move the paddle · tap to launch',
   init(G) {
     G.pw = 90; G.px = W / 2; G.lives = 3; G.level = 1;
     G.wall = () => {
@@ -151,7 +152,7 @@ const BREAKOUT = {
 // ---------------------------------------------------------------------------------------------
 const FLAPPY = {
   id: 'flappy', name: 'Flappy Friend', color: '#ffd84d', blurb: 'Flap through the gaps between the pipes. One bump and it\'s over!',
-  controls: 'Space, W or click to flap',
+  controls: 'Space, W or click to flap', touchHelp: 'Tap to flap',
   init(G) { G.by = H / 2; G.vy = 0; G.pipes = []; G.t = 1.2; G.speed = 170; G.cloud = Array.from({ length: 5 }, () => ({ x: rnd(0, W), y: rnd(40, 250), s: rnd(0.6, 1.3) })); },
   key(G, k) { if (k === ' ' || k === 'w' || k === 'arrowup') { G.vy = -330; sfx('whoosh'); } },
   click(G) { this.key(G, ' '); },
@@ -201,7 +202,7 @@ const SHAPES = {
 const SHAPE_COL = { I: '#39e6ff', O: '#ffd84d', T: '#b77bff', S: '#6ee7a0', Z: '#ff5d73', J: '#3b82f6', L: '#ff9f43' };
 const BLOCKS = {
   id: 'blocks', name: 'Block Drop', color: '#39c6ff', blurb: 'Stack the falling blocks and fill whole rows to clear them.',
-  controls: '← → move · ↑ rotate · ↓ soft drop · Space hard drop',
+  controls: '← → move · ↑ rotate · ↓ soft drop · Space hard drop', touch: 'blocks', touchHelp: 'Swipe ← → to move · tap to rotate · swipe ↓ to drop',
   init(G) {
     G.bw = 10; G.bh = 20; G.cs = 25; G.ox = 20; G.oy = 40;
     G.grid = Array.from({ length: G.bh }, () => Array(G.bw).fill(null));
@@ -267,7 +268,7 @@ const BLOCKS = {
 const TILE_COL = { 2: '#fff1d6', 4: '#ffe0b0', 8: '#ffb36b', 16: '#ff9248', 32: '#ff6e4a', 64: '#ff4a3d', 128: '#ffe066', 256: '#ffd84d', 512: '#ffc53d', 1024: '#b77bff', 2048: '#7c6bff' };
 const MERGE = {
   id: 'merge', name: '2048', color: '#ffc53d', blurb: 'Slide the tiles. Two the same merge into one. Can you reach 2048?',
-  controls: 'Arrows / WASD to slide',
+  controls: 'Arrows / WASD to slide', touch: 'swipe', touchHelp: 'Swipe to slide the tiles',
   init(G) { G.b = Array.from({ length: 4 }, () => Array(4).fill(0)); G.anim = 0; this.add(G); this.add(G); },
   add(G) {
     const free = []; G.b.forEach((r, y) => r.forEach((v, x) => !v && free.push([x, y])));
@@ -326,7 +327,7 @@ const MERGE = {
 // ---------------------------------------------------------------------------------------------
 const HOP = {
   id: 'hop', name: 'Sky Hop', color: '#ff8fc7', blurb: 'Bounce from cloud to cloud and climb as high as you can. Don\'t fall!',
-  controls: '← → or A/D to steer (wrap around the sides)',
+  controls: '← → or A/D to steer (wrap around the sides)', touch: 'sides', touchHelp: 'Hold the left or right side to steer',
   init(G) {
     G.px = W / 2; G.py = H - 80; G.vy = -600; G.vx = 0; G.cam = 0; G.top = 0;
     G.plats = [{ x: W / 2 - 40, y: H - 40, w: 80, kind: 'n' }];
@@ -491,8 +492,128 @@ const MEMORY = {
 };
 let G_CARDS = [];
 
+// ---------------------------------------------------------------------------------------------
+// Surf Rush (Coral Cove's surf shack): carve up the wave, launch off the crest, spin flips in the air
+// and land them straight. Dodge rocks, buoys and gulls; grab the stars.
+// ---------------------------------------------------------------------------------------------
+const SURF = {
+  id: 'surf', name: 'Surf Rush', color: '#39c6ff', blurb: 'Hold to carve up the wave and launch off the top. Hold in the air to flip, let go to land it straight. Dodge rocks, buoys and gulls!',
+  controls: 'Hold Space / Up / click', touchHelp: 'Hold to carve and flip, let go to land',
+  init(G) {
+    G.y = 400; G.vy = 0; G.air = false; G.rot = 0; G.airT = 0; G.spd = 230; G.t = 0; G.hold = false;
+    G.things = []; G.next = 1.2; G.pops = []; G.spray = [];
+    G.up = () => { G.hold = false; };
+    window.addEventListener('pointerup', G.up);
+  },
+  click(G) { G.hold = true; },
+  update(G, dt) {
+    if (G.done) return;
+    G.t += dt;
+    const hold = G.hold || G.keys.has(' ') || G.keys.has('arrowup') || G.keys.has('w');
+    const WATER = 400, CREST = 250;
+    G.spd = Math.min(560, 230 + G.t * 7);
+    G.score += G.spd * dt * 0.08;
+    if (!G.air) {
+      G.vy += (hold ? -1100 : 820) * dt;
+      G.vy = Math.max(-520, Math.min(520, G.vy));
+      G.y += G.vy * dt;
+      if (G.y > WATER) { G.y = WATER; G.vy = 0; }
+      if (G.y < CREST) {
+        if (G.vy < -300) { G.air = true; G.airT = 0; G.rot = 0; sfx('whoosh', { vol: 0.5 }); }
+        else { G.y = CREST; G.vy = 0; }
+      }
+      if (Math.random() < dt * 30) G.spray.push({ x: 130, y: G.y + 10, vx: -rnd(60, 160), vy: -rnd(40, 160), life: 0.5 });
+    } else {
+      G.airT += dt;
+      G.vy += 900 * dt;
+      G.y += G.vy * dt;
+      if (hold) G.rot += 8 * dt;
+      if (G.y >= CREST + 30 && G.vy > 0) {
+        // landing: the board has to be (nearly) flat
+        const r = ((G.rot % TAU) + TAU) % TAU;
+        if (r > 0.75 && r < TAU - 0.75) { sfx('splash'); G.over(); return; }
+        const flips = Math.round(G.rot / TAU);
+        const bonus = Math.round(G.airT * 120) + flips * 400;
+        G.score += bonus;
+        G.pops.push({ x: 150, y: G.y - 50, text: flips ? `${flips > 1 ? `${flips}x ` : ''}FLIP! +${bonus}` : `AIR +${bonus}`, life: 1.2 });
+        sfx(flips ? 'correct' : 'land', { vol: 0.6 });
+        G.air = false; G.rot = 0; G.vy = 120;
+      }
+    }
+    // obstacles and stars
+    if ((G.next -= dt) <= 0) {
+      G.next = rnd(0.7, 1.5) * (330 / G.spd) * 1.3;
+      const r = Math.random();
+      const kind = r < 0.35 ? 'rock' : r < 0.55 ? 'buoy' : r < 0.72 ? 'gull' : 'star';
+      const y = { rock: 405, buoy: rnd(310, 360), gull: rnd(120, 220), star: rnd(150, 390) }[kind];
+      G.things.push({ kind, x: W + 40, y, ph: Math.random() * TAU });
+    }
+    for (const o of G.things) {
+      o.x -= G.spd * dt * (o.kind === 'gull' ? 1.25 : 1);
+      if (o.kind === 'gull') o.y += Math.sin(G.t * 4 + o.ph) * 30 * dt;
+      const r = { rock: 26, buoy: 18, gull: 18, star: 20 }[o.kind];
+      if (!o.hit && Math.abs(o.x - 150) < r + 16 && Math.abs(o.y - (G.y - 12)) < r + 14) {
+        o.hit = true;
+        if (o.kind === 'star') { G.score += 150; G.pops.push({ x: o.x, y: o.y - 20, text: '+150', life: 0.8 }); sfx('coin', { vol: 0.5 }); }
+        else { sfx('splash'); G.over(); return; }
+      }
+    }
+    G.things = G.things.filter((o) => o.x > -60 && !(o.hit && o.kind === 'star'));
+    for (const q of G.spray) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 500 * dt; q.life -= dt; }
+    G.spray = G.spray.filter((q) => q.life > 0);
+    for (const q of G.pops) { q.y -= 40 * dt; q.life -= dt; }
+    G.pops = G.pops.filter((q) => q.life > 0);
+  },
+  draw(G, ctx) {
+    if (G.done && G.up) { window.removeEventListener('pointerup', G.up); G.up = null; }
+    const t = G.t;
+    const sky = ctx.createLinearGradient(0, 0, 0, 300);
+    sky.addColorStop(0, '#5ec8ff'); sky.addColorStop(1, '#c9f0ff');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff3a0'; ctx.beginPath(); ctx.arc(380, 90, 36, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#6fb38a';
+    for (let i = 0; i < 3; i++) { const x = ((i * 220 - t * 12) % 700 + 700) % 700 - 100; ctx.beginPath(); ctx.ellipse(x, 245, 90, 26, 0, Math.PI, 0); ctx.fill(); }
+    // the swell, rising towards the right
+    const water = ctx.createLinearGradient(0, 230, 0, H);
+    water.addColorStop(0, '#2fc4d8'); water.addColorStop(1, '#10589e');
+    ctx.fillStyle = water;
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (let x = 0; x <= W; x += 8) ctx.lineTo(x, 240 + Math.sin(x * 0.03 + t * 3) * 6);
+    ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3;
+    for (let k = 0; k < 5; k++) { ctx.beginPath(); for (let x = 0; x <= W; x += 10) ctx.lineTo(x, 300 + k * 50 + Math.sin(x * 0.04 - t * 4 + k) * 5); ctx.stroke(); }
+    // the curl chasing you
+    ctx.fillStyle = '#e9fbff';
+    ctx.beginPath(); ctx.moveTo(0, 230); ctx.quadraticCurveTo(70 + Math.sin(t * 5) * 6, 200, 60, 300); ctx.quadraticCurveTo(40, 420, 0, 440); ctx.fill();
+    ctx.fillStyle = '#9ee8f5'; ctx.beginPath(); ctx.moveTo(0, 260); ctx.quadraticCurveTo(40, 250, 30, 320); ctx.quadraticCurveTo(20, 380, 0, 390); ctx.fill();
+    for (const o of G.things) {
+      ctx.save(); ctx.translate(o.x, o.y);
+      if (o.kind === 'rock') { ctx.fillStyle = '#6d6a7c'; ctx.beginPath(); ctx.moveTo(-30, 12); ctx.lineTo(-18, -22); ctx.lineTo(6, -30); ctx.lineTo(28, -8); ctx.lineTo(30, 12); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.stroke(); }
+      if (o.kind === 'buoy') { ctx.fillStyle = '#ff5d73'; ctx.beginPath(); ctx.arc(0, 0, 16, 0, TAU); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(-16, -4, 32, 8); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 16, 0, TAU); ctx.stroke(); }
+      if (o.kind === 'gull') { ctx.strokeStyle = INK; ctx.lineWidth = 4; const f = Math.sin(t * 12 + o.ph) * 8; ctx.beginPath(); ctx.moveTo(-18, f); ctx.quadraticCurveTo(-8, -10, 0, 0); ctx.quadraticCurveTo(8, -10, 18, f); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(0, 2, 8, 5, 0, 0, TAU); ctx.fill(); }
+      if (o.kind === 'star') { ctx.rotate(t * 3); ctx.fillStyle = '#ffd84d'; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU, r = i % 2 ? 8 : 18; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2.5; ctx.stroke(); }
+      ctx.restore();
+    }
+    for (const q of G.spray) { ctx.fillStyle = `rgba(255,255,255,${Math.max(0, q.life * 1.6)})`; ctx.beginPath(); ctx.arc(q.x, q.y, 4, 0, TAU); ctx.fill(); }
+    // the surfer
+    ctx.save(); ctx.translate(150, G.y);
+    ctx.rotate(G.air ? -G.rot : Math.max(-0.5, Math.min(0.4, G.vy / 900)));
+    ctx.fillStyle = '#ff9f43'; ctx.beginPath(); ctx.ellipse(0, 0, 38, 7, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillRect(-30, -1.5, 60, 3);
+    ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-10, -4); ctx.lineTo(-4, -24); ctx.lineTo(8, -4); ctx.stroke();
+    ctx.strokeStyle = '#3b6fd0'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(-4, -24); ctx.lineTo(0, -46); ctx.stroke();
+    ctx.strokeStyle = INK; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-2, -40); ctx.lineTo(-22, -34); ctx.moveTo(2, -40); ctx.lineTo(22, -46); ctx.stroke();
+    ctx.fillStyle = '#c68642'; ctx.beginPath(); ctx.arc(1, -56, 10, 0, TAU); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+    for (const q of G.pops) text(ctx, q.text, q.x, q.y, 22, '#ffd84d');
+    if (G.air) text(ctx, G.rot > 0.5 ? `spin ${Math.floor((G.rot / TAU) * 10) / 10}` : 'AIR!', 150, G.y - 90, 18, '#fff');
+    hud(G, `${Math.round(G.spd / 10)} km/h`);
+  },
+};
+
 export const ARCADE_GAMES = [SNAKE, BREAKOUT, FLAPPY, BLOCKS, MERGE, HOP, SECOND, MEMORY];
-export const ARCADE_BY_ID = Object.fromEntries(ARCADE_GAMES.map((g) => [g.id, g]));
+export const ARCADE_BY_ID = Object.fromEntries([...ARCADE_GAMES, SURF].map((g) => [g.id, g]));
 
 // ---------------------------------------------------------------------------------------------
 // The cabinet panel: the game on the left, the zone's high scores on the right
@@ -509,12 +630,15 @@ export function arcadeCabinet(body, id) {
       <div class="arc-side">
         <h2 style="color:${def.color}">${esc(def.name)}</h2>
         <p class="muted small">${esc(def.blurb)}</p>
-        <p class="arc-controls"><b>Controls:</b> ${esc(def.controls)}</p>
+        <p class="arc-controls"><b>Controls:</b> ${esc(touch.enabled && def.touchHelp ? def.touchHelp : def.controls)}</p>
         <h3>🏆 High scores</h3>
         <ol class="arc-board"></ol>
       </div>
     </div>`;
   const canvas = body.querySelector('canvas'), ctx = canvas.getContext('2d');
+  const box = body.closest('.modal-box');
+  box?.classList.add('arc-modal'); // (phones: the game gets the whole screen)
+  box?.parentElement?.classList.add('arc-full');
   const overlay = body.querySelector('.arc-overlay'), boardEl = body.querySelector('.arc-board');
   let G = null, raf = 0, last = 0, lastResult = null;
 
@@ -530,7 +654,7 @@ export function arcadeCabinet(body, id) {
       ${lastResult ? `<div class="arc-final">Score <b>${fmt(lastResult.s)}</b>${lastResult.best ? ' · <span class="win">New best!</span>' : ''}${lastResult.coins ? ` · +${fmt(lastResult.coins)} 🪙` : ''}</div>` : ''}
       ${mine ? `<div class="muted">Your best: ${fmt(mine.s)}</div>` : ''}
       <button class="btn primary" data-play>${lastResult ? 'Play again' : 'Press start'}</button>
-      <div class="muted small">${esc(def.controls)}</div>`;
+      <div class="muted small">${esc(touch.enabled && def.touchHelp ? def.touchHelp : def.controls)}</div>`;
   };
   const start = () => {
     overlay.classList.add('hidden');
@@ -573,11 +697,41 @@ export function arcadeCabinet(body, id) {
   };
   const pos = (e) => { const r = canvas.getBoundingClientRect(); return [((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H]; };
   canvas.addEventListener('pointermove', (e) => { if (G && !G.done && def.pointer) def.pointer(G, pos(e)[0]); });
+  // phones: swipes become arrow keys, holding a side of the screen holds that arrow, taps rotate
+  let swipe = null;
+  const SW = { l: 'arrowleft', r: 'arrowright', u: 'arrowup', d: 'arrowdown' };
   canvas.addEventListener('pointerdown', (e) => {
     if (!G || G.done) return;
     const [x, y] = pos(e);
+    if (e.pointerType === 'touch' && def.touch) {
+      e.preventDefault();
+      swipe = { x: e.clientX, y: e.clientY, used: false };
+      if (def.touch === 'sides') { swipe.key = x < W / 2 ? 'arrowleft' : 'arrowright'; G.keys.add(swipe.key); }
+      return;
+    }
     if (def.clickAt) def.clickAt(G, x, y); else def.click?.(G);
   });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!swipe || !G || G.done || e.pointerType !== 'touch' || def.touch === 'sides') return;
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    if (Math.hypot(dx, dy) < 28) return;
+    const dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'l' : 'r') : (dy < 0 ? 'u' : 'd');
+    // blocks: sideways swipes keep stepping as you drag; down drops it all the way
+    if (def.touch === 'blocks' && dir === 'd') { if (!swipe.used) def.key(G, ' '); swipe.used = true; return; }
+    if (def.touch === 'blocks' && dir === 'u') return;
+    if (swipe.used && def.touch !== 'blocks') return;
+    def.key(G, SW[dir]);
+    swipe.used = true;
+    swipe.x = e.clientX; swipe.y = e.clientY;
+  });
+  const endSwipe = () => {
+    if (!swipe) return;
+    if (swipe.key) G?.keys.delete(swipe.key);
+    else if (!swipe.used && def.touch === 'blocks' && G && !G.done) def.key(G, 'arrowup'); // a tap rotates
+    swipe = null;
+  };
+  canvas.addEventListener('pointerup', endSwipe);
+  canvas.addEventListener('pointercancel', endSwipe);
   overlay.addEventListener('click', (e) => { if (e.target.closest('[data-play]')) start(); });
   window.addEventListener('keydown', onKey, true);
   window.addEventListener('keyup', onKey, true);
@@ -597,6 +751,8 @@ export function arcadeCabinet(body, id) {
     cancelAnimationFrame(raf);
     window.removeEventListener('keydown', onKey, true);
     window.removeEventListener('keyup', onKey, true);
+    box?.classList.remove('arc-modal');
+    box?.parentElement?.classList.remove('arc-full');
     off();
   };
 }

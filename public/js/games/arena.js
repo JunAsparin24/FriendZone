@@ -10,6 +10,7 @@ import { toon, basic, shiny, canvasTexture, outlineMaterial, additive, glowTextu
 import { Sparks, FloatText, orb, groundRing, emojiSprite, crowd } from '../three/fx.js';
 import { sfx } from '../sfx.js';
 import { listen } from './util.js';
+import { touch } from '../touch.js';
 
 const PR = 14, BULLET_SPEED = 950, BULLET_LIFE = 1.2, MOVE_SPEED = 240;
 const EYE = 1.55;                          // eye height (world units)
@@ -340,12 +341,14 @@ export function arena(stage) {
   stage.onPointer = (type, e) => {
     if (type === 'down') {
       if (!locked() && e?.pointerType === 'mouse') { grab(); return; } // that click only grabs the mouse
-      if (e?.button === 0 || e?.pointerType !== 'mouse') { firing = true; tapped = true; } // (a quick tap still fires once)
+      // (phones: the right thumb only looks around; the Fire button shoots)
+      if (e?.button === 0 && e?.pointerType === 'mouse') { firing = true; tapped = true; } // (a quick tap still fires once)
     }
     if (type === 'up') firing = false;
   };
   stage.onKey = (e, down) => {
     const k = e.key.toLowerCase();
+    if (k === 'f' && !e.repeat) { firing = down; if (down) tapped = true; } // the phone's Fire button (F on a keyboard)
     if (!down || e.repeat) return;
     if (k === ' ') tryJump();
     if (k === 'shift' || k === 'c') trySlide();
@@ -516,6 +519,17 @@ export function arena(stage) {
         if (!circleHitsWall(nx, mine.y)) mine.x = nx;
         const ny = Math.min(AH() - 16, Math.max(16, mine.y + vy * dt));
         if (!circleHitsWall(mine.x, ny)) mine.y = ny;
+      }
+      // phones: a gentle aim assist while shooting, pulling the view towards someone close to the crosshair
+      if (touch.enabled && firing) {
+        let best = null, bestErr = 0.16;
+        for (const [k, f] of fighters) {
+          if (k === S.me || f.hp <= 0) continue;
+          const want = Math.atan2(-(f.x - mine.x), -(f.y - mine.y));
+          const err = Math.atan2(Math.sin(want - orbit.yaw), Math.cos(want - orbit.yaw));
+          if (Math.abs(err) < Math.abs(bestErr) && Math.hypot(f.x - mine.x, f.y - mine.y) < 900) { best = err; bestErr = err; }
+        }
+        if (best != null) orbit.yaw += best * Math.min(1, dt * 5);
       }
       mine.a = Math.atan2(-Math.cos(orbit.yaw), -Math.sin(orbit.yaw)); // where you look
       mine.h = jump.h;

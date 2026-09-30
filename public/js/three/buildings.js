@@ -1066,6 +1066,43 @@ export const BUILDERS = {
   },
 };
 
+// the portal to Coral Cove: a stone ring round a swirling doorway, with palm fronds and a sign
+BUILDERS.portal = function portal(g, w, d, anim) {
+  const stone = toon('#b8b2c8'), dark = toon('#8f8a99');
+  add(g, new THREE.CylinderGeometry(w * 0.55, w * 0.6, 0.35, 24), mapped(stoneTex, '#a39ead', 3, 0.3), { p: [0, 0.17, 0], outline: true });
+  add(g, new THREE.TorusGeometry(2.3, 0.42, 12, 40, Math.PI), stone, { p: [0, 2.6, 0], outline: true });
+  for (const sx of [-1, 1]) {
+    add(g, new THREE.BoxGeometry(0.9, 2.6, 0.9), stone, { p: [sx * 2.3, 1.3 + 0.17, 0], outline: true });
+    add(g, new THREE.BoxGeometry(1.1, 0.3, 1.1), dark, { p: [sx * 2.3, 0.3, 0] });
+  }
+  // keystones round the arch
+  for (let k = 1; k < 8; k++) {
+    const a = (k / 8) * Math.PI;
+    add(g, new THREE.BoxGeometry(0.34, 0.5, 1.0), dark, { p: [Math.cos(a) * 2.3, 2.6 + Math.sin(a) * 2.3, 0], r: [0, 0, a - Math.PI / 2] });
+  }
+  const swirlTex = canvasTexture(256, 256, (c) => {
+    const gr = c.createRadialGradient(128, 128, 10, 128, 128, 128);
+    gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.35, '#8ff2ff'); gr.addColorStop(0.75, '#39c6ff'); gr.addColorStop(1, 'rgba(60,120,255,0)');
+    c.fillStyle = gr; c.fillRect(0, 0, 256, 256);
+    c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 6;
+    for (let k = 0; k < 5; k++) { c.beginPath(); for (let a = 0; a < 9; a += 0.1) { const r = a * 13; c.lineTo(128 + Math.cos(a + k * 1.25) * r, 128 + Math.sin(a + k * 1.25) * r); } c.stroke(); }
+  });
+  // the doorway: an arch-shaped swirl (a disc on top of a rectangle)
+  const mat = new THREE.MeshBasicMaterial({ map: swirlTex, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  const disc = add(g, new THREE.CircleGeometry(1.95, 40), mat, { p: [0, 2.6, 0], cast: false });
+  const low = add(g, new THREE.PlaneGeometry(3.9, 2.4), new THREE.MeshBasicMaterial({ color: '#7fe8ff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }), { p: [0, 1.45, 0], cast: false });
+  const glow = new THREE.Sprite(additive(glowTexture, 0x7fe8ff, 0.45));
+  glow.scale.set(8, 8, 1); glow.position.set(0, 2.4, 0.2);
+  g.add(glow);
+  anim.push((t) => { disc.rotation.z = -t * 1.4; low.material.opacity = 0.45 + Math.sin(t * 3) * 0.12; glow.material.opacity = 0.35 + Math.sin(t * 2) * 0.12; });
+  // palm fronds peeking over the top, and a hint of sand at its feet
+  for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) {
+    add(g, new THREE.ConeGeometry(0.28, 2.2, 4), toon('#3fae4f'), { p: [sx * (2.4 + k * 0.1), 4.9 - k * 0.2, -0.2], r: [0, 0, sx * (0.9 + k * 0.35)], s: [1, 1, 0.3] });
+  }
+  add(g, new THREE.CylinderGeometry(1.3, 1.5, 0.06, 20), toon('#f2d9a0'), { p: [0, 0.37, 0.8], cast: false });
+  signBoard(g, null, 'CORAL COVE', { font: 'chunky', face: '#ffffff', bg: ['#ff7a59'], rail: '#6b4226', w: 4.6, h: 0.75, p: [0, 5.75, 0] });
+};
+
 // the fish market stall by the pond: a counter of fish on ice, and the fishmonger who buys your catch
 BUILDERS.fishstand = function fishstand(g, w, d, anim) {
   const wood = mapped(plankTex, '#b07a45', 2, 1), dark = toon('#6b4226');

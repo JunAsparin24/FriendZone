@@ -14,7 +14,7 @@ import { sfx } from '../sfx.js';
 import { $, TAU, clamp, listen, hiDpiCanvas, confetti } from './util.js';
 
 const TRACK = { x: 22, y: 18, w: 46, h: 400 }; // a tall track: more room for the fish to get away
-const BASE_BAR = 64;          // the catch bar with a basic rod; better rods make it taller
+const BASE_BAR = 80;          // the catch bar with a basic rod; better rods make it taller
 const RODS = Object.fromEntries(CATALOG.rods.map((r) => [r.id, r]));
 const myRod = () => RODS[me().rod] ?? CATALOG.rods[0];
 const barHeight = () => BASE_BAR + (myRod().bar ?? 0);
@@ -262,7 +262,7 @@ export class Fishing {
     const pattern = m.pat ? Array.from({ length: 6 }, () => 0.08 + rnd() * 0.84) : null;
     this.game = {
       d: difficulty, pattern, pt: 0, bar: 40, vel: 0, fish: TRACK.h / 2, target: TRACK.h / 2, retarget: 0.6,
-      progress: 0.3, on: 0, total: 0, onBar: true,
+      progress: 0.36, on: 0, total: 0, onBar: true,
       treasure: Math.random() < 0.3 ? { at: 1 + Math.random() * 2, y: 0, p: 0, life: 7, shown: false, got: false } : null,
     };
     this.setState('reeling');
@@ -302,7 +302,7 @@ export class Fishing {
       this.timer -= dt;
       if (Math.random() < dt * 0.6) this.line.ripple(b.x, b.z, 0.4);
       if (this.timer <= 0) {
-        this.timer = 1.0; // be quick!
+        this.timer = 1.3; // be quick!
         this.setState('bite');
         sfx('bite');
         this.bite(true);
@@ -365,7 +365,8 @@ export class Fishing {
     g.onBar = on;
     g.total += dt;
     if (on) g.on += dt;
-    g.progress += on ? (0.3 / (1 + g.d * 0.35)) * dt : -(0.15 + g.d * 0.14) * dt;
+    // (common fish forgive a slip more than rare ones do)
+    g.progress += on ? (0.33 / (1 + g.d * 0.35)) * dt : -(0.1 + g.d * 0.16) * dt;
     const t = g.treasure;
     if (t && !t.got) {
       if (!t.shown && g.total > t.at) { t.shown = true; t.y = 30 + Math.random() * (TRACK.h - 60); }

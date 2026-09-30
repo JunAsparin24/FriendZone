@@ -38,6 +38,9 @@
     </div>
   </section>
 
+  <!-- the version (year.commit) in the corner of the menus -->
+  <div class="version-tag" id="versionTag"></div>
+
   <section id="create" class="screen hidden">
     <h1 class="logo small" aria-label="NEW ZONE"><span data-text="NEW">NEW</span><span data-text="ZONE">ZONE</span></h1>
     <form id="createForm" class="card narrow form" autocomplete="off">
@@ -94,7 +97,6 @@
       <p>Your coins, level, cosmetics, pets and house here will be <b>deleted</b>, and your name will disappear from this zone for everyone. You can join again later with the invite code, but you'll start from scratch.</p>
       <div class="row center"><button class="btn danger" id="quitYes">Yes, delete me from this zone</button><button class="btn ghost" id="quitNo">Cancel</button></div>
     </div>
-    <div class="version-tag" id="versionTag"></div>
   </section>
 
   <!-- World: walk around together -->
@@ -108,6 +110,7 @@
     <div class="hud-online" id="hudOnline"></div>
     <canvas class="minimap" id="minimap" title="Map (M)"></canvas>
     <div class="hud-clock" id="hudClock"></div>
+    <div class="hud-town" id="hudTown">📍 Maplewood</div>
     <div class="hud-prompt hidden" id="hudPrompt"></div>
     <div class="chat">
       <ul id="chatLog"></ul>

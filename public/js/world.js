@@ -1,6 +1,7 @@
 // The shared 3D overworld: walk around, see friends, chat, emote and enter activities.
 // Movement and networking use map pixels (like the server); rendering happens in Three.js.
 import * as THREE from 'three';
+import { watchContext } from './gfxguard.js';
 import { net } from './net.js';
 import { S, isTyping, esc } from './state.js';
 import * as M from './map.js';
@@ -36,7 +37,7 @@ const SPOT_COLORS = {
 const dayLight = () => Math.min(1, Math.max(0, (Math.sin(dayPhase() * Math.PI * 2) + 0.12) / 0.34));
 // how far a point is from a spot: the lake by its real shoreline, buildings by their footprint
 const spotDist = (s, p) => (s.kind === 'pond' ? Math.max(0, M.lakeDist(p.x, p.y)) : M.distToRect(p, s));
-const BUILDING_HEIGHT = { fishstand: 7, garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4 };
+const BUILDING_HEIGHT = { fishstand: 7, garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4, portal: 7 };
 
 export class World {
   constructor(canvas, hooks) {
@@ -73,7 +74,8 @@ export class World {
   // ---- setup -------------------------------------------------------------------
 
   init() {
-    const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
+    const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: settings.quality !== 'low', powerPreference: settings.quality === 'low' ? 'default' : 'high-performance' });
+    watchContext(this.canvas);
     r.setPixelRatio(pixelRatio());
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.shadowMap.enabled = true;

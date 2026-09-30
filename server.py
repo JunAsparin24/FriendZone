@@ -53,8 +53,16 @@ PIN_RE = re.compile(r"^\d{4,6}$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 MAX_MEMBERS = 50
 
-SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "archery", "shop", "petshop", "arcade", "tavern"}
-AREA_SCENES = {"casino", "shop", "petshop", "arcade", "tavern"}  # 3D rooms you walk around in; positions are relayed to everyone inside
+SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "archery", "shop", "petshop", "arcade", "tavern", "beach"}
+AREA_SCENES = {"casino", "shop", "petshop", "arcade", "tavern", "beach"}  # 3D rooms you walk around in; positions are relayed to everyone inside
+
+
+def beach_spot():
+    x0, x1, z0, z1 = BEACH_SAND
+    while True:
+        x, z = random.uniform(x0, x1), random.uniform(z0, z1)
+        if not (35 < x < 105 and 0 < z < 32) and not (-80 < x < -52 and 2 < z < 18) and not (-34 < x < -22 and 30 < z < 42):  # not under the crab track or the surf shack
+            return {"x": round(x, 1), "z": round(z, 1)}
 
 
 def is_area(scene):
@@ -360,6 +368,13 @@ SLOT_PAIR_PAYS = 0.5         # a pair gives back half your bet
 SLOT_NEAR_MISS = 0.35        # a winning line that slips to a near miss at the last reel
 WHEEL_ZERO_WEIGHT = 1.6      # the empty slices come up more often
 BJ_DEALER_LUCK = 0.5         # chance the dealer's busting card is swapped for another
+# ---- Coral Cove (the beach town) ----
+BEACH_SAND = (-205, 205, 2, 56)   # x0, x1, z0, z1: where treasure can be buried (world units)
+BEACH_TREASURES = 9
+CRAB_NAMES = ["Pinchy", "Sandy", "Clawdia", "Sir Scuttle"]
+CRAB_BET_T, CRAB_RACE_T, CRAB_PAUSE_T = 20, 9.5, 6
+CRAB_PAYS = 3.5               # 4 crabs, so a fair price would be 4x
+CRAB_BETS = (10, 50, 100, 250, 500)
 ROULETTE_HOUSE = 0.35        # chance a spin lands on whatever pays the table least
 MAX_BET = 5000
 BJ_RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
@@ -503,6 +518,7 @@ ARCADE_GAMES = {
     "blocks": {"name": "Block Drop", "max": 500000, "pay": 0.02, "cap": 80},
     "merge": {"name": "2048", "max": 400000, "pay": 0.01, "cap": 80},
     "hop": {"name": "Sky Hop", "max": 100000, "pay": 0.03, "cap": 60},
+    "surf": {"name": "Surf Rush", "max": 60000, "pay": 0.02, "cap": 70},  # (played at the surf shack in Coral Cove)
     "second": {"name": "One Second", "max": 1000, "pay": 0.06, "cap": 60},
     "memory": {"name": "Memory Match", "max": 5000, "pay": 0.03, "cap": 50},
 }
@@ -530,7 +546,10 @@ ADMIN_HELP = [
     "/item <name|me> <item id|all> — give a cosmetic (or every one)",
     "/furni <name|me> <furniture id|all> [count] — give furniture, floors or wallpaper",
     "/items [search] — list item ids",
+    "/score <name|me> <game> <value> — set a high score / leaderboard stat (/score me list for the games)",
     "/kick <name> — send someone back to the home screen",
+    "/boot <name> [minutes] — kick someone off the whole server (every zone) and keep them out (default 10 min)",
+    "/unboot <name> — let someone booted come back early",
     "/announce <message> — post to the zone news",
     "/players — who's here, with coins",
     "/rain <on|off|auto> — change the weather",
@@ -727,6 +746,7 @@ class Client:
         self.scene = None
         self.x = self.y = None  # last position in the world
         self.ax = self.az = self.ah = None  # position inside a 3D area (casino floor)
+        self.aseat = None  # [furniture index, seat] while sitting on something in a house
         self.pose = None  # e.g. fishing at the pond, sitting on a bench
         self.pose_extra = {}
         self.cooldowns = {}
@@ -771,6 +791,8 @@ class Room:
         self.trades = {}      # id -> a live trade between two people in the tavern
         self.trade_seq = 0
         self.roulette = {"id": 0, "state": "idle", "ends": 0.0, "bets": {}, "history": [], "result": None}
+        self.treasure = [beach_spot() for _ in range(BEACH_TREASURES)]
+        self.crabs = {"id": 0, "state": "idle", "ends": 0.0, "bets": {}, "times": [], "winner": None, "history": []}
 
     def in_scene(self, scene):
         return [k for k, c in self.clients.items() if c.scene == scene]
@@ -818,7 +840,7 @@ IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
     "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
-    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "pose",
+    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "beach_dig", "crab_bet", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "arcade_score", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
     "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
@@ -829,6 +851,7 @@ class Game:
     def __init__(self, store):
         self.store = store
         self.rooms = {}
+        self.booted = {}  # player name (lowercase) -> when they may come back (admin /boot, server-wide)
 
     def room(self, code):
         if code not in self.rooms:
@@ -933,6 +956,10 @@ class Game:
         self.enter(c, zone["code"], key, token)
 
     def enter(self, c, code, key, token=None):
+        until = self.booted.get(key, 0)
+        if until > time.time():
+            mins = max(1, round((until - time.time()) / 60))
+            raise GameError(f"An admin removed you from the server. You can come back in {mins} minute{'s' if mins != 1 else ''}.")
         room = self.room(code)
         player = room.zone["players"][key]
         player.setdefault("key", key)  # older saves: pin the key before the name can change
@@ -1172,6 +1199,7 @@ class Game:
         if is_area(prev) and scene != prev:
             room.broadcast({"t": "area_del", "k": c.key}, scene=prev, exclude=c)
             c.ax = c.az = c.ah = None
+            c.aseat = None
         if prev == "arena" and scene != "arena":
             self.arena_leave(c)
         if prev == "race" and scene != "race":
@@ -1202,8 +1230,10 @@ class Game:
             self.doodle_join(c)
         elif scene == "casino":
             self.roulette_join(c)
+        elif scene == "beach":
+            self.beach_join(c)
         if is_area(scene):
-            c.ws.send({"t": "area", "others": [{"k": o.key, "x": o.ax, "z": o.az, "h": o.ah} for o in room.clients.values()
+            c.ws.send({"t": "area", "others": [{"k": o.key, "x": o.ax, "z": o.az, "h": o.ah, "seat": o.aseat} for o in room.clients.values()
                                                 if o.scene == scene and o is not c and o.ax is not None]})
         elif scene == "race":
             c.ws.send({"t": "race", "race": self.race_view(room)})
@@ -1218,9 +1248,26 @@ class Game:
     def on_area_move(self, c, m):
         if not is_area(c.scene):
             return
-        c.ax, c.az, c.ah = num(m["x"], -200, 200), num(m["z"], -200, 200), num(m.get("h", 0), -7, 7)
+        c.ax, c.az, c.ah = num(m["x"], -260, 260), num(m["z"], -260, 260), num(m.get("h", 0), -7, 7)
         c.room.broadcast({"t": "area_pos", "k": c.key, "x": round(c.ax, 2), "z": round(c.az, 2), "h": round(c.ah, 2)},
                          scene=c.scene, exclude=c)
+
+    def on_area_sit(self, c, m):
+        """Sitting on a seat in a house (a sofa has two); one person per seat. seat: [item, seat] or None."""
+        if not (c.scene or "").startswith("house:"):
+            return
+        seat = m.get("seat")
+        if seat is not None:
+            try:
+                seat = [int(seat[0]), int(seat[1])]
+            except (TypeError, ValueError, IndexError):
+                raise GameError("That isn't a seat.")
+            if not (0 <= seat[0] < HOUSE_MAX_ITEMS and 0 <= seat[1] < 4):
+                raise GameError("That isn't a seat.")
+            if any(o.aseat == seat for o in c.room.clients.values() if o is not c and o.scene == c.scene):
+                raise GameError("Someone's already sitting there!")
+        c.aseat = seat
+        c.room.broadcast({"t": "area_sit", "k": c.key, "seat": seat}, scene=c.scene, exclude=c)
 
     def on_pose(self, c, m):
         """World poses other players should see (sitting on the dock fishing, the bobber...)."""
@@ -1384,6 +1431,47 @@ class Game:
         self._adm_touch(c, keys)
         self.sys(c, f"Gave {'all the furniture' if fid == 'all' else every[fid]['name']} to {self.names(c, keys)}.", "ok")
 
+    # leaderboard names for /score, and the stat each one sets
+    SCORE_STATS = {"dungeon": "dungeonBest", "archery": "archeryBest", "race": "raceWins", "arena": "arenaWins",
+                   "kills": "elims", "ko": "elims", "fish": "fish", "boss": "bossKills", "jackpots": "jackpots",
+                   "koi": "koi", "mythic": "mythic", "likes": "houseLikes"}
+
+    def admin_score(self, c, args):
+        if len(args) >= 2 and args[-1].lower() == "list":
+            games = sorted(self.SCORE_STATS) + sorted(ARCADE_GAMES)
+            return self.sys(c, "Games: " + ", ".join(games) + " (or any stat name)")
+        if len(args) < 3:
+            raise GameError("Like: /score me snake 1500 (or /score me list).")
+        game, value = args[-2].lower(), int(float(args[-1]))
+        if value < 0:
+            raise GameError("Scores can't be negative.")
+        keys = self._adm_targets(c, " ".join(args[:-2]))
+        room = c.room
+        if game in ARCADE_GAMES:
+            cfg = ARCADE_GAMES[game]
+            value = min(value, cfg["max"])
+            board = room.zone.setdefault("arcade", {}).setdefault(game, [])
+            for k in keys:
+                board[:] = [e for e in board if e["k"] != k]
+                if value > 0:
+                    board.append({"k": k, "s": value, "ts": int(time.time())})
+            board.sort(key=lambda e: (-e["s"], e["ts"]))
+            del board[10:]
+            room.broadcast({"t": "arcade_board", "g": game, "board": board})
+            label = cfg["name"]
+        else:
+            stat = self.SCORE_STATS.get(game) or next((st for st in {v for v in self.SCORE_STATS.values()} if st.lower() == game), game)
+            if not re.fullmatch(r"[a-zA-Z]{2,24}", stat):
+                raise GameError("That isn't a game or stat. Try /score me list.")
+            for k in keys:
+                room.zone["players"][k]["stats"][stat] = value
+                cl = next((o for o in room.clients.values() if o.key == k), None)
+                if cl:
+                    self.check_unlocks(cl)
+            label = stat
+        self._adm_touch(c, keys)
+        self.sys(c, f"Set {self.names(c, keys)}'s {label} to {value:,}.", "ok")
+
     def admin_items(self, c, args):
         q = " ".join(args).lower()
         ids = [i["id"] for i in CATALOG["items"]] + list(FURN) + list(FLOORS) + list(WALLS) + list(CEILINGS) + list(DOORS)
@@ -1400,6 +1488,33 @@ class Game:
         target.ws.send({"t": "kicked", "msg": "An admin sent you back to the home screen."})
         self.leave(target)
         self.sys(c, f"Kicked {self.names(c, keys)}.", "ok")
+
+    def admin_boot(self, c, args):
+        if not args:
+            raise GameError("Like: /boot Bob (or /boot Bob 60 to keep them out for an hour).")
+        minutes = 10
+        if len(args) > 1 and args[-1].isdigit():
+            minutes = min(60 * 24 * 7, int(args[-1]))
+            args = args[:-1]
+        key = " ".join(args).strip().lower()
+        if key == c.key or key in ("me", "all", "everyone"):
+            raise GameError("Name one other person to boot.")
+        hits = [(room, o) for room in self.rooms.values() for o in list(room.clients.values())
+                if o.key == key or o.player and o.player["name"].lower() == key]
+        if minutes:
+            self.booted[key] = time.time() + minutes * 60
+        for room, o in hits:
+            o.ws.send({"t": "kicked", "msg": "An admin removed you from the server."})
+            self.leave(o)
+            o.ws.close()
+        where = f"from {len({id(r) for r, _ in hits})} zone(s)" if hits else "(they weren't online)"
+        self.sys(c, f"Booted {' '.join(args)} {where}" + (f"; they're kept out for {minutes} min." if minutes else "."), "ok")
+
+    def admin_unboot(self, c, args):
+        key = " ".join(args).strip().lower()
+        if self.booted.pop(key, None) is None:
+            raise GameError(f"{' '.join(args) or 'Nobody'} isn't booted.")
+        self.sys(c, f"{' '.join(args)} can come back now.", "ok")
 
     def admin_announce(self, c, args):
         msg = clean(" ".join(args), 120)
@@ -2849,6 +2964,112 @@ class Game:
                 c.ws.send({"t": "doodle_close", "text": text})
             room.broadcast({"t": "doodle_msg", "k": c.key, "text": text}, scene="doodle")
 
+    # ---- Coral Cove: treasure digging and crab races ------------------------------------------
+    # Treasure is buried in the sand (everyone's metal detector hears the same spots); dig close enough
+    # to one and it's yours, and a new one gets buried somewhere else. Crab races run on a loop while
+    # anyone's at the beach: bet on a crab, watch them scuttle, 3.5x if yours wins.
+
+    def beach_join(self, c):
+        room = c.room
+        c.ws.send({"t": "beach", "treasure": room.treasure})
+        if room.crabs["state"] == "idle":
+            self.crab_round(room, room.crabs["id"])
+        else:
+            c.ws.send(self.crab_view(room))
+
+    def on_beach_dig(self, c, m):
+        if c.scene != "beach" or c.ax is None or not c.ready("dig", 1.2):
+            return
+        room = c.room
+        # dig where the server last saw you, not where the client claims
+        best = min(range(len(room.treasure)), key=lambda i: math.hypot(room.treasure[i]["x"] - c.ax, room.treasure[i]["z"] - c.az))
+        t = room.treasure[best]
+        d = math.hypot(t["x"] - c.ax, t["z"] - c.az)
+        room.broadcast({"t": "beach_hole", "x": round(c.ax, 1), "z": round(c.az, 1)}, scene="beach", exclude=c)
+        if d > 2.6:
+            c.ws.send({"t": "dig_result", "found": False, "x": round(c.ax, 1), "z": round(c.az, 1)})
+            return
+        roll = random.random()
+        kind, coins = ("chest", random.randint(350, 600)) if roll < 0.06 else ("pearl", random.randint(120, 220)) if roll < 0.28 else ("coins", random.randint(25, 80))
+        self.reward(c, coins=coins, xp=6, treasures=1)
+        room.treasure[best] = beach_spot()
+        c.ws.send({"t": "dig_result", "found": True, "kind": kind, "coins": coins, "x": t["x"], "z": t["z"]})
+        room.broadcast({"t": "treasure", "treasure": room.treasure}, scene="beach")
+        if kind == "chest":
+            self.post_feed(room, f"🏴‍☠️ {c.player['name']} dug up a treasure chest at Coral Cove! (+{coins} coins)")
+
+    def crab_view(self, room):
+        r = room.crabs
+        return {"t": "crabs", "state": r["state"], "left": round(max(0.0, r["ends"] - time.monotonic()), 2), "bets": r["bets"],
+                "times": r["times"], "winner": r["winner"], "history": r["history"], "names": CRAB_NAMES, "pays": CRAB_PAYS}
+
+    def crab_round(self, room, token):
+        r = room.crabs
+        if token != r["id"]:
+            return
+        r["id"] += 1
+        if not room.in_scene("beach"):
+            r.update(state="idle", bets={})
+            return
+        r.update(state="betting", ends=time.monotonic() + CRAB_BET_T, bets={}, times=[], winner=None)
+        room.broadcast(self.crab_view(room), scene="beach")
+        asyncio.get_running_loop().call_later(CRAB_BET_T, self.crab_race, room, r["id"])
+
+    def crab_race(self, room, token):
+        r = room.crabs
+        if token != r["id"]:
+            return
+        r["id"] += 1
+        winner = random.randrange(4)
+        times = [round(random.uniform(8.1, CRAB_RACE_T - 0.2), 2) for _ in range(4)]
+        times[winner] = round(random.uniform(7.2, 7.9), 2)
+        r.update(state="racing", winner=winner, times=times, ends=time.monotonic() + CRAB_RACE_T)
+        room.broadcast(self.crab_view(room), scene="beach")
+        asyncio.get_running_loop().call_later(CRAB_RACE_T, self.crab_payout, room, r["id"])
+
+    def crab_payout(self, room, token):
+        r = room.crabs
+        if token != r["id"]:
+            return
+        r["id"] += 1
+        w, wins = r["winner"], {}
+        for k, bets in r["bets"].items():
+            total = int(sum(b["amount"] for b in bets if b["crab"] == w) * CRAB_PAYS)
+            wins[k] = total
+            if not total:
+                continue
+            c = room.clients.get(k)
+            if c:
+                self.reward(c, coins=total, xp=3)
+            else:
+                room.zone["players"][k]["coins"] += total
+                self.store.mark()
+            if total >= 1000:
+                self.post_feed(room, f"🦀 {room.zone['players'][k]['name']} won {total:,} coins on {CRAB_NAMES[w]} at the crab races!")
+        r["history"] = ([w] + r["history"])[:10]
+        r.update(state="result", ends=time.monotonic() + CRAB_PAUSE_T)
+        room.broadcast({**self.crab_view(room), "wins": wins}, scene="beach")
+        asyncio.get_running_loop().call_later(CRAB_PAUSE_T, self.crab_round, room, r["id"])
+
+    def on_crab_bet(self, c, m):
+        room = c.room
+        r = room.crabs
+        if c.scene != "beach" or r["state"] != "betting":
+            raise GameError("Bets are closed. Wait for the next race!")
+        crab, amount = int(m.get("crab", -1)), int(m.get("amount", 0))
+        if not 0 <= crab < 4 or amount not in CRAB_BETS:
+            raise GameError("That isn't a bet.")
+        mine = r["bets"].setdefault(c.key, [])
+        if sum(b["amount"] for b in mine) + amount > 2000:
+            raise GameError("That's the table limit: 2,000 coins a race.")
+        if c.player["coins"] < amount:
+            raise GameError("You don't have enough coins.")
+        c.player["coins"] -= amount
+        mine.append({"crab": crab, "amount": amount})
+        self.store.mark()
+        self.push_player(room, c.key)
+        room.broadcast({"t": "crab_bets", "bets": r["bets"]}, scene="beach")
+
     # ---- arcade ------------------------------------------------------------------
     # Each cabinet is a little 2D game played in your browser; the server keeps a top-10 board per game
     # for the zone and pays a few coins for a good run.
@@ -2856,7 +3077,7 @@ class Game:
     def on_arcade_score(self, c, m):
         game = str(m.get("g", ""))
         cfg = ARCADE_GAMES.get(game)
-        if not cfg or c.scene != "arcade":
+        if not cfg or c.scene not in ("arcade", "beach"):
             return
         score = int(num(m.get("s", 0), 0, cfg["max"]))
         if not c.ready("arcade", 3):

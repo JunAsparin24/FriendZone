@@ -93,7 +93,7 @@ function onClick(e) {
   if (e.target === el || e.target.closest('[data-close]')) { closeSettings(); return; }
   const q = e.target.closest('[data-quality]');
   if (q) {
-    setSetting({ quality: q.dataset.quality });
+    setSetting({ quality: q.dataset.quality, qualityChosen: true });
     el.querySelectorAll('[data-quality]').forEach((b) => b.classList.toggle('on', b === q));
     sfx('click');
   }

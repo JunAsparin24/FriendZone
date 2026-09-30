@@ -161,9 +161,9 @@ const BUILD = {
     const head = add(body, sph(0.16), black, { p: [0, 0.26, 0.02], s: [1, 0.8, 1] });
     add(head, sph(0.12), white, { p: [0, -0.02, 0.06], s: [1.1, 0.9, 0.85], outline: false });
     add(head, cone(0.04, 0.08, 8), orange, { p: [0, -0.02, 0.17], r: [Math.PI / 2, 0, 0], outline: false });
-    // big white eye patches so the dark eyes show up against the black head
-    for (const sx of [-1, 1]) add(head, sph(0.05, 14, 10), white, { p: [sx * 0.062, 0.05, 0.14], s: [1, 1.15, 0.5], outline: false });
-    face(head, 0.2, { spread: 0.31, y: 0.26, size: 0.17, mouth: false });
+    // small white eye patches so the dark eyes still show up against the black head
+    for (const sx of [-1, 1]) add(head, sph(0.032, 14, 10), white, { p: [sx * 0.058, 0.045, 0.145], s: [1, 1.15, 0.5], outline: false });
+    face(head, 0.2, { spread: 0.29, y: 0.23, size: 0.105, mouth: false });
     for (const s of [-1, 1]) add(g, sph(0.05), orange, { p: [s * 0.08, 0.02, 0.06], s: [1, 0.35, 1.5] });
     return (t, dt, m) => { body.rotation.z = m ? Math.sin(t * 9) * 0.18 : Math.sin(t * 1.5) * 0.04; flippers.forEach((f, i) => { f.rotation.z = (i ? 1 : -1) * (0.3 + Math.abs(Math.sin(t * (m ? 9 : 2))) * 0.4); }); };
   },

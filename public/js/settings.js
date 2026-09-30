@@ -29,7 +29,20 @@ function load() {
       if (old) Object.assign(saved, { master: old.volume ?? DEFAULTS.master, muted: !!old.muted });
     } catch { /* nothing saved */ }
   }
+  // graphics quality starts at what this device can handle, until the player picks one themselves
+  // (phones crash when the page asks for more graphics memory than they have)
+  if (!saved.qualityChosen) saved.quality = autoQuality();
   return { ...DEFAULTS, ...saved };
+}
+
+/** A sensible starting quality: low on phones and low-memory devices, medium on tablets. */
+export function autoQuality() {
+  const coarse = window.matchMedia?.('(pointer: coarse)').matches || 'ontouchstart' in window;
+  const mem = navigator.deviceMemory ?? 8;
+  const small = Math.min(window.screen?.width ?? 1200, window.screen?.height ?? 1200) < 820;
+  if (mem <= 4 || (coarse && small)) return 'low';
+  if (coarse) return 'medium';
+  return 'high';
 }
 
 export const settings = load();

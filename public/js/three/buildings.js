@@ -811,6 +811,90 @@ export const BUILDERS = {
   },
 };
 
+// the fish market stall by the pond: a counter of fish on ice, and the fishmonger who buys your catch
+BUILDERS.fishstand = function fishstand(g, w, d, anim) {
+  const wood = mapped(plankTex, '#b07a45', 2, 1), dark = toon('#6b4226');
+  const cz = d * 0.08; // the counter's front edge lines up with where you can't walk any more
+  // wooden deck
+  add(g, new THREE.BoxGeometry(w, 0.25, d), mapped(plankTex, '#a0703f', w / 2, d / 2), { p: [0, 0.12, 0], outline: true });
+  // back wall + posts + striped awning roof
+  add(g, new THREE.BoxGeometry(w - 0.4, 3.4, 0.25), wood, { p: [0, 1.95, -d / 2 + 0.4], outline: true });
+  for (const x of [-w / 2 + 0.35, w / 2 - 0.35]) for (const z of [-d / 2 + 0.4, cz]) add(g, new THREE.CylinderGeometry(0.14, 0.16, 3.7, 10), dark, { p: [x, 1.95, z], outline: true });
+  const aw = add(g, new THREE.PlaneGeometry(w + 0.4, d * 0.62), new THREE.MeshToonMaterial({ map: tiled(awningTex('#2f7fe0', '#ffffff'), 5, 1), side: THREE.DoubleSide, gradientMap: toon('#fff').gradientMap }), { p: [0, 3.95, -d * 0.12], r: [-Math.PI / 2 + 0.28, 0, 0] });
+  aw.castShadow = true;
+  // scalloped fringe along the front
+  for (let i = 0; i < 12; i++) add(g, new THREE.CylinderGeometry(0.28, 0.28, 0.05, 12, 1, false, 0, Math.PI), toon(i % 2 ? '#ffffff' : '#2f7fe0'), { p: [-w / 2 + 0.2 + (i + 0.5) * ((w + 0.0) / 12), 3.55, cz + 0.55], r: [Math.PI / 2, 0, 0], cast: false });
+  // the counter, topped with crushed ice and the day's catch
+  add(g, new THREE.BoxGeometry(w - 1, 1.1, 1.2), wood, { p: [0, 0.8, cz - 0.3], outline: true });
+  add(g, new THREE.BoxGeometry(w - 1.1, 0.16, 1.1), toon('#e8f6ff'), { p: [0, 1.42, cz - 0.3] });
+  for (let i = 0; i < 18; i++) add(g, new THREE.IcosahedronGeometry(0.09, 0), basic('#ffffff', { transparent: true, opacity: 0.85 }), { p: [-w / 2 + 0.8 + (i * 0.47) % (w - 1.6), 1.53, cz - 0.7 + (i % 3) * 0.35], cast: false });
+  const catchOfTheDay = [
+    { color: '#6fa8dc', belly: '#dfe9f5' }, { color: '#ff8a5c', belly: '#ffe0cc' }, { color: '#b0b7c3', belly: '#eef2f7' }, { color: '#5fbf77', belly: '#e0f5e5' },
+    { color: '#e0463c', belly: '#ffd9d4' }, { color: '#ffd84d', belly: '#fff6c8' }, { color: '#7d5cff', belly: '#e6e0ff' },
+  ];
+  catchOfTheDay.forEach((c, i) => {
+    const f = new THREE.Group();
+    add(f, new THREE.SphereGeometry(0.2, 14, 10), toon(c.color), { s: [1.9, 0.75, 0.6], outline: true });
+    add(f, new THREE.ConeGeometry(0.16, 0.26, 4), toon(c.color), { p: [-0.46, 0, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.35] });
+    add(f, new THREE.SphereGeometry(0.035, 8, 6), basic('#1d1b2e'), { p: [0.26, 0.05, 0.1], cast: false });
+    f.position.set(-w / 2 + 1.1 + i * ((w - 2.2) / (catchOfTheDay.length - 1)), 1.62, cz - 0.3 + (i % 2 ? 0.18 : -0.18));
+    f.rotation.set(Math.PI / 2 - 0.2, 0, (i % 2 ? 0.4 : -0.3));
+    g.add(f);
+  });
+  // price slate
+  const slate = canvasTexture(256, 128, (c) => {
+    c.fillStyle = '#23263f'; c.fillRect(0, 0, 256, 128);
+    c.strokeStyle = '#8b5a2b'; c.lineWidth = 10; c.strokeRect(5, 5, 246, 118);
+    c.fillStyle = '#ffffff'; c.font = 'bold 30px Rubik, sans-serif'; c.textAlign = 'center';
+    c.fillText('WE BUY FISH!', 128, 55);
+    c.fillStyle = '#ffd84d'; c.font = 'bold 26px Rubik, sans-serif'; c.fillText('best prices 🪙', 128, 95);
+  });
+  add(g, new THREE.PlaneGeometry(1.6, 0.8), new THREE.MeshBasicMaterial({ map: slate }), { p: [w / 2 - 1.3, 0.85, cz + 0.31], cast: false });
+  // big sign on top
+  const sign = canvasTexture(512, 128, (c) => {
+    c.fillStyle = '#fff6e0'; c.fillRect(0, 0, 512, 128);
+    c.strokeStyle = '#2f7fe0'; c.lineWidth = 14; c.strokeRect(7, 7, 498, 114);
+    c.font = '64px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = '#2f5fa0'; c.fillText('FISH MARKET', 256, 70);
+  });
+  add(g, new THREE.BoxGeometry(4.6, 1.15, 0.15), [dark, dark, dark, dark, new THREE.MeshBasicMaterial({ map: sign }), dark], { p: [0, 4.75, -d / 2 + 0.45], outline: true });
+  const bigFish = new THREE.Group();
+  add(bigFish, new THREE.SphereGeometry(0.45, 16, 12), toon('#39a0ff'), { s: [2, 0.8, 0.5], outline: true });
+  add(bigFish, new THREE.ConeGeometry(0.4, 0.6, 4), toon('#39a0ff'), { p: [-1.05, 0, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.35], outline: true });
+  add(bigFish, new THREE.SphereGeometry(0.08, 8, 6), basic('#1d1b2e'), { p: [0.62, 0.12, 0.2] });
+  bigFish.position.set(0, 5.75, -d / 2 + 0.45);
+  g.add(bigFish);
+  anim.push((t) => { bigFish.rotation.z = Math.sin(t * 1.3) * 0.12; bigFish.position.y = 5.75 + Math.sin(t * 2) * 0.08; });
+  // fish hanging from the awning beam
+  for (let i = 0; i < 4; i++) {
+    const x = -w / 2 + 1.2 + i * 0.55;
+    add(g, new THREE.CylinderGeometry(0.01, 0.01, 0.5, 4), toon('#e8dcc0'), { p: [x, 3.2, cz + 0.2], cast: false });
+    add(g, new THREE.SphereGeometry(0.13, 10, 8), toon(['#b0b7c3', '#ff8a5c', '#6fa8dc', '#5fbf77'][i]), { p: [x, 2.85, cz + 0.2], s: [0.6, 1.8, 0.5], outline: true });
+  }
+  // barrels, a crate of ice and a lantern
+  for (const [x, z] of [[w / 2 - 0.5, cz + 0.9], [w / 2 - 1.2, cz + 1.3], [-w / 2 + 0.6, cz + 1]]) {
+    add(g, new THREE.CylinderGeometry(0.42, 0.36, 0.95, 14), toon('#8b5a2b'), { p: [x, 0.72, z], outline: true });
+    add(g, new THREE.CylinderGeometry(0.43, 0.43, 0.06, 14), toon('#3a3f5a'), { p: [x, 0.95, z], cast: false });
+    add(g, new THREE.CylinderGeometry(0.43, 0.43, 0.06, 14), toon('#3a3f5a'), { p: [x, 0.5, z], cast: false });
+  }
+  crate(g, -w / 2 + 1.6, 0.25, cz + 1.2, 0.8, 0.3);
+  add(g, new THREE.BoxGeometry(0.7, 0.12, 0.7), toon('#e8f6ff'), { p: [-w / 2 + 1.6, 1.11, cz + 1.2], r: [0, 0.3, 0] });
+  const lantern = add(g, new THREE.SphereGeometry(0.2, 12, 10), basic('#ffe9a8'), { p: [w / 2 - 0.35, 3.05, cz + 0.05], cast: false });
+  const halo = new THREE.Sprite(additive(glowTexture, 0xffd27a, 0.55));
+  halo.scale.setScalar(1.6);
+  lantern.add(halo);
+  // the fishmonger: rubber apron, cap, waving at passers-by
+  const monger = new Character({ skin: '#e3ac78', hairColor: '#8a8a8a', topColor: '#f4f0ff', bottomColor: '#2f5fa0', shoeColor: '#23263f', hair: 'hair_short', top: 'top_tee', bottom: 'bottom_overalls', hat: 'hat_cap', face: 'face_none', back: 'back_none', aura: 'aura_none', height: 'height_tall' });
+  monger.root.position.set(0.4, 0.25, cz - 1.35);
+  monger.root.traverse((o) => { o.castShadow = false; });
+  g.add(monger.root);
+  let waveAt = 3;
+  anim.push((t, dt) => {
+    monger.update(dt, t, false);
+    if (t > waveAt) { monger.emote('wave'); waveAt = t + 6 + Math.random() * 6; }
+  });
+};
+
 /** Build a building for a map spot; returns a Group placed in the world. */
 export function buildBuilding(spot, anim, ctx) {
   const g = new THREE.Group();

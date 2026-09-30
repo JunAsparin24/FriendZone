@@ -120,6 +120,15 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
   // hats and back items marked "tint" can be recoloured from the full palette
   const tintPicker = (slot, field, label) => (ITEMS[draft[slot]]?.tint ? swatches(`${label} (${esc(ITEMS[draft[slot]].name)})`, field, CATALOG.clothColors, { original: true }) : '');
 
+  // tops: the main colour (tops with their own look, like suits, can be recoloured or kept original)
+  // plus an accent for the tie / stripes / trim
+  function topPickers() {
+    const it = ITEMS[draft.top];
+    const name = esc(it?.name ?? 'Top');
+    return (it?.tint ? swatches(`${name} color`, 'topTint', CATALOG.clothColors, { original: true }) : swatches('Shirt color', 'topColor', CATALOG.clothColors))
+      + (it?.accent ? swatches(`Accent · tie, stripes & trim`, 'topAccent', CATALOG.clothColors, { original: true }) : '');
+  }
+
   // body options (height, build, eye style): always free, previewed on your own character
   function choices(label, field, options, zoom = 'body') {
     return `<div class="wd2-card"><div class="wd-label">${label}</div><div class="tiles choice-tiles">${options.map((o) =>
@@ -158,7 +167,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
     } else {
       content.innerHTML = `<div class="wd2-card">${itemTiles(tab)}${tab === 'pet' ? '<p class="muted small">Buy pets here, or hatch a random one from an egg at the 🐾 Pet Shop in town (cheaper!).</p>' : ''}</div>`
         + (tab === 'hair' ? swatches('Hair color', 'hairColor', CATALOG.hairColors) : '')
-        + (tab === 'top' ? swatches('Shirt color', 'topColor', CATALOG.clothColors) : '')
+        + (tab === 'top' ? topPickers() : '')
         + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors) + swatches('Shoe color', 'shoeColor', CATALOG.clothColors) : '')
         + (tab === 'hat' ? tintPicker('hat', 'hatColor', 'Hat color') : '')
         + (tab === 'back' ? tintPicker('back', 'backColor', 'Color') : '');

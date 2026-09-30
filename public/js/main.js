@@ -64,17 +64,31 @@ function show(id) {
   if (id === 'world') { renderHud(); renderChat(); }
 }
 
-function renderHome() {
+let onlineCounts = {};
+function askOnline() {
+  const codes = savedZones().map((z) => z.code);
+  if (codes.length && screen === 'home') net.send('zones_online', { codes });
+}
+setInterval(askOnline, 10000);
+net.on('zones_online', (m) => { onlineCounts = m.counts ?? {}; if (screen === 'home') renderHome(false); });
+
+function renderHome(ask = true) {
   const list = savedZones();
   $('#noZones').hidden = list.length > 0;
-  $('#myZones').innerHTML = list.map((z) => `
+  $('#myZones').innerHTML = list.map((z) => {
+    const n = onlineCounts[String(z.code).toUpperCase()];
+    const badge = n == null ? '' : `<span class="zone-online ${n ? 'on' : ''}">${n ? `● ${n} online` : 'nobody online'}</span>`;
+    return `
     <li>
       <button class="zone-item" data-code="${esc(z.code)}">
         <span class="zn">${esc(z.zoneName)}</span>
         <span class="muted">as ${esc(z.name)} · ${esc(z.code)}</span>
+        ${badge}
       </button>
       <button class="icon-btn" data-forget="${esc(z.code)}" title="Remove from this device">✕</button>
-    </li>`).join('');
+    </li>`;
+  }).join('');
+  if (ask) askOnline();
 }
 
 $('#myZones').addEventListener('click', (e) => {
@@ -500,6 +514,11 @@ $('#backLobby').onclick = () => {
 // Server messages
 // ---------------------------------------------------------------------------
 
+net.on('weather', (m) => {
+  S.rain = !!m.rain;
+  world.dayNight?.setRain(S.rain);
+});
+
 net.on('welcome', (m) => {
   const wasInWorld = screen === 'world' && S.zone?.code === m.zone.code;
   S.zone = m.zone;
@@ -509,6 +528,8 @@ net.on('welcome', (m) => {
   S.feed = m.feed;
   S.race = m.race;
   S.arcade = m.arcade ?? {};
+  S.rain = !!m.rain;
+  world.dayNight?.setRain(S.rain);
   session = { code: m.zone.code, name: me().name, token: m.token };
   rememberZone({ ...session, zoneName: m.zone.name });
   for (const form of [$('#createForm'), $('#joinForm')]) {
@@ -562,8 +583,7 @@ net.on('chat', (m) => {
 net.on('arcade_board', (m) => { S.arcade = { ...(S.arcade ?? {}), [m.g]: m.board }; });
 net.on('feed', (m) => {
   S.feed = [...S.feed, m].slice(-25);
-  toast(m.text, 'feed');
-  renderFeed();
+  renderFeed(); // (the zone news lives in the lobby list; no pop-ups over the game)
 });
 
 net.on('race', (m) => { S.race = m.race; });
@@ -598,6 +618,7 @@ net.on('error', (m) => {
 net.onOpen = () => {
   $('#conn').classList.add('hidden');
   if (session) net.send('resume', session);
+  askOnline();
 };
 
 net.onClose = () => {

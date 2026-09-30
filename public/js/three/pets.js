@@ -311,6 +311,43 @@ const BUILD = {
       sparkle.material.opacity = 0.3 + Math.abs(Math.sin(t * 4)) * 0.5;
     };
   },
+  pet_snake(g) {
+    // a chubby green snake: a chain of body segments that slithers side to side in a wave, with a
+    // diamond pattern down its back, a flicking forked tongue and a little rattle-free tail tip
+    const green = toon('#4cc66a'), belly = toon('#e8f5b0'), spot = toon('#2e8b4a');
+    const segs = [];
+    const N = 11;
+    for (let i = 0; i < N; i++) {
+      const r = 0.085 - Math.pow(i / N, 1.6) * 0.06;
+      const seg = new THREE.Group();
+      g.add(seg);
+      add(seg, sph(r, 14, 10), green, { s: [1, 0.85, 1.25] });
+      add(seg, sph(r * 0.8, 10, 8), belly, { p: [0, -r * 0.35, 0], s: [1, 0.5, 1.2], outline: false });
+      if (i % 2 === 0 && i < N - 1) add(seg, sph(r * 0.45, 8, 6), spot, { p: [0, r * 0.72, 0], s: [1, 0.4, 1.3], r: [0, Math.PI / 4, 0], outline: false });
+      segs.push({ seg, r, z: -0.06 - i * 0.075 });
+    }
+    const head = add(g, sph(0.12), green, { p: [0, 0.14, 0.08], s: [1.05, 0.8, 1.2] });
+    add(head, sph(0.09), belly, { p: [0, -0.05, 0.04], s: [1, 0.5, 1.1], outline: false });
+    face(head, 0.12, { spread: 0.48, y: 0.3, size: 0.24, blush: '#ff8fab', mouth: false });
+    const tongue = new THREE.Group();
+    tongue.position.set(0, -0.03, 0.13);
+    head.add(tongue);
+    add(tongue, cyl(0.008, 0.008, 0.08, 5), basic('#ff4d6d'), { p: [0, 0, 0.04], r: [Math.PI / 2, 0, 0], outline: false });
+    for (const sx of [-1, 1]) add(tongue, cyl(0.006, 0.006, 0.035, 5), basic('#ff4d6d'), { p: [sx * 0.01, 0, 0.09], r: [Math.PI / 2, 0, sx * 0.5], outline: false });
+    let flick = 0;
+    return (t, dt, m) => {
+      const speed = m ? 9 : 2.2, amp = m ? 0.09 : 0.04;
+      segs.forEach(({ seg, r, z }, i) => {
+        seg.position.set(Math.sin(t * speed - i * 0.75) * amp * Math.min(1, i / 2 + 0.3), r * 0.85, z);
+      });
+      head.position.x = Math.sin(t * speed + 0.75) * amp * 0.5;
+      head.position.y = 0.14 + (m ? 0 : Math.sin(t * 1.3) * 0.03);
+      head.rotation.y = Math.sin(t * speed + 0.3) * 0.25;
+      flick = Math.max(0, flick - (dt || 0.016) * 4);
+      if (Math.random() < (dt || 0.016) * 0.7) flick = 1;
+      tongue.scale.set(1, 1, Math.sin(flick * Math.PI) * 1.2 + 0.001);
+    };
+  },
   pet_dragon(g) {
     const purple = toon('#9d7bff'), belly = toon('#ffe4b5'), wingMat = toon('#ff8fc7', { side: THREE.DoubleSide });
     const fly = new THREE.Group();

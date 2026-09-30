@@ -9,16 +9,20 @@ import { CATALOG, RARITY } from '../catalog.js';
 import { toon, basic } from '../three/materials.js';
 import { groundRing } from '../three/fx.js';
 import { buildFishModel, fishThumb } from '../three/fishmodels.js';
+import * as M from '../map.js';
 import { sfx } from '../sfx.js';
 import { $, TAU, clamp, listen, hiDpiCanvas, confetti } from './util.js';
 
-const TRACK = { x: 22, y: 18, w: 46, h: 300 };
+const TRACK = { x: 22, y: 18, w: 46, h: 400 }; // a tall track: more room for the fish to get away
 const BASE_BAR = 64;          // the catch bar with a basic rod; better rods make it taller
 const RODS = Object.fromEntries(CATALOG.rods.map((r) => [r.id, r]));
 const myRod = () => RODS[me().rod] ?? CATALOG.rods[0];
 const barHeight = () => BASE_BAR + (myRod().bar ?? 0);
 const WATER_Y = 0.1;
+// some fish stay a secret until somebody catches one
+const journalFish = (dex) => CATALOG.fish.filter((f) => f.rarity !== 'mythic' || dex[f.name]);
 const HINTS = {
+  hooking: 'Hooked! Get ready…',
   idle: '<b>Hold</b> click or <kbd>Space</kbd> to charge your cast, <b>release</b> to throw.',
   charging: 'Release to cast! Farther casts find better fish.',
   casting: 'Casting…',
@@ -104,21 +108,22 @@ export class Fishing {
     this.cast = null;
     this.buildHud();
     this.setState('idle');
-    this.actor.char.setProp('rod', myRod().color);
+    this.actor.char.setProp('rod', myRod().id);
     this.actor.char.setPose('fish');
-    this.actor.lift = 0.49;
+    this.actor.lift = spot.dock ? 0.49 : 0;
     sfx('enter');
     net.send('pose', { pose: 'fish' });
     this.off = listen({
       fish_result: (m) => this.onResult(m),
+      fish_hooked: (m) => { if (this.state === 'hooking') this.startReeling(m); },
       player: (m) => {
         if (m.p.key !== S.me) return;
         this.renderJournalBtn();
         this.renderRods();
-        this.actor.char.setProp('rod', myRod().color);
+        this.actor.char.setProp('rod', myRod().id);
       },
       error: (m) => {
-        if (m.for !== 'fish') return;
+        if (m.for !== 'fish' && m.for !== 'fish_hook') return;
         m.handled = true;
         this.say(m.msg);
         this.reset();
@@ -176,7 +181,7 @@ export class Fishing {
   renderJournalBtn() {
     const dex = me().fishdex ?? {};
     const found = CATALOG.fish.filter((f) => dex[f.name]).length;
-    $(this.el, '[data-journal]').textContent = `📖 Journal ${found}/${CATALOG.fish.length}`;
+    $(this.el, '[data-journal]').textContent = `📖 Journal ${found}/${journalFish(dex).length}`;
   }
 
   setState(s) {
@@ -201,16 +206,19 @@ export class Fishing {
     this.holding = true;
     if (this.state === 'idle') { this.chargeT = 0; this.setState('charging'); sfx('charge'); }
     else if (this.state === 'waiting') { this.say('Too early! You spooked it.'); sfx('escape'); this.reset(); }
-    else if (this.state === 'bite') this.startReeling();
+    else if (this.state === 'bite') this.hook();
     else if (this.state === 'result') this.reset();
   }
 
   release() {
     this.holding = false;
     if (this.state !== 'charging') return;
-    const dist = 3 + this.power * 9;
+    let dist = 3 + this.power * 9;
     const s = this.spot;
-    const to = new THREE.Vector3(s.X + Math.sin(s.heading) * dist + (Math.random() - 0.5), WATER_Y, s.Z + Math.cos(s.heading) * dist + (Math.random() - 0.5));
+    // from the shore, a cast that would land on the far bank comes up short in the water instead
+    const wet = (d) => M.inLake(s.X * M.PX + M.CENTER.x + Math.sin(s.heading) * d * M.PX, s.Z * M.PX + M.CENTER.y + Math.cos(s.heading) * d * M.PX);
+    while (dist > 1.5 && !wet(dist)) dist -= 0.5;
+    const to = new THREE.Vector3(s.X + Math.sin(s.heading) * dist + (Math.random() - 0.5) * 0.6, WATER_Y, s.Z + Math.cos(s.heading) * dist + (Math.random() - 0.5) * 0.6);
     const from = this.tip() ?? new THREE.Vector3(s.X, 2, s.Z);
     this.cast = { from: from.clone(), to, t: 0 };
     this.line.show(true);
@@ -236,16 +244,27 @@ export class Fishing {
     if (on) { e.classList.remove('pop'); void e.offsetWidth; e.classList.add('pop'); }
   }
 
-  startReeling() {
-    // livelier fish than before: they dart more and wander faster
-    const difficulty = 0.4 + Math.random() * 0.55;
+  /** Set the hook: the pond decides what's on the line (rarer fish fight harder), then the reeling starts. */
+  hook() {
+    this.setState('hooking');
+    this.bite(false);
+    sfx('hook');
+    net.send('fish_hook', { p: this.power });
+    this.timer = 3; // (if the answer never comes, give up)
+  }
+
+  startReeling(m) {
+    // d: how hard this fish fights (junk ~0.2 … mythic ~1.5). The rarest fish follow a pattern: fast,
+    // jumpy, but it repeats, so it can be learned.
+    const difficulty = m.d;
+    let seed = m.seed ?? 1;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+    const pattern = m.pat ? Array.from({ length: 6 }, () => 0.08 + rnd() * 0.84) : null;
     this.game = {
-      d: difficulty, bar: 40, vel: 0, fish: TRACK.h / 2, target: TRACK.h / 2, retarget: 0.6,
+      d: difficulty, pattern, pt: 0, bar: 40, vel: 0, fish: TRACK.h / 2, target: TRACK.h / 2, retarget: 0.6,
       progress: 0.3, on: 0, total: 0, onBar: true,
       treasure: Math.random() < 0.3 ? { at: 1 + Math.random() * 2, y: 0, p: 0, life: 7, shown: false, got: false } : null,
     };
-    this.bite(false);
-    sfx('hook');
     this.setState('reeling');
     net.send('pose', { pose: 'reel', bx: this.line.bobber.position.x, bz: this.line.bobber.position.z });
   }
@@ -291,6 +310,10 @@ export class Fishing {
         this.line.ripple(b.x, b.z, 1.5);
         net.send('pose', { pose: 'bite', bx: b.x, bz: b.z });
       }
+    } else if (this.state === 'hooking') {
+      b.y = WATER_Y - 0.1 + Math.sin(now / 40) * 0.05;
+      this.timer -= dt;
+      if (this.timer <= 0) { this.say('It got away…'); this.reset(); }
     } else if (this.state === 'bite') {
       b.y = WATER_Y - 0.12 + Math.sin(now / 40) * 0.05;
       this.timer -= dt;
@@ -318,20 +341,31 @@ export class Fishing {
     g.bar += g.vel * dt;
     if (g.bar < 0) { g.bar = 0; g.vel = Math.abs(g.vel) > 60 ? -g.vel * 0.35 : 0; }
     if (g.bar > TRACK.h - BAR_H) { g.bar = TRACK.h - BAR_H; g.vel = -Math.abs(g.vel) * 0.2; }
-    g.retarget -= dt;
-    if (g.retarget <= 0) {
-      const dart = Math.random() < g.d * 0.32;
-      g.target = dart ? clamp(g.fish + (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 80), 12, TRACK.h - 12) : 12 + Math.random() * (TRACK.h - 24);
-      g.retarget = dart ? 0.35 : 0.6 + Math.random() * (1.8 - g.d);
+    const span = TRACK.h - 24;
+    if (g.pattern) {
+      // legendary/mythic: leap between the same few spots in the same order, with a wiggle on top
+      g.pt += dt;
+      const beat = 1.25 - Math.min(0.6, g.d * 0.35);
+      const i = Math.floor(g.pt / beat);
+      g.target = 12 + g.pattern[i % g.pattern.length] * span + Math.sin(g.pt * (4 + g.d * 2)) * 18 * g.d;
+      g.fish += (g.target - g.fish) * Math.min(1, dt * (3 + g.d * 4));
+    } else {
+      g.retarget -= dt;
+      if (g.retarget <= 0) {
+        // the rarer the fish, the more it darts, and the faster it swims
+        const dart = Math.random() < 0.15 + g.d * 0.35;
+        g.target = dart ? clamp(g.fish + (Math.random() < 0.5 ? -1 : 1) * (70 + Math.random() * (80 + g.d * 90)), 12, TRACK.h - 12) : 12 + Math.random() * span;
+        g.retarget = dart ? 0.4 - g.d * 0.12 : Math.max(0.25, 0.5 + Math.random() * (1.9 - g.d));
+      }
+      g.fish += (g.target - g.fish) * Math.min(1, dt * (0.8 + g.d * 2.8)) + Math.sin(now / 70) * g.d * 0.5;
     }
-    g.fish += (g.target - g.fish) * Math.min(1, dt * (0.9 + g.d * 2.4)) + Math.sin(now / 70) * g.d * 0.4;
     g.fish = clamp(g.fish, 8, TRACK.h - 8);
     const inside = (y) => y >= g.bar - 6 && y <= g.bar + BAR_H + 6;
     const on = inside(g.fish);
     g.onBar = on;
     g.total += dt;
     if (on) g.on += dt;
-    g.progress += on ? 0.3 * dt : -(0.17 + g.d * 0.12) * dt;
+    g.progress += on ? (0.3 / (1 + g.d * 0.35)) * dt : -(0.15 + g.d * 0.14) * dt;
     const t = g.treasure;
     if (t && !t.got) {
       if (!t.shown && g.total > t.at) { t.shown = true; t.y = 30 + Math.random() * (TRACK.h - 60); }
@@ -345,7 +379,7 @@ export class Fishing {
     if (g.progress >= 1) {
       const acc = g.on / g.total;
       const perfect = acc > 0.97;
-      const q = clamp(acc * 0.8 + this.power * 0.1 + g.d * 0.15 - 0.05 + (perfect ? 0.08 : 0), 0, 1);
+      const q = clamp(acc * 0.9 + (perfect ? 0.1 : 0), 0, 1); // (how big it turns out to be)
       if (perfect) { this.say('✨ PERFECT!'); sfx('notify'); }
       sfx('splash');
       net.send('fish', { q, treasure: !!g.treasure?.got });
@@ -419,7 +453,7 @@ export class Fishing {
     card.style.setProperty('--r', r.color);
     card.innerHTML = `${m.first ? '<span class="tag">NEW!</span>' : m.record ? '<span class="tag rec">RECORD!</span>' : ''}
       <div class="fr-emoji"><img class="fish-img" src="${fishThumb(f)}" alt=""></div><div class="fr-rar">${r.label}</div><div class="fr-name">${esc(f.name)}</div>
-      <div class="muted">${f.size} inches</div><div class="fr-coins">+${f.coins + m.treasure} 🪙${m.treasure ? ` (🎁 +${m.treasure})` : ''}</div>
+      <div class="muted">${f.size} inches</div><div class="fr-coins">${m.bagged ? `🎒 Worth ${m.price} 🪙 at the Fish Market` : `Bag full, sold for +${m.sold} 🪙`}${m.treasure ? ` · 🎁 +${m.treasure} 🪙` : ''}</div>
       <small class="muted">click to cast again</small>`;
     sfx('catch', { rarity: f.rarity });
     if (m.first || m.record) setTimeout(() => sfx('unlock'), 700);
@@ -461,6 +495,7 @@ export function fishJournal(body) {
   const render = () => {
     const dex = me().fishdex ?? {};
     const found = CATALOG.fish.filter((f) => dex[f.name]).length;
+    const list = journalFish(dex);
     const records = [];
     for (const p of Object.values(S.players)) {
       for (const [name, d] of Object.entries(p.fishdex ?? {})) {
@@ -470,8 +505,8 @@ export function fishJournal(body) {
     }
     records.sort((a, b) => b.best - a.best);
     body.innerHTML = `
-      <h2>📖 Fish Journal <small class="muted">${found}/${CATALOG.fish.length} found</small></h2>
-      <div class="journal">${CATALOG.fish.map((f) => {
+      <h2>📖 Fish Journal <small class="muted">${found}/${list.length} found</small></h2>
+      <div class="journal">${list.map((f) => {
         const d = dex[f.name];
         const r = RARITY[f.rarity];
         return `<div class="jcard ${d ? '' : 'unknown'}" style="--r:${r.color}">
@@ -483,4 +518,52 @@ export function fishJournal(body) {
   };
   render();
   return listen({ player: render });
+}
+
+/** The Fish Market: pick fish from your bag and sell them to the fishmonger. */
+export function fishMarket(body) {
+  const picked = new Set();
+  let flash = '';
+  const price = (it) => {
+    const f = CATALOG.fish.find((x) => x.name === it.name);
+    if (!f) return 0;
+    const [lo, hi] = f.size;
+    const k = Math.min(1, Math.max(0, (it.size - lo) / Math.max(0.1, hi - lo)));
+    return Math.max(1, Math.round(f.coins * (0.8 + 0.8 * k)));
+  };
+  const render = () => {
+    const bag = (me().fishbag ?? []).filter((it) => CATALOG.fish.some((f) => f.name === it.name));
+    for (const id of [...picked]) if (!bag.some((it) => it.id === id)) picked.delete(id);
+    const order = ['legendary', 'epic', 'rare', 'uncommon', 'common', 'junk'];
+    const rows = bag.map((it) => ({ it, f: CATALOG.fish.find((x) => x.name === it.name) }))
+      .sort((a, b) => order.indexOf(a.f.rarity) - order.indexOf(b.f.rarity) || price(b.it) - price(a.it));
+    const sel = rows.filter((r) => picked.has(r.it.id));
+    const selTotal = sel.reduce((n, r) => n + price(r.it), 0);
+    const allTotal = rows.reduce((n, r) => n + price(r.it), 0);
+    body.innerHTML = `
+      <h2>🐟 Fish Market <small class="muted">${bag.length}/60 in your bag</small></h2>
+      <p class="muted fm-intro">"Fresh catch? I'll take it off your hands!" Tap the fish you want to sell. Bigger fish fetch more.</p>
+      ${flash ? `<div class="fm-flash">${flash}</div>` : ''}
+      ${rows.length ? `<div class="fm-grid">${rows.map(({ it, f }) => {
+        const r = RARITY[f.rarity];
+        return `<button class="fm-fish ${picked.has(it.id) ? 'on' : ''}" data-id="${it.id}" style="--r:${r.color}">
+          <img class="fish-img" src="${fishThumb(f)}" alt=""><b>${esc(f.name)}</b><small>${r.label} · ${it.size}"</small><span class="fm-price">🪙 ${price(it)}</span></button>`;
+      }).join('')}</div>
+      <div class="fm-bar">
+        <button class="btn ghost" data-a="none"${picked.size ? '' : ' disabled'}>Clear</button>
+        <button class="btn ghost" data-a="pick-all">Select all</button>
+        <button class="btn primary" data-a="sell"${picked.size ? '' : ' disabled'}>Sell ${sel.length || ''} for 🪙 ${selTotal}</button>
+        <button class="btn" data-a="sell-all">Sell everything (🪙 ${allTotal})</button>
+      </div>` : '<p class="fm-empty">Your fish bag is empty. Go catch something at the pond! 🎣</p>'}`;
+    body.querySelectorAll('.fm-fish').forEach((b) => { b.onclick = () => { const id = +b.dataset.id; if (picked.has(id)) picked.delete(id); else picked.add(id); sfx('click'); render(); }; });
+    body.querySelector('[data-a=none]')?.addEventListener('click', () => { picked.clear(); render(); });
+    body.querySelector('[data-a=pick-all]')?.addEventListener('click', () => { rows.forEach((r) => picked.add(r.it.id)); render(); });
+    body.querySelector('[data-a=sell]')?.addEventListener('click', () => net.send('fish_sell', { ids: [...picked] }));
+    body.querySelector('[data-a=sell-all]')?.addEventListener('click', () => net.send('fish_sell', { all: true }));
+  };
+  render();
+  return listen({
+    player: (m) => { if (m.p.key === S.me) render(); },
+    fish_sold: (m) => { picked.clear(); flash = `Sold ${m.n} fish for <b>🪙 ${m.coins}</b>! Pleasure doing business.`; sfx('coins', { n: 8 }); render(); },
+  });
 }

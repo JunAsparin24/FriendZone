@@ -195,6 +195,7 @@ class Stage {
     if (touch.enabled && activity.touch?.hint) setTimeout(() => this.active === activity && this.banner(activity.touch.hint, 4500), 900);
     try {
       this.cleanup = activity.area(this);
+      this.tipsTab();
     } catch (e) {
       console.error('area failed to load', e);
       this.cleanup = null;
@@ -251,6 +252,22 @@ class Stage {
     this.renderer.render(this.scene, this.camera);
     this.camera.position.copy(base);
     this.updateLabels();
+  }
+
+  /** Fold the game's how-to-play line into an ℹ️ tab in the bottom right: shown for a few seconds when
+   * you arrive, then tucked away until you click it. */
+  tipsTab() {
+    const tips = [...this.hud.querySelectorAll('.arena-help:not(.house-hint)')];
+    if (!tips.length) return;
+    const tab = document.createElement('div');
+    tab.className = 'tips-tab open';
+    tab.innerHTML = '<button class="tips-btn" title="How to play">ℹ️</button><div class="tips-body hud-panel"></div>';
+    const body = tab.querySelector('.tips-body');
+    for (const t of tips) { t.classList.remove('hud-panel', 'arena-help'); body.append(t); }
+    tab.querySelector('.tips-btn').onclick = (e) => { e.stopPropagation(); tab.classList.toggle('open'); };
+    tab.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.hud.append(tab);
+    setTimeout(() => tab.classList.remove('open'), 6000);
   }
 
   onFrame(fn) { this.frameFns.push(fn); }
@@ -374,6 +391,14 @@ class Stage {
     const o = this.orbit;
     const goal = o.target.clone().add(new THREE.Vector3(0, o.height, 0));
     if (!o.cur) o.cur = goal.clone();
+    if (o.fps) {
+      // first person: the camera sits at the eyes and looks along yaw/pitch (pitch > 0 looks down)
+      o.cur.copy(goal);
+      this.camera.position.copy(goal);
+      const cp = Math.cos(o.pitch);
+      this.camera.lookAt(goal.x - Math.sin(o.yaw) * cp, goal.y - Math.sin(o.pitch), goal.z - Math.cos(o.yaw) * cp);
+      return;
+    }
     o.cur.lerp(goal, 1 - Math.exp(-dt * 9));
     // below a low orbit the camera stays off the floor and tilts its gaze up instead (never straight up)
     const LOW = 0.08, orbit = Math.max(o.pitch, LOW), cp = Math.cos(orbit);
@@ -499,9 +524,9 @@ class Stage {
         else { dx = vx / d; dz = vz / d; }
       }
       const len = Math.hypot(dx, dz);
-      const run = k.has('shift') || (touch.stick.active && touch.stick.run) ? 1.9 : 0.7;
+      const run = k.has('shift') || (touch.stick.active && touch.stick.run) ? 1.65 : 0.7;
       me.moving = false;
-      me.speed = run > 1 ? 1.9 : 0.85;
+      me.speed = run > 1 ? 1.75 : 0.85;
       if (len) {
         const step = speed * run * dt;
         const nx = me.x + (dx / len) * step, nz = me.z + (dz / len) * step;

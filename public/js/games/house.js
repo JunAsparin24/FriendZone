@@ -23,23 +23,33 @@ const owned = (id) => me().furni?.[id] ?? 0;
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
 // where you sit on things (in tiles above the floor)
 const BEDS = new Set(['bed', 'bed_princess']);
-const SEATS = { chair: 0.5, armchair: 0.42, sofa: 0.42, beanbag: 0.3, bed: 0.55, sofa_pink: 0.42, armchair_pink: 0.42, beanbag_pink: 0.3, bed_princess: 0.55 };
+// top: the height of the cushion/mattress; front: how far its front edge is from the middle (model units)
+const SEATS = {
+  chair: { top: 0.525, front: 0.25 }, armchair: { top: 0.53, front: 0.41 }, sofa: { top: 0.53, front: 0.41 },
+  beanbag: { top: 0.5, front: 0.3 }, bed: { top: 0.6, front: 0 }, sofa_pink: { top: 0.53, front: 0.41 },
+  armchair_pink: { top: 0.53, front: 0.41 }, beanbag_pink: { top: 0.5, front: 0.3 }, bed_princess: { top: 0.6, front: 0 },
+};
 // pictures of the real thing: a 3D snapshot of furniture, the actual texture for floors and walls
 const furniImg = (id) => `<img class="fem-img" src="${furnitureThumb(id)}" alt="">`;
 const decoBg = (id) => `background:url(${surfaceImage(id)}) center/cover, ${SWATCH[id] ?? '#888'}`;
 
-/** Footprint cells of a placed item, keyed by layer so rugs can sit under furniture. */
+// furniture snaps to quarter tiles, so things can go almost anywhere
+const SNAP = 4;
+const snap = (v) => Math.round(v * SNAP) / SNAP;
+
+/** Footprint cells (on the quarter-tile grid) of a placed item, keyed by layer so rugs can sit under furniture. */
 function cellsOf(it) {
   const f = FURN[it.id];
   if (!f) return [];
   const kind = kindOf(it.id);
   if (kind === 'wall') {
-    const start = it.r % 2 === 0 ? it.x : it.y;
-    return Array.from({ length: f.w }, (_, i) => `wall:${it.r % 4}:${start + i}`);
+    const start = Math.round((it.r % 2 === 0 ? it.x : it.y) * SNAP);
+    return Array.from({ length: f.w * SNAP }, (_, i) => `wall:${it.r % 4}:${start + i}`);
   }
   const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
+  const x0 = Math.round(it.x * SNAP), y0 = Math.round(it.y * SNAP);
   const out = [];
-  for (let i = 0; i < w; i++) for (let j = 0; j < d; j++) out.push(`${kind}:${it.x + i}:${it.y + j}`);
+  for (let i = 0; i < w * SNAP; i++) for (let j = 0; j < d * SNAP; j++) out.push(`${kind}:${x0 + i}:${y0 + j}`);
   return out;
 }
 
@@ -167,6 +177,12 @@ function buildRoom() {
   const gridGeo = new THREE.BufferGeometry();
   gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridPts, 3));
   const grid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35 }));
+  // fainter quarter-tile lines: furniture snaps to these
+  const finePts = [];
+  for (let i = 0.25; i < N; i += 0.25) if (i % 1) finePts.push(i, 0.012, 0, i, 0.012, N, 0, 0.012, i, N, 0.012, i);
+  const fineGeo = new THREE.BufferGeometry();
+  fineGeo.setAttribute('position', new THREE.Float32BufferAttribute(finePts, 3));
+  grid.add(new THREE.LineSegments(fineGeo, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.1 })));
   grid.visible = false;
   g.add(grid);
   const marker = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), basic('#6ee7a0', { transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }));
@@ -302,12 +318,30 @@ export function house(stage) {
     const [w, d] = footprint(it);
     const p = walker.me;
     seated = entry;
-    p.x = (it.x + w / 2) * T;
-    p.z = (it.y + d / 2) * T;
-    const bed = BEDS.has(it.id);
-    p.y = bed ? SEATS[it.id] * T - 0.5 : SEATS[it.id] * T - 0.42;
-    p.heading = it.r * (Math.PI / 2);
+    const seat = SEATS[it.id], bed = BEDS.has(it.id);
+    const heading = it.r * (Math.PI / 2), fx = Math.sin(heading), fz = Math.cos(heading);
+    p.heading = heading;
     p.char.setPose(bed ? 'lie' : 'sit');
+    // rest on top of the cushion, not inside it: find the lowest point of the posed body (for sitting,
+    // the seat of the pants; the legs hang over the front edge) and put that on the surface
+    const c = p.char, hipY = c.rig.hipY;
+    c.update(0, 0, false, 1);
+    let lowest;
+    if (bed) {
+      c.root.position.set(0, 0, 0);
+      c.root.rotation.set(0, 0, 0);
+      c.root.updateMatrixWorld(true);
+      // the torso and legs rest on the mattress (hair and hats can sink into the pillow)
+      const box = new THREE.Box3().setFromObject(c.rig.torso);
+      for (const l of c.rig.legs) box.union(new THREE.Box3().setFromObject(l));
+      lowest = box.min.y;
+    } else lowest = hipY - 0.12;
+    // sitting, you perch near the front so your knees reach the edge and the shins hang down in front
+    const fwd = bed ? 0 : Math.max(0, seat.front * T - 0.2 * (hipY / 0.46) + 0.1);
+    p.x = (it.x + w / 2) * T + fx * fwd;
+    p.z = (it.y + d / 2) * T + fz * fwd;
+    p.y = seat.top * T - lowest + 0.01;
+    entry.at = { x: p.x, y: p.y, z: p.z, heading };
     sfx(bed ? 'snore' : 'squish');
   }
   function standUp() {
@@ -413,15 +447,15 @@ export function house(stage) {
       const local = room.group.worldToLocal(h.point.clone());
       const r = h.object === room.walls.back.face ? 0 : h.object === room.walls.left.face ? 1 : h.object === room.walls.right.face ? 3 : 2;
       placing.r = r;
-      if (r % 2 === 0) { placing.y = 0; placing.x = Math.max(0, Math.min(N - f.w, Math.round(local.x - f.w / 2))); }
-      else { placing.x = 0; placing.y = Math.max(0, Math.min(N - f.w, Math.round(local.z - f.w / 2))); }
+      if (r % 2 === 0) { placing.y = 0; placing.x = Math.max(0, Math.min(N - f.w, snap(local.x - f.w / 2))); }
+      else { placing.x = 0; placing.y = Math.max(0, Math.min(N - f.w, snap(local.z - f.w / 2))); }
       return;
     }
     const p = stage.pointerOnPlane(0);
     if (!p) { placing.x = -1; return; }
     const [w, d] = footprint(placing);
-    placing.x = Math.max(0, Math.min(N - w, Math.round(p.x / T - w / 2)));
-    placing.y = Math.max(0, Math.min(N - d, Math.round(p.z / T - d / 2)));
+    placing.x = Math.max(0, Math.min(N - w, snap(p.x / T - w / 2)));
+    placing.y = Math.max(0, Math.min(N - d, snap(p.z / T - d / 2)));
   }
 
   function startPlacing(id, from = -1) {
@@ -809,23 +843,33 @@ export function house(stage) {
   // ---- per frame --------------------------------------------------------------------
 
   const center = new THREE.Vector3(W / 2, 0, W / 2);
+  const baseHeight = orbit.height;
   stage.onFrame((dt, now) => {
     const t = now / 1000;
     const p = walker.me;
     if (seated) {
       // hold the seat (the walker can't move us out of the furniture)
-      const it = seated.it;
-      const [w, d] = footprint(it);
-      p.x = (it.x + w / 2) * T;
-      p.z = (it.y + d / 2) * T;
-      p.heading = it.r * (Math.PI / 2);
+      p.x = seated.at.x;
+      p.z = seated.at.z;
+      p.y = seated.at.y;
+      p.heading = seated.at.heading;
       p.moving = false;
     }
     if (edit) {
-      // decorating: pull the camera up for an overview of the whole room
-      orbit.target.copy(center);
-      orbit.dist += (19 - orbit.dist) * Math.min(1, dt * 4);
-      orbit.pitch += (0.95 - orbit.pitch) * Math.min(1, dt * 4);
+      if (preview.ceiling) {
+        // trying on a ceiling: stand in the middle of the room and slowly look around up at it
+        orbit.fps = true;
+        orbit.target.copy(center);
+        orbit.height = WALL_H * T * 0.3;
+        orbit.pitch = -0.55;
+        orbit.yaw += dt * 0.25;
+      } else {
+        // decorating: pull the camera up for an overview of the whole room
+        if (orbit.fps) { orbit.fps = false; orbit.height = baseHeight; orbit.pitch = 0.95; }
+        orbit.target.copy(center);
+        orbit.dist += (19 - orbit.dist) * Math.min(1, dt * 4);
+        orbit.pitch += (0.95 - orbit.pitch) * Math.min(1, dt * 4);
+      }
     } else if (orbit.dist > 15) orbit.dist += (11 - orbit.dist) * Math.min(1, dt * 3);
     for (const e of entries) {
       e.A.anim = e.A.anim.filter((fn) => !fn(t, dt));
@@ -838,7 +882,9 @@ export function house(stage) {
     if (ghost?.visible) ghost.position.y = (kindOf(placing.id) === 'wall' ? WALL_Y : kindOf(placing.id) === 'ceiling' ? WALL_H : 0) + Math.sin(t * 6) * 0.03;
     // hide the walls between the camera and the room
     const c = stage.camera.position;
-    room.ceiling.visible = room.roof.visible = !edit;
+    if (!edit && orbit.fps) { orbit.fps = false; orbit.height = baseHeight; }
+    room.ceiling.visible = !edit || !!preview.ceiling;
+    room.roof.visible = !edit;
     room.walls.front.grp.visible = c.z < W - 0.2;
     room.walls.back.grp.visible = c.z > 0.2;
     room.walls.left.grp.visible = c.x > 0.2;

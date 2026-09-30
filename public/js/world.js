@@ -17,28 +17,26 @@ import { Fishing, Line } from './games/fishing.js';
 import { Sparks } from './three/fx.js';
 import { registerLook, mouseLooking } from './mouselook.js';
 import { touch, registerTouch, fitFov } from './touch.js';
-import { CATALOG } from './catalog.js';
 const PITCH_MIN = -0.55, PITCH_LOW = 0.08; // how far you can look up; where the orbit stops dropping
 
-const CATALOG_RODS = Object.fromEntries(CATALOG.rods.map((r) => [r.id, r]));
 
 export const EMOTES = M.EMOTES;
 export const SPOTS = M.SPOTS;
 
 const SPEED = 150;            // map px per second: a relaxed walk
-const SPRINT = 2.3;           // Shift: a run (about the old walking speed)
+const SPRINT = 2.0;           // Shift: a run
 const R = 12;                 // collision radius in map px
 const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown', 'hat_horns']);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const SPOT_COLORS = {
   racing: '#ff5d73', doodle: '#e57bff', boss: '#7c6bff', arcade: '#b77bff', arena: '#ff9f43', archery: '#37c871',
-  casino: '#ffd84d', fishing: '#3b82f6', trading: '#ffc53d', shop: '#ff6fb5', house: '#2ed8c3', pets: '#ff8fc7',
+  casino: '#ffd84d', fishing: '#3b82f6', fishstand: '#39a0ff', trading: '#ffc53d', shop: '#ff6fb5', house: '#2ed8c3', pets: '#ff8fc7',
 };
 /** 0 at night .. 1 in full daylight (for dimming the minimap). */
 const dayLight = () => Math.min(1, Math.max(0, (Math.sin(dayPhase() * Math.PI * 2) + 0.12) / 0.34));
 // how far a point is from a spot: the lake by its real shoreline, buildings by their footprint
 const spotDist = (s, p) => (s.kind === 'pond' ? Math.max(0, M.lakeDist(p.x, p.y)) : M.distToRect(p, s));
-const BUILDING_HEIGHT = { garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4 };
+const BUILDING_HEIGHT = { fishstand: 7, garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4 };
 
 export class World {
   constructor(canvas, hooks) {
@@ -281,9 +279,9 @@ export class World {
       a.line?.show(false);
       return;
     }
-    a.char.setProp(a.pose ? 'rod' : null, CATALOG_RODS[S.players[k]?.rod]?.color);
+    a.char.setProp(a.pose ? 'rod' : null, S.players[k]?.rod ?? 'rod_twig');
     a.char.setPose(a.pose ? 'fish' : 'idle');
-    a.lift = a.pose ? 0.49 : 0;
+    a.lift = a.pose && M.inLake(a.x, a.y) ? 0.49 : 0; // up on the dock, or on the shore
     if (a.pose && m.bx != null && ['cast', 'bite', 'reel'].includes(a.pose)) {
       a.line ||= new Line(this.scene);
       a.line.show(true);
@@ -358,8 +356,18 @@ export class World {
       { X: dockX - 0.95, Z: pa.z + 1.2, heading: -Math.PI / 2 }, { X: dockX + 0.95, Z: pa.z + 1.2, heading: Math.PI / 2 },
     ];
     const taken = (s) => [...this.actors.values()].some((a) => a.k !== S.me && a.pose && a.pose !== 'bench' && Math.hypot(M.to3(a.x, a.y).x - s.X, M.to3(a.x, a.y).z - s.Z) < 0.5);
-    const spot = slots.find((s) => !taken(s)) ?? slots[0];
     const me = this.actors.get(S.me);
+    const here = M.to3(me.x, me.y);
+    let spot;
+    if (Math.hypot(here.x - dockX, here.z - (pa.z + 2)) < 3.2) {
+      // on (or right by) the dock: take a free spot on it
+      spot = { ...(slots.find((s) => !taken(s)) ?? slots[0]), dock: true };
+    } else {
+      // anywhere else on the shore: step to the water's edge right here and face the lake
+      const sp = M.shorePoint(me.x, me.y, 14);
+      const w3 = M.to3(sp.x, sp.y);
+      spot = { X: w3.x, Z: w3.z, heading: Math.atan2(-sp.nx, -sp.ny), dock: false };
+    }
     me.x = me.tx = spot.X * M.PX + M.CENTER.x;
     me.y = me.ty = spot.Z * M.PX + M.CENTER.y;
     me.heading = spot.heading;
@@ -378,12 +386,13 @@ export class World {
 
   stopActivity() {
     if (!this.fishing) return;
+    const onDock = this.fishing.spot.dock;
     this.fishing.stop();
     this.fishing = null;
     const pond = SPOTS.find((s) => s.kind === 'pond');
     const door = M.doorOf(pond);
     const me = this.actors.get(S.me);
-    if (me) {
+    if (me && onDock) { // step off the dock (on the shore you just stay where you were)
       me.x = me.tx = door.x;
       me.y = me.ty = door.y;
       me.heading = Math.PI;
@@ -521,8 +530,9 @@ export class World {
     const pond = SPOTS.find((s) => s.kind === 'pond');
     if (M.inLake(px, py)) {
       if (this.near === pond) { this.hooks.onActivity(pond.id); return; }
+      // walk to the bit of shore nearest where you clicked, then fish there
       this.pendingSpot = pond;
-      this.walkTo(M.doorOf(pond));
+      this.walkTo(M.shorePoint(px, py, 24));
       return;
     }
     this.pendingSpot = null;
@@ -740,6 +750,7 @@ export class World {
 
     this.env.update(dt, t);
     if ((this.boardT = (this.boardT ?? 0) + dt) > 1) { this.boardT = 0; this.boards.refresh(); } // leaderboard signs
+    this.boards.tick(t);
     this.updateCamera(dt, me);
     this.updateAmbience(dt, me);
   }
@@ -783,7 +794,7 @@ export class World {
     }
     const len = Math.hypot(dx, dy);
     const sprint = (this.keys.has('shift') || (touch.stick.active && touch.stick.run)) && !this.paused ? SPRINT : 1;
-    me.speed = sprint > 1 ? 2.0 : 1.0;
+    me.speed = sprint > 1 ? 1.85 : 1.0;
     me.moving = false;
     if (len) {
       const bx = me.x, by = me.y;
@@ -834,7 +845,7 @@ export class World {
     if (this.clockEl && performance.now() - (this.clockAt ?? 0) > 1000) {
       this.clockAt = performance.now();
       const tod = timeOfDay(dn.phase);
-      this.clockEl.textContent = `${tod.icon} ${tod.clock}`;
+      this.clockEl.textContent = `${S.rain ? '🌧️' : tod.icon} ${tod.clock}`;
       this.clockEl.classList.toggle('night', tod.night);
       music.setNight(!!tod.night && settings.dayNight !== false); // chill music after dark
     }

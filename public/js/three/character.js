@@ -34,6 +34,14 @@ const BOTTOMS = {
   bottom_cuffed: { legs: 'pants', cuffs: true },
   bottom_cargo: { legs: 'pants', baggy: 1.12, pockets: true },
   bottom_tutu: { legs: 'pants', skirt: { len: 0.2, flare: 0.4, frill: true } },
+  bottom_jeans: { legs: 'pants', seams: true, cuffs: true },
+  bottom_joggers: { legs: 'pants', jogger: true, stripe: true },
+  bottom_flares: { legs: 'pants', flare: true, seams: true },
+  bottom_ripped: { legs: 'pants', ripped: true, seams: true },
+  bottom_overalls: { legs: 'pants', overalls: true, cuffs: true },
+  bottom_leather: { legs: 'pants', leather: true, seams: true },
+  bottom_athletic: { legs: 'shorts', stripe: true },
+  bottom_plaidskirt: { legs: 'skin', socks: true, skirt: { len: 0.3, flare: 0.36, plaid: true } },
 };
 
 const R = 0.42; // head radius
@@ -73,17 +81,82 @@ const _ik1 = new THREE.Vector3(), _ik2 = new THREE.Vector3(), _ik3 = new THREE.V
 const _ikq = new THREE.Quaternion(), _ikq2 = new THREE.Quaternion();
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _q4 = new THREE.Quaternion();
 
+// color: a top with its own look (it can be recoloured with topTint); accent: the default colour of
+// its trim/tie/stripes (recolour with topAccent)
 const TOPS = {
   top_tee: { sleeve: 'short' },
   top_tank: { sleeve: 'none' },
-  top_hoodie: { sleeve: 'long', hood: true },
-  top_hawaiian: { sleeve: 'short' },
-  top_jersey: { sleeve: 'short' },
-  top_suit: { sleeve: 'long', color: '#23263f' },
-  top_racing: { sleeve: 'long', color: '#f4f4f4' },
-  top_armor: { sleeve: 'long', color: '#aab3c5', metal: true },
-  top_robe: { sleeve: 'long', color: '#5b2a86', robe: true },
+  top_hoodie: { sleeve: 'long', hood: true, accent: '#ffffff' },
+  top_hawaiian: { sleeve: 'short', pattern: 'hawaiian', accent: '#ffd84d' },
+  top_jersey: { sleeve: 'short', accent: '#ffffff' },
+  top_suit: { sleeve: 'long', color: '#23263f', accent: '#e0463c' },
+  top_racing: { sleeve: 'long', color: '#f4f4f4', accent: '#e0463c', armStripe: true },
+  top_armor: { sleeve: 'long', color: '#aab3c5', metal: true, accent: '#8b5a2b' },
+  top_robe: { sleeve: 'long', color: '#5b2a86', robe: true, accent: '#ffc53d' },
+  top_leather: { sleeve: 'long', color: '#1d1b22', leather: true, accent: '#f4f0ff' },
+  top_varsity: { sleeve: 'long', accent: '#f4f0ff', armAccent: true },
+  top_puffer: { sleeve: 'long', puffy: true, accent: '#23263f' },
+  top_sweater: { sleeve: 'long', accent: '#f4f0ff' },
+  top_flannel: { sleeve: 'long', pattern: 'plaid', accent: '#1d1b2e' },
+  top_kimono: { sleeve: 'long', kimono: true, accent: '#ffc53d' },
+  top_denim: { sleeve: 'long', color: '#4a74b8', accent: '#e8c07a' },
+  top_tux: { sleeve: 'long', color: '#15141c', accent: '#15141c' },
+  top_polo: { sleeve: 'short', accent: '#ffffff' },
 };
+const hex = (c) => `#${new THREE.Color(c).getHexString()}`;
+// printed fabrics, made per colour pair (cached)
+const patternCache = new Map();
+function patternMaterial(kind, main, accent) {
+  const key = `${kind}${main}${accent}`;
+  if (!patternCache.has(key)) {
+    const tex = canvasTexture(128, 128, (ctx) => {
+      ctx.fillStyle = main; ctx.fillRect(0, 0, 128, 128);
+      if (kind === 'plaid') {
+        ctx.globalAlpha = 0.45; ctx.fillStyle = accent;
+        for (let i = 0; i < 128; i += 32) { ctx.fillRect(i, 0, 12, 128); ctx.fillRect(0, i, 128, 12); }
+        ctx.globalAlpha = 0.3; ctx.fillStyle = '#ffffff';
+        for (let i = 20; i < 128; i += 32) { ctx.fillRect(i, 0, 2, 128); ctx.fillRect(0, i, 128, 2); }
+      } else if (kind === 'hawaiian') {
+        const flower = (x, y, r, c) => {
+          ctx.fillStyle = c;
+          for (let k = 0; k < 5; k++) { const a = (k / 5) * Math.PI * 2; ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.6, y + Math.sin(a) * r * 0.6, r * 0.5, 0, Math.PI * 2); ctx.fill(); }
+          ctx.fillStyle = '#ffd84d'; ctx.beginPath(); ctx.arc(x, y, r * 0.3, 0, Math.PI * 2); ctx.fill();
+        };
+        ctx.fillStyle = 'rgba(40,120,60,.55)';
+        for (const [x, y, a] of [[20, 90, 0.6], [80, 30, -0.4], [110, 100, 1.2], [50, 50, 2]]) { ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.beginPath(); ctx.ellipse(0, 0, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+        flower(30, 30, 14, accent); flower(96, 70, 16, '#ffffff'); flower(40, 104, 11, accent); flower(110, 16, 10, '#ff9fb4'); flower(70, 118, 9, '#ffffff');
+      }
+    });
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(kind === 'plaid' ? 3 : 2, kind === 'plaid' ? 2 : 1.5);
+    patternCache.set(key, new THREE.MeshToonMaterial({ color: '#ffffff', map: tex, gradientMap: toon('#ffffff').gradientMap }));
+  }
+  return patternCache.get(key);
+}
+const letterTexture = (() => {
+  const cache = new Map();
+  return (color, bg) => {
+    const key = color + bg;
+    if (!cache.has(key)) cache.set(key, canvasTexture(64, 64, (ctx) => {
+      ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(4, 4, 56, 56, 10); ctx.fill();
+      ctx.font = '900 46px Rubik, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6; ctx.strokeStyle = '#ffffff'; ctx.strokeText('F', 32, 36);
+      ctx.fillStyle = color; ctx.fillText('F', 32, 36);
+    }));
+    return cache.get(key);
+  };
+})();
+const numberTexture = (() => {
+  const cache = new Map();
+  return (color) => {
+    if (!cache.has(color)) cache.set(color, canvasTexture(128, 128, (ctx) => {
+      ctx.font = '900 96px Rubik, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 10; ctx.strokeStyle = '#1d1b2e'; ctx.strokeText('7', 64, 70);
+      ctx.fillStyle = color; ctx.fillText('7', 64, 70);
+    }));
+    return cache.get(color);
+  };
+})();
 const FRINGE_HIDING_HATS = new Set(['hat_durag', 'hat_beanie', 'hat_helmet', 'hat_viking', 'hat_bucket', 'hat_cap']);
 const COVERING_HATS = new Set(['hat_durag', 'hat_cap', 'hat_beanie', 'hat_cowboy', 'hat_bucket', 'hat_tophat', 'hat_viking',
   'hat_wizard', 'hat_helmet', 'hat_robin', 'hat_party', 'hat_crown']);
@@ -322,43 +395,113 @@ function cornrows(head, mat, L, lineup) {
 }
 
 
+/**
+ * One strand of hair (a lock, a loc, a spike of a mane): a smooth tube along a curve through `pts`,
+ * tapering from r0 at the root to r1, closed with a rounded (or pointed) tip. `bumps` adds the knobbly
+ * rhythm of real locs/twists; `flat` squashes it into a ribbon (fringes, layered cuts).
+ */
+function strandGeo(pts, r0, r1, { bumps = 0, bumpAmt = 0.14, flat = 1, point = false, radial = 9, segs = 26 } = {}) {
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+  const frames = curve.computeFrenetFrames(segs, false);
+  const pos = [], idx = [];
+  const P = new THREE.Vector3(), N = new THREE.Vector3(), B = new THREE.Vector3();
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    curve.getPointAt(t, P);
+    let r = r0 + (r1 - r0) * t;
+    if (point) r *= 1 - Math.pow(t, 3) * 0.92;
+    if (bumps) r *= 1 + Math.sin(t * bumps * TAU) * bumpAmt;
+    N.copy(frames.normals[i]); B.copy(frames.binormals[i]);
+    for (let j = 0; j < radial; j++) {
+      const a = (j / radial) * TAU;
+      const cx = Math.cos(a) * r, cy = Math.sin(a) * r * flat;
+      pos.push(P.x + N.x * cx + B.x * cy, P.y + N.y * cx + B.y * cy, P.z + N.z * cx + B.z * cy);
+    }
+  }
+  // rounded cap at the tip
+  const end = curve.getPointAt(1), dir = curve.getTangentAt(1);
+  const capI = pos.length / 3;
+  pos.push(end.x + dir.x * r1 * 0.9, end.y + dir.y * r1 * 0.9, end.z + dir.z * r1 * 0.9);
+  for (let i = 0; i < segs; i++) {
+    for (let j = 0; j < radial; j++) {
+      const a = i * radial + j, b = i * radial + ((j + 1) % radial), c = a + radial, d = b + radial;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  const last = segs * radial;
+  for (let j = 0; j < radial; j++) idx.push(last + j, last + ((j + 1) % radial), capI);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+function strand(head, mat, pts, r0, r1, opts = {}) {
+  const key = `strand${pts.map((v) => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`).join('|')}${r0},${r1},${JSON.stringify(opts)}`;
+  return part(head, geo(key, () => strandGeo(pts, r0, r1, opts)), mat, { outline: opts.outline === undefined ? OUT_THIN : opts.outline });
+}
+/** A path that hugs the scalp from (phi0, th0) to (phi1, th1), then falls `len` down and out. */
+function lockPath(phi0, th0, phi1, th1, len, { lift = 0.03, out = 0.07, sway = 0, curl = 0 } = {}) {
+  const pts = [];
+  for (let k = 0; k <= 3; k++) {
+    const t = k / 3;
+    pts.push(onHead(phi0 + (phi1 - phi0) * t, th0 + (th1 - th0) * t, R + lift + t * 0.02));
+  }
+  const edge = pts[pts.length - 1];
+  const o = new THREE.Vector3(edge.x, 0, edge.z).normalize();
+  const side = new THREE.Vector3(-o.z, 0, o.x);
+  for (let k = 1; k <= 3; k++) {
+    const t = k / 3;
+    pts.push(edge.clone().addScaledVector(o, out * Math.sqrt(t) + curl * t * t).addScaledVector(side, Math.sin(t * 2.2) * sway).add(new THREE.Vector3(0, -len * t, 0)));
+  }
+  return pts;
+}
+
 const HAIR = {
   hair_short(head, mat) { shell(head, mat, { front: 0.9, side: 1.4, back: 2.15 }); fringe(head, mat); },
   // ---- braids, locs, fades and friends ----
   hair_cornrows(head, mat, L) { cornrows(head, mat, L, false); },
   hair_cornrows_lineup(head, mat, L) { cornrows(head, mat, L, true); },
-  hair_dreads(head, mat) {
-    // long, thick locs falling from all over the scalp, with a few tied up on top
+  hair_dreads(head, mat, L) {
+    // a full head of thick locs: they start all over the scalp, run back over the head and fall past
+    // the shoulders, knobbly like real locs, with a few gold cuffs
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.2, lift: 0.02 });
-    const bead = toon('#ffc53d');
-    for (let i = 0; i < 18; i++) {
-      const phi = (i / 18) * TAU + 0.17;
-      if (Math.cos(phi) > 0.55) continue; // keep the face clear
-      const lim = hairline(phi, 0.95, 1.5, 2.2);
-      const root = onHead(phi, Math.min(lim, 1.55) - 0.6, R + 0.03);
-      const edge = onHead(phi, Math.min(lim - 0.05, Math.PI / 2 + 0.25), R + 0.07);
-      const out = new THREE.Vector3(edge.x, 0, edge.z).normalize();
-      const len = 0.55 + ((i * 7) % 5) * 0.06;
-      const tip = edge.clone().add(out.clone().multiplyScalar(0.06)).add(new THREE.Vector3(0, -len, 0));
-      taper(head, [root, edge, edge.clone().lerp(tip, 0.5).add(out.clone().multiplyScalar(0.03)), tip], 0.065, 0.055, mat);
-      if (i % 5 === 2) part(head, cyl(0.07, 0.07, 0.06, 10), bead, { p: edge.clone().lerp(tip, 0.6).toArray(), outline: null });
-    }
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * TAU;
-      part(head, capsule(0.055, 0.12), mat, { p: [Math.sin(a) * 0.14, R + 0.04, Math.cos(a) * 0.14 - 0.05], r: [Math.cos(a) * 0.6, 0, -Math.sin(a) * 0.6], outline: OUT_THIN });
+    const shade = toon(mix(L.hairColor, '#000000', 0.18)), cuff = shiny('#ffc53d', { metalness: 0.6 });
+    let n = 0;
+    for (let ring = 0; ring < 4; ring++) {
+      const th0 = 0.28 + ring * 0.3, count = 7 + ring * 4;
+      for (let k = 0; k < count; k++) {
+        const phi = (k / count) * TAU + ring * 0.37;
+        const front = Math.cos(phi);
+        // locs starting over the forehead get swept to the sides/back so the face stays clear
+        const phi1 = front > 0.2 ? phi + Math.sign(Math.sin(phi) || 1) * (0.9 + front * 0.6) : phi;
+        const th1 = Math.max(th0 + 0.3, Math.min(hairline(phi1, 0.95, 1.5, 2.2) - 0.1, 1.72));
+        const len = 0.5 + ((n * 7) % 6) * 0.05 + (Math.cos(phi1) < -0.3 ? 0.12 : 0);
+        const pts = lockPath(phi, th0, phi1, th1, len, { lift: 0.035, out: 0.05, sway: ((n % 3) - 1) * 0.03 });
+        const m = strand(head, n % 4 === 1 ? shade : mat, pts, 0.052, 0.044, { bumps: 9, bumpAmt: 0.12 });
+        m.userData.hair = true;
+        if (n % 6 === 2) part(head, cyl(0.058, 0.058, 0.05, 12), cuff, { p: pts[5].toArray(), outline: null });
+        n++;
+      }
     }
   },
-  hair_twists(head, mat) {
-    // short dreads / twists standing up all over
+  hair_twists(head, mat, L) {
+    // short dreads / sponge twists: little knobbly coils all over, springing up and out
     shell(head, mat, { front: 0.95, side: 1.45, back: 2.15, lift: 0.015 });
-    for (let th = 0.15; th < 1.9; th += 0.27) {
-      const ring = Math.max(1, Math.round((TAU * Math.sin(th)) / 0.27));
+    const shade = toon(mix(L.hairColor, '#000000', 0.15));
+    let n = 0;
+    for (let th = 0.12; th < 1.95; th += 0.24) {
+      const ring = Math.max(1, Math.round((TAU * Math.sin(th)) / 0.24));
       for (let k = 0; k < ring; k++) {
         const phi = (k / ring) * TAU + th * 2.1;
         if (th > hairline(phi, 0.9, 1.4, 2.1) - 0.05) continue;
-        const v = onHead(phi, th, 1);
-        const len = 0.07 + ((k * 3 + Math.round(th * 10)) % 3) * 0.02;
-        part(head, capsule(0.045, len), mat, { p: v.clone().multiplyScalar(R + 0.02 + len / 2).toArray(), q: pointTo(v.clone().add(new THREE.Vector3(0, 0.8, 0))), outline: OUT_THIN });
+        const nrm = onHead(phi, th, 1).normalize();
+        const up = nrm.clone().add(new THREE.Vector3(0, 0.45, 0)).normalize();
+        const len = 0.08 + ((k * 3 + Math.round(th * 10)) % 3) * 0.03;
+        const a = nrm.clone().multiplyScalar(R + 0.01);
+        const b = a.clone().addScaledVector(up, len * 0.55);
+        const c = a.clone().addScaledVector(up, len).add(new THREE.Vector3(0, -0.02 * Math.sin(th), 0));
+        strand(head, n++ % 3 === 0 ? shade : mat, [a, b, c], 0.042, 0.036, { bumps: 3, bumpAmt: 0.18, radial: 7, segs: 12 });
       }
     }
   },
@@ -403,23 +546,40 @@ const HAIR = {
       part(head, ring, k % 2 ? light : dark, { outline: null });
     }
   },
-  hair_freeform(head, mat) {
-    // a huge wild mane of long spikes sweeping down the back, with bangs hanging over one eye
+  hair_freeform(head, mat, L) {
+    // a huge wild mane (think Madara): heavy, jagged locks sweeping back and down past the shoulders,
+    // spiky volume on top and long bangs hanging over one eye
     shell(head, mat, { front: 0.95, side: 1.55, back: 2.3, lift: 0.03 });
-    for (let i = 0; i < 26; i++) {
-      const phi = Math.PI * 0.35 + (i / 25) * Math.PI * 1.3, th = 0.9 + ((i * 7) % 5) * 0.12;
-      const base = onHead(phi, th, R + 0.02);
-      const dir = new THREE.Vector3(base.x * 0.9, -1.1 - ((i * 3) % 4) * 0.2, base.z * 0.9 - 0.3).normalize();
-      const len = 0.55 + ((i * 11) % 6) * 0.08;
-      part(head, cone(0.1, len, 7), mat, { p: base.clone().addScaledVector(dir, len / 2 - 0.04).toArray(), q: pointTo(dir), outline: OUT_THIN });
+    const shade = toon(mix(L.hairColor, '#000000', 0.22));
+    let n = 0;
+    for (let row = 0; row < 3; row++) {
+      const count = 9 + row * 3;
+      for (let k = 0; k < count; k++) {
+        const phi = Math.PI * 0.42 + (k / (count - 1)) * Math.PI * 1.16;
+        const th = 0.55 + row * 0.35;
+        const root = onHead(phi, th, R + 0.03);
+        const o = new THREE.Vector3(root.x, 0, root.z).normalize();
+        const len = 0.55 + row * 0.18 + ((n * 7) % 5) * 0.07;
+        const kick = 0.1 + ((n * 3) % 4) * 0.035;
+        const pts = [root, root.clone().addScaledVector(o, kick).add(new THREE.Vector3(0, 0.05 - row * 0.05, 0)),
+          root.clone().addScaledVector(o, kick * 1.3).add(new THREE.Vector3(0, -len * 0.55, 0)),
+          root.clone().addScaledVector(o, kick * 1.5 + 0.02).add(new THREE.Vector3(((n % 3) - 1) * 0.05, -len, -0.04))];
+        strand(head, n++ % 3 === 1 ? shade : mat, pts, 0.1 - row * 0.012, 0.03, { point: true, flat: 0.55, radial: 8, segs: 16 });
+      }
     }
-    for (let i = 0; i < 8; i++) {
-      const v = onHead(i * 0.8, 0.35 + (i % 3) * 0.2, 1);
-      part(head, cone(0.1, 0.34, 7), mat, { p: v.clone().multiplyScalar(R + 0.1).toArray(), q: pointTo(v.clone().add(new THREE.Vector3(0, 0.4, -0.5))), outline: OUT_THIN });
+    // spiky crown
+    for (let i = 0; i < 9; i++) {
+      const v = onHead(Math.PI + (i - 4) * 0.42, 0.3 + (i % 3) * 0.16, 1).normalize();
+      const a = v.clone().multiplyScalar(R + 0.02);
+      const tip = a.clone().addScaledVector(v, 0.3).add(new THREE.Vector3(0, 0.14, -0.2));
+      strand(head, i % 2 ? shade : mat, [a, a.clone().lerp(tip, 0.5).addScaledVector(v, 0.05), tip], 0.09, 0.02, { point: true, flat: 0.6, radial: 8, segs: 12 });
     }
-    for (const [x, len, tilt] of [[0.1, 0.36, 0.25], [0.2, 0.3, 0.45], [-0.02, 0.24, 0.1]]) {
-      const p = onFace(x, 0.22, 0.05);
-      part(head, cone(0.08, len, 7), mat, { p: [p.x, p.y - len / 2 + 0.05, p.z + 0.02], r: [Math.PI - 0.2, 0, tilt], outline: OUT_THIN });
+    // long bangs: one heavy lock falls over the right eye, a few thinner ones frame the face
+    for (const [x, len, w] of [[0.12, 0.42, 0.075], [0.26, 0.36, 0.06], [-0.22, 0.3, 0.05], [-0.02, 0.2, 0.05]]) {
+      const top = onFace(x * 0.6, 0.34, 0.05);
+      const mid = onFace(x, 0.14, 0.07);
+      const low = onFace(x * 1.15, 0.14 - len * 0.6, 0.08);
+      strand(head, mat, [top, mid, low, low.clone().add(new THREE.Vector3(x * 0.2, -len * 0.4, 0.02))], w, 0.02, { point: true, flat: 0.5, radial: 8, segs: 14 });
     }
   },
   hair_spiky(head, mat) {
@@ -465,18 +625,23 @@ const HAIR = {
       part(head, sphere(0.12, 12, 10), mat, { p: [Math.sin(a) * (R + 0.06), -0.14, Math.cos(a) * (R + 0.04)], outline: OUT_THIN });
     }
   },
-  hair_puffs(head, mat) {
-    // two big curly puffs on top, like fluffy space buns
+  hair_puffs(head, mat, L) {
+    // two big, round, fluffy afro puffs high on the head, tied off with scrunchies, hair slicked back
+    // with a neat centre part
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.25, lift: 0.015 });
+    part(head, box(0.012, 0.004, 0.36), toon(mix(L.hairColor, L.skin, 0.5)), { p: [0, R + 0.02, 0.04], r: [0.1, 0, 0], outline: null });
     for (const sx of [-1, 1]) {
-      const c = new THREE.Vector3(sx * 0.3, 0.36, -0.05);
-      for (let k = 0; k < 9; k++) {
-        const v = new THREE.Vector3(Math.sin(k * 2.4) * Math.cos(k), Math.cos(k * 1.7) * 0.8, Math.sin(k * 1.3)).normalize().multiplyScalar(0.14);
-        part(head, sphere(0.11, 12, 10), mat, { p: c.clone().add(v).toArray(), outline: OUT_THIN });
+      const c = new THREE.Vector3(sx * 0.29, 0.43, -0.06);
+      part(head, sphere(0.2, 20, 16), mat, { p: c.toArray(), s: [1, 0.95, 1] });
+      // a fuzzy surface of little curls over the puff
+      for (let k = 0; k < 26; k++) {
+        const y = 1 - (k / 25) * 1.6, r = Math.sqrt(Math.max(0, 1 - y * y)), a = k * 2.39996;
+        const v = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
+        if (v.y < -0.45) continue;
+        part(head, sphere(0.06, 10, 8), mat, { p: c.clone().addScaledVector(v, 0.19).toArray(), outline: null });
       }
-      part(head, sphere(0.16, 14, 12), mat, { p: c.toArray() });
+      part(head, torus(0.1, 0.03, TAU, 8, 20), toon('#ff5d73'), { p: c.clone().add(new THREE.Vector3(-sx * 0.05, -0.17, 0.01)).toArray(), r: [Math.PI / 2, sx * 0.45, 0], outline: null });
     }
-    fringe(head, mat, 4);
   },
   hair_ponytail(head, mat) {
     shell(head, mat, { front: 0.95, side: 1.5, back: 2.3 });
@@ -562,13 +727,34 @@ const HAIR = {
     const q = onFace(0.2, 0.2, 0.0);
     part(head, sphere(0.13, 16, 12), mat, { p: q.toArray(), q: faceTo(q).multiply(new THREE.Quaternion().setFromAxisAngle(Z, 0.7)), s: [1.4, 0.55, 0.55], outline: OUT_THIN });
   },
-  hair_emo(head, mat) {
-    shell(head, mat, { front: 0.9, side: 1.5, back: 2.3 });
-    const p = onFace(0.08, 0.12, 0.03);
-    part(head, sphere(0.2, 20, 14), mat, { p: p.toArray(), q: faceTo(p).multiply(new THREE.Quaternion().setFromAxisAngle(Z, -0.5)), s: [0.8, 1.35, 0.4], outline: OUT_THIN });
-    const q = onFace(-0.15, 0.24, 0);
-    part(head, sphere(0.14, 16, 12), mat, { p: q.toArray(), q: faceTo(q).multiply(new THREE.Quaternion().setFromAxisAngle(Z, -0.4)), s: [1.4, 0.55, 0.55], outline: OUT_THIN });
-    curtain(head, mat, { len: 0.3, flare: 0.04, wrap: 0.2 });
+  hair_emo(head, mat, L) {
+    // emo: a long, sleek side fringe swept across the forehead and over one eye, choppy pointed layers
+    // round the back and sides, and a bit of teased volume at the crown
+    shell(head, mat, { front: 0.9, side: 1.55, back: 2.3, lift: 0.03 });
+    const shade = toon(mix(L.hairColor, '#000000', 0.2));
+    // the fringe: ribbons from the side part, across the brow, ending at the cheek
+    [[-0.3, 0.1, 0.28, 0.08], [-0.28, 0.02, 0.24, 0.075], [-0.24, -0.05, 0.19, 0.06], [-0.16, 0.14, 0.33, 0.06], [-0.34, 0.18, 0.12, 0.05]]
+      .forEach(([x0, y1, x1, w], i) => {
+        const a = onFace(x0, 0.36, 0.05), b = onFace((x0 + x1) / 2, 0.28 - i * 0.01, 0.065), c = onFace(x1, y1, 0.06);
+        const d = onFace(Math.min(0.36, x1 + 0.05), y1 - 0.12, 0.05);
+        strand(head, i === 3 ? shade : mat, [a, b, c, d], w, 0.012, { point: true, flat: 0.38, radial: 10, segs: 18 });
+      });
+    // choppy layers round the sides and back, ending in points
+    for (let i = 0; i < 17; i++) {
+      const phi = Math.PI * 0.38 + (i / 16) * Math.PI * 1.24;
+      const th = 0.95 + (i % 2) * 0.2;
+      const root = onHead(phi, th, R + 0.035);
+      const o = new THREE.Vector3(root.x, 0, root.z).normalize();
+      const len = 0.28 + ((i * 5) % 4) * 0.05;
+      const tip = root.clone().addScaledVector(o, 0.08).add(new THREE.Vector3(0, -len, 0));
+      strand(head, i % 3 === 0 ? shade : mat, [root, root.clone().lerp(tip, 0.45).addScaledVector(o, 0.06), tip], 0.085, 0.015, { point: true, flat: 0.45, radial: 8, segs: 12 });
+    }
+    // teased crown
+    for (let i = 0; i < 5; i++) {
+      const v = onHead(Math.PI + (i - 2) * 0.45, 0.45, 1).normalize();
+      const a = v.clone().multiplyScalar(R + 0.02);
+      strand(head, mat, [a, a.clone().addScaledVector(v, 0.13).add(new THREE.Vector3(0, 0.03, -0.08)), a.clone().addScaledVector(v, 0.2).add(new THREE.Vector3(0, -0.02, -0.18))], 0.08, 0.015, { point: true, flat: 0.5, radial: 8, segs: 10 });
+    }
   },
   hair_quiff(head, mat) {
     shell(head, mat, { front: 1.0, side: 1.35, back: 2.1 });
@@ -994,6 +1180,55 @@ const AURAS = {
 // Character
 // ---------------------------------------------------------------------------
 
+// Each fishing rod has its own look: the blank (the long pole), the grip, the reel and the line guides.
+const ROD_STYLES = {
+  rod_twig: { blank: '#8b5a2b', grip: '#6b4226', twig: true },
+  rod_bamboo: { blank: '#d9c46a', grip: '#8b6a2b', nodes: '#a88f3c', reel: '#8d96a8' },
+  rod_fiber: { blank: '#39c6ff', grip: '#c9955a', reel: '#c0c6d4', guides: '#e8ecf5', shinyBlank: true },
+  rod_clover: { blank: '#37c871', grip: '#f4f0ff', reel: '#ffd84d', guides: '#ffd84d', charm: 'clover' },
+  rod_pro: { blank: '#1d1b2e', stripe: '#e0463c', grip: '#23263f', reel: '#e0463c', bigReel: true, guides: '#c0c6d4', shinyBlank: true },
+  rod_golden: { blank: '#ffc53d', grip: '#7a2a8a', reel: '#ffe9a8', bigReel: true, guides: '#ffffff', shinyBlank: true, gold: true, charm: 'gem' },
+};
+
+/** Build a rod along -Y from the hand (the tip ends at y = -2.35). */
+function buildRod(g, st) {
+  const blankMat = st.gold ? shiny(st.blank, { metalness: 0.8, roughness: 0.25 }) : st.shinyBlank ? shiny(st.blank, { metalness: 0.2, roughness: 0.35 }) : toon(st.blank);
+  if (st.twig) {
+    // a knobbly stick with a string tied on
+    part(g, cyl(0.022, 0.045, 2.4, 7), blankMat, { p: [0, -1.1, 0], outline: null });
+    for (const [y, a] of [[-0.5, 0.7], [-1.2, -0.6], [-1.8, 0.9]]) part(g, cyl(0.008, 0.016, 0.22, 5), blankMat, { p: [0.05 * Math.sign(a), y, 0], r: [0, 0, a], outline: null });
+    part(g, sphere(0.035, 8, 6), toon('#e8dcc0'), { p: [0, -2.3, 0], outline: null });
+    return;
+  }
+  // grip + butt cap
+  part(g, cyl(0.036, 0.04, 0.42, 10), toon(st.grip), { p: [0, 0.02, 0], outline: null });
+  part(g, sphere(0.045, 10, 8), toon(st.grip), { p: [0, 0.24, 0], outline: null });
+  // reel on the side
+  const rs = st.bigReel ? 1.35 : 1;
+  part(g, cyl(0.055 * rs, 0.055 * rs, 0.07, 14), shiny(st.reel ?? '#c0c6d4', { metalness: 0.6 }), { p: [0.07, -0.14, 0], r: [0, 0, Math.PI / 2], outline: null });
+  part(g, cyl(0.012, 0.012, 0.09, 6), toon('#23263f'), { p: [0.12, -0.14, 0.04 * rs], r: [0, 0, Math.PI / 2], outline: null });
+  part(g, sphere(0.018, 6, 5), toon('#23263f'), { p: [0.16, -0.14, 0.04 * rs], outline: null });
+  // the blank, tapering to the tip
+  part(g, cyl(0.011, 0.022, 2.15, 8), blankMat, { p: [0, -1.25, 0], outline: null });
+  if (st.stripe) for (const y of [-0.45, -0.9, -1.5]) part(g, cyl(0.02, 0.02, 0.04, 8), toon(st.stripe), { p: [0, y, 0], outline: null });
+  if (st.nodes) for (let i = 0; i < 6; i++) part(g, cyl(0.022 - i * 0.002, 0.022 - i * 0.002, 0.03, 8), toon(st.nodes), { p: [0, -0.4 - i * 0.33, 0], outline: null });
+  if (st.guides) for (let i = 0; i < 4; i++) {
+    const r = 0.03 - i * 0.004;
+    part(g, torus(r, 0.005, TAU, 5, 12), shiny(st.guides, { metalness: 0.6 }), { p: [0, -0.55 - i * 0.48, 0.035], r: [0, Math.PI / 2, 0], outline: null });
+  }
+  if (st.charm === 'clover') {
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU;
+      part(g, sphere(0.035, 8, 6), toon('#2e9e5a'), { p: [0.02 + Math.cos(a) * 0.035, 0.34 + Math.sin(a) * 0.035, 0], s: [1, 1, 0.4], outline: null });
+    }
+  } else if (st.charm === 'gem') {
+    const gem = part(g, new THREE.OctahedronGeometry(0.05, 0), shiny('#b77bff', { metalness: 0.3, roughness: 0.1 }), { p: [0, 0.32, 0], outline: null });
+    const glow = new THREE.Sprite(additive(glowTexture, 0xffe27a, 0.6));
+    glow.scale.setScalar(0.22);
+    gem.add(glow);
+  }
+}
+
 export class Character {
   constructor(look = DEFAULT_LOOK) {
     this.root = new THREE.Group();
@@ -1068,9 +1303,7 @@ export class Character {
       g.add(frame);
     } else if (kind === 'rod') {
       g.rotation.x = -0.6;
-      part(g, cyl(0.03, 0.035, 0.34, 8), toon('#c9955a'), { p: [0, 0.05, 0], outline: null });
-      part(g, cyl(0.045, 0.045, 0.07, 10), shiny('#c0c6d4'), { p: [0.05, -0.12, 0], r: [0, 0, Math.PI / 2], outline: null });
-      part(g, cyl(0.011, 0.02, 2.2, 6), toon(this.propColor ?? '#3b2a1a'), { p: [0, -1.25, 0], outline: null });
+      buildRod(g, ROD_STYLES[this.propColor] ?? { ...ROD_STYLES.rod_twig, blank: this.propColor ?? '#3b2a1a' });
       const tip = new THREE.Object3D();
       tip.position.y = -2.35;
       g.add(tip);
@@ -1091,9 +1324,13 @@ export class Character {
     const anim = [];
     const state = { disposables: [] };
     const skin = toon(L.skin);
-    const topColor = top.color ?? L.topColor;
-    const topMat = top.metal ? shiny(topColor, { metalness: 0.75, roughness: 0.3 }) : toon(topColor);
-    const pants = toon(L.bottomColor);
+    // fixed-look tops (suits, armour…) keep their own colour unless you recolour them
+    const topColor = top.color ? (L.topTint || top.color) : L.topColor;
+    const accent = L.topAccent || top.accent || '#ffffff';
+    const topMat = top.metal ? shiny(topColor, { metalness: 0.75, roughness: 0.3 })
+      : top.leather ? shiny(topColor, { metalness: 0.15, roughness: 0.42 })
+        : top.pattern ? patternMaterial(top.pattern, hex(topColor), hex(accent)) : toon(topColor);
+    const pants = bottom.leather ? shiny(L.bottomColor, { metalness: 0.15, roughness: 0.4 }) : toon(L.bottomColor);
     const shoe = toon(L.shoeColor);
 
     // body shape: legs and torso stretch with height; build widens the torso and limbs
@@ -1117,10 +1354,22 @@ export class Character {
       part(pivot, capsule(0.1, 0.1), upperMat, { p: [0, -0.1 * kl, 0], s: [kb * (bottom.baggy ?? 1), kl, kb * (bottom.baggy ?? 1)] });
       if (bottom.legs === 'shorts') part(pivot, cyl(0.115 * kb, 0.12 * kb, 0.06, 14), toon(tint(L.bottomColor, 0.85)), { p: [0, -0.19 * kl, 0], outline: null });
       if (bottom.pockets) part(pivot, box(0.05, 0.12, 0.14), toon(tint(L.bottomColor, 0.82)), { p: [s * 0.1 * kb, -0.1 * kl, 0], outline: OUT_THIN });
+      const bw = kb * (bottom.baggy ?? 1);
+      if (bottom.seams) part(pivot, box(0.008, 0.2 * kl, 0.012), toon(tint(L.bottomColor, 1.35)), { p: [s * 0.1 * bw, -0.1 * kl, 0], outline: null, shadow: false });
+      if (bottom.stripe) part(pivot, box(0.012, (bottom.legs === 'shorts' ? 0.12 : 0.2) * kl, 0.03), toon('#ffffff'), { p: [s * 0.1 * bw, -0.1 * kl, 0], outline: null, shadow: false });
+      if (bottom.ripped) part(pivot, circle(0.03), skin, { p: [s * 0.02, -0.14 * kl, 0.098 * bw], s: [1.4, 0.7, 1], outline: null, shadow: false });
       const knee = new THREE.Group();
       knee.position.y = -0.2 * kl;
       part(knee, capsule(0.09, 0.08), lowerMat, { p: [0, -0.08 * kl, 0], s: [kb * (bottom.baggy ?? 1), kl, kb * (bottom.baggy ?? 1)] });
       if (bottom.cuffs) part(knee, cyl(0.1 * kb, 0.105 * kb, 0.06, 14), toon(tint(L.bottomColor, 1.25)), { p: [0, -0.14 * kl, 0], outline: OUT_THIN });
+      if (bottom.seams && !bottom.flare) part(knee, box(0.008, 0.14 * kl, 0.012), toon(tint(L.bottomColor, 1.35)), { p: [s * 0.088 * kb, -0.06 * kl, 0], outline: null, shadow: false });
+      if (bottom.stripe && bottom.legs !== 'shorts') part(knee, box(0.012, 0.14 * kl, 0.03), toon('#ffffff'), { p: [s * 0.088 * kb, -0.06 * kl, 0], outline: null, shadow: false });
+      if (bottom.jogger) part(knee, cyl(0.082 * kb, 0.082 * kb, 0.06, 14), toon(tint(L.bottomColor, 0.8)), { p: [0, -0.15 * kl, 0], outline: OUT_THIN });
+      if (bottom.flare) part(knee, cyl(0.085 * kb, 0.15 * kb, 0.16 * kl, 18, true), toon(L.bottomColor, { side: THREE.DoubleSide }), { p: [0, -0.1 * kl, 0.005], outline: OUT_THIN });
+      if (bottom.ripped) {
+        part(knee, circle(0.04), skin, { p: [0, 0.0, 0.09 * kb], s: [1.5, 0.8, 1], outline: null, shadow: false });
+        for (const dy of [0.03, -0.03]) part(knee, box(0.08, 0.006, 0.004), toon('#f4f0ff'), { p: [0, dy, 0.092 * kb], outline: null, shadow: false });
+      }
       if (bottom.socks) part(knee, cyl(0.093 * kb, 0.093 * kb, 0.08, 14), toon('#f4f0ff'), { p: [0, -0.14 * kl, 0], outline: null });
       const fy = 0.26 * (1 - kl); // shoes keep their size and stay on the ground at any leg length
       part(knee, sphere(0.12, 18, 12), shoe, { p: [0, -0.2 + fy, 0.045], s: [0.95, 0.6, 1.4] });
@@ -1137,7 +1386,9 @@ export class Character {
       const skirt = new THREE.Group();
       skirt.position.y = up(0.52);
       body.add(skirt);
-      part(skirt, cyl(0.27 * B.w, k.flare * B.w, k.len, 28, true), toon(L.bottomColor, { side: THREE.DoubleSide }), { p: [0, -k.len / 2 + 0.04, 0], s: [1, 1, 0.85 * B.d], outline: OUT_THIN });
+      const skirtMat = k.plaid ? patternMaterial('plaid', hex(L.bottomColor), '#1d1b2e') : toon(L.bottomColor, { side: THREE.DoubleSide });
+      if (k.plaid) skirtMat.side = THREE.DoubleSide;
+      part(skirt, cyl(0.27 * B.w, k.flare * B.w, k.len, 28, true), skirtMat, { p: [0, -k.len / 2 + 0.04, 0], s: [1, 1, 0.85 * B.d], outline: OUT_THIN });
       if (k.frill) part(skirt, cyl(k.flare * B.w * 0.96, k.flare * B.w * 1.2, 0.08, 28, true), toon(tint(L.bottomColor, 1.35), { side: THREE.DoubleSide }), { p: [0, -k.len + 0.06, 0], s: [1, 1, 0.85 * B.d], outline: null });
       anim.push((t, dt, moving) => { skirt.rotation.x = moving ? Math.sin(t * 9) * 0.04 : 0; });
     }
@@ -1148,18 +1399,29 @@ export class Character {
     body.add(torso);
     if (top.robe) {
       part(torso, cyl(0.26, 0.42, 0.98, 28), topMat, { p: [0, -0.14, 0], s: [1, 1, 0.85] });
-      part(torso, torus(0.42, 0.035, TAU, 8, 40), shiny('#ffc53d'), { p: [0, -0.62, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.85, 1], outline: null });
-      part(torso, box(0.06, 0.95, 0.02), shiny('#ffc53d'), { p: [0, -0.14, 0.3], r: [-0.14, 0, 0], outline: null });
+      part(torso, torus(0.42, 0.035, TAU, 8, 40), shiny(accent), { p: [0, -0.62, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.85, 1], outline: null });
+      part(torso, box(0.06, 0.95, 0.02), shiny(accent), { p: [0, -0.14, 0.3], r: [-0.14, 0, 0], outline: null });
       part(torso, torus(0.21, 0.08, TAU, 10, 28), toon('#f4f0ff'), { p: [0, 0.33, 0], r: [Math.PI / 2, 0, 0] });
     } else {
       part(torso, capsule(0.25, 0.2), topMat, { s: [1.02, 1, 0.8] });
     }
-    this.decorateTop(torso, L, top, topColor);
+    this.decorateTop(torso, L, top, topColor, accent);
+    if (bottom.overalls) {
+      // a bib over the shirt with two straps and brass buttons
+      const bib = toon(L.bottomColor), brass = shiny('#ffc53d', { metalness: 0.6 });
+      part(torso, box(0.26, 0.24, 0.03), bib, { p: [0, -0.06, 0.205], outline: OUT_THIN });
+      part(torso, box(0.1, 0.06, 0.015), toon(tint(L.bottomColor, 0.82)), { p: [0, -0.04, 0.224], outline: null });
+      for (const sx of [-1, 1]) {
+        part(torso, box(0.045, 0.3, 0.02), bib, { p: [sx * 0.1, 0.16, 0.13], r: [-0.55, 0, 0], outline: null });
+        part(torso, box(0.045, 0.34, 0.02), bib, { p: [sx * 0.1, 0.1, -0.19], r: [0.3, 0, 0], outline: null });
+        part(torso, sphere(0.022, 8, 6), brass, { p: [sx * 0.1, 0.06, 0.225], outline: null });
+      }
+    }
 
     part(body, cyl(0.09, 0.1, 0.16), skin, { p: [0, up(1.2), 0], s: [0.9 + B.w * 0.1, 1, 0.9 + B.w * 0.1], outline: null });
 
     // arms: shoulder -> elbow -> hand
-    const armMat = top.sleeve === 'long' ? topMat : skin;
+    const armMat = top.sleeve === 'long' ? (top.armAccent ? toon(accent) : topMat) : skin;
     const elbows = [];
     const arms = [-1, 1].map((s) => {
       const pivot = new THREE.Group();
@@ -1169,10 +1431,14 @@ export class Character {
       part(pivot, capsule(0.08, 0.07), armMat, { p: [0, -0.09, 0] });
       if (top.sleeve === 'short') part(pivot, capsule(0.1, 0.06), topMat, { p: [0, -0.05, 0] });
       if (top.metal) part(pivot, dome(0.15), topMat, { p: [0, 0.01, 0], s: [1, 0.8, 1] });
+      if (top.sleeve === 'short') part(pivot, torus(0.1, 0.014, TAU, 6, 18), toon(top.accent && L.top !== 'top_hawaiian' ? accent : tint(topColor, 0.85)), { p: [0, -0.1, 0], r: [Math.PI / 2, 0, 0], outline: null });
+      if (top.armStripe) part(pivot, capsule(0.083, 0.07), toon(accent), { p: [0, -0.09, 0], s: [0.35, 1, 1.02], r: [0, 0, 0], outline: null });
+      if (top.puffy) for (const y of [-0.02, -0.12]) part(pivot, torus(0.078, 0.028, TAU, 8, 18), topMat, { p: [0, y, 0], r: [Math.PI / 2, 0, 0], outline: null });
       const elbow = new THREE.Group();
       elbow.position.y = -0.19;
       part(elbow, capsule(0.075, 0.06), armMat, { p: [0, -0.08, 0] });
-      if (top.sleeve === 'long') part(elbow, torus(0.07, 0.025, TAU, 6, 16), toon(tint(topColor, top.metal ? 0.8 : 0.85)), { p: [0, -0.15, 0], r: [Math.PI / 2, 0, 0], outline: null });
+      if (top.kimono) part(elbow, cyl(0.08, 0.125, 0.18, 18, true), toon(topColor, { side: THREE.DoubleSide }), { p: [0, -0.09, -0.01], outline: OUT_THIN });
+      else if (top.sleeve === 'long') part(elbow, torus(0.07, 0.025, TAU, 6, 16), toon(top.armAccent || L.top === 'top_sweater' || L.top === 'top_puffer' ? tint(topColor, 0.85) : tint(topColor, top.metal ? 0.8 : 0.85)), { p: [0, -0.15, 0], r: [Math.PI / 2, 0, 0], outline: null });
       part(elbow, sphere(0.088, 16, 12), skin, { p: [0, -0.19, 0.005], s: [0.95, 1.05, 1] });
       part(elbow, sphere(0.04, 8, 6), skin, { p: [s * -0.06, -0.16, 0.04], outline: null, shadow: false }); // thumb
       pivot.add(elbow);
@@ -1306,44 +1572,151 @@ export class Character {
     return eyes;
   }
 
-  decorateTop(torso, L, top, color) {
+  decorateTop(torso, L, top, color, accent = '#ffffff') {
     const front = (x, y, lift = 0.012) => {
       // front surface of the (scaled) torso capsule
       const r = 0.25;
       const z = Math.abs(y) <= 0.1 ? r : Math.sqrt(Math.max(0, r * r - (Math.abs(y) - 0.1) ** 2));
       return [x, y, z * 0.8 + lift];
     };
+    // a point on the torso at angle a round from the front (sides at ±π/2), height y
+    const around = (a, y, lift = 0.012) => {
+      const r = 0.25;
+      const rad = Math.abs(y) <= 0.1 ? r : Math.sqrt(Math.max(0, r * r - (Math.abs(y) - 0.1) ** 2));
+      return [Math.sin(a) * (rad * 1.02 + lift), y, Math.cos(a) * (rad * 0.8 + lift)];
+    };
+    const acc = toon(accent), dark = toon(tint(color, 0.75)), white = toon('#f4f0ff');
+    const ring = (y, mat, t = 0.018) => {
+      const rad = Math.abs(y) <= 0.1 ? 0.25 : Math.sqrt(Math.max(0, 0.0625 - (Math.abs(y) - 0.1) ** 2));
+      part(torso, torus(rad + 0.004, t, TAU, 6, 32), mat, { p: [0, y, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.8, 1], outline: null });
+    };
+    const vneck = (mat, size = 0.12, y = 0.22) => part(torso, geo(`vn${size}`, () => new THREE.CircleGeometry(size, 3)), mat, { p: front(0, y, 0.006), r: [-0.35, 0, -Math.PI / 2], s: [1, 0.85, 1], outline: null, shadow: false });
+    const lapels = (mat, w = 0.075) => {
+      for (const sx of [-1, 1]) part(torso, box(w, 0.26, 0.02), mat, { p: front(sx * 0.075, 0.11, 0.02), r: [-0.25, 0, -sx * 0.38], outline: OUT_THIN });
+    };
+    const buttons = (mat, ys, x = 0) => ys.forEach((y) => part(torso, sphere(0.016, 8, 6), mat, { p: front(x, y, 0.018), outline: null, shadow: false }));
+    const collar = (mat, flaps = true) => {
+      if (flaps) for (const sx of [-1, 1]) part(torso, box(0.1, 0.05, 0.02), mat, { p: [sx * 0.08, 0.34, 0.14], r: [-0.9, sx * 0.5, sx * 0.3], outline: OUT_THIN });
+      else ring(0.33, mat, 0.03);
+    };
     switch (L.top) {
       case 'top_tee':
       case 'top_tank':
         part(torso, circle(0.08), toon(L.skin), { p: front(0, 0.27, 0.004), r: [-0.5, 0, 0], outline: null, shadow: false });
+        ring(-0.16, dark, 0.012);
+        if (L.top === 'top_tank') for (const sx of [-1, 1]) part(torso, box(0.06, 0.12, 0.44), toon(color), { p: [sx * 0.14, 0.32, 0], outline: null });
         break;
       case 'top_hoodie':
         part(torso, torus(0.2, 0.08, TAU, 10, 28), toon(tint(color, 0.85)), { p: [0, 0.3, -0.1], r: [Math.PI / 2 - 0.5, 0, 0] });
         part(torso, box(0.26, 0.12, 0.02), toon(tint(color, 0.85)), { p: front(0, -0.12), outline: OUT_THIN });
-        for (const s of [-1, 1]) part(torso, cyl(0.012, 0.012, 0.16, 6), toon('#ffffff'), { p: front(s * 0.05, 0.14, 0.01), outline: null });
+        for (const sx of [-1, 1]) {
+          part(torso, cyl(0.009, 0.009, 0.15, 6), acc, { p: front(sx * 0.05, 0.14, 0.012), outline: null });
+          part(torso, cyl(0.016, 0.012, 0.03, 8), acc, { p: front(sx * 0.05, 0.055, 0.014), outline: null });
+        }
+        ring(-0.17, dark, 0.02);
         break;
       case 'top_hawaiian':
-        [[-0.12, 0.08, '#ffffff'], [0.1, -0.06, '#ffd84d'], [-0.06, -0.16, '#ff9fb4'], [0.14, 0.14, '#ff9fb4'], [-0.18, -0.02, '#ffd84d']].forEach(([x, y, c]) => {
-          part(torso, circle(0.045), toon(c), { p: front(x, y), outline: null, shadow: false });
-        });
-        part(torso, geo('vneck', () => new THREE.CircleGeometry(0.1, 3)), toon('#ffffff'), { p: front(0, 0.24, 0.006), r: [0, 0, -Math.PI / 2], outline: null, shadow: false });
+        vneck(toon(L.skin), 0.1, 0.25);
+        collar(toon(tint(color, 1.2)));
+        buttons(white, [0.12, 0.02, -0.08]);
         break;
-      case 'top_jersey':
-        part(torso, geo('jerseyNum', () => new THREE.PlaneGeometry(0.24, 0.24)), new THREE.MeshBasicMaterial({ map: jerseyNumber, transparent: true }), { p: front(0, -0.02, 0.02), outline: null, shadow: false });
-        for (const s of [-1, 1]) part(torso, box(0.03, 0.5, 0.2), toon('#ffffff'), { p: [s * 0.25, 0, 0], outline: null });
+      case 'top_jersey': {
+        part(torso, geo('jerseyNum', () => new THREE.PlaneGeometry(0.24, 0.24)), new THREE.MeshBasicMaterial({ map: numberTexture(accent), transparent: true }), { p: front(0, -0.02, 0.02), outline: null, shadow: false });
+        for (const sx of [-1, 1]) part(torso, box(0.03, 0.5, 0.2), acc, { p: [sx * 0.25, 0, 0], outline: null });
+        vneck(toon(L.skin), 0.09, 0.27);
+        ring(0.3, acc, 0.022);
         break;
+      }
       case 'top_suit':
-        part(torso, geo('vneck2', () => new THREE.CircleGeometry(0.14, 3)), toon('#ffffff'), { p: front(0, 0.2, 0.004), r: [0, 0, -Math.PI / 2], s: [1, 0.8, 1], outline: null, shadow: false });
-        part(torso, box(0.06, 0.24, 0.02), toon(L.topColor), { p: front(0, 0.06, 0.02), outline: null });
-        part(torso, box(0.08, 0.06, 0.03), toon(tint(L.topColor, 0.8)), { p: front(0, 0.2, 0.02), outline: null });
+        vneck(white, 0.14, 0.2);
+        lapels(dark);
+        part(torso, box(0.055, 0.2, 0.02), acc, { p: front(0, 0.07, 0.025), outline: null });
+        part(torso, geo('tietip', () => new THREE.CircleGeometry(0.035, 4)), acc, { p: front(0, -0.04, 0.026), r: [0, 0, Math.PI / 4], outline: null });
+        part(torso, box(0.065, 0.05, 0.03), toon(tint(accent, 0.8)), { p: front(0, 0.2, 0.028), outline: null });
+        part(torso, box(0.06, 0.03, 0.01), acc, { p: front(-0.14, 0.12, 0.012), r: [0, -0.5, 0], outline: null });
+        buttons(dark, [-0.06, -0.13], 0.03);
+        break;
+      case 'top_tux':
+        vneck(white, 0.15, 0.19);
+        lapels(shiny('#2a2833', { roughness: 0.2 }), 0.08);
+        for (const sx of [-1, 1]) part(torso, cone(0.04, 0.09, 4), acc, { p: front(sx * 0.04, 0.22, 0.035), r: [0, 0, sx * Math.PI / 2], s: [1, 1, 0.5], outline: OUT_THIN });
+        part(torso, sphere(0.02, 8, 6), acc, { p: front(0, 0.22, 0.038), outline: null });
+        buttons(white, [0.1, 0.02, -0.06]);
         break;
       case 'top_racing':
-        part(torso, box(0.6, 0.1, 0.44), toon(L.topColor), { r: [0, 0, 0.55], outline: null });
+        // a proper race suit: twin stripes down the front, coloured side panels, a zip, collar and belt
+        for (const sx of [-1, 1]) {
+          part(torso, box(0.035, 0.44, 0.02), acc, { p: front(sx * 0.07, 0.06, 0.006), outline: null, shadow: false });
+          part(torso, box(0.02, 0.4, 0.17), acc, { p: [sx * 0.252, -0.01, 0], outline: null });
+        }
+        part(torso, box(0.012, 0.44, 0.02), shiny('#c0c6d4', { metalness: 0.6 }), { p: front(0, 0.02, 0.012), outline: null, shadow: false });
+        ring(0.33, toon('#23263f'), 0.03);
+        ring(-0.16, toon('#23263f'), 0.022);
+        part(torso, circle(0.045), white, { p: front(-0.13, 0.13, 0.014), r: [0, -0.5, 0], outline: null, shadow: false });
+        part(torso, circle(0.03), acc, { p: front(-0.13, 0.13, 0.018), r: [0, -0.5, 0], outline: null, shadow: false });
+        part(torso, box(0.08, 0.035, 0.01), toon('#ffd84d'), { p: front(0.13, 0.13, 0.014), r: [0, 0.5, 0], outline: null, shadow: false });
         break;
       case 'top_armor':
         part(torso, torus(0.25, 0.025, TAU, 6, 36), shiny('#7d869a'), { p: [0, -0.08, 0], r: [Math.PI / 2, 0, 0], s: [1.03, 0.82, 1], outline: null });
-        part(torso, box(0.5, 0.06, 0.44), toon('#6b4a2b'), { p: [0, -0.28, 0], outline: null });
+        part(torso, box(0.5, 0.06, 0.44), acc, { p: [0, -0.28, 0], outline: null });
+        part(torso, box(0.06, 0.05, 0.03), shiny('#ffc53d', { metalness: 0.7 }), { p: front(0, -0.28, 0.02), outline: null });
+        ring(0.32, shiny(tint(color, 0.85), { metalness: 0.7 }), 0.035);
+        part(torso, geo('crest', () => new THREE.CircleGeometry(0.06, 5)), acc, { p: front(0, 0.1, 0.02), r: [0, 0, Math.PI], outline: null, shadow: false });
+        break;
+      case 'top_robe':
+        break;
+      case 'top_leather':
+        vneck(toon(accent), 0.12, 0.22);
+        lapels(shiny(tint(color, 1.2), { metalness: 0.15, roughness: 0.4 }), 0.08);
+        part(torso, box(0.012, 0.4, 0.015), shiny('#c0c6d4', { metalness: 0.7 }), { p: front(0.05, 0.0, 0.016), r: [0, 0, 0.12], outline: null, shadow: false });
+        for (const sx of [-1, 1]) part(torso, box(0.07, 0.008, 0.01), shiny('#c0c6d4', { metalness: 0.7 }), { p: front(sx * 0.14, -0.08, 0.012), r: [0, sx * 0.5, 0], outline: null, shadow: false });
+        ring(-0.16, toon(tint(color, 1.3)), 0.02);
+        break;
+      case 'top_varsity':
+        ring(0.31, acc, 0.03); ring(0.335, toon(color), 0.02);
+        ring(-0.16, acc, 0.025);
+        part(torso, geo('vpatch', () => new THREE.PlaneGeometry(0.1, 0.1)), new THREE.MeshBasicMaterial({ map: letterTexture(accent, hex(color)), transparent: true }), { p: front(-0.12, 0.12, 0.016), r: [0, -0.45, 0], outline: null, shadow: false });
+        buttons(acc, [0.16, 0.06, -0.04, -0.12]);
+        break;
+      case 'top_puffer':
+        for (const y of [0.2, 0.06, -0.08]) ring(y, toon(tint(color, 1.08)), 0.045);
+        part(torso, cyl(0.17, 0.2, 0.12, 22), toon(color), { p: [0, 0.34, 0], s: [1, 1, 0.85], outline: OUT_THIN });
+        part(torso, box(0.012, 0.44, 0.015), toon(accent), { p: front(0, 0.04, 0.05), outline: null, shadow: false });
+        break;
+      case 'top_sweater':
+        ring(0.1, acc, 0.03); ring(0.03, toon(tint(accent, 0.85)), 0.012); ring(0.17, toon(tint(accent, 0.85)), 0.012);
+        for (let i = 0; i < 8; i++) part(torso, geo('knitd', () => new THREE.CircleGeometry(0.018, 4)), toon(color), { p: around(-0.9 + i * 0.26, 0.1, 0.035), r: [0, -0.9 + i * 0.26, 0], outline: null, shadow: false });
+        ring(0.32, toon(tint(color, 0.85)), 0.03);
+        ring(-0.16, toon(tint(color, 0.85)), 0.025);
+        break;
+      case 'top_flannel':
+        vneck(white, 0.13, 0.2);
+        collar(toon(tint(color, 0.9)));
+        buttons(toon('#e8dcc0'), [0.1, 0.0, -0.1], 0.02);
+        for (const sx of [-1, 1]) part(torso, box(0.08, 0.07, 0.012), patternMaterial('plaid', hex(color), hex(accent)), { p: front(sx * 0.12, 0.12, 0.014), r: [0, sx * 0.45, 0], outline: OUT_THIN });
+        break;
+      case 'top_kimono':
+        for (const sx of [-1, 1]) part(torso, box(0.05, 0.36, 0.02), acc, { p: front(sx * 0.05, 0.1, 0.018), r: [0, 0, -sx * 0.45], outline: null });
+        vneck(toon(L.skin), 0.1, 0.24);
+        ring(-0.06, acc, 0.06);
+        part(torso, box(0.12, 0.08, 0.04), toon(tint(accent, 0.8)), { p: front(0, -0.06, 0.05), outline: OUT_THIN });
+        break;
+      case 'top_denim':
+        collar(toon(tint(color, 0.85)));
+        vneck(white, 0.1, 0.25);
+        for (const sx of [-1, 1]) {
+          part(torso, box(0.09, 0.07, 0.012), toon(tint(color, 0.88)), { p: front(sx * 0.11, 0.12, 0.014), r: [0, sx * 0.45, 0], outline: OUT_THIN });
+          part(torso, sphere(0.012, 6, 5), shiny('#c0c6d4', { metalness: 0.7 }), { p: front(sx * 0.11, 0.1, 0.028), outline: null, shadow: false });
+        }
+        buttons(shiny('#c0c6d4', { metalness: 0.7 }), [0.14, 0.04, -0.06]);
+        part(torso, box(0.006, 0.44, 0.012), acc, { p: front(0.03, 0.0, 0.014), outline: null, shadow: false });
+        ring(-0.16, toon(tint(color, 0.85)), 0.022);
+        break;
+      case 'top_polo':
+        collar(toon(tint(color, 0.9)));
+        part(torso, box(0.05, 0.1, 0.012), toon(tint(color, 0.9)), { p: front(0, 0.22, 0.012), outline: null, shadow: false });
+        buttons(acc, [0.24, 0.19]);
+        part(torso, circle(0.02), acc, { p: front(-0.13, 0.12, 0.014), r: [0, -0.5, 0], outline: null, shadow: false });
         break;
     }
   }

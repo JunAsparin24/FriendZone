@@ -10,6 +10,7 @@ export const RARITY = {
   rare: { label: 'Rare', color: '#39c6ff' },
   epic: { label: 'Epic', color: '#b77bff' },
   legendary: { label: 'Legendary', color: '#ffc53d' },
+  mythic: { label: 'Mythic', color: '#ff4fd8' },
 };
 
 export const owns = (player, id) => !!ITEMS[id]?.free || player.owned.includes(id);

@@ -31,6 +31,7 @@ const PLAN_SPOTS = [
   { id: 'casino', emoji: '🎰', name: 'Casino', kind: 'casino', x: 3920, y: 1400, w: 250, h: 340, face: 'w' },
   { id: 'archery', emoji: '🏹', name: 'Archery Range', kind: 'range', x: 640, y: 1310, w: 220, h: 320, face: 'e' },
   { id: 'fishing', emoji: '🎣', name: 'Fishing Pond', kind: 'pond', x: 560, y: 2140, w: 640, h: 380 },
+  { id: 'fishstand', emoji: '🐟', name: 'Fish Market', kind: 'fishstand', x: 1255, y: 2330, w: 130, h: 90, face: 'n' },
   { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 2230, y: 2330, w: 380, h: 270, face: 'n' },
   { id: 'pets', emoji: '🐾', name: 'Pet Shop', kind: 'petshop', x: 3230, y: 1720, w: 280, h: 210, face: 'n' },
 ];
@@ -62,6 +63,17 @@ export function lakeDist(x, y) {
   let best = Infinity;
   for (let i = 0; i < LAKE.length; i++) best = Math.min(best, distToSeg({ x, y }, LAKE[i], LAKE[(i + 1) % LAKE.length]));
   return inLake(x, y) ? -best : best;
+}
+/** The point on the shore nearest (x, y), stepped `off` map px out onto dry land; n is the outward direction. */
+export function shorePoint(x, y, off = 14) {
+  let i = 0;
+  LAKE.forEach((q, j) => { if (Math.hypot(q.x - x, q.y - y) < Math.hypot(LAKE[i].x - x, LAKE[i].y - y)) i = j; });
+  const a = LAKE[(i + LAKE.length - 1) % LAKE.length], b = LAKE[(i + 1) % LAKE.length], q = LAKE[i];
+  let nx = b.y - a.y, ny = -(b.x - a.x);
+  const l = Math.hypot(nx, ny) || 1;
+  nx /= l; ny /= l;
+  if (inLake(q.x + nx * 10, q.y + ny * 10)) { nx = -nx; ny = -ny; }
+  return { x: q.x + nx * off, y: q.y + ny * off, nx, ny };
 }
 const lakeTop = LAKE.reduce((a, q) => (q.y < a.y ? q : a));
 
@@ -326,21 +338,22 @@ export const BOARD_SPOTS = [['dungeon', 'boss', 1], ['archery', 'archery', -1], 
   const spot = SPOTS.find((s) => s.id === spotId), door = doorOf(spot), [dx, dy] = doorDir(spot);
   const x = door.x + dx * 110 - dy * 230 * side, y = door.y + dy * 110 + dx * 230 * side;
   const tx = door.x + dx * 420, ty = door.y + dy * 420; // where visitors come from
-  return { id, x, y, dx, dy, face: Math.atan2(tx - x, ty - y) };
+  return { id, x, y, dx, dy, tx, ty, face: Math.atan2(tx - x, ty - y) };
 });
 
 /** Is this point clear of the square, buildings, streets, water and props (for scattering things)? */
 export function openGround(p, pad = 10) {
   if (Math.hypot(p.x - CENTER.x, p.y - CENTER.y) < PLAZA_R + 40) return false;
   // (<= so that points inside a footprint count even with no padding)
-  if (SPOTS.some((s) => distToRect(p, { x: s.x - 90, y: s.y - 90, w: s.w + 180, h: s.h + 180 }) <= pad)) return false;
+  if (SPOTS.some((s) => { const m = s.kind === 'fishstand' ? 230 : 90; return distToRect(p, { x: s.x - m, y: s.y - m, w: s.w + m * 2, h: s.h + m * 2 }) <= pad; })) return false;
   if (COTTAGES.some((c) => distToRect(p, { x: c.x - 70, y: c.y - 60, w: c.w + 140, h: c.h + 120 }) <= pad)) return false;
   if (STALLS.some((s) => Math.hypot(p.x - s.x, p.y - s.y) < 60 + pad)) return false;
   if (Object.values(LANDMARKS).some((l) => Math.hypot(p.x - l.x, p.y - l.y) < 90 + pad)) return false;
   const c = creekInfo(p.x, p.y);
   if (c && c.d < c.w + BANK_SLOPE + pad) return false;
   if (lakeDist(p.x, p.y) < 40 + pad) return false;
-  if (BOARD_SPOTS.some((b) => Math.hypot(p.x - b.x, p.y - b.y) < 110 + pad)) return false;
+  // keep the leaderboards clear: nothing around them, or in the view from the path in front
+  if (BOARD_SPOTS.some((b) => Math.hypot(p.x - b.x, p.y - b.y) < 170 + pad || distToSeg(p, b, { x: b.tx, y: b.ty }) < 150 + pad)) return false;
   return !nearPath(p, 38);
 }
 

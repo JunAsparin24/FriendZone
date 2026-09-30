@@ -223,6 +223,67 @@ def bj_soft(hand):
     return any(r == "A" for r, _ in hand) and total + 10 <= 21
 
 
+# ---- chat filter ------------------------------------------------------------------------
+# Catches swears even when they're dressed up: l33t (sh1t, @ss), symbols (f*ck, $hit), accents,
+# spaced or dotted letters (f u c k, f.u.c.k) and stretched letters (fuuuck). Short words that hide
+# inside innocent ones (ass in "class", hell in "hello") only count as whole words.
+LEET = str.maketrans({"0": "o", "1": "i", "!": "i", "|": "i", "3": "e", "4": "a", "@": "a", "5": "s", "$": "s",
+                      "7": "t", "+": "t", "8": "b", "9": "g", "6": "g", "(": "c", "<": "c", "€": "e", "¢": "c"})
+# rude anywhere inside a word
+BAD_ROOTS = ("fuck", "fuk", "fck", "fuq", "phuck", "shit", "cunt", "bitch", "biatch", "nigg", "nigga", "niger",
+             "faggot", "fagot", "whore", "slut", "retard", "pussy", "asshole", "arsehole", "bastard", "motherf",
+             "wank", "twat", "dildo", "jizz", "cocksuck", "blowjob", "handjob", "porn", "penis", "vagina", "boner",
+             "horny", "dumbass", "jackass", "bullshit", "goddamn", "damnit", "dammit", "kike", "chink", "tranny",
+             "negro", "hitler", "nazi", "rapist", "molest", "pedo", "stfu", "gtfo")
+# rude only as a whole word (plus simple endings)
+BAD_WORDS = ("ass", "arse", "fag", "dick", "cock", "cum", "tit", "tits", "titty", "boob", "rape", "hell", "damn",
+             "crap", "piss", "sex", "sexy", "hoe", "kys", "prick", "balls", "butthole", "douche", "thot", "milf",
+             "anal", "cuck", "spic", "wtf", "shat", "sht")
+ENDINGS = ("", "s", "es", "ed", "ing", "er", "ers", "y", "ies")
+# innocent words that happen to contain a rude root
+SAFE = ("scunthorpe", "cockpit", "cockatoo", "peacock", "hancock", "shitake", "shiitake", "penistone", "hitchcock",
+        "therapist", "grape", "drape", "spicy", "spice", "shitzu", "cocktail", "classic", "document")
+
+
+def _norm(text):
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(text).lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return t.translate(LEET)
+
+
+def _forms(w):
+    """A word as typed, with runs of 3+ letters squeezed (fuuuck -> fuck) and with every run squeezed."""
+    return {w, re.sub(r"(.)\1{2,}", r"\1", w), re.sub(r"(.)\1+", r"\1", w)}
+
+
+def is_rude(text):
+    t = _norm(text)
+    chunks = [c for c in re.split(r"\s+", t) if c]
+    words = [re.sub(r"[^a-z]", "", c) for c in chunks]
+    cands = set()
+    for w in words:
+        if w:
+            cands |= _forms(w)
+    # letters spelled out one or two at a time: "f u c k", "sh it"
+    run = ""
+    for w in words + ["   "]:
+        if 0 < len(w) <= 2:
+            run += w
+        else:
+            if len(run) >= 3:
+                cands |= _forms(run)
+            run = ""
+    for w in cands:
+        if any(safe in w for safe in SAFE):
+            continue
+        if any(root in w for root in BAD_ROOTS):
+            return True
+        if any(w == bad + end for bad in BAD_WORDS for end in ENDINGS):
+            return True
+    return False
+
+
 def squash(text):
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
@@ -244,6 +305,32 @@ HOUSE_MAX_ITEMS = 80
 CATALOG = json.loads((PUBLIC / "cosmetics.json").read_text("utf-8"))
 ITEMS = {item["id"]: item for item in CATALOG["items"]}
 FISH = CATALOG["fish"]
+FISH_BAG_MAX = 60
+FISH_BY_NAME = {f["name"]: f for f in FISH}
+
+
+def fish_price(fish, size):
+    """What the fishmonger pays: the fish's value, more for a big one (up to +60%), less for a tiddler."""
+    lo, hi = fish["size"]
+    k = (size - lo) / max(0.1, hi - lo)
+    return max(1, round(fish["coins"] * (0.8 + 0.8 * min(1.0, max(0.0, k)))))
+
+
+FISH_DAMP = {"legendary": 0.05, "epic": 0.4, "mythic": 0.012}  # makes the rarest catches much rarer
+# how hard each rarity fights on the line (the reeling minigame reads this)
+FISH_FIGHT = {"junk": 0.2, "common": 0.35, "uncommon": 0.5, "rare": 0.7, "epic": 0.9, "legendary": 1.15, "mythic": 1.5}
+
+WEATHER_BLOCK = 480  # the forecast changes every 8 minutes
+
+
+def rain_scheduled(now=None):
+    """About one 8-minute spell in five is rainy. Clients get told; nothing else hints at it."""
+    block = int((now if now is not None else time.time()) // WEATHER_BLOCK)
+    return ((block * 2654435761) & 0xFFFFFFFF) >> 8 & 0xFF < 52
+
+
+def raining(room):
+    return room.rain_override if room.rain_override is not None else rain_scheduled()
 RODS = {r["id"]: r for r in CATALOG["rods"]}
 FURN = {f["id"]: f for f in CATALOG["furniture"]}
 FLOORS = {f["id"]: f for f in CATALOG["floors"]}
@@ -435,6 +522,8 @@ ADMIN_HELP = [
     "/kick <name> — send someone back to the home screen",
     "/announce <message> — post to the zone news",
     "/players — who's here, with coins",
+    "/rain <on|off|auto> — change the weather",
+    "/filter <on|off> — the chat filter for this zone (on by default)",
     "/unadmin — turn admin mode off",
 ]
 
@@ -490,10 +579,10 @@ def give_closet(p):
         if not f or f.get("kind", "floor") != "floor":
             continue
         w, d = (f["w"], f["d"]) if it["r"] % 2 == 0 else (f["d"], f["w"])
-        taken |= {(it["x"] + i, it["y"] + j) for i in range(w) for j in range(d)}
+        taken.add((it["x"], it["y"], w, d))
     for y in range(HOUSE_SIZE):
         for x in range(HOUSE_SIZE):
-            if (x, y) not in taken:
+            if not any(tx < x + 1 and x < tx + w and ty < y + 1 and y < ty + d for tx, ty, w, d in taken):
                 p["house"]["items"].append({"id": "closet", "x": x, "y": y, "r": 0})
                 return
 
@@ -506,6 +595,7 @@ def migrate(p):
         p["look"].setdefault(field, value)
     p.setdefault("owned", [])
     p.setdefault("fishdex", {})
+    p.setdefault("fishbag", [])   # caught fish waiting to be sold at the Fish Market: {id, name, size}
     p.setdefault("rods", ["rod_twig"])
     p.setdefault("rod", "rod_twig")
     p.setdefault("furni", {f["id"]: 1 for f in CATALOG["furniture"] if f.get("starter")})
@@ -541,6 +631,17 @@ def met(p, cond):
     return p["stats"].get(cond["stat"], 0) >= cond["min"]
 
 
+HOUSE_SNAP = 4  # furniture snaps to quarter tiles
+
+
+def snap_q(v):
+    try:
+        v = round(float(v) * HOUSE_SNAP) / HOUSE_SNAP
+    except (TypeError, ValueError):
+        return -1
+    return int(v) if v == int(v) else v
+
+
 def clean_house(p, data):
     """Validate a house layout from the client: ownership, bounds and overlaps."""
     floor, wall, ceiling = data.get("floor"), data.get("wall"), data.get("ceiling") or "ceil_plain"
@@ -556,7 +657,8 @@ def clean_house(p, data):
         f = FURN.get(it.get("id")) if isinstance(it, dict) else None
         if not f:
             raise GameError("Unknown furniture.")
-        x, y, r = int(it.get("x", -1)), int(it.get("y", -1)), int(it.get("r", 0)) % 4
+        # positions snap to quarter tiles; overlaps are checked on that finer grid
+        x, y, r = snap_q(it.get("x", -1)), snap_q(it.get("y", -1)), int(it.get("r", 0)) % 4
         used[f["id"]] = used.get(f["id"], 0) + 1
         if used[f["id"]] > p["furni"].get(f["id"], 0):
             raise GameError(f"You don't have another {f['name']}.")
@@ -565,7 +667,7 @@ def clean_house(p, data):
             # which wall: r 0 back (column x), 1 left (row y), 2 front (column x), 3 right (row y)
             start = x if r % 2 == 0 else y
             x, y = (x, 0) if r % 2 == 0 else (0, y)
-            cells = {("wall", r, start + i) for i in range(f["w"])}
+            cells = {("wall", r, round(start * HOUSE_SNAP) + i) for i in range(f["w"] * HOUSE_SNAP)}
             if start < 0 or start + f["w"] > HOUSE_SIZE:
                 raise GameError("That doesn't fit on the wall.")
             if r == 2 and start < HOUSE_DOOR[1] and start + f["w"] > HOUSE_DOOR[0]:
@@ -574,7 +676,8 @@ def clean_house(p, data):
             w, d = (f["w"], f["d"]) if r % 2 == 0 else (f["d"], f["w"])
             if x < 0 or y < 0 or x + w > HOUSE_SIZE or y + d > HOUSE_SIZE:
                 raise GameError("That doesn't fit in the room.")
-            cells = {(kind, x + i, y + j) for i in range(w) for j in range(d)}
+            x0, y0 = round(x * HOUSE_SNAP), round(y * HOUSE_SNAP)
+            cells = {(kind, x0 + i, y0 + j) for i in range(w * HOUSE_SNAP) for j in range(d * HOUSE_SNAP)}
         if cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
@@ -591,7 +694,7 @@ def public(p, client):
     return {
         "key": p.get("key", p["name"].lower()), "name": p["name"], "color": p["color"],
         "coins": p["coins"], "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
-        "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "rods": p["rods"], "rod": p["rod"],
+        "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "fishbag": p.get("fishbag", []), "rods": p["rods"], "rod": p["rod"],
         "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"])},
         "dailyAt": p.get("lastDaily", 0) + DAILY_SECS,
         "online": client is not None, "scene": client.scene if client else None,
@@ -612,6 +715,8 @@ class Client:
         self.failed_pins = 0
         self.admin = False
         self.admin_fails = 0
+        self.dgn = None  # the dungeon run this player is in (each group gets its own)
+        self.hooked = None  # the fish on your line right now (decided when it bites)
 
     @property
     def player(self):
@@ -635,10 +740,11 @@ class Room:
         self.feed = []
         self.race = {"id": 0, "state": "idle", "racers": {}, "order": [], "field": 0, "last": {}}
         self.arena = {}  # player key -> fighter state
-        self.arena_map = 0          # index into ARENA_MAPS
+        self.arena_map = int(os.environ.get("FZ_ARENA_MAP", 0))  # index into ARENA_MAPS
         self.arena_break = 0.0      # while now < this, it's the scoreboard break between rounds
-        self.boss = {"fighters": {}, "b": None, "task": None, "state": "lobby", "floor": 0, "ends": 0.0, "mobs": {},
-                     "mob_id": 0, "queue": [], "spawn_at": 0.0, "dmg": {}, "ran": set(), "last": None}
+        self.dungeons = []  # live DungeonRun instances
+        self.rain_override = None  # admin /rain on|off; None follows the forecast
+        self.rain_sent = None
         self.arena_items = {}
         self.arena_item_seq = 0
         self.arena_spawning = False
@@ -658,11 +764,38 @@ class Room:
                 c.ws.send_raw(data)
 
 
+class DungeonRun:
+    """One group's private dungeon. It stands in for the Room in the dungeon code: "boss" scene messages
+    only go to this run's members, everything else (feed, zone, clients) is the real room."""
+
+    def __init__(self, room):
+        self.room = room
+        self.members = set()
+        self.boss = {"fighters": {}, "b": None, "task": None, "state": "lobby", "floor": 0, "ends": 0.0, "mobs": {},
+                     "mob_id": 0, "queue": [], "spawn_at": 0.0, "dmg": {}, "ran": set(), "last": None}
+
+    def __getattr__(self, name):
+        return getattr(self.room, name)
+
+    def in_scene(self, scene):
+        keys = self.room.in_scene(scene)
+        return [k for k in keys if k in self.members] if scene == "boss" else keys
+
+    def broadcast(self, msg, scene=None, exclude=None):
+        if scene != "boss":
+            return self.room.broadcast(msg, scene=scene, exclude=exclude)
+        data = encode(msg)
+        for k in list(self.members):
+            c = self.room.clients.get(k)
+            if c and c is not exclude and c.scene == "boss":
+                c.ws.send_raw(data)
+
+
 # --------------------------------------------------------------------------
 # Game logic
 # --------------------------------------------------------------------------
 
-PRE_AUTH = {"create", "join", "resume"}
+PRE_AUTH = {"create", "join", "resume", "zones_online"}
 IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
@@ -670,7 +803,7 @@ IN_ZONE = {
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "area_move", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "arcade_score", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
-    "house_get", "house_save", "house_buy", "house_like",
+    "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
 }
 
 
@@ -697,12 +830,27 @@ class Game:
 
     # ---- joining zones ---------------------------------------------------
 
+    def on_zones_online(self, c, m):
+        """The home screen asks how many people are in each of your saved zones right now."""
+        if not c.ready("zones_online", 2):
+            return
+        raw = m.get("codes")
+        codes = [str(x).upper()[:12] for x in raw[:20]] if isinstance(raw, list) else []
+        counts = {}
+        for code in codes:
+            if code in self.store.zones:
+                room = self.rooms.get(code)
+                counts[code] = len(room.clients) if room else 0
+        c.ws.send({"t": "zones_online", "counts": counts})
+
     def profile_fields(self, m):
         name = clean(m.get("name"), 16)
         pin = str(m.get("pin", ""))
         color = str(m.get("color", "#39c6ff"))
         if not NAME_RE.match(name):
             raise GameError("Names are 1–16 letters, numbers, spaces, - or _.")
+        if is_rude(name):
+            raise GameError("That name has a word that isn't allowed. Keep it friendly!")
         if not PIN_RE.match(pin):
             raise GameError("Your PIN must be 4–6 digits.")
         if not COLOR_RE.match(color):
@@ -713,6 +861,8 @@ class Game:
         if not c.ready("create", 10):
             raise GameError("Hang on a few seconds before making another zone.")
         zone_name = clean(m.get("zoneName"), 24)
+        if is_rude(zone_name):
+            raise GameError("That zone name has a word that isn't allowed. Keep it friendly!")
         if not zone_name:
             raise GameError("Give your FriendZone a name.")
         name, pin, color = self.profile_fields(m)
@@ -784,6 +934,7 @@ class Game:
             "zone": {"code": code, "name": room.zone["name"], "owner": room.zone["owner"]},
             "players": [public(p, room.clients.get(k)) for k, p in room.zone["players"].items()],
             "chat": room.chat, "feed": room.feed, "race": self.race_view(room), "arcade": room.zone.get("arcade", {}),
+            "rain": raining(room),
         })
         self.check_unlocks(c)
         self.push_player(room, key)
@@ -885,6 +1036,7 @@ class Game:
         name = clean(m.get("name"), 16)
         if not NAME_RE.match(name):
             raise GameError("Names are 1–16 letters, numbers, spaces, - or _.")
+        self.check_clean(c.room, name, "That name")
         if not c.ready("rename", 5):
             raise GameError("Give it a few seconds before changing your name again.")
         low = name.lower()
@@ -913,7 +1065,7 @@ class Game:
             if look.get(field) not in {o["id"] for o in CATALOG[options]}:
                 raise GameError("Unknown body option.")
             new[field] = look[field]
-        for field in ("hatColor", "backColor"):  # optional: recolour a hat / back item
+        for field in ("hatColor", "backColor", "topTint", "topAccent"):  # optional recolours (hat, back item, top + its trim)
             col = look.get(field) or ""
             if col and col not in CATALOG["clothColors"]:
                 raise GameError("Unknown color.")
@@ -1066,6 +1218,11 @@ class Game:
         c.pose_extra = {k: v for k, v in msg.items() if k in ("bx", "bz", "h")}
         c.room.broadcast(msg, scene="world", exclude=c)
 
+    def check_clean(self, room, text, what="That"):
+        """Refuse rude text (unless an admin turned the filter off for this zone)."""
+        if text and not room.zone.get("noFilter") and is_rude(text):
+            raise GameError(f"{what} has a word that isn't allowed here. Keep it friendly!")
+
     def on_chat(self, c, m):
         text = clean(m.get("text"), 140)
         if text.startswith("/"):
@@ -1075,6 +1232,7 @@ class Game:
             return
         if not text or not c.ready("chat", 0.4):
             return
+        self.check_clean(c.room, text, "Your message")
         entry = {"k": c.key, "text": text, "ts": int(time.time())}
         c.room.chat = (c.room.chat + [entry])[-40:]
         c.room.broadcast({"t": "chat", **entry})
@@ -1236,6 +1394,37 @@ class Game:
         rows = [f"{p['name']}{' (online)' if k in c.room.clients else ''}: {p['coins']:,} coins, level {level_for(p['xp'])}" for k, p in ps.items()]
         self.sys(c, "\n".join(rows))
 
+    def admin_filter(self, c, args):
+        mode = (args[0].lower() if args else "")
+        if mode not in ("on", "off"):
+            raise GameError("Like: /filter on or /filter off")
+        c.room.zone["noFilter"] = mode == "off"
+        self.store.mark()
+        self.sys(c, f"Chat filter is {'ON' if mode == 'on' else 'OFF'} for this zone.", "ok")
+
+    def admin_rain(self, c, args):
+        mode = (args[0].lower() if args else "")
+        if mode not in ("on", "off", "auto"):
+            raise GameError("Like: /rain on, /rain off or /rain auto")
+        c.room.rain_override = None if mode == "auto" else mode == "on"
+        self.weather_tick()
+        self.sys(c, f"Weather: {'following the forecast' if mode == 'auto' else 'rain' if mode == 'on' else 'clear skies'}.", "ok")
+
+    def weather_tick(self):
+        for room in list(self.rooms.values()):
+            r = raining(room)
+            if r != room.rain_sent:
+                room.rain_sent = r
+                room.broadcast({"t": "weather", "rain": r})
+
+    async def weather_loop(self):
+        while True:
+            await asyncio.sleep(5)
+            try:
+                self.weather_tick()
+            except Exception as e:  # never let the weather take the server down
+                print("weather tick failed:", repr(e))
+
     def admin_unadmin(self, c, args):
         c.admin = False
         self.sys(c, "Admin mode off.")
@@ -1246,14 +1435,33 @@ class Game:
 
     # ---- solo activities -------------------------------------------------
 
+    def on_fish_hook(self, c, m):
+        """A fish bit and the player hooked it: decide what it is now, so rarer fish fight harder."""
+        if not c.ready("hook", 1.0):
+            raise GameError("Easy there, the fish need a moment.")
+        # a longer cast and a luckier rod find better fish (capped, and the rarest are damped, so even
+        # the best rod lands a legendary well under 1% of the time)
+        power = num(m.get("p", 0), 0, 1)
+        q = min(1.25, 0.35 + power * 0.25 + RODS.get(c.player["rod"], {}).get("luck", 0))
+        rain = raining(c.room)
+        pool = [f for f in FISH if f["rarity"] != "mythic" or rain]
+        weights = [f["weight"] * math.exp(f["bias"] * (q - 0.5)) * FISH_DAMP.get(f["rarity"], 1) for f in pool]
+        fish = random.choices(pool, weights=weights)[0]
+        c.hooked = {"fish": fish, "at": time.monotonic()}
+        fight = FISH_FIGHT.get(fish["rarity"], 0.5) * random.uniform(0.92, 1.08)
+        c.ws.send({"t": "fish_hooked", "d": round(fight, 3), "pat": fish["rarity"] in ("legendary", "mythic"),
+                   "seed": random.randint(0, 9999)})
+
     def on_fish(self, c, m):
         """Sent when the reeling minigame is won. `q` is how well the player tracked the fish."""
-        if not c.ready("fish", 2.5):
+        hooked = getattr(c, "hooked", None)
+        c.hooked = None
+        if not hooked or time.monotonic() - hooked["at"] < 1.2:
+            raise GameError("Nothing on the line!")
+        if not c.ready("fish", 2.0):
             raise GameError("Easy there, the fish need a moment.")
-        # a luckier rod counts as a better catch when choosing which fish bit
-        q = num(m.get("q", 0), 0, 1) + RODS.get(c.player["rod"], {}).get("luck", 0)
-        weights = [f["weight"] * math.exp(f["bias"] * (q - 0.5)) for f in FISH]
-        fish = random.choices(FISH, weights=weights)[0]
+        fish = hooked["fish"]
+        q = num(m.get("q", 0), 0, 1)
         lo, hi = fish["size"]
         size = round(random.uniform(lo, hi) * (0.85 + 0.3 * q), 1)
         treasure = random.randint(30, 120) if m.get("treasure") is True else 0
@@ -1261,12 +1469,37 @@ class Game:
         first, record = entry["n"] == 0, size > entry["best"]
         entry["n"] += 1
         entry["best"] = max(entry["best"], size)
-        extra = {"koi": 1} if fish["rarity"] == "legendary" else {}
-        self.reward(c, coins=fish["coins"] + treasure, xp=max(5, fish["coins"] // 4), fish=1, **extra)
-        c.ws.send({"t": "fish_result", "fish": {**fish, "size": size}, "treasure": treasure,
+        extra = {"koi": 1} if fish["rarity"] in ("legendary", "mythic") else {}
+        # the catch goes in your fish bag, to sell at the Fish Market (a full bag sells it on the spot, at half price)
+        bag = c.player["fishbag"]
+        price = fish_price(fish, size)
+        bagged = len(bag) < FISH_BAG_MAX
+        if bagged:
+            c.player["fishseq"] = c.player.get("fishseq", 0) + 1
+            bag.append({"id": c.player["fishseq"], "name": fish["name"], "size": size})
+        coins = treasure + (0 if bagged else price // 2)
+        self.reward(c, coins=coins, xp=max(5, fish["coins"] // 4), fish=1, **extra)
+        c.ws.send({"t": "fish_result", "fish": {**fish, "size": size}, "treasure": treasure, "price": price,
+                   "bagged": bagged, "sold": 0 if bagged else price // 2,
                    "first": first, "record": record and not first})
-        if fish["rarity"] in ("rare", "epic", "legendary"):
+        if fish["rarity"] in ("rare", "epic", "legendary", "mythic"):
             self.post_feed(c.room, f"🎣 {c.player['name']} caught a {fish['rarity']} {fish['name']} ({size} in)!")
+
+    def on_fish_sell(self, c, m):
+        """Sell the chosen fish from your bag to the fishmonger (ids, or all: true)."""
+        bag = c.player["fishbag"]
+        if m.get("all") is True:
+            ids = {f["id"] for f in bag}
+        else:
+            raw = m.get("ids")
+            ids = {int(num(i, 0, 1e9)) for i in raw[:FISH_BAG_MAX]} if isinstance(raw, list) else set()
+        sold = [f for f in bag if f["id"] in ids and f["name"] in FISH_BY_NAME]
+        if not sold:
+            raise GameError("Pick some fish to sell first.")
+        total = sum(fish_price(FISH_BY_NAME[f["name"]], f["size"]) for f in sold)
+        c.player["fishbag"] = [f for f in bag if f["id"] not in ids]
+        self.reward(c, coins=total)
+        c.ws.send({"t": "fish_sold", "n": len(sold), "coins": total})
 
     def on_rod(self, c, m):
         """Buy a fishing rod, or pick one you own."""
@@ -1616,7 +1849,8 @@ class Game:
             return
         f["x"], f["y"], f["a"] = num(m["x"], 0, ARENA_W), num(m["y"], 0, ARENA_H), num(m["a"], -7, 7)
         c.room.broadcast({"t": "arena_pos", "k": c.key, "x": round(f["x"], 1), "y": round(f["y"], 1),
-                          "a": round(f["a"], 2)}, scene="arena", exclude=c)
+                          "a": round(f["a"], 2), "h": round(num(m.get("h", 0), 0, 6), 2), "sl": bool(m.get("sl"))},
+                         scene="arena", exclude=c)
 
     def on_arena_shoot(self, c, m):
         f = c.room.arena.get(c.key)
@@ -1758,7 +1992,15 @@ class Game:
                 "hurt": time.monotonic(), "up": {}, "shield": False, "wind": False, "picked": False, "choices": [], "poison": 0.0, "ptick": 0.0}
 
     def boss_join(self, c):
-        room, bs = c.room, c.room.boss
+        # you join a group that's still in the lobby (so friends can start together); a run that's already
+        # going stays private, and you get your own
+        run = next((r for r in c.room.dungeons if r.boss["state"] == "lobby" and r.members), None)
+        if not run:
+            run = DungeonRun(c.room)
+            c.room.dungeons.append(run)
+        run.members.add(c.key)
+        c.dgn = run
+        room, bs = run, run.boss
         f = bs["fighters"][c.key] = self.new_fighter()
         if bs["state"] in ("intro", "fight", "pick"):
             bs["ran"].add(c.key)
@@ -1777,8 +2019,14 @@ class Game:
             bs["task"] = asyncio.get_running_loop().create_task(self.boss_loop(room))
 
     def boss_leave(self, c):
-        if c.room.boss["fighters"].pop(c.key, None) is not None:
-            c.room.broadcast({"t": "boss_del", "k": c.key}, scene="boss")
+        run, c.dgn = c.dgn, None
+        if not run:
+            return
+        run.members.discard(c.key)
+        if run.boss["fighters"].pop(c.key, None) is not None:
+            run.broadcast({"t": "boss_del", "k": c.key}, scene="boss")
+        if not run.members and not run.boss["task"] and run in run.room.dungeons:
+            run.room.dungeons.remove(run)
 
     async def boss_loop(self, room):
         bs = room.boss
@@ -1797,17 +2045,19 @@ class Game:
             if not bs["fighters"]:
                 # everyone left: the next group starts a fresh run
                 bs.update(state="lobby", floor=0, b=None, mobs={}, queue=[], dmg={}, ran=set())
+                if not room.members and room in room.room.dungeons:
+                    room.room.dungeons.remove(room)
 
     # ---- runs and floors ----
 
     def on_boss_start(self, c, m):
-        room, bs = c.room, c.room.boss
+        room, bs = c.dgn, c.dgn.boss
         if bs["state"] != "lobby" or c.key not in bs["fighters"]:
             return
         for f in bs["fighters"].values():
             f.update(hp=BOSS_PLAYER_HP, max=BOSS_PLAYER_HP, up={}, shield=False, wind=False, picked=False, choices=[], rev=0.0)
         bs.update(floor=0, dmg={}, ran=set(bs["fighters"]), last=None)
-        self.post_feed(room, f"🏰 {c.player['name']} started a dungeon run! Jump in at the Boss Cave.")
+        self.post_feed(room.room, f"🏰 {c.player['name']} started a dungeon run!")
         self.dungeon_floor(room, time.monotonic())
 
     def dungeon_floor(self, room, now):
@@ -1866,7 +2116,7 @@ class Game:
         self.dungeon_sync(room)
 
     def on_boss_pick(self, c, m):
-        bs = c.room.boss
+        bs = c.dgn.boss
         f = bs["fighters"].get(c.key)
         u = str(m.get("id", ""))
         if bs["state"] != "pick" or not f or f["picked"] or (u not in f["choices"] and u != "skip"):
@@ -1874,7 +2124,7 @@ class Game:
         if u != "skip":
             self.dungeon_apply(f, u)
         f["picked"] = True
-        c.room.broadcast({"t": "boss_picked", "k": c.key, "id": u, "f": self.boss_fighter_view(f)}, scene="boss")
+        c.dgn.broadcast({"t": "boss_picked", "k": c.key, "id": u, "f": self.boss_fighter_view(f)}, scene="boss")
 
     def dungeon_wipe(self, room, now):
         """Everyone is down: the run is over. Pay out by floors cleared and damage dealt."""
@@ -1900,7 +2150,7 @@ class Game:
         self.store.mark()
         if record and len(bs["ran"]):
             names = ", ".join(bs["last"]["names"][:4])
-            self.post_feed(room, f"🏰 New dungeon record! {names} reached floor {floor}.")
+            self.post_feed(room.room, f"🏰 New dungeon record! {names} reached floor {floor}.")
         room.broadcast({"t": "boss_wipe", "floor": floor, "record": record, "results": results}, scene="boss")
         self.dungeon_sync(room)
 
@@ -2191,23 +2441,23 @@ class Game:
     # ---- players ----
 
     def on_boss_move(self, c, m):
-        f = c.room.boss["fighters"].get(c.key)
+        f = c.dgn.boss["fighters"].get(c.key)
         if not f or f["hp"] <= 0:
             return
         f["x"], f["y"], f["a"] = num(m["x"], 0, BOSS_W), num(m["y"], 0, BOSS_H), num(m["a"], -7, 7)
-        c.room.broadcast({"t": "boss_pos", "k": c.key, "x": round(f["x"], 1), "y": round(f["y"], 1),
+        c.dgn.broadcast({"t": "boss_pos", "k": c.key, "x": round(f["x"], 1), "y": round(f["y"], 1),
                           "a": round(f["a"], 2)}, scene="boss", exclude=c)
 
     def on_boss_shoot(self, c, m):
-        f = c.room.boss["fighters"].get(c.key)
+        f = c.dgn.boss["fighters"].get(c.key)
         if not f or f["hp"] <= 0 or not c.ready("shoot", 0.06):
             return
-        c.room.broadcast({"t": "boss_shot", "k": c.key, "x": num(m["x"], 0, BOSS_W), "y": num(m["y"], 0, BOSS_H),
+        c.dgn.broadcast({"t": "boss_shot", "k": c.key, "x": num(m["x"], 0, BOSS_W), "y": num(m["y"], 0, BOSS_H),
                           "a": num(m["a"], -7, 7), "n": int(num(m.get("n", 1), 1, 4))}, scene="boss", exclude=c)
 
     def on_boss_hit(self, c, m):
         """Sent when one of your shots hits a monster (id) or the boss (no id)."""
-        room, bs = c.room, c.room.boss
+        room, bs = c.dgn, c.dgn.boss
         f = bs["fighters"].get(c.key)
         if bs["state"] != "fight" or not f or f["hp"] <= 0 or not c.ready("boss_hit", 0.02):
             return
@@ -2290,7 +2540,7 @@ class Game:
 
     def on_boss_hurt(self, c, m):
         """Sent by a player who got caught by an attack; friends are trusted to be honest."""
-        room, bs = c.room, c.room.boss
+        room, bs = c.dgn, c.dgn.boss
         f = bs["fighters"].get(c.key)
         now = time.monotonic()
         if bs["state"] != "fight" or not f or f["hp"] <= 0 or now - f["hurt"] < BOSS_IFRAMES:
@@ -2345,7 +2595,7 @@ class Game:
             results[k] = {"coins": coins, "xp": xp, "dmg": dealt, "loot": loot}
         room.broadcast({"t": "boss_dead", "name": spec["name"], "mvp": mvp, "results": results}, scene="boss")
         mvp_name = room.zone["players"][mvp]["name"] if mvp in room.zone["players"] else None
-        self.post_feed(room, f"👾 {spec['name']} was defeated on floor {bs['floor']}!" + (f" MVP: {mvp_name}" if mvp_name else ""))
+        self.post_feed(room.room, f"👾 {spec['name']} was defeated on floor {bs['floor']}!" + (f" MVP: {mvp_name}" if mvp_name else ""))
 
     # ---- doodle guess --------------------------------------------------------------
 
@@ -2442,6 +2692,7 @@ class Game:
             word = clean(m.get("word"), 24)
             if not DOODLE_CUSTOM_RE.match(word) or len(squash(word)) < 2:
                 raise GameError("Custom words are 2–24 letters, numbers, spaces or dashes.")
+            self.check_clean(c.room, word, "That word")
             self.doodle_begin(c.room, word.lower())
             c.room.broadcast({"t": "doodle_msg", "sys": f"✏️ {c.player['name']} made up their own word!"}, scene="doodle")
             return
@@ -2534,6 +2785,7 @@ class Game:
         text = clean(m.get("text"), 60)
         if not text or not c.ready("guess", 0.4):
             return
+        self.check_clean(room, text, "Your message")
         playing = d["state"] == "drawing" and c.key != d["drawer"] and c.key not in d["guessed"]
         if not playing:
             if d["state"] != "drawing" or (c.key != d["drawer"] and c.key not in d["guessed"]):
@@ -3004,6 +3256,7 @@ async def main():
     game = Game(store)
     server = await asyncio.start_server(lambda r, w: handle_connection(game, r, w), HOST, PORT)
     saver = asyncio.create_task(store.autosave())
+    weather = asyncio.create_task(game.weather_loop())
     print(f"FriendZone is running: http://localhost:{PORT}")
     lan = lan_address()
     if lan:
@@ -3013,6 +3266,7 @@ async def main():
             await server.serve_forever()
     finally:
         saver.cancel()
+        weather.cancel()
         store.save()
 
 

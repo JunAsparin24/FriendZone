@@ -3,7 +3,7 @@
 //   world – it happens right there in the world (fishing off the dock)
 //   mount – a panel opens over the world (trading, the shop, houses…)
 // `icon` names an SVG badge from icons.js; `battle` switches the music to the fight playlist.
-import { fishJournal } from './games/fishing.js';
+import { fishJournal, fishMarket } from './games/fishing.js';
 import { archery } from './games/archery.js';
 import { racing } from './games/racing.js';
 import { arena } from './games/arena.js';
@@ -31,6 +31,7 @@ export const ACTIVITIES = {
     touch: { hint: 'Left thumb: walk · Right thumb: look around · tap things to use them' } },
   fishing: { icon: 'fishing', emoji: '🎣', name: 'Fishing', world: 'fishing' },
   journal: { icon: 'fishing', emoji: '📖', name: 'Fish Journal', wide: true, mount: fishJournal },
+  fishstand: { icon: 'fishing', emoji: '🐟', name: 'Fish Market', wide: true, mount: fishMarket },
   doodle: { icon: 'doodle', emoji: '🎨', name: 'Doodle', scene: 'doodle', wide: true, mount: doodle },
   trading: { icon: 'tavern', emoji: '🍺', name: 'Tavern', place: 'The Tavern', scene: 'tavern', area: tavernArea,
     touch: { hint: 'Left thumb: walk · walk up to someone to trade with them' } },

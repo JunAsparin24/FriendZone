@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import * as M from '../map.js';
 import { S, fmt } from '../state.js';
-import { toon, outlineMaterial } from './materials.js';
+import { toon, outlineMaterial, additive, glowTexture } from './materials.js';
 
 const OUT = outlineMaterial(0.03);
 const BOARDS = [
@@ -34,23 +34,27 @@ export function buildLeaderboards(scene) {
     g.rotation.y = facing;
     g.scale.setScalar(1.9);
     scene.add(g);
-    const wood = toon('#8b5a2b'), dark = toon('#5a3a1e');
-    for (const x of [-1.6, 1.6]) mesh(g, new THREE.BoxGeometry(0.22, 4.2, 0.22), dark, [x, 2.1, 0]);
-    mesh(g, new THREE.BoxGeometry(3.7, 2.7, 0.18), wood, [0, 2.85, 0]);
-    mesh(g, new THREE.BoxGeometry(3.9, 0.22, 0.34), dark, [0, 4.3, 0]);
+    // a floating panel: no stand, just the board hovering with a soft glow in its colour
+    const float = new THREE.Group();
+    g.add(float);
+    const glow = new THREE.Sprite(additive(glowTexture, new THREE.Color(b.color).getHex(), 0.45));
+    glow.scale.set(5.2, 4, 1);
+    glow.position.set(0, 2.85, -0.05);
+    float.add(glow);
+    mesh(float, new THREE.BoxGeometry(3.62, 2.62, 0.08), toon(b.color), [0, 2.85, 0]);
     const c = document.createElement('canvas');
     c.width = 512; c.height = 372;
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;
     const face = new THREE.Mesh(new THREE.PlaneGeometry(3.45, 2.5), new THREE.MeshBasicMaterial({ map: tex }));
-    face.position.set(0, 2.85, 0.1);
-    g.add(face);
+    face.position.set(0, 2.85, 0.05);
+    float.add(face);
     const back = face.clone();
     back.rotation.y = Math.PI;
-    back.position.z = -0.1;
-    g.add(back);
-    return { ...b, c, tex, key: '' };
+    back.position.z = -0.05;
+    float.add(back);
+    return { ...b, c, tex, key: '', float, phase: Math.random() * 6 };
   });
 
   const draw = (bd) => {
@@ -81,5 +85,7 @@ export function buildLeaderboards(scene) {
   const refresh = () => list.forEach(draw);
   refresh();
   document.fonts?.ready?.then(() => { list.forEach((b) => { b.key = '*'; }); refresh(); });
-  return { refresh };
+  // gentle hover
+  const tick = (t) => list.forEach((b) => { b.float.position.y = 0.35 + Math.sin(t * 1.2 + b.phase) * 0.12; });
+  return { refresh, tick };
 }

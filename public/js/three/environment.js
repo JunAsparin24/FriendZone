@@ -97,12 +97,36 @@ export function buildEnvironment(scene) {
     new THREE.SphereGeometry(760, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { top: { value: new THREE.Color('#2f6fd6') }, mid: { value: new THREE.Color('#7fb7f5') }, bottom: { value: new THREE.Color('#d9ecff') } },
+      uniforms: {
+        top: { value: new THREE.Color('#2f6fd6') }, mid: { value: new THREE.Color('#7fb7f5') }, bottom: { value: new THREE.Color('#d9ecff') },
+        sunDir: { value: new THREE.Vector3(0.5, 0.5, 0.5).normalize() }, sunCol: { value: new THREE.Color('#fff2c0') },
+        cloudCol: { value: new THREE.Color('#ffffff') }, cloudShade: { value: new THREE.Color('#c9d6f0') },
+        time: { value: 0 }, cover: { value: 0.42 }, glow: { value: 1 },
+      },
       vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: `uniform vec3 top; uniform vec3 mid; uniform vec3 bottom; varying vec3 vP;
-        void main(){ float h = vP.y; vec3 c = h > 0.15 ? mix(mid, top, smoothstep(0.15, 0.8, h)) : mix(bottom, mid, smoothstep(-0.05, 0.15, h));
-        gl_FragColor = vec4(c, 1.0);
-        #include <colorspace_fragment>
+      // a soft gradient, a warm halo around the sun, a haze band at the horizon and a layer of
+      // drifting, wispy high clouds (fbm noise projected onto the dome)
+      fragmentShader: `uniform vec3 top; uniform vec3 mid; uniform vec3 bottom; uniform vec3 sunDir; uniform vec3 sunCol;
+        uniform vec3 cloudCol; uniform vec3 cloudShade; uniform float time; uniform float cover; uniform float glow; varying vec3 vP;
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y); }
+        float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return v; }
+        void main(){
+          float h = vP.y;
+          vec3 c = h > 0.15 ? mix(mid, top, smoothstep(0.15, 0.8, h)) : mix(bottom, mid, smoothstep(-0.05, 0.15, h));
+          float sd = max(dot(vP, normalize(sunDir)), 0.0);
+          c += sunCol * (pow(sd, 6.0) * 0.28 + pow(sd, 48.0) * 0.5) * glow;
+          c = mix(c, bottom * 1.05, (1.0 - smoothstep(0.0, 0.12, abs(h - 0.02))) * 0.35);
+          if (h > 0.02) {
+            vec2 uv = vP.xz / (h + 0.18) * 1.6 + vec2(time * 0.012, time * 0.004);
+            float n = fbm(uv) * 0.75 + fbm(uv * 3.1 - time * 0.01) * 0.25;
+            float cl = smoothstep(1.0 - cover, 1.0 - cover + 0.28, n) * smoothstep(0.02, 0.22, h);
+            vec3 cc = mix(cloudShade, cloudCol, smoothstep(0.35, 0.75, n)) + sunCol * pow(sd, 4.0) * 0.25 * glow;
+            c = mix(c, cc, cl * 0.9);
+          }
+          gl_FragColor = vec4(c, 1.0);
+          #include <colorspace_fragment>
         }`,
     }),
   );
@@ -433,12 +457,71 @@ export function buildEnvironment(scene) {
     p.castShadow = p.receiveShadow = true;
     dock.add(p);
   }
-  for (const [x, z] of [[-1.1, 0], [1.1, 0], [-1.1, 3], [1.1, 3], [-1.1, 4.3], [1.1, 4.3]]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.2, 8), toon('#6b4226'));
-    post.position.set(x, 0.3, z);
-    dock.add(post);
+  const postMat = toon('#6b4226'), ropeMat = toon('#e8d7a8');
+  const mesh = (geo, mat, x, y, z, r) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    if (r) m.rotation.set(...r);
+    m.castShadow = m.receiveShadow = true;
+    dock.add(m);
+    return m;
+  };
+  // side beams under the planks, and posts that stick up above the deck with a rope rail between them
+  for (const x of [-1.22, 1.22]) mesh(new THREE.BoxGeometry(0.14, 0.2, 6.2), toon('#7a4e2a'), x, 0.36, 1.45);
+  const dockPosts = [[-1.2, -1.5], [1.2, -1.5], [-1.2, 0.4], [1.2, 0.4], [-1.2, 4.2], [1.2, 4.2]];
+  for (const [x, z] of dockPosts) {
+    mesh(new THREE.CylinderGeometry(0.12, 0.13, 1.9, 8), postMat, x, 0.35, z);
+    mesh(new THREE.CylinderGeometry(0.15, 0.12, 0.1, 8), toon('#8b5a2b'), x, 1.32, z);
   }
+  for (const x of [-1.2, 1.2]) {
+    const rope = mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.9, 6), ropeMat, x, 1.12, -0.55, [Math.PI / 2, 0, 0]);
+    rope.castShadow = false;
+  }
+  // lanterns on the two end posts (they glow at night)
+  for (const x of [-1.2, 1.2]) {
+    mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6, 6), toon('#23263f'), x, 1.65, 4.2);
+    const lamp = mesh(new THREE.BoxGeometry(0.22, 0.3, 0.22), basic('#ffe9a8'), x, 2.05, 4.2);
+    mesh(new THREE.ConeGeometry(0.2, 0.16, 4), toon('#23263f'), x, 2.28, 4.2, [0, Math.PI / 4, 0]);
+    const halo = new THREE.Sprite(additive(glowTexture, 0xffd27a, 0.5));
+    halo.scale.setScalar(1.4);
+    lamp.add(halo);
+  }
+  // a ladder down into the water at the end
+  for (const x of [-0.25, 0.25]) mesh(new THREE.BoxGeometry(0.06, 0.9, 0.06), postMat, x, 0.1, 4.2);
+  for (let i = 0; i < 3; i++) mesh(new THREE.BoxGeometry(0.5, 0.05, 0.06), postMat, 0, -0.15 + i * 0.22, 4.2);
+  // a bucket, a tackle box and a coil of rope
+  mesh(new THREE.CylinderGeometry(0.17, 0.13, 0.3, 12), toon('#8d96a8'), -0.8, 0.64, -0.9);
+  mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.02, 12), toon('#3b82f6'), -0.8, 0.77, -0.9);
+  mesh(new THREE.BoxGeometry(0.42, 0.2, 0.26), toon('#2e9e5a'), 0.8, 0.59, -1.0);
+  mesh(new THREE.BoxGeometry(0.44, 0.05, 0.28), toon('#23263f'), 0.8, 0.7, -1.0);
+  mesh(new THREE.TorusGeometry(0.16, 0.05, 6, 14), ropeMat, 0.75, 0.53, -0.35, [Math.PI / 2, 0, 0]);
+  // a little rowboat tied up alongside
+  const boat = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 10, 0, TAU, Math.PI / 2, Math.PI / 2), toon('#e0463c', { side: THREE.DoubleSide }));
+  hull.scale.set(0.62, 0.38, 1.5);
+  hull.castShadow = true;
+  boat.add(hull);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 6, 24), toon('#ffffff'));
+  rim.rotation.x = Math.PI / 2;
+  rim.scale.set(0.62, 1.5, 1);
+  boat.add(rim);
+  for (const z of [-0.4, 0.45]) {
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.05, 0.22), toon('#a0703f'));
+    seat.position.set(0, -0.1, z);
+    boat.add(seat);
+  }
+  const oar = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.8, 6), toon('#c9955a'));
+  oar.position.set(0.1, 0.02, 0);
+  oar.rotation.set(Math.PI / 2, 0.2, 0);
+  boat.add(oar);
+  boat.position.set(2.1, M.LAKE_LEVEL + 0.12, 2.4);
+  boat.rotation.y = 0.08;
+  dock.add(boat);
+  const tie = mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.95, 5), ropeMat, 1.62, 0.45, 2.9, [0, 0, 1.2]);
+  tie.castShadow = false;
+  dock.userData.bob = (t) => { boat.position.y = M.LAKE_LEVEL + 0.12 + Math.sin(t * 1.4) * 0.04; boat.rotation.z = Math.sin(t * 1.1) * 0.04; };
   dock.position.set(dockX, 0, pa.z);
+  anim.push((t) => dock.userData.bob(t));
   scene.add(dock);
   const pads = [];
   for (let i = 0; i < 60 && pads.length < 18; i++) {
@@ -483,17 +566,34 @@ export function buildEnvironment(scene) {
   const town = buildTown(scene, layout, anim, waterMat);
 
   // ---- clouds + butterflies ------------------------------------------------------------
-  const cloudMat = toon('#ffffff');
+  // fluffy cumulus: a heap of puffs, biggest in the middle, with a flat, shaded underside. Their colour
+  // follows the time of day (and turns grey in the rain) - see DayNight.
+  const cloudMat = new THREE.MeshToonMaterial({ color: '#ffffff', vertexColors: true, gradientMap: toon('#fff').gradientMap });
   const clouds = [];
-  for (let i = 0; i < 28; i++) {
+  for (let i = 0; i < 34; i++) {
     const parts = [];
-    const n = 4 + Math.floor(rnd() * 4);
-    for (let k = 0; k < n; k++) parts.push({ geo: new THREE.IcosahedronGeometry(1.4 + rnd() * 1.4, 2), matrix: T((k - n / 2) * 1.6, rnd() * 0.8, (rnd() - 0.5) * 1.6) });
-    const cloud = new THREE.Mesh(merge(parts), cloudMat);
-    cloud.position.set((rnd() - 0.5) * 400, 26 + rnd() * 14, (rnd() - 0.5) * 280);
-    cloud.scale.setScalar(1.2 + rnd() * 1.4);
+    const n = 5 + Math.floor(rnd() * 5);
+    for (let k = 0; k < n; k++) {
+      const x = (k - (n - 1) / 2) * 1.5 + (rnd() - 0.5) * 0.6;
+      const r = (1.3 + rnd() * 1.1) * (1.25 - Math.abs(x) / (n * 1.1));
+      parts.push({ geo: new THREE.IcosahedronGeometry(r, 3), matrix: T(x, r * 0.35 + rnd() * 0.5, (rnd() - 0.5) * 1.8) });
+    }
+    for (let k = 0; k < 3; k++) parts.push({ geo: new THREE.IcosahedronGeometry(1.2 + rnd() * 0.8, 3), matrix: T((rnd() - 0.5) * n * 0.9, 1.6 + rnd() * 0.9, (rnd() - 0.5) * 1.2) });
+    const geo = merge(parts);
+    const pos = geo.attributes.position, cols = [];
+    for (let v = 0; v < pos.count; v++) {
+      const y = pos.getY(v);
+      if (y < 0) pos.setY(v, y * 0.25); // flat bottom
+      const k = Math.min(1, Math.max(0, (pos.getY(v) + 0.3) / 3));
+      cols.push(0.78 + k * 0.22, 0.8 + k * 0.2, 0.9 + k * 0.1); // bluish underside, bright top
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    geo.computeVertexNormals();
+    const cloud = new THREE.Mesh(geo, cloudMat);
+    cloud.position.set((rnd() - 0.5) * 420, 30 + rnd() * 18, (rnd() - 0.5) * 300);
+    cloud.scale.set(1.3 + rnd() * 1.6, 1 + rnd() * 0.6, 1.2 + rnd() * 1.2);
     cloud.castShadow = true;
-    cloud.userData.speed = 1 + rnd() * 1.5;
+    cloud.userData.speed = 0.8 + rnd() * 1.3;
     scene.add(cloud);
     clouds.push(cloud);
   }
@@ -522,7 +622,7 @@ export function buildEnvironment(scene) {
     for (const fn of anim) fn(t, dt);
     for (const c of clouds) {
       c.position.x += c.userData.speed * dt;
-      if (c.position.x > 210) c.position.x = -210;
+      if (c.position.x > 220) c.position.x = -220;
     }
     for (const b of butterflies) {
       const u = b.userData;
@@ -557,5 +657,5 @@ export function buildEnvironment(scene) {
     }
   }
 
-  return { update, groundCanvas, buildings, solidsForCamera: [...buildings, ...town.cottages], ground, redrawText, sky, sunGlow, lit, windows: town.windows };
+  return { update, groundCanvas, buildings, solidsForCamera: [...buildings, ...town.cottages], ground, redrawText, sky, sunGlow, lit, windows: town.windows, cloudMat, clouds };
 }

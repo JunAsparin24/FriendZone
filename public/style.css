@@ -528,8 +528,8 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 }
 .top-ctl button:hover { border-color: var(--accent); transform: translateY(-2px); }
 .top-ctl #settingsBtn svg { width: 30px; height: 30px; }
-.top-ctl #settingsBtn:hover svg { animation: spin-gear 1.2s linear infinite; }
-@keyframes spin-gear { to { transform: rotate(360deg); } }
+
+
 .hud-top { padding-right: 100px; }
 
 /* ---------- icons + logo ---------- */
@@ -708,7 +708,7 @@ body.no-names .wl-tag { display: none; }
 .fish-power { position: absolute; left: calc(50% + 120px); top: 35%; width: 22px; height: 150px; border-radius: 11px; background: #0d1f4ad9; border: 2px solid var(--line); overflow: hidden; }
 .fish-power i { position: absolute; left: 2px; right: 2px; bottom: 2px; border-radius: 8px; background: linear-gradient(0deg, #ff5d73, #ffd84d, #6ee7a0); }
 .fish-reel { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); }
-.fish-reel canvas { width: 136px; height: 370px; display: block; }
+.fish-reel canvas { width: 136px; height: 470px; max-height: 80vh; width: auto; display: block; }
 .fish-result {
   position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); min-width: 240px; text-align: center; cursor: pointer;
   background: #1a3d85; border: 4px solid var(--r); border-radius: 20px; padding: 16px 22px; box-shadow: 0 0 34px var(--r); animation: pop .25s ease-out;
@@ -983,9 +983,11 @@ body.no-names .wl-tag { display: none; }
 }
 
 .mouselook-hint {
-  position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 60; pointer-events: none;
-  background: #0d1f4ad9; border: 2px solid var(--line); border-radius: 99px; padding: 5px 14px; font-size: 13px; color: var(--muted);
+  position: fixed; left: 12px; bottom: 6px; z-index: 60; pointer-events: none;
+  background: #0d1f4ad9; border: 2px solid var(--line); border-radius: 99px; padding: 2px 12px; font-size: 12px; color: var(--muted);
 }
+/* the chat moves up a little to make room for the mouse-look tip underneath it */
+body.mouselooking .chat { bottom: 38px; }
 
 /* ---------- wardrobe / character creator ---------- */
 .wd2 { display: grid; grid-template-columns: 250px 92px 1fr; gap: 14px; height: min(640px, calc(100vh - 150px)); }
@@ -1278,3 +1280,29 @@ html.touch .hud-top { padding-right: 172px; } /* room for the 💬 🔊 ⚙️ b
 .fish-img { width: 100px; height: 70px; object-fit: contain; display: block; margin: 0 auto; filter: drop-shadow(0 2px 3px #0006); }
 .jemoji .fish-img { width: 76px; height: 54px; }
 .fish-img.sm { width: 40px; height: 28px; display: inline-block; vertical-align: middle; }
+
+/* ---- fish market ---- */
+.fm-intro { margin: 0 0 10px; }
+.fm-flash { background: #1f3b2a; border: 2px solid #6ee7a0; border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; }
+.fm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; max-height: 52vh; overflow-y: auto; padding: 2px; }
+.fm-fish { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px; border-radius: 12px; border: 2px solid color-mix(in srgb, var(--r) 60%, transparent); background: rgba(255,255,255,.05); color: inherit; font: inherit; cursor: pointer; position: relative; }
+.fm-fish img { width: 64px; height: 44px; object-fit: contain; }
+.fm-fish b { font-size: 13px; text-align: center; }
+.fm-fish small { opacity: .75; font-size: 11px; }
+.fm-fish .fm-price { font-weight: 700; color: #ffd84d; font-size: 13px; }
+.fm-fish.on { background: color-mix(in srgb, var(--r) 28%, transparent); border-color: var(--r); box-shadow: 0 0 0 2px var(--r); }
+.fm-fish.on::after { content: '✓'; position: absolute; top: 4px; right: 7px; font-weight: 800; color: #6ee7a0; }
+.fm-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+.fm-empty { text-align: center; padding: 30px 10px; opacity: .8; }
+
+/* ---- how-to-play tab (bottom right of every minigame) ---- */
+.tips-tab { position: absolute; right: 14px; bottom: 14px; display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 8px; pointer-events: auto; z-index: 5; }
+.tips-btn { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--line); background: #0d1f4ad9; font-size: 18px; cursor: pointer; }
+.tips-btn:hover { border-color: var(--accent); }
+.tips-body { max-width: min(420px, calc(100vw - 40px)); font-size: 13px; line-height: 1.45; padding: 10px 14px; margin: 0; display: none; }
+.tips-body p { margin: 0; }
+.tips-tab.open .tips-body { display: block; animation: tipsin .2s ease-out; }
+@keyframes tipsin { from { opacity: 0; transform: translateY(6px); } }
+html.touch .tips-tab { bottom: 150px; }
+.zone-online { font-size: 12px; font-weight: 700; color: var(--muted); }
+.zone-online.on { color: #6ee7a0; }

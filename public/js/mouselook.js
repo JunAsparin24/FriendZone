@@ -62,6 +62,7 @@ window.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('pointerlockchange', () => {
   hint.classList.toggle('hidden', !current());
+  document.body.classList.toggle('mouselooking', !!current());
   // the browser let go of the lock by itself (Esc, alt-tab): that turns mouse look off
   if (!document.pointerLockElement && !ourExit) sticky = false;
   ourExit = false;

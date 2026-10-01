@@ -57,14 +57,6 @@ SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle"
 AREA_SCENES = {"casino", "shop", "petshop", "arcade", "tavern", "beach"}  # 3D rooms you walk around in; positions are relayed to everyone inside
 
 
-def beach_spot():
-    x0, x1, z0, z1 = BEACH_SAND
-    while True:
-        x, z = random.uniform(x0, x1), random.uniform(z0, z1)
-        if not (35 < x < 105 and 0 < z < 32) and not (-80 < x < -52 and 2 < z < 18) and not (-34 < x < -22 and 30 < z < 42) and not (128 < x < 172) and not (-132 < x < -108 and 22 < z < 38) and not (10 < x < 18 and 40 < z < 48):  # not under the crab track or the surf shack
-            return {"x": round(x, 1), "z": round(z, 1)}
-
-
 def is_area(scene):
     """Walk-around rooms: the casino, and every member's house ("house:<owner>")."""
     return scene in AREA_SCENES or (isinstance(scene, str) and scene.startswith("house:"))
@@ -388,8 +380,12 @@ SLOT_NEAR_MISS = 0.35        # a winning line that slips to a near miss at the l
 WHEEL_ZERO_WEIGHT = 1.6      # the empty slices come up more often
 BJ_DEALER_LUCK = 0.5         # chance the dealer's busting card is swapped for another
 # ---- Coral Cove (the beach town) ----
-BEACH_SAND = (-205, 205, 2, 56)   # x0, x1, z0, z1: where treasure can be buried (world units)
-BEACH_TREASURES = 9
+MATCH_COURTS = {  # first to `to` points, or whoever's ahead after `time` seconds; up to `max` a side
+    "bb1": {"to": 11, "time": 240, "max": 3}, "bb2": {"to": 11, "time": 240, "max": 3},
+    "soccer": {"to": 5, "time": 300, "max": 5},
+}
+STEAL_CHANCE = 0.4
+GOLF_PARS = (3, 3, 4, 3, 4, 5)
 CRAB_NAMES = ["Pinchy", "Sandy", "Clawdia", "Sir Scuttle"]
 CRAB_BET_T, CRAB_RACE_T, CRAB_PAUSE_T = 20, 9.5, 6
 CRAB_PAYS = 3.5               # 4 crabs, so a fair price would be 4x
@@ -821,8 +817,8 @@ class Room:
         self.trades = {}      # id -> a live trade between two people in the tavern
         self.trade_seq = 0
         self.roulette = {"id": 0, "state": "idle", "ends": 0.0, "bets": {}, "history": [], "result": None}
-        self.treasure = [beach_spot() for _ in range(BEACH_TREASURES)]
         self.balls = {}   # Coral Cove: id -> last known state
+        self.matches = {}  # Coral Park court -> the pickup game played on it
         self.courts = {}  # Coral Cove: court -> {"s": [home, away]}
         self.boats = {}   # Coral Cove: id -> {"driver", x, z, h, v}
         self.crabs = {"id": 0, "state": "idle", "ends": 0.0, "bets": {}, "times": [], "winner": None, "history": []}
@@ -873,7 +869,7 @@ IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
     "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
-    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "beach_dig", "crab_bet", "ball", "court_score", "boat", "boat_take", "boat_leave", "pose",
+    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "crab_bet", "ball", "ball_steal", "ball_event", "court_join", "court_ready", "court_leave", "court_score", "golf_done", "boat", "boat_take", "boat_leave", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "arcade_score", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
     "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
@@ -1236,6 +1232,8 @@ class Game:
             c.apose = None
             if prev == "beach":
                 self.boat_release(room, c.key)
+                for court in list(room.matches):
+                    self.court_drop(room, court, c.key)
         if prev == "arena" and scene != "arena":
             self.arena_leave(c)
         if prev == "race" and scene != "race":
@@ -1311,13 +1309,162 @@ class Game:
         except (KeyError, TypeError, ValueError):
             return
         st.update(id=bid, own=c.key, held=m.get("held") if isinstance(m.get("held"), str) else None)
+        cur = c.room.balls.get(bid)
+        # just stolen: the old holder's last few updates (still saying they've got it) don't count
+        if cur and cur.get("lock") and time.time() - cur["lock"][1] < 1.0 and c.key != cur["lock"][0]:
+            return
         c.room.balls[bid] = st
         c.room.broadcast({"t": "ball", **st}, scene="beach", exclude=c)
+
+    # ---- Coral Park pickup games: steals, blocks, and matches you ready up for -------------------
+
+    def on_ball_steal(self, c, m):
+        """Reach in for the ball someone's holding. Close enough and lucky: it's yours."""
+        if c.scene != "beach" or c.ax is None or not c.ready("steal", 1.1):
+            return
+        bid = str(m.get("id", ""))[:12]
+        room = c.room
+        b = room.balls.get(bid)
+        holder = b and b.get("held")
+        h = room.clients.get(holder) if holder else None
+        if not h or holder == c.key or h.ax is None or math.hypot(h.ax - c.ax, h.az - c.az) > 2.4:
+            return
+        match = room.matches.get(bid.split("-")[0])
+        if match and match["state"] == "live":
+            t = match["teams"]
+            if c.key not in t or holder not in t or t[c.key] == t[holder]:
+                return  # (no stealing from your own team, or from outside the game)
+        if random.random() < STEAL_CHANCE:
+            b.update(held=c.key, own=c.key, vx=0, vy=0, vz=0, lock=(c.key, time.time()))
+            room.broadcast({"t": "ball", **{k: v for k, v in b.items() if k != "lock"}, "steal": True}, scene="beach")
+            room.broadcast({"t": "ball_event", "kind": "steal", "by": c.key, "from": holder, "id": bid}, scene="beach")
+            self.reward(c, xp=2)
+        else:
+            room.broadcast({"t": "ball_event", "kind": "reach", "by": c.key, "from": holder, "id": bid}, scene="beach")
+
+    def on_ball_event(self, c, m):
+        """Blocks, tackles and throw-ins: the player's game works out the ball's new path and sends it
+        itself; this just tells everyone (for the banner and the crowd)."""
+        kind = m.get("kind")
+        if c.scene != "beach" or kind not in ("block", "out", "tackle") or not c.ready("bevent", 0.4):
+            return
+        c.room.broadcast({"t": "ball_event", "kind": kind, "by": c.key, "from": str(m.get("from", ""))[:24],
+                          "id": str(m.get("id", ""))[:12], "side": 1 if m.get("side") == 1 else 0}, scene="beach")
+        if kind == "block":
+            self.reward(c, xp=2)
+
+    def match_view(self, room, court):
+        mt = room.matches[court]
+        return {"t": "court_match", "court": court, "state": mt["state"], "teams": mt["teams"], "ready": sorted(mt["ready"]),
+                "s": mt["s"], "left": round(max(0.0, mt["ends"] - time.monotonic()), 1), "to": MATCH_COURTS[court]["to"],
+                "winner": mt.get("winner")}
+
+    def court_of(self, c, m):
+        court = str(m.get("court", ""))
+        if c.scene != "beach" or court not in MATCH_COURTS:
+            raise GameError("That's not a court.")
+        return c.room.matches.setdefault(court, {"state": "lobby", "teams": {}, "ready": set(), "s": [0, 0], "ends": 0.0, "id": 0}), court
+
+    def on_court_join(self, c, m):
+        mt, court = self.court_of(c, m)
+        if mt["state"] in ("countdown", "live"):
+            raise GameError("You can't switch sides mid-game." if c.key in mt["teams"] else "A game's on! Wait for the next one.")
+        side = 1 if m.get("side") == 1 else 0
+        if sum(1 for v in mt["teams"].values() if v == side) >= MATCH_COURTS[court]["max"] and mt["teams"].get(c.key) != side:
+            raise GameError("That side is full.")
+        for other in list(c.room.matches):  # (one game at a time)
+            if other != court:
+                self.court_drop(c.room, other, c.key)
+        mt["teams"][c.key] = side
+        mt["ready"].discard(c.key)
+        c.room.broadcast(self.match_view(c.room, court), scene="beach")
+
+    def on_court_leave(self, c, m):
+        for court in list(c.room.matches):
+            self.court_drop(c.room, court, c.key)
+
+    def court_drop(self, room, court, key):
+        mt = room.matches.get(court)
+        if not mt or key not in mt["teams"]:
+            return
+        mt["teams"].pop(key, None)
+        mt["ready"].discard(key)
+        if mt["state"] in ("countdown", "live") and len(set(mt["teams"].values())) < 2:
+            self.match_end(room, court, mt["id"], forfeit=True)
+        else:
+            room.broadcast(self.match_view(room, court), scene="beach")
+
+    def on_court_ready(self, c, m):
+        mt, court = self.court_of(c, m)
+        if c.key not in mt["teams"] or mt["state"] not in ("lobby", "over"):
+            return
+        mt["ready"] ^= {c.key}
+        teams = mt["teams"]
+        if len(set(teams.values())) == 2 and all(k in mt["ready"] for k in teams):
+            mt["id"] += 1
+            mt.update(state="countdown", s=[0, 0], winner=None, ends=time.monotonic() + 3)
+            asyncio.get_running_loop().call_later(3, self.match_go, c.room, court, mt["id"])
+        c.room.broadcast(self.match_view(c.room, court), scene="beach")
+
+    def match_go(self, room, court, token):
+        mt = room.matches.get(court)
+        if not mt or mt["id"] != token or mt["state"] != "countdown":
+            return
+        mt.update(state="live", ends=time.monotonic() + MATCH_COURTS[court]["time"])
+        room.broadcast(self.match_view(room, court), scene="beach")
+        asyncio.get_running_loop().call_later(MATCH_COURTS[court]["time"], self.match_end, room, court, token)
+
+    def match_end(self, room, court, token, forfeit=False):
+        mt = room.matches.get(court)
+        if not mt or mt["id"] != token or mt["state"] not in ("countdown", "live"):
+            return
+        s = mt["s"]
+        if forfeit:
+            winner = next(iter(mt["teams"].values()), None)
+        else:
+            winner = None if s[0] == s[1] else (0 if s[0] > s[1] else 1)
+        mt.update(state="over", winner=winner, ready=set())
+        mt["id"] += 1
+        for k, side in mt["teams"].items():
+            cl = room.clients.get(k)
+            if cl and side == winner and not forfeit:
+                self.reward(cl, coins=40, xp=25)
+        if winner is not None and not forfeit:
+            names = ", ".join(room.zone["players"][k]["name"] for k, v in mt["teams"].items() if v == winner)
+            sport = "🏀" if court.startswith("bb") else "⚽"
+            self.post_feed(room, f"{sport} {names} won {max(s)}–{min(s)} at Coral Park!")
+        room.broadcast(self.match_view(room, court), scene="beach")
+        mt["state"] = "lobby"
+
+    def on_golf_done(self, c, m):
+        """Holed out on the golf course: strokes for that hole (par pays best)."""
+        if c.scene != "beach" or not c.ready("golf", 3):
+            return
+        hole, strokes = int(num(m.get("hole", 0), 0, 8)), int(num(m.get("strokes", 9), 1, 20))
+        par = GOLF_PARS[hole] if hole < len(GOLF_PARS) else 3
+        under = par - strokes
+        coins = max(3, 12 + under * 10) if strokes < 10 else 2
+        self.reward(c, coins=coins, xp=5 + max(0, under) * 5)
+        c.ws.send({"t": "golf_result", "hole": hole, "strokes": strokes, "par": par, "coins": coins})
+        if strokes == 1:
+            self.post_feed(c.room, f"⛳ {c.player['name']} got a HOLE IN ONE at Coral Links!")
 
     def on_court_score(self, c, m):
         if c.scene != "beach" or not c.ready("score", 0.5):
             return
         court = str(m.get("court", ""))[:12]
+        mt = c.room.matches.get(court)
+        if mt and mt["teams"]:
+            # a match court with players signed up: points only count in a live game, for the scorer's team
+            if mt["state"] != "live" or c.key not in mt["teams"]:
+                return
+            side = mt["teams"][c.key] if court.startswith("bb") else (1 if m.get("side") == 1 else 0)
+            mt["s"][side] += int(num(m.get("pts", 1), 1, 3))
+            c.room.broadcast({"t": "court_score", "court": court, "s": mt["s"], "by": c.key, "pts": m.get("pts", 1)}, scene="beach")
+            c.room.broadcast(self.match_view(c.room, court), scene="beach")
+            if mt["s"][side] >= MATCH_COURTS[court]["to"]:
+                self.match_end(c.room, court, mt["id"])
+            return
         side = 1 if m.get("side") == 1 else 0
         pts = int(num(m.get("pts", 1), 1, 7))
         board = c.room.courts.setdefault(court, {"s": [0, 0], "at": 0})
@@ -3084,40 +3231,19 @@ class Game:
                 c.ws.send({"t": "doodle_close", "text": text})
             room.broadcast({"t": "doodle_msg", "k": c.key, "text": text}, scene="doodle")
 
-    # ---- Coral Cove: treasure digging and crab races ------------------------------------------
-    # Treasure is buried in the sand (everyone's metal detector hears the same spots); dig close enough
-    # to one and it's yours, and a new one gets buried somewhere else. Crab races run on a loop while
-    # anyone's at the beach: bet on a crab, watch them scuttle, 3.5x if yours wins.
+    # ---- Coral Cove: crab races ------------------------------------------
+    # Crab races run on a loop while anyone's at the beach: bet on a crab, watch them scuttle, 3.5x if yours wins.
 
     def beach_join(self, c):
         room = c.room
-        c.ws.send({"t": "beach", "treasure": room.treasure, "balls": list(room.balls.values()),
+        for court in room.matches:
+            c.ws.send(self.match_view(room, court))
+        c.ws.send({"t": "beach", "balls": [{k: v for k, v in b.items() if k != "lock"} for b in room.balls.values()],
                    "courts": {k: v["s"] for k, v in room.courts.items()}, "boats": room.boats})
         if room.crabs["state"] == "idle":
             self.crab_round(room, room.crabs["id"])
         else:
             c.ws.send(self.crab_view(room))
-
-    def on_beach_dig(self, c, m):
-        if c.scene != "beach" or c.ax is None or not c.ready("dig", 1.2):
-            return
-        room = c.room
-        # dig where the server last saw you, not where the client claims
-        best = min(range(len(room.treasure)), key=lambda i: math.hypot(room.treasure[i]["x"] - c.ax, room.treasure[i]["z"] - c.az))
-        t = room.treasure[best]
-        d = math.hypot(t["x"] - c.ax, t["z"] - c.az)
-        room.broadcast({"t": "beach_hole", "x": round(c.ax, 1), "z": round(c.az, 1)}, scene="beach", exclude=c)
-        if d > 2.6:
-            c.ws.send({"t": "dig_result", "found": False, "x": round(c.ax, 1), "z": round(c.az, 1)})
-            return
-        roll = random.random()
-        kind, coins = ("chest", random.randint(350, 600)) if roll < 0.06 else ("pearl", random.randint(120, 220)) if roll < 0.28 else ("coins", random.randint(25, 80))
-        self.reward(c, coins=coins, xp=6, treasures=1)
-        room.treasure[best] = beach_spot()
-        c.ws.send({"t": "dig_result", "found": True, "kind": kind, "coins": coins, "x": t["x"], "z": t["z"]})
-        room.broadcast({"t": "treasure", "treasure": room.treasure}, scene="beach")
-        if kind == "chest":
-            self.post_feed(room, f"🏴‍☠️ {c.player['name']} dug up a treasure chest at Coral Cove! (+{coins} coins)")
 
     def crab_view(self, room):
         r = room.crabs

@@ -1395,3 +1395,17 @@ html.touch .modal-box.arc-modal { overflow: hidden; }
 .playland-game { padding: 18px 10px; border-radius: 14px; border: 3px solid var(--c); background: #0d1f4a; color: #fff; font: 18px var(--pixel); cursor: pointer; box-shadow: 0 0 18px color-mix(in srgb, var(--c) 40%, transparent); }
 .playland-game:hover { transform: translateY(-2px); }
 html.touch .beach-ctx { bottom: 150px; }
+
+/* Coral Cove is a town: its own clock, place and map like the town's HUD */
+.area.is-town .tips-tab { right: 264px; }
+.court-panel { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; text-align: center; }
+.ct-title { font: 20px var(--pixel); color: #ffd27a; }
+.ct-win { font-weight: 800; }
+.ct-teams { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ct-teams > div { border: 2px solid var(--c); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.ct-teams > div > b { color: var(--c); font: 16px var(--pixel); }
+.ct-teams ul { list-style: none; margin: 0; padding: 0; font-size: 13px; text-align: left; min-height: 20px; }
+.ct-live { display: flex; justify-content: space-between; align-items: center; font: 22px var(--pixel); gap: 12px; }
+.ct-live span { font: 16px var(--body); color: #fff; }
+.golf-panel { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); padding: 6px 14px; font-size: 14px; }
+html.touch .court-panel { top: 58px; zoom: .8; }

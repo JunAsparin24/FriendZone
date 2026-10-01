@@ -58,7 +58,7 @@ class Stage {
     this.promptEl = el.querySelector('.area-prompt');
     this.bannerEl = el.querySelector('.area-banner');
     this.fade = el.querySelector('.area-fade');
-    el.querySelector('.area-exit').onclick = () => this.onExit?.();
+    el.querySelector('.area-exit').onclick = () => (this.town ? window.dispatchEvent(new CustomEvent('fz:lobby')) : this.onExit?.());
 
     const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: settings.quality !== 'low', powerPreference: settings.quality === 'low' ? 'default' : 'high-performance' });
     watchContext(this.canvas);
@@ -220,6 +220,13 @@ class Stage {
     };
     this.raf = requestAnimationFrame(frame);
     sfx('enter');
+  }
+
+  /** A town (Coral Cove) rather than a place you pop into: the corner button goes to the lobby. */
+  setTown(on) {
+    this.town = on;
+    this.el.querySelector('.area-exit').textContent = on ? '← Lobby' : '← Leave';
+    this.el.classList.toggle('is-town', on);
   }
 
   close() {

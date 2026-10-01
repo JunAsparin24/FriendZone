@@ -8,7 +8,7 @@ import { S } from '../../state.js';
 import { toon, shiny, basic, TAU } from '../../three/materials.js';
 import { letterSign } from '../../three/signs3d.js';
 import { add, box, cyl, sph, group, plank, stripeMat } from './common.js';
-import { DOCK, DOCK2, DOCK_Y } from './pier.js';
+import { DOCK, DOCK2, DOCK_Y, PIER_DX } from './pier.js';
 
 export const BOAT_TYPES = {
   jetski: { name: 'Jet Ski', speed: 26, accel: 14, turn: 1.9, seats: [[0, 0.65, -0.1], [0, 0.65, -0.9]], len: 3, beam: 1.2 },
@@ -91,7 +91,7 @@ export class Boats {
       const wake = add(g, new THREE.PlaneGeometry(t.beam * 1.4, t.len * 1.6), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, depthWrite: false }), { p: [0, 0.08, -t.len * 0.9], r: [-Math.PI / 2, 0, 0], cast: false });
       // moored in two rows along the outside of the marina dock, noses out to sea
       const row = i % 2, slot = Math.floor(i / 2);
-      const x = DOCK2.x0 - 3 - t.beam / 2 - row * 9, z = DOCK2.z0 + 6 + slot * 13;
+      const x = DOCK2.x0 + PIER_DX - 3 - t.beam / 2 - row * 9, z = DOCK2.z0 + 6 + slot * 13;
       const b = { id, type, t, g, hull, wake, x, z, h: 0, v: 0, driver: null, homeX: x, homeZ: z, sent: 0, tx: null, tz: null, th: null };
       this.boats.set(id, b);
     });
@@ -139,7 +139,7 @@ export class Boats {
     // step onto the dock if it's right there, otherwise into the sea beside the boat
     const b = r.b;
     for (const D of [DOCK2, DOCK]) {
-      const dockX = Math.min(Math.max(b.x, D.x0 + 1), D.x1 - 1), dockZ = Math.min(Math.max(b.z, D.z0 + 1), D.z1 - 1);
+      const dockX = Math.min(Math.max(b.x, D.x0 + PIER_DX + 1), D.x1 + PIER_DX - 1), dockZ = Math.min(Math.max(b.z, D.z0 + 1), D.z1 - 1);
       if (Math.hypot(dockX - b.x, dockZ - b.z) < b.t.beam + 12) return { x: dockX, z: dockZ };
     }
     return { x: b.x + Math.cos(b.h) * (b.t.beam / 2 + 1.2), z: b.z - Math.sin(b.h) * (b.t.beam / 2 + 1.2) };

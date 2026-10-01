@@ -1,6 +1,7 @@
 // Building blocks shared by the Coral Cove modules (the beach, the pier, the park, the boats).
 import * as THREE from 'three';
 import { toon, basic, canvasTexture, outlineMaterial, glowTexture } from '../../three/materials.js';
+import { lampParts } from '../../three/town.js';
 
 export const OUT = outlineMaterial(0.04);
 
@@ -99,16 +100,23 @@ export function nightLights() {
     windows: [],
   };
 }
-/** A street lamp at (x, z) on the given lights. */
-export function lamp(parent, lights, x, z, { y = 0, h = 4, color = '#2b2f4a', glow } = {}) {
-  add(parent, cyl(0.1, 0.14, h, 8), toon(color), { p: [x, y + h / 2, z] });
-  add(parent, sph(0.35), lights.lanternMat, { p: [x, y + h + 0.2, z], cast: false });
-  const halo = new THREE.Sprite(lights.haloMat);
-  halo.scale.setScalar(glow ?? 3);
-  halo.position.set(x, y + h + 0.2, z);
-  parent.add(halo);
-  const pool = add(parent, new THREE.CircleGeometry(2.6, 20), lights.poolMat, { p: [x, y + 0.06, z], r: [-Math.PI / 2, 0, 0], cast: false });
-  pool.renderOrder = 1;
+/** A street lamp at (x, z) like the town's: an iron post with a curled arm and a hanging lantern.
+ *  ry turns it (the lantern hangs out towards +z when ry is 0). Lamps are instanced: call flushLamps() once. */
+const lampList = [];
+export function lamp(parent, lights, x, z, { y = 0, ry = 0 } = {}) {
+  lampList.push({ parent, lights, m: new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(1, 1, 1)) });
+}
+export function flushLamps() {
+  const { iron, glass } = lampParts();
+  const byParent = new Map();
+  for (const l of lampList) { if (!byParent.has(l.parent)) byParent.set(l.parent, []); byParent.get(l.parent).push(l); }
+  for (const [parent, list] of byParent) {
+    const a = new THREE.InstancedMesh(iron, toon('#2b2f4a'), list.length), b = new THREE.InstancedMesh(glass, list[0].lights.lanternMat, list.length);
+    list.forEach((l, i) => { a.setMatrixAt(i, l.m); b.setMatrixAt(i, l.m); });
+    a.castShadow = true;
+    parent.add(a, b);
+  }
+  lampList.length = 0;
 }
 /** A window that glows at night. */
 export function windowMat(lights, color = '#9fd6ff') {

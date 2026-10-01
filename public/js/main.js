@@ -304,7 +304,12 @@ $('#playBtn').onclick = () => {
   sfx('enter');
   show('world');
   world.start();
+  // you were in Coral Cove last time: back you go
+  let town = null;
+  try { town = localStorage.getItem('fz.town'); } catch { /* private mode */ }
+  if (town === 'cove') setTimeout(() => openActivity('portal'), 300);
 };
+window.addEventListener('fz:lobby', () => $('#backLobby').click());
 
 $('#switchZone').onclick = () => leaveZone();
 $('#quitZone').onclick = () => { $('#quitConfirm').classList.remove('hidden'); $('#quitConfirm').scrollIntoView({ behavior: 'smooth', block: 'center' }); };

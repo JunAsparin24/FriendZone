@@ -45,7 +45,7 @@ function instances(geo, mat, list, cast = true) {
 }
 
 // ---- street lamps: an old-fashioned iron post with a curled arm and a hanging lantern -------------
-function lampParts() {
+export function lampParts() {
   // post: base -> fluted post -> collar -> top finial at y 4.0
   const iron = [];
   iron.push({ geo: new THREE.CylinderGeometry(0.34, 0.42, 0.3, 8), matrix: at(0, 0.15, 0) });

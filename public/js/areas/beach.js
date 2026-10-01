@@ -1,7 +1,7 @@
 // Coral Cove: the beach town through the portal. A long sandy beach on the sea, a boardwalk of beach
 // huts, Coral Park's courts and fields on the grass behind it, and Coral Pier, a big LA-style pier
 // with shops, rides and a fishing platform. Boats and jet skis at the marina, swimming in the sea,
-// treasure in the sand, crab races and Surf Rush. Day and night and the weather match the town's.
+// crab races, golf, pickup games and Surf Rush. Day and night and the weather match the town's.
 import * as THREE from 'three';
 import { net } from '../net.js';
 import { S, fmt, esc, toast, me } from '../state.js';
@@ -17,24 +17,32 @@ import { Fishing } from '../games/fishing.js';
 import { sfx, ambient } from '../sfx.js';
 import { listen, onKeys } from '../games/util.js';
 import { touch, setTouchButtons } from '../touch.js';
-import { add, box, cyl, sph, group, merge, tf, instanced, plank, stripeMat, nightLights, lamp, windowMat, seeded } from './beach/common.js';
-import { buildPier, pierHeight, onPierFootprint, PIER_Y } from './beach/pier.js';
-import { buildPark, Balls, COURTS } from './beach/park.js';
+import { add, box, cyl, sph, group, merge, tf, instanced, plank, stripeMat, nightLights, lamp, flushLamps, windowMat, seeded } from './beach/common.js';
+import { buildPier, pierHeight, onPierFootprint, PIER_Y, PIER_DX } from './beach/pier.js';
+import { buildPark, Balls, Golf, COURTS, HOLES, PONDS } from './beach/park.js';
+import { timeOfDay } from '../three/daynight.js';
 import { Boats } from './beach/boats.js';
 
 // the walkable area (world units); the sea is to the south (+z)
-const X0 = -230, X1 = 230, Z0 = -165, Z1 = 215;
+const X0 = -172, X1 = 172, Z0 = -150, Z1 = 215;
 const SWIM_MAX = 175; // the buoy line: as far out as you can swim
 export const shoreZ = (x) => 62 + Math.sin(x / 23) * 4 + Math.sin(x / 9 + 1) * 1.6;
-const CRAB_TRACK = { x0: 44, x1: 96, z: 16 };
+const CRAB_TRACK = { x0: 18, x1: 66, z: 16 };
 const CRAB_COLORS = ['#e0463c', '#ff9f43', '#3b82f6', '#9b59ff'];
-const PORTAL = { x: 0, z: -140 };
+const PORTAL = { x: 0, z: -128 };
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 /** In the sea (and not up on the pier or the dock)? */
 const inSea = (x, z) => z > shoreZ(x) && pierHeight(x, z) == null;
 /** What you stand on here: the pier/dock's height, else the ground (the sea floor counts as 0 for walking). */
-const floorAt = (x, z) => pierHeight(x, z) ?? 0;
+const floorAt = (x, z) => pierHeight(x, z) ?? walkHeight(x, z);
+/** The wooden walks you stand on top of: the boardwalk, the walk up to the portal, and the portal plaza. */
+function walkHeight(x, z) {
+  if (Math.hypot(x - PORTAL.x, z - PORTAL.z) < 14.2) return 0.3;
+  if (Math.abs(x) < 3.5 && z > PORTAL.z + 10 && z < -18) return 0.22;
+  if (z > -18.5 && z < -11.5 && Math.abs(x) < 172) return 0.2;
+  return 0;
+}
 
 // ---- textures --------------------------------------------------------------------------------------------
 const sandTex = canvasTexture(256, 256, (c) => {
@@ -140,14 +148,14 @@ function buildBeach() {
   }
 
   // ---- the boardwalk along the top of the beach, and the walk up to the portal
-  add(g, box(7, 0.2, 118), plank(2, 36), { p: [0, 0.12, -77], cast: false });
-  add(g, box(460, 0.2, 7), plank(140, 2), { p: [0, 0.1, -15], cast: false });
-  for (let x = -224; x <= 224; x += 8) if (!onPierFootprint(x, -15, 2)) for (const z of [-18.6, -11.4]) add(g, cyl(0.12, 0.12, 1, 6), toon('#8b5a2b'), { p: [x, 0.5, z] });
-  for (let x = -210; x <= 210; x += 28) for (const z of [-19.5, -10.5]) { const lx = x + (z > -15 ? 14 : 0); if (!onPierFootprint(lx, z, 4)) lamp(g, lights, lx, z); }
-  for (let z = -120; z <= -30; z += 18) for (const x of [-4.5, 4.5]) lamp(g, lights, x, z);
+  add(g, box(7, 0.22, -18 - (PORTAL.z + 10)), plank(2, 32), { p: [0, 0.11, (PORTAL.z + 10 - 18) / 2], cast: false });
+  add(g, box(344, 0.2, 7), plank(104, 2), { p: [0, 0.1, -15], cast: false });
+  for (let x = -168; x <= 168; x += 8) if (!onPierFootprint(x, -15, 2) && Math.abs(x) > 5) for (const z of [-18.6, -11.4]) add(g, cyl(0.12, 0.12, 1, 6), toon('#8b5a2b'), { p: [x, 0.5, z] });
+  for (let x = -160; x <= 160; x += 32) for (const z of [-19.2, -10.8]) { const lx = x + (z > -15 ? 16 : 0); if (!onPierFootprint(lx, z, 4) && Math.abs(lx) > 6) lamp(g, lights, lx, z, { y: 0.2, ry: z > -15 ? Math.PI : 0 }); }
+  for (let z = PORTAL.z + 20; z <= -30; z += 20) { lamp(g, lights, -4.4, z, { ry: Math.PI / 2 }); lamp(g, lights, 4.4, z + 10, { ry: -Math.PI / 2 }); }
   // paths over to the courts and the football field
-  add(g, box(200, 0.14, 5), toon('#d8d2c4'), { p: [-100, 0.08, -60], cast: false });
-  add(g, box(150, 0.14, 5), toon('#d8d2c4'), { p: [75, 0.08, -60], cast: false });
+  add(g, box(150, 0.14, 4.5), toon('#d8d2c4'), { p: [-78, 0.06, -42], cast: false });
+  add(g, box(150, 0.14, 4.5), toon('#d8d2c4'), { p: [78, 0.06, -42], cast: false });
 
   // ---- the portal home: a mosaic plaza with a great arch, flaming braziers and orbiting crystals
   const portal = group(g, PORTAL.x, 0, PORTAL.z);
@@ -209,7 +217,7 @@ function buildBeach() {
   spots.portal = { x: PORTAL.x, z: PORTAL.z - 1, spawn: PORTAL.z + 17 };
 
   // ---- the welcome sign: off to the side of the walk, angled towards you as you arrive
-  const welcome = group(g, 16, 0, -104, Math.PI + 0.55);
+  const welcome = group(g, 14, 0, -92, Math.PI + 0.55);
   for (const sx of [-1, 1]) add(welcome, cyl(0.25, 0.3, 5, 8), toon('#8b5a2b'), { p: [sx * 6.5, 2.5, 0], outline: true });
   add(welcome, box(14, 3, 0.4), plank(5, 1), { p: [0, 3.8, -0.3], outline: true });
   const ws = letterSign('Coral Cove', { font: 'script', even: false, w: 11.5, h: 2, face: '#ffffff', side: '#ff7a59', depth: 0.3 });
@@ -218,13 +226,13 @@ function buildBeach() {
   for (let i = 0; i < 6; i++) add(welcome, sph(0.4), toon(['#ff7aa8', '#ffd84d', '#6ee7c0'][i % 3]), { p: [-6 + i * 2.4, 5.5, 0], s: [1, 0.5, 1] });
   add(welcome, cyl(1.6, 1.8, 0.6, 12), toon('#c9a472'), { p: [0, 0.3, 0.6], s: [4.5, 1, 0.8], outline: true });
   for (let k = 0; k < 9; k++) add(welcome, sph(0.3, 8, 6), toon(['#ff5d73', '#ffd84d', '#ff9fc7'][k % 3]), { p: [-6 + k * 1.5, 0.7, 0.9] });
-  solids.push({ x: 16, z: -104, w: 14, d: 3 });
+  solids.push({ x: 14, z: -92, w: 12, d: 3 });
 
   // ---- beach huts along the north side of the boardwalk (their windows light up at night)
   const hutCols = ['#ff7aa8', '#6ee7c0', '#ffd84d', '#7cc0ff', '#ff9f43', '#c59bff', '#ffffff'];
   const huts = [];
-  for (let x = -208; x <= 208; x += 9) {
-    if (Math.abs(x) < 16 || (x > 40 && x < 70) || (x < -45 && x > -75) || onPierFootprint(x, -24, 8) || Math.abs(x + 95) < 10) continue;
+  for (let x = -164; x <= 164; x += 9) {
+    if (Math.abs(x) < 12 || (x > 46 && x < 66) || (x < -46 && x > -66) || onPierFootprint(x, -24, 8) || Math.abs(x + 76) < 9) continue;
     huts.push({ x, z: -24.5, color: hutCols[Math.abs(Math.round(x / 9)) % hutCols.length] });
   }
   instanced(g, box(6, 4.2, 5).translate(0, 2.1, 0), toon('#ffffff'), huts);
@@ -250,11 +258,12 @@ function buildBeach() {
     leafParts.push(tf(leaf, { p: crownTop }));
   }
   const palms = [];
-  const clearOf = (x, z, pad) => !onPierFootprint(x, z, pad) && !COURTS.some((c) => Math.abs(x - c.x) < c.w / 2 + pad + 4 && Math.abs(z - c.z) < c.d / 2 + pad + 6) && Math.hypot(x - PORTAL.x, z - PORTAL.z) > 18 && Math.abs(x) > 8 && Math.abs(z + 60) > 4;
+  const onGolf = (x, z) => HOLES.some((h) => { const [tx, tz] = h.tee, [cx, cz] = h.cup; const L = Math.hypot(cx - tx, cz - tz), u = Math.max(0, Math.min(1, ((x - tx) * (cx - tx) + (z - tz) * (cz - tz)) / (L * L))); return Math.hypot(x - tx - u * (cx - tx), z - tz - u * (cz - tz)) < 10; }) || PONDS.some((pd) => Math.hypot(x - pd.x, z - pd.z) < pd.r + 2);
+  const clearOf = (x, z, pad) => !onPierFootprint(x, z, pad) && !COURTS.some((c) => Math.abs(x - c.x) < c.w / 2 + pad + 4 && Math.abs(z - c.z) < c.d / 2 + pad + 6) && Math.hypot(x - PORTAL.x, z - PORTAL.z) > 18 && Math.abs(x) > 8 && Math.abs(z + 42) > 4 && !onGolf(x, z);
   const palmAt = (x, z, s = sr(0.85, 1.25)) => { if (!clearOf(x, z, 2)) return; palms.push({ x, z, s, ry: sr(0, TAU) }); solids.push({ x, z, r: 0.6 * s }); };
-  for (let x = -214; x <= 214; x += 14) palmAt(x + sr(-2, 2), -7.5 + sr(-1, 1));
-  for (let i = 0; i < 70; i++) palmAt(sr(-224, 224), sr(-160, -34));
-  for (let i = 0; i < 16; i++) { const x = sr(-215, 215); if (!(x > 30 && x < 110)) palmAt(x, sr(20, 32)); }
+  for (let x = -166; x <= 166; x += 14) palmAt(x + sr(-2, 2), -7.5 + sr(-1, 1));
+  for (let i = 0; i < 70; i++) palmAt(sr(-170, 170), sr(-148, -34));
+  for (let i = 0; i < 12; i++) { const x = sr(-165, 165); if (!(x > 10 && x < 75) && !(x > -115 && x < -80)) palmAt(x, sr(20, 32)); }
   for (const [x, z] of places) { palms.push({ x, z, s: 0.8, ry: sr(0, TAU) }); solids.push({ x, z, r: 1.1 }); }
   instanced(g, merge(trunkParts), toon('#a8743f'), palms);
   instanced(g, merge(leafParts), withWind(toon('#3fae4f', { side: THREE.DoubleSide }), 0.09, 4), palms, { outline: false });
@@ -262,17 +271,17 @@ function buildBeach() {
   instanced(g, cyl(1.1, 0.9, 1, 12), toon('#c9a472'), places.map(([x, z]) => ({ x, y: 0.5, z })));
   // beach grass on the dunes, and grass in the park (both bend in the wind)
   const tufts = [];
-  for (let i = 0; i < 900; i++) { const x = sr(-225, 225), z = sr(-34, -2); if (!onPierFootprint(x, z, 1) && Math.abs(x) > 5 && Math.abs(z + 15) > 4) tufts.push({ x, z, ry: sr(0, TAU), s: sr(0.7, 1.4), color: '#8fbf5a' }); }
-  for (let i = 0; i < 2600; i++) { const x = sr(-228, 228), z = sr(-163, -34); if (clearOf(x, z, 0) && Math.abs(x) > 6) tufts.push({ x, z, ry: sr(0, TAU), s: sr(0.6, 1.1), color: ['#5aa84a', '#4f9e47', '#6cbc5a'][i % 3] }); }
+  for (let i = 0; i < 700; i++) { const x = sr(-170, 170), z = sr(-34, -2); if (!onPierFootprint(x, z, 1) && Math.abs(x) > 5 && Math.abs(z + 15) > 4) tufts.push({ x, z, ry: sr(0, TAU), s: sr(0.7, 1.4), color: '#8fbf5a' }); }
+  for (let i = 0; i < 2200; i++) { const x = sr(-172, 172), z = sr(-150, -34); if (clearOf(x, z, 0) && Math.abs(x) > 6) tufts.push({ x, z, ry: sr(0, TAU), s: sr(0.6, 1.1), color: ['#5aa84a', '#4f9e47', '#6cbc5a'][i % 3] }); }
   const blade = merge([0, 1, 2].map((i) => tf(new THREE.ConeGeometry(0.05, 0.6 + i * 0.12, 3), { p: [(i - 1) * 0.07, (0.6 + i * 0.12) / 2, 0], r: [0, 0, (i - 1) * 0.35] })));
   instanced(g, blade, withWind(toon('#ffffff'), 0.35, 0.05), tufts, { outline: false, cast: false });
 
   // ---- umbrellas (flapping a little in the wind) and towels on the sand
   const umbCols = ['#ff5d73', '#ffd84d', '#39c6ff', '#6ee7a0', '#ff9f43', '#c59bff'];
   const umbs = [];
-  for (let i = 0; i < 60; i++) {
-    const x = sr(-210, 210), z = sr(6, 52);
-    if ((x > 35 && x < 105 && z < 32) || (x > -85 && x < -45 && z < 18) || onPierFootprint(x, z, 6) || (x > -135 && x < -105 && z > 20 && z < 40) || (x > -40 && x < -18 && z > 28 && z < 44) || (x > 8 && x < 20 && z > 38)) continue;
+  for (let i = 0; i < 46; i++) {
+    const x = sr(-165, 165), z = sr(6, 52);
+    if ((x > 6 && x < 75 && z < 32) || (x > -85 && x < -45 && z < 18) || onPierFootprint(x, z, 6) || (x > -112 && x < -80 && z > 20 && z < 40) || (x > 30 && x < 42 && z > 38)) continue;
     umbs.push({ x, z, color: umbCols[i % umbCols.length], ry: sr(0, TAU), rz: sr(-0.15, 0.15) });
   }
   instanced(g, cyl(0.06, 0.06, 3.2, 6).translate(0, 1.6, 0), toon('#ffffff'), umbs.map((u) => ({ ...u, color: '#f4f0ea' })), { outline: false });
@@ -324,38 +333,25 @@ function buildBeach() {
     cg.add(num);
     return cg;
   });
-  const booth = group(g, 38, 0, 8, Math.PI);
+  const booth = group(g, 12, 0, 8, Math.PI);
   add(booth, box(4, 2.2, 3), toon('#ffffff'), { p: [0, 1.1, 0], outline: true });
   add(booth, box(4.6, 0.2, 3.6), stripeMat('#e0463c', '#ffffff', 1), { p: [0, 2.9, 0.3], r: [0.2, 0, 0], outline: true });
   for (const sx of [-1, 1]) add(booth, cyl(0.08, 0.08, 2.8, 6), toon('#ffffff'), { p: [sx * 2.1, 1.4, 1.9] });
   const crabSign = letterSign('CRAB RACES', { font: 'chunky', w: 5.5, h: 0.9, face: '#ffffff', side: '#e0463c', depth: 0.2 });
   crabSign.position.set(0, 3.6, 0);
   booth.add(crabSign);
-  solids.push({ x: 38, z: 8, w: 4.4, d: 3.4 });
-  spots.crabs = { x: 38, z: 4.5 };
+  solids.push({ x: 12, z: 8, w: 4.4, d: 3.4 });
+  spots.crabs = { x: 12, z: 4.5 };
 
-  // ---- treasure hut (its pirate flag flies in the wind)
-  const dig = group(g, -28, 0, 36, Math.PI);
-  add(dig, box(5, 3, 4), plank(2, 1), { p: [0, 1.5, 0], outline: true });
-  add(dig, new THREE.ConeGeometry(4.2, 2, 4), toon('#6b4226'), { p: [0, 4, 0], r: [0, Math.PI / 4, 0], s: [1, 1, 0.85], outline: true });
-  add(dig, box(1.5, 1, 1), toon('#8b5a2b'), { p: [3.4, 0.5, 1.2], outline: true });
-  add(dig, box(1.6, 0.35, 1.1), shiny('#ffc53d'), { p: [3.4, 1.15, 1.2] });
-  const flagPole = add(dig, cyl(0.05, 0.05, 4, 6), toon('#2b2f4a'), { p: [0, 6, 0] });
   const flag = (parent, w, h, color, p) => {
     const f = add(parent, new THREE.PlaneGeometry(w, h, 6, 2).translate(w / 2, 0, 0), toon(color, { side: THREE.DoubleSide }), { p });
     const base = Float32Array.from(f.geometry.attributes.position.array);
     anim.push((t) => { const pp = f.geometry.attributes.position, ws2 = wind.strength.value; for (let i = 0; i < pp.count; i++) { const x = base[i * 3]; pp.setZ(i, Math.sin(t * (5 + ws2 * 2) - x * 4) * 0.09 * x * ws2); } pp.needsUpdate = true; });
     return f;
   };
-  flag(flagPole, 1.4, 0.9, '#1d1b2e', [0, 1.4, 0]);
-  const digSign = letterSign('TREASURE', { font: 'medieval', w: 5, h: 0.9, face: '#ffd84d', side: '#6b4226', depth: 0.2 });
-  digSign.position.set(0, 3.1, 2.05);
-  dig.add(digSign);
-  solids.push({ x: -28, z: 36, w: 5.4, d: 4.4 });
-  spots.dig = { x: -28, z: 32 };
 
   // ---- lifeguard tower and sandcastles
-  const lg = group(g, 14, 0, 44);
+  const lg = group(g, 36, 0, 44);
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(lg, cyl(0.12, 0.12, 3.2, 6), toon('#ffffff'), { p: [sx * 1.1, 1.6, sz * 1.1] });
   add(lg, box(3, 2, 3), toon('#e0463c'), { p: [0, 4.2, 0], outline: true });
   add(lg, box(3.6, 0.2, 3.6), toon('#ffffff'), { p: [0, 5.3, 0], outline: true });
@@ -363,8 +359,8 @@ function buildBeach() {
   add(lg, box(1, 0.1, 3), plank(1, 2), { p: [0, 1.4, 2.4], r: [0.8, 0, 0] });
   const lgPole = add(lg, cyl(0.04, 0.04, 2.4, 6), toon('#ffffff'), { p: [1.4, 6.4, -1.4] });
   flag(lgPole, 1, 0.6, '#ffd84d', [0, 0.8, 0]);
-  solids.push({ x: 14, z: 44, w: 2.8, d: 2.8 });
-  for (const [x, z] of [[-60, 42], [26, 22], [-180, 26], [190, 34], [-160, 46]]) {
+  solids.push({ x: 36, z: 44, w: 2.8, d: 2.8 });
+  for (const [x, z] of [[-60, 42], [-12, 30], [-140, 26], [150, 34], [-130, 46]]) {
     const cg = group(g, x, 0, z);
     const s = toon('#e6c27a');
     add(cg, cyl(1.2, 1.4, 0.8, 10), s, { p: [0, 0.4, 0], outline: true });
@@ -376,11 +372,11 @@ function buildBeach() {
   }
   // shells, starfish and rocks
   const shellCols = ['#ffd6e0', '#ffe9c4', '#ffffff', '#ffb38a'];
-  instanced(g, sph(0.18, 8, 5).scale(1, 0.35, 0.8), toon('#ffffff'), Array.from({ length: 110 }, (_, i) => ({ x: sr(-215, 215), z: sr(0, 60), y: 0.05, ry: sr(0, TAU), s: sr(0.7, 1.3), color: shellCols[i % 4] })), { outline: false, cast: false });
+  instanced(g, sph(0.18, 8, 5).scale(1, 0.35, 0.8), toon('#ffffff'), Array.from({ length: 80 }, (_, i) => ({ x: sr(-165, 165), z: sr(0, 60), y: 0.05, ry: sr(0, TAU), s: sr(0.7, 1.3), color: shellCols[i % 4] })), { outline: false, cast: false });
   const starShape = new THREE.Shape();
   for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU, rr = i % 2 ? 0.12 : 0.34; starShape[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); }
-  instanced(g, tf(new THREE.ExtrudeGeometry(starShape, { depth: 0.05, bevelEnabled: false }), { r: [-Math.PI / 2, 0, 0], p: [0, 0.03, 0] }), toon('#ffffff'), Array.from({ length: 40 }, (_, i) => ({ x: sr(-215, 215), z: sr(10, 62), ry: sr(0, TAU), color: ['#ff7a59', '#ff5fa8', '#ffb347'][i % 3] })), { outline: false, cast: false });
-  instanced(g, new THREE.DodecahedronGeometry(1, 0), toon('#9a93a8'), [[-214, 58], [-205, 61], [-190, 66], [212, 60], [203, 64], [-60, 70], [-10, 72], [-150, 69], [60, 72]].map(([x, z], i) => ({ x, z, y: 0.2, s: 1.2 + (i % 3) * 0.6, ry: i })));
+  instanced(g, tf(new THREE.ExtrudeGeometry(starShape, { depth: 0.05, bevelEnabled: false }), { r: [-Math.PI / 2, 0, 0], p: [0, 0.03, 0] }), toon('#ffffff'), Array.from({ length: 30 }, (_, i) => ({ x: sr(-165, 165), z: sr(10, 62), ry: sr(0, TAU), color: ['#ff7a59', '#ff5fa8', '#ffb347'][i % 3] })), { outline: false, cast: false });
+  instanced(g, new THREE.DodecahedronGeometry(1, 0), toon('#9a93a8'), [[-168, 58], [-160, 61], [-150, 66], [168, 62], [160, 64], [-60, 70], [-10, 72], [-120, 69], [40, 72]].map(([x, z], i) => ({ x, z, y: 0.2, s: 1.2 + (i % 3) * 0.6, ry: i })));
 
   // ---- tiki bar and ice cream stand on the boardwalk
   const tiki = group(g, -56, 0, -27);
@@ -410,7 +406,7 @@ function buildBeach() {
     const gg = group(g);
     add(gg, sph(0.25, 8, 6), toon('#ffffff'), { s: [1.6, 0.8, 0.8], cast: false });
     const wings = [-1, 1].map((s) => add(gg, box(0.1, 0.04, 1.1), toon('#e8e8f0'), { p: [0, 0, s * 0.55], cast: false }));
-    const q = { cx: sr(-180, 220), cz: sr(0, 140), r: sr(8, 22), h: sr(12, 22), sp: sr(0.3, 0.6), ph: sr(0, TAU) };
+    const q = { cx: sr(-140, 160), cz: sr(0, 140), r: sr(8, 22), h: sr(12, 22), sp: sr(0.3, 0.6), ph: sr(0, TAU) };
     anim.push((t) => {
       const a = t * q.sp + q.ph;
       gg.position.set(q.cx + Math.cos(a) * q.r + Math.sin(t * 0.1) * 6 * wind.strength.value, q.h + Math.sin(t * 0.7 + q.ph) * 1.5, q.cz + Math.sin(a) * q.r);
@@ -423,6 +419,7 @@ function buildBeach() {
   const pierSpots = [];
   buildPier(g, { anim, lights, solids, spots: pierSpots });
   const park = buildPark(g, { anim, lights, solids, spots: [] });
+  flushLamps();
 
   return { group: g, anim, solids, spots, pierSpots, park, crabs, seaMat, sky, sunGlow, lights };
 }
@@ -537,14 +534,30 @@ function crabPanel(body, getState) {
   return () => clearInterval(iv);
 }
 
-/** Playland: pick any arcade game to play right here on the pier. */
-function playlandPanel(body) {
-  let off = null;
-  const games = [...ARCADE_GAMES, { id: 'surf', name: 'Surf Rush', color: '#39c6ff' }];
-  body.innerHTML = `<h2>🕹️ Playland</h2><p class="muted small">Every cabinet from the town's arcade, out on the pier.</p>
-    <div class="playland">${games.map((gm) => `<button class="playland-game" data-g="${gm.id}" style="--c:${gm.color}">${esc(gm.name)}</button>`).join('')}</div>`;
-  body.addEventListener('click', (e) => { const b = e.target.closest('[data-g]'); if (b && !off) off = arcadeCabinet(body, b.dataset.g); });
-  return () => off?.();
+// ---- the minimap: Coral Cove from above, with everyone on it ----------------------------------------------------
+function coveMap() {
+  const W = 344, H = 365; // world: x -172..172, z -150..215
+  const base = document.createElement('canvas');
+  base.width = W; base.height = H;
+  const c = base.getContext('2d');
+  const X = (x) => x + 172, Z = (z) => z + 150;
+  c.fillStyle = '#7cc46a'; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#f2d9a0';
+  c.beginPath(); c.moveTo(0, Z(-30)); for (let x = -172; x <= 172; x += 4) c.lineTo(X(x), Z(-30)); for (let x = 172; x >= -172; x -= 4) c.lineTo(X(x), Z(shoreZ(x))); c.fill();
+  c.fillStyle = '#3fb6d8';
+  c.beginPath(); c.moveTo(0, H); for (let x = -172; x <= 172; x += 4) c.lineTo(X(x), Z(shoreZ(x))); c.lineTo(W, H); c.fill();
+  c.fillStyle = '#c99a62';
+  c.fillRect(X(-172), Z(-18.5), W, 7); c.fillRect(X(-3.5), Z(PORTAL.z), 7, -18 - PORTAL.z);
+  // the pier (in its own coordinates, shifted)
+  for (const [x0, x1, z0, z1] of [[135, 165, -15, 212], [104, 196, 86, 164], [122, 178, 170, 212], [90, 135, 68, 84], [90, 104, 84, 150]]) c.fillRect(X(x0 + PIER_DX), Z(z0), x1 - x0, z1 - z0);
+  for (const ct of COURTS) { c.fillStyle = ct.kind === 'basket' ? '#2f6fd6' : ct.kind === 'soccer' ? '#4fa843' : '#e8c98c'; c.fillRect(X(ct.x - ct.w / 2), Z(ct.z - ct.d / 2), ct.w, ct.d); c.strokeStyle = '#ffffff'; c.strokeRect(X(ct.x - ct.w / 2), Z(ct.z - ct.d / 2), ct.w, ct.d); }
+  c.strokeStyle = '#a8e08a'; c.lineWidth = 7; c.lineCap = 'round';
+  for (const h of HOLES) { c.beginPath(); c.moveTo(X(h.tee[0]), Z(h.tee[1])); c.lineTo(X(h.cup[0]), Z(h.cup[1])); c.stroke(); }
+  c.fillStyle = '#3fb6e0'; for (const pd of PONDS) { c.beginPath(); c.arc(X(pd.x), Z(pd.z), pd.r, 0, TAU); c.fill(); }
+  c.fillStyle = '#8fd3ff'; c.beginPath(); c.arc(X(PORTAL.x), Z(PORTAL.z), 9, 0, TAU); c.fill();
+  c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.fillStyle = '#1d1b2e';
+  for (const [t, x, z] of [['Portal', 0, -112], ['Coral Park', -80, -128], ['Coral Links', 66, -140], ['Pier', 105 + PIER_DX + 30, 120], ['Marina', 52, 100], ['Crab Races', 42, 32], ['Surf', -66, 2]]) c.fillText(t, X(x), Z(z));
+  return { base, W, H, X, Z };
 }
 
 // ---- the area -------------------------------------------------------------------------------------------------------
@@ -556,6 +569,7 @@ export function beachArea(stage) {
   S3.add(scene3);
   stage.camera.far = 1600; // (the sky dome and the horizon are a long way off)
   stage.camera.updateProjectionMatrix();
+  try { localStorage.setItem('fz.town', 'cove'); } catch { /* private mode */ }
   // lights, fog and the day/night cycle (shared with the town: same sun, same weather)
   S3.fog = new THREE.Fog('#cfe4fb', 140, 420);
   const hemi = new THREE.HemisphereLight(0xe8f7ff, 0xf2d9a0, 1.2);
@@ -570,12 +584,14 @@ export function beachArea(stage) {
 
   const boats = new Boats(scene3, { anim: [], solids, isWater: (x, z) => inSea(x, z) && x > -400 && x < 400 && z < 480 });
   const balls = new Balls(scene3, park);
+  const golf = new Golf(scene3);
   const critters = beachCrabs(scene3);
   if (!env.npcs) { env.npcs = true; beachgoers(scene3, anim); }
 
   // ---- you: walking, wading, swimming
-  let mode = 'walk'; // walk | dig | boat | fish | ride
+  let mode = 'walk'; // walk | boat | fish | ride | golf
   let boardedAt = 0; // (the E that gets you on mustn't also get you straight off)
+  let jumpUntil = 0;
   const walker = stage.walker({
     spawn: { x: rnd(-2, 2), z: spots.portal.spawn }, speed: 6,
     bounds: { minX: X0, maxX: X1, minZ: Z0, maxZ: Z1 },
@@ -584,21 +600,26 @@ export function beachArea(stage) {
     ceiling: 200,
     speedOf: () => (inSea(walker.me.x, walker.me.z) && walker.me.z - shoreZ(walker.me.x) > 3 ? 3.6 : 6),
     frozen: () => mode !== 'walk',
-    // railings: you can't step up or down more than a stair (so you get on and off the pier by the ramp or the steps); and not past the buoys
-    blockedAt: (x, z) => z > SWIM_MAX || Math.abs(floorAt(x, z) - floorAt(walker.me.x, walker.me.z)) > 0.55,
+    blockedAt: (x, z) => {
+      if (z > SWIM_MAX) return true;
+      // railings: you can't step up or down more than a stair (onto the pier by the ramp or the steps)
+      if (Math.abs(floorAt(x, z) - floorAt(walker.me.x, walker.me.z)) > 0.55) return true;
+      // in a match you stay on the field (and its out-of-bounds strip)
+      const ct = balls.myCourt();
+      return !!ct && (Math.abs(x - ct.x) > ct.w / 2 + ct.margin || Math.abs(z - ct.z) > ct.d / 2 + ct.margin);
+    },
   });
   const me3 = walker.me;
   me3.heading = 0;
   const orbit = stage.orbit;
+  // (it's a town: the button in the corner goes to the lobby; the portal is the way back to The Town)
+  stage.setTown?.(true);
 
-  // others' poses (digging, on a boat, on a ride, fishing): from area_pose
   const poses = new Map();
-
-  /** Height + pose for anyone, from where they are (the pier, the dock, wading, swimming, a boat). */
   const placePerson = (p, pose, t) => {
     if (pose?.p === 'boat') {
       const b = boats.boats.get(pose.v);
-      if (b) { const s = boats.seatPos(b, +pose.s || 0); p.x = s.x; p.z = s.z; p.y = s.y - 0.55; p.heading = s.h; p.tx = s.x; p.tz = s.z; p.char.lean = b.lean ?? 0; }
+      if (b) { const st = boats.seatPos(b, +pose.s || 0); p.x = st.x; p.z = st.z; p.y = st.y - 0.55; p.heading = st.h; p.tx = st.x; p.tz = st.z; p.char.lean = b.lean ?? 0; }
       if (p.char.pose !== 'drive') { p.char.setPose('drive'); p.char.setProp(null); }
       return;
     }
@@ -609,46 +630,46 @@ export function beachArea(stage) {
       const depth = p.z - shoreZ(p.x);
       p.y = depth < 3 ? -depth * 0.25 : -0.95 + Math.sin(t * 2 + p.x) * 0.04;
       if (depth >= 3) { if (p.char.pose !== 'swim') { p.char.setPose('swim'); p.char.setProp(null); } return; }
-    } else p.y = 0;
-    const want = pose?.p === 'dig' ? 'dig' : pose?.p === 'fish' ? 'fish' : 'idle';
-    if (p.char.pose !== want && !(want === 'fish' && p === me3)) { p.char.setPose(want); p.char.setProp(want === 'dig' ? 'shovel' : want === 'fish' ? 'rod' : null); }
+    } else p.y = walkHeight(p.x, p.z);
+    const want = pose?.p === 'fish' ? 'fish' : 'idle';
+    if (p.char.pose !== want && !(want === 'fish' && p === me3)) { p.char.setPose(want); p.char.setProp(want === 'fish' ? 'rod' : null); }
   };
   const sendPose = (pose) => net.send('area_pose', { pose });
 
-  // ---- HUD: the treasure detector and the context hint
+  // ---- HUD: like the town's (where you are, the time and weather, the map), plus the match panel
   stage.hud.insertAdjacentHTML('beforeend', `
-    <div class="hud-panel beach-detector"><div class="det-top">📡 <b>Treasure detector</b></div><div class="det-bar"><i></i></div><button class="btn small primary det-dig">⛏️ Dig <kbd>F</kbd></button></div>
+    <div class="hud-town cove-town">📍 Coral Cove</div>
+    <div class="hud-clock cove-clock"></div>
+    <canvas class="minimap cove-map" title="Map"></canvas>
     <div class="hud-panel beach-ctx hidden"></div>
-    <p class="hud-panel arena-help">Walk the sand: the detector beeps faster near buried treasure, press <kbd>F</kbd> to dig · Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski (<kbd>WASD</kbd>) · Fish off the end of the pier, or from a boat · Play ball at Coral Park (<kbd>F</kbd> shoots, kicks, throws or hits) · Rides, food and Playland on the pier</p>`);
-  const bar = stage.hud.querySelector('.det-bar i'), digBtn = stage.hud.querySelector('.det-dig'), ctxEl = stage.hud.querySelector('.beach-ctx');
-  if (touch.enabled) setTouchButtons([{ icon: '✋', label: 'Dig', key: 'f', code: 'KeyF' }]);
-  let treasure = [], beepAt = 0;
-  const holes = [];
-  const addHole = (x, z) => {
-    holes.push(add(scene3, new THREE.CircleGeometry(0.7, 14), toon('#c9a462'), { p: [x, 0.07, z], r: [-Math.PI / 2, 0, 0], cast: false }));
-    holes.push(add(scene3, sph(0.5, 10, 6), toon('#e8c98c'), { p: [x + 0.9, 0, z], s: [1, 0.45, 1], cast: false }));
-    while (holes.length > 40) scene3.remove(holes.shift());
-  };
-  // sand flying off the spade
-  const grains = [];
-  const grainMat = toon('#e8c98c');
-  const throwSand = () => {
-    for (let k = 0; k < 6; k++) {
-      const m = add(scene3, sph(0.07, 5, 4), grainMat, { p: [me3.x + Math.sin(me3.heading) * 0.8, 0.3, me3.z + Math.cos(me3.heading) * 0.8], cast: false });
-      grains.push({ m, v: new THREE.Vector3(-Math.sin(me3.heading) * rnd(1, 2.5) + rnd(-1, 1), rnd(3, 5), -Math.cos(me3.heading) * rnd(1, 2.5) + rnd(-1, 1)), life: 1 });
+    <div class="hud-panel court-panel hidden"></div>
+    <div class="hud-panel golf-panel hidden"></div>
+    <p class="hud-panel arena-help">Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski (<kbd>WASD</kbd>) · Fish off the end of the pier or from a boat · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park: pick a side and ready up for a game. <kbd>F</kbd> shoots, kicks, steals and throws in, <kbd>Space</kbd> jumps (block shots!) · Golf at Coral Links: <kbd>A</kbd>/<kbd>D</kbd> aim, hold <kbd>F</kbd> to swing · The portal goes back to The Town</p>`);
+  const $h = (sel) => stage.hud.querySelector(sel);
+  const ctxEl = $h('.beach-ctx'), courtEl = $h('.court-panel'), golfEl = $h('.golf-panel'), clockEl = $h('.cove-clock'), mapEl = $h('.cove-map');
+  if (touch.enabled) setTouchButtons([{ icon: '✋', label: 'Action', key: 'f', code: 'KeyF', big: true }, { icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }]);
+  // the map: drawn once, players dotted on top; click it to make it big
+  const map = coveMap();
+  const mctx = mapEl.getContext('2d');
+  mapEl.onclick = () => mapEl.classList.toggle('big');
+  const drawMap = () => {
+    const big = mapEl.classList.contains('big');
+    const r = mapEl.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (mapEl.width !== Math.round(r.width * dpr)) { mapEl.width = Math.round(r.width * dpr); mapEl.height = Math.round(r.height * dpr); }
+    const cw = mapEl.width, ch = mapEl.height;
+    // small: a window centred on you; big: the whole cove
+    const k = big ? Math.min(cw / map.W, ch / map.H) : 2.2 * dpr;
+    const cx = big ? map.W / 2 : map.X(me3.x), cz = big ? map.H / 2 : map.Z(me3.z);
+    mctx.setTransform(k, 0, 0, k, cw / 2 - cx * k, ch / 2 - cz * k);
+    mctx.fillStyle = '#1c6fb8'; mctx.fillRect(-500, -500, 2000, 2000);
+    mctx.drawImage(map.base, 0, 0);
+    for (const p of stage.people.values()) {
+      mctx.fillStyle = p === me3 ? '#ffffff' : (S.players[p.k]?.color ?? '#ffd84d');
+      mctx.beginPath(); mctx.arc(map.X(p.x), map.Z(p.z), (p === me3 ? 3.5 : 2.6) / Math.max(1, k / 2), 0, TAU); mctx.fill();
+      if (p === me3) { mctx.strokeStyle = '#1d1b2e'; mctx.lineWidth = 1.2 / Math.max(1, k / 2); mctx.stroke(); }
     }
+    mctx.setTransform(1, 0, 0, 1, 0, 0);
   };
-  let digT = 0;
-  const doDig = () => {
-    if (mode !== 'walk') return;
-    if (inSea(me3.x, me3.z) || pierHeight(me3.x, me3.z) != null || me3.z < -2) { toast('Dig in the sand on the beach!'); return; }
-    mode = 'dig'; digT = 1.25;
-    me3.char.setPose('dig'); me3.char.setProp('shovel');
-    sendPose({ p: 'dig', prop: 'shovel' });
-    net.send('area_move', { x: +me3.x.toFixed(2), z: +me3.z.toFixed(2), h: +me3.heading.toFixed(2) });
-    setTimeout(() => net.send('beach_dig', {}), 900);
-  };
-  digBtn.onclick = doDig;
 
   // ---- fishing (off the pier, or from a boat)
   let fishing = null;
@@ -702,9 +723,10 @@ export function beachArea(stage) {
     else if (ride.kind === 'carousel') { const a = t * 0.5; me3.x = sp.center.x + Math.cos(-a) * 3.8; me3.z = sp.center.z + Math.sin(-a) * 3.8; me3.y = PIER_Y + 1.6 + Math.sin(t * 2) * 0.35; me3.heading = -a; }
     else if (ride.kind === 'drop') { sp.ring.getWorldPosition(tmpV); me3.x = tmpV.x + 2.6; me3.z = tmpV.z; me3.y = tmpV.y - 1.5; me3.heading = -Math.PI / 2; }
     else if (ride.kind === 'coaster') {
+      // you ride in the front car, round the whole track
       const u = (ride.t / ride.T) % 1;
       sp.path.getPointAt(u, tmpV); sp.path.getTangentAt(u, tmpT);
-      me3.x = tmpV.x; me3.z = tmpV.z; me3.y = PIER_Y + tmpV.y + 0.4; me3.heading = Math.atan2(tmpT.x, tmpT.z);
+      me3.x = tmpV.x + PIER_DX; me3.z = tmpV.z; me3.y = PIER_Y + tmpV.y + 0.45; me3.heading = Math.atan2(tmpT.x, tmpT.z);
       if (tmpT.y < -0.3 && Math.random() < dt * 3) sfx('whoosh', { vol: 0.3 });
     }
     if (Math.random() < dt * 6) sendPose({ p: 'ride', y: +me3.y.toFixed(2) });
@@ -712,7 +734,7 @@ export function beachArea(stage) {
   };
 
   // ---- boats
-  const seatTaken = (bid, s) => [...poses.entries()].some(([k, p]) => k !== S.me && p?.p === 'boat' && p.v === bid && +p.s === s);
+  const seatTaken = (bid, st) => [...poses.entries()].some(([k, p]) => k !== S.me && p?.p === 'boat' && p.v === bid && +p.s === st);
   const boardBoat = (b) => {
     const seat = boats.board(b, seatTaken);
     if (seat < 0) { toast('That boat is full!'); return; }
@@ -731,39 +753,90 @@ export function beachArea(stage) {
     sendPose(null);
   };
 
+  // ---- golf
+  const golfStart = (i) => {
+    if (mode !== 'walk') return;
+    mode = 'golf';
+    boardedAt = performance.now();
+    golf.start(i);
+    me3.char.setProp('rod');
+    stage.banner(`⛳ Hole ${i + 1} · par ${HOLES[i].par}. <kbd>A</kbd>/<kbd>D</kbd> to aim, hold <kbd>F</kbd> (or <kbd>Space</kbd>) and let go to swing. <kbd>E</kbd> to quit.`, 4200);
+  };
+  const golfStop = () => { golf.stop(); mode = 'walk'; me3.char.setProp(null); golfEl.classList.add('hidden'); };
+
   // ---- interactables
-  stage.interactable({ x: spots.portal.x, z: spots.portal.z, r: 6, label: 'go through the portal to The Town', use: () => stage.onExit?.() });
+  stage.interactable({ x: spots.portal.x, z: spots.portal.z, r: 6, label: 'go through the portal to The Town', use: () => { try { localStorage.removeItem('fz.town'); } catch { /* */ } stage.onExit?.(); } });
   stage.interactable({ x: spots.surf.x, z: spots.surf.z, r: 4, label: 'play Surf Rush', use: () => stage.openPanel({ wide: true, mount: (body) => arcadeCabinet(body, 'surf') }) });
   let crabState = null;
   stage.interactable({ x: spots.crabs.x, z: spots.crabs.z, r: 3.5, label: 'bet on the crab races', use: () => stage.openPanel({ mount: (body) => crabPanel(body, () => crabState) }) });
-  stage.interactable({ x: spots.dig.x, z: spots.dig.z, r: 3.5, label: 'read the treasure map', use: () => stage.banner('🏴‍☠️ Treasure is buried all over the beach! Watch the <b>detector</b>: the fuller it gets (and the faster it beeps), the closer you are. Stand right on top and press <b>F</b> to dig.', 6500) });
   const snack = (name) => () => { me3.char.emote('heart'); sfx('coin', { vol: 0.5 }); stage.banner(`😋 You grabbed something tasty from <b>${esc(name)}</b>.`, 1800); };
   stage.interactable({ x: spots.tiki.x, z: spots.tiki.z, r: 3.5, label: 'order a coconut drink', use: snack('the Tiki Bar') });
   stage.interactable({ x: spots.ice.x, z: spots.ice.z, r: 3.5, label: 'get an ice cream', use: snack('the ice cream stand') });
+  HOLES.forEach((h, i) => stage.interactable({ x: h.tee[0], z: h.tee[1], r: 3, label: `play hole ${i + 1} (par ${h.par})`, use: () => golfStart(i) }));
   for (const sp of pierSpots) {
     const use = {
       food: snack(sp.name), gift: () => stage.banner('🎁 Postcards, shell necklaces and Coral Cove snow globes. Cute!', 2200),
       bait: () => stage.banner('🎣 Head to the end of the pier (or take a boat out) to fish the ocean. New fish out there!', 3000),
-      fish: () => startFishing(sp), playland: () => stage.openPanel({ wide: true, mount: playlandPanel }),
+      fish: () => startFishing(sp),
       ferris: () => startRide('ferris', sp), coaster: () => startRide('coaster', sp), carousel: () => startRide('carousel', sp), drop: () => startRide('drop', sp),
     }[sp.kind];
-    const label = { food: `eat at ${sp.name}`, gift: `browse ${sp.name}`, bait: 'chat at the bait shop', fish: 'fish off the pier', playland: 'play at Playland', ferris: 'ride the Ferris wheel', coaster: 'ride the roller coaster', carousel: 'ride the carousel', drop: 'ride the drop tower' }[sp.kind];
+    const label = { food: `eat at ${sp.name}`, gift: `browse ${sp.name}`, bait: 'chat at the bait shop', fish: 'fish off the pier', ferris: 'ride the Ferris wheel', coaster: 'ride the roller coaster', carousel: 'ride the carousel', drop: 'ride the drop tower' }[sp.kind];
     if (use) stage.interactable({ x: sp.x, z: sp.z, r: sp.kind === 'fish' ? 1.6 : 3.2, label, use });
   }
-  // the nearest boat you could board (follows you around the marina)
   const boatInter = stage.interactable({ x: 1e6, z: 1e6, r: 0, label: 'board the boat', use: () => { const b = boats.nearest(me3); if (b && mode === 'walk') boardBoat(b); } });
 
-  // ---- input: F for the context action; E off boats and rides; Space/click to fish
+  // ---- the match panel: pick a side, ready up; the score and clock once it's on
+  let panelCourt = null;
+  const TEAM = [{ name: 'Home', color: '#ff5d73' }, { name: 'Away', color: '#39c6ff' }];
+  const renderCourt = () => {
+    const ct = panelCourt;
+    if (!ct) { courtEl.classList.add('hidden'); return; }
+    courtEl.classList.remove('hidden');
+    const m = balls.match(ct.id) ?? { state: 'lobby', teams: {}, ready: [], s: [0, 0], to: ct.kind === 'soccer' ? 5 : 11 };
+    const mine = m.teams?.[S.me];
+    const sport = ct.kind === 'soccer' ? '⚽ Soccer' : `🏀 Court ${ct.id === 'bb1' ? 1 : 2}`;
+    const left = Math.max(0, Math.ceil((m.left ?? 0) - (performance.now() - (m.at ?? 0)) / 1000));
+    const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    const list = (side) => Object.entries(m.teams ?? {}).filter(([, v]) => v === side).map(([k]) => `<li>${(m.ready ?? []).includes(k) ? '✅' : '⏳'} ${esc(S.players[k]?.name ?? k)}</li>`).join('') || '<li class="muted">nobody yet</li>';
+    const key = JSON.stringify([ct.id, m.state, m.teams, m.ready, m.s, m.winner, m.state === 'live' ? clock : '']);
+    if (courtEl.dataset.k === key) return;
+    courtEl.dataset.k = key;
+    if (m.state === 'live' || m.state === 'countdown') {
+      courtEl.innerHTML = `<div class="ct-live"><b style="color:${TEAM[0].color}">${TEAM[0].name} ${m.s[0]}</b><span>${m.state === 'countdown' ? 'Get ready…' : clock}</span><b style="color:${TEAM[1].color}">${m.s[1]} ${TEAM[1].name}</b></div>
+        <small class="muted">${sport} · first to ${m.to}${mine == null ? ' · game on, wait for the next one' : ''}</small>`;
+      return;
+    }
+    courtEl.innerHTML = `<div class="ct-title">${sport} <small class="muted">first to ${m.to}</small></div>
+      ${m.winner != null && m.state === 'over' ? `<div class="ct-win" style="color:${TEAM[m.winner].color}">🏆 ${TEAM[m.winner].name} won ${Math.max(...m.s)}–${Math.min(...m.s)}!</div>` : ''}
+      <div class="ct-teams">${[0, 1].map((side) => `<div style="--c:${TEAM[side].color}"><b>${TEAM[side].name}</b><ul>${list(side)}</ul>
+        <button class="btn small ${mine === side ? 'primary' : 'ghost'}" data-side="${side}">${mine === side ? 'Your team' : mine != null ? 'Switch here' : `Join ${TEAM[side].name}`}</button></div>`).join('')}</div>
+      ${mine != null ? `<div class="row center"><button class="btn small ${(m.ready ?? []).includes(S.me) ? 'ghost' : 'primary'}" data-ready>${(m.ready ?? []).includes(S.me) ? 'Not ready' : 'Ready up'}</button><button class="btn small ghost" data-leave>Leave</button></div>
+        <small class="muted">The game starts when everyone on both sides is ready.</small>` : '<small class="muted">Pick a side to play.</small>'}`;
+  };
+  courtEl.addEventListener('click', (e) => {
+    const t = e.target.closest('button');
+    if (!t || !panelCourt) return;
+    if (t.dataset.side != null) net.send('court_join', { court: panelCourt.id, side: +t.dataset.side });
+    if (t.dataset.ready != null) net.send('court_ready', { court: panelCourt.id });
+    if (t.dataset.leave != null) net.send('court_leave', {});
+    sfx('click');
+  });
+
+  // ---- input: F for the context action, Space to jump, E off boats/rides/golf
   const action = () => {
-    if (mode === 'fish' || mode === 'ride') return;
+    if (mode === 'fish' || mode === 'ride' || mode === 'golf') return;
     if (mode === 'boat') { const b = boats.ride.b; if (b.t.fishing || Math.abs(b.v) < 1) startFishing({ heading: b.h + Math.PI / 2 }); return; }
-    if (balls.act(me3)) return;
-    doDig();
+    balls.act(me3, stage.people);
   };
   const offKeys = onKeys((e) => {
     const k = e.key.toLowerCase();
+    if (mode === 'golf' && (k === 'f' || k === ' ') && !e.repeat) { golf.press(); return; }
     if (k === 'f' && !e.repeat) action();
-    if (k === 'e' && !e.repeat && performance.now() - boardedAt > 400) { if (mode === 'boat') leaveBoat(); else if (mode === 'ride') endRide(); }
+    if (k === ' ' && !e.repeat && mode === 'walk' && !fishing && performance.now() > jumpUntil) { me3.char.jump(); jumpUntil = performance.now() + 550; sfx('jump', { vol: 0.4 }); }
+    if (k === 'e' && !e.repeat && performance.now() - boardedAt > 400) { if (mode === 'boat') leaveBoat(); else if (mode === 'ride') endRide(); else if (mode === 'golf') golfStop(); }
+  }, (e) => {
+    const k = e.key.toLowerCase();
+    if (mode === 'golf' && (k === 'f' || k === ' ')) golf.release();
   });
   stage.onKey = (e, down) => {
     if (!fishing) return;
@@ -784,28 +857,18 @@ export function beachArea(stage) {
     if (m.state === 'betting') { race = null; crabs.forEach((c) => { c.position.x = CRAB_TRACK.x0; }); }
     if (m.state === 'result' && m.winner != null) {
       const win = m.wins?.[S.me];
-      if (Math.hypot(me3.x - 70, me3.z - 16) < 45) stage.banner(`🦀 <b>${esc(m.names[m.winner])}</b> wins the crab race!${win ? ` You won <b>${fmt(win)}</b> 🪙!` : ''}`, 3500);
+      if (Math.hypot(me3.x - 42, me3.z - 16) < 45) stage.banner(`🦀 <b>${esc(m.names[m.winner])}</b> wins the crab race!${win ? ` You won <b>${fmt(win)}</b> 🪙!` : ''}`, 3500);
       if (win) sfx('win');
     }
   };
   balls.onEvent = (msg) => stage.banner(`<span class="big">${msg}</span>`, 1500);
+  const nm = (k) => esc(S.players[k]?.name ?? 'Someone');
 
   const off = listen({
     beach: (m) => {
-      treasure = m.treasure;
       for (const b of m.balls ?? []) balls.apply(b);
-      for (const [court, s] of Object.entries(m.courts ?? {})) balls.scoreboard(court, s);
+      for (const [court, sc] of Object.entries(m.courts ?? {})) balls.scoreboard(court, sc);
       for (const [id, b] of Object.entries(m.boats ?? {})) boats.apply(id, b);
-    },
-    treasure: (m) => { treasure = m.treasure; },
-    beach_hole: (m) => addHole(m.x, m.z),
-    dig_result: (m) => {
-      addHole(m.x, m.z);
-      if (!m.found) { toast('Nothing here… keep looking!'); return; }
-      const what = { chest: '🏴‍☠️ A TREASURE CHEST', pearl: '🦪 A shiny pearl', coins: '🪙 A pouch of coins' }[m.kind] ?? 'Treasure';
-      stage.banner(`${what}! <b>+${fmt(m.coins)}</b> 🪙`, 3000);
-      sfx(m.kind === 'chest' ? 'win' : 'coin');
-      me3.char.emote('gg');
     },
     crabs: (m) => setCrabs(m),
     crab_bets: (m) => { if (crabState) crabState.bets = m.bets; },
@@ -813,10 +876,33 @@ export function beachArea(stage) {
     area_pose: (m) => { if (m.pose) poses.set(m.k, m.pose); else poses.delete(m.k); },
     area_del: (m) => poses.delete(m.k),
     ball: (m) => balls.apply(m),
+    ball_event: (m) => {
+      balls.event(m);
+      const close = (() => { const b = balls.balls.get(m.id); return b && Math.hypot(me3.x - b.ct.x, me3.z - b.ct.z) < 50; })();
+      if (!close) return;
+      if (m.kind === 'steal') { stage.banner(`🫳 <b>${nm(m.by)}</b> stole it from <b>${nm(m.from)}</b>!`, 1600); sfx('swap'); }
+      if (m.kind === 'reach' && (m.by === S.me || m.from === S.me)) { stage.banner(m.by === S.me ? 'Missed the steal!' : `${nm(m.by)} reached in!`, 900); }
+      if (m.kind === 'block' && m.by !== S.me) { stage.banner(`🚫 <b>${nm(m.by)}</b> BLOCKED <b>${nm(m.from)}</b>!`, 1600); sfx('slam'); }
+      if (m.kind === 'out') stage.banner(`Out of bounds! <b style="color:${TEAM[m.side].color}">${TEAM[m.side].name}</b> throws it in.`, 1800);
+    },
+    court_match: (m) => {
+      const prev = balls.match(m.court);
+      balls.setMatch(m);
+      if (m.teams[S.me] != null) {
+        if (m.state === 'countdown' && prev?.state !== 'countdown') { stage.banner('<span class="big">Game on!</span>', 1800); sfx('whistle'); }
+        if (m.state === 'over' && m.winner != null) { stage.banner(`<span class="big">${m.teams[S.me] === m.winner ? '🏆 You win!' : 'Good game!'}</span>`, 2600); sfx(m.teams[S.me] === m.winner ? 'win' : 'lose'); }
+      }
+      balls.scoreboard(m.court, m.s);
+      courtEl.dataset.k = '';
+    },
     court_score: (m) => {
       balls.scoreboard(m.court, m.s);
       const ct = COURTS.find((c) => c.id === m.court);
       if (ct && Math.hypot(me3.x - ct.x, me3.z - ct.z) < 60) sfx('cheer', { vol: 0.4 });
+    },
+    golf_result: (m) => {
+      const name = { '-3': 'Albatross!', '-2': 'Eagle!', '-1': 'Birdie!', 0: 'Par', 1: 'Bogey', 2: 'Double bogey' }[m.strokes - m.par] ?? `${m.strokes} strokes`;
+      stage.banner(`⛳ ${m.strokes === 1 ? '<span class="big">HOLE IN ONE!</span>' : `<b>${name}</b>`} Hole ${m.hole + 1} in ${m.strokes} (par ${m.par}) · +${m.coins} 🪙`, 3500);
     },
     boat: (m) => boats.apply(m.id, m),
     error: (m) => { if (m.for === 'boat_take' && boats.ride) { boats.ride = null; mode = 'walk'; me3.char.setPose('idle'); sendPose(null); } },
@@ -824,8 +910,9 @@ export function beachArea(stage) {
 
   // ---- sounds: the surf, the wind, the rain, gulls, the boat's motor
   const waves = ambient('waves'), windS = ambient('wind'), rainS = ambient('rain'), engine = ambient('engine');
-  let gullAt = 3;
+  let gullAt = 3, hudAt = 0;
   const center = new THREE.Vector3();
+  const subOf = new Map();
 
   stage.onFrame((dt, now) => {
     const t = now / 1000;
@@ -834,57 +921,62 @@ export function beachArea(stage) {
     for (const fn of anim) fn(t, dt, dn.night);
     boats.animate(t, dt);
     critters.update(dt, t, stage.people);
-    // you
-    if (mode === 'dig') {
-      digT -= dt;
-      if (Math.random() < dt * 4) { throwSand(); sfx('dig', { vol: 0.5 }); }
-      if (digT <= 0) { mode = 'walk'; me3.char.setPose('idle'); me3.char.setProp(null); sendPose(null); }
-    }
     if (boats.ride) {
       boats.drive(dt, stage.keys);
-      const b = boats.ride.b, s = boats.seatPos(b, boats.ride.seat);
-      me3.x = s.x; me3.z = s.z; me3.y = s.y - 0.55; me3.heading = s.h;
+      const b = boats.ride.b, st = boats.seatPos(b, boats.ride.seat);
+      me3.x = st.x; me3.z = st.z; me3.y = st.y - 0.55; me3.heading = st.h;
       me3.char.lean = b.lean ?? 0;
       engine.set(0.2 + Math.min(1, Math.abs(b.v) / b.t.speed) * 0.8, Math.abs(b.v) / b.t.speed);
     } else engine.set(0);
     if (mode === 'ride' && ride) rideUpdate(dt, t);
     if (fishing) fishing.update(dt, now);
-    // everyone's height and pose (pier, dock, wading, swimming, boats, rides)
+    // golf: stand behind the ball, aim, swing; the camera follows the ball
+    if (mode === 'golf' && golf.game) {
+      const res = golf.update(dt, stage.keys);
+      const gm = golf.game;
+      if (!gm.rolling) { me3.x = gm.p.x - Math.sin(gm.aim) * 0.9 - Math.cos(gm.aim) * 0.5; me3.z = gm.p.z - Math.cos(gm.aim) * 0.9 + Math.sin(gm.aim) * 0.5; me3.heading = gm.aim; }
+      orbit.target.set(gm.p.x, 0, gm.p.z);
+      if (res === 'water') stage.banner('💦 In the water! +1 stroke, back to where you hit from.', 1800);
+      if (res === 'holed') { net.send('golf_done', { hole: gm.hole, strokes: gm.strokes }); me3.char.emote('gg'); setTimeout(golfStop, 1200); }
+      golfEl.classList.remove('hidden');
+      golfEl.innerHTML = `⛳ Hole ${gm.hole + 1} · par ${gm.par} · stroke ${gm.strokes}${gm.charging ? ` · power <b>${Math.round(gm.power * 100)}%</b>` : ''}`;
+    }
+    // everyone's height and pose (pier, dock, walks, wading, swimming, boats, rides)
     for (const p of stage.people.values()) {
-      if (p === me3) { if (mode === 'walk' || mode === 'dig' || (mode === 'fish' && !boats.ride)) placePerson(p, mode === 'fish' ? { p: 'fish' } : mode === 'dig' ? { p: 'dig' } : null, t); }
+      if (p === me3) { if (mode === 'walk' || mode === 'golf' || (mode === 'fish' && !boats.ride)) placePerson(p, mode === 'fish' ? { p: 'fish' } : null, t); }
       else placePerson(p, poses.get(p.k), t);
+      // the team you're on, over your head
+      const sub = p.el.querySelector('.area-sub');
+      let tag = '';
+      for (const ct of COURTS) { const side = balls.live(ct) ? balls.teamOf(ct, p.k) : null; if (side != null) tag = side; }
+      if (sub && subOf.get(p.k) !== tag) { subOf.set(p.k, tag); sub.textContent = tag === '' ? '' : TEAM[tag].name.toUpperCase(); sub.style.color = tag === '' ? '' : TEAM[tag].color; }
     }
     if (mode === 'walk' && inSea(me3.x, me3.z) && me3.moving && Math.random() < dt * 2.5) sfx('swim', { vol: 0.35 });
-    // the camera follows you up onto the pier, the rides and the boats
-    orbit.target.y = me3.y;
-    // sand flying
-    for (let i = grains.length - 1; i >= 0; i--) {
-      const gr = grains[i];
-      gr.v.y -= 14 * dt; gr.m.position.addScaledVector(gr.v, dt); gr.life -= dt;
-      if (gr.life <= 0 || gr.m.position.y < 0) { scene3.remove(gr.m); grains.splice(i, 1); }
-    }
+    if (mode !== 'golf') orbit.target.y = me3.y;
     // the nearest boat you could board
     const nb = mode === 'walk' ? boats.nearest(me3, 3.5) : null;
     boatInter.x = nb ? me3.x : 1e6; boatInter.z = nb ? me3.z : 1e6; boatInter.r = nb ? 1 : 0;
     if (nb) boatInter.label = nb.driver && nb.driver !== S.me ? `hop aboard the ${nb.t.name}` : `drive the ${nb.t.name}`;
-    // the context hint (and the phone's action button)
-    const near = mode === 'walk' ? balls.near(me3) : null;
+    // what F does now (and the phone's action button)
+    const near = mode === 'walk' ? balls.near(me3, stage.people) : null;
     const canFishBoat = boats.ride && (boats.ride.b.t.fishing || Math.abs(boats.ride.b.v) < 1);
     const ctx = mode === 'boat' ? `${canFishBoat ? '🎣 <kbd>F</kbd> fish from the boat · ' : ''}<kbd>E</kbd> hop off`
-      : mode === 'ride' ? '<kbd>E</kbd> get off the ride' : near ? `${near.icon} <kbd>F</kbd> ${near.verb}` : null;
+      : mode === 'ride' ? '<kbd>E</kbd> get off the ride' : mode === 'golf' ? '<kbd>A</kbd>/<kbd>D</kbd> aim · hold <kbd>F</kbd> to swing · <kbd>E</kbd> quit' : near ? `${near.icon} <kbd>F</kbd> ${near.verb}` : null;
     ctxEl.classList.toggle('hidden', !ctx);
     if (ctx && ctxEl.dataset.k !== ctx) { ctxEl.dataset.k = ctx; ctxEl.innerHTML = ctx; }
-    const tb = document.querySelector('.touch-buttons button small');
-    if (tb) tb.textContent = mode === 'boat' ? 'Fish' : near ? near.verb : 'Dig';
-    balls.update(dt, me3, stage.people);
-    // the treasure detector
-    if (treasure.length) {
-      const d = Math.min(...treasure.map((q) => Math.hypot(q.x - me3.x, q.z - me3.z)));
-      const onSand = me3.z > -2 && me3.z < shoreZ(me3.x) + 1 && mode === 'walk' && pierHeight(me3.x, me3.z) == null;
-      const k = onSand ? Math.max(0, 1 - d / 28) : 0;
-      bar.style.width = `${Math.round(k * 100)}%`;
-      bar.style.background = k > 0.9 ? '#6ee7a0' : k > 0.6 ? '#ffd84d' : '#39c6ff';
-      if (k > 0.05 && now > beepAt) { sfx('near', { vol: 0.25 + k * 0.4 }); beepAt = now + 1400 - k * 1250; }
+    const tb = document.querySelector('.touch-buttons button.big small');
+    if (tb) tb.textContent = mode === 'boat' ? 'Fish' : mode === 'golf' ? 'Swing' : near ? near.verb : 'Action';
+    balls.update(dt, me3, stage.people, now < jumpUntil);
+    // the match panel for the court you're standing by
+    panelCourt = mode === 'walk' ? (COURTS.find((ct) => ct.match && Math.abs(me3.x - ct.x) < ct.w / 2 + 6 && Math.abs(me3.z - ct.z) < ct.d / 2 + 6) ?? null) : null;
+    if ((hudAt -= dt) <= 0) {
+      hudAt = 0.25;
+      renderCourt();
+      const tod = timeOfDay();
+      const wIcon = { rain: '🌧️', storm: '⛈️', cloudy: '☁️', windy: '💨' }[S.weather];
+      clockEl.textContent = `${wIcon ?? tod.icon} ${tod.clock}`;
+      clockEl.classList.toggle('night', tod.night);
+      drawMap();
     }
     // crabs racing
     if (race) {
@@ -896,7 +988,6 @@ export function beachArea(stage) {
         c.position.y = u < 1 ? Math.abs(Math.sin(el * 14 + i)) * 0.12 : 0;
       });
     }
-    // sounds
     const shoreD = Math.abs(me3.z - shoreZ(me3.x));
     waves.set(Math.max(0.15, 1 - shoreD / 70) * (0.8 + wind.strength.value * 0.15));
     windS.set(Math.max(0, wind.strength.value - 1.3) * 0.5);
@@ -907,11 +998,15 @@ export function beachArea(stage) {
   return () => {
     walker.stop(); off(); offKeys();
     fishing?.stop();
+    golf.stop();
     if (boats.ride) net.send('boat_leave', {});
-    for (const s of [waves, windS, rainS, engine]) s.stop();
+    net.send('court_leave', {});
+    for (const snd of [waves, windS, rainS, engine]) snd.stop();
     setTouchButtons([]);
+    stage.setTown?.(false);
     for (const b of boats.boats.values()) scene3.remove(b.g);
-    for (const b of balls.balls.values()) scene3.remove(b.mesh);
+    for (const b of balls.balls.values()) { scene3.remove(b.mesh); scene3.remove(b.ring); }
+    scene3.remove(golf.ball, golf.arrow);
     stage.scene?.remove(scene3);
     stage.camera.far = 600;
     stage.camera.updateProjectionMatrix();

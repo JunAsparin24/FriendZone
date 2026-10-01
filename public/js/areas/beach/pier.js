@@ -9,6 +9,8 @@ import { add, box, cyl, sph, group, plank, stripeMat, lamp, windowMat, seeded } 
 
 // decks (world units): the long walk, the wide amusement deck, the fishing platform, the boat dock
 export const PIER_Y = 1.3, DOCK_Y = 0.45;
+// the pier is modelled at x ~ 90..210 and slid west by PIER_DX (so it sits closer to everything else)
+export const PIER_DX = -45;
 export const PIER_WALK = { x0: 135, x1: 165, z0: -6, z1: 212 };
 export const PIER_PARK = { x0: 104, x1: 196, z0: 86, z1: 164 };
 export const PIER_END = { x0: 122, x1: 178, z0: 170, z1: 212 };
@@ -20,6 +22,7 @@ const inR = (r, x, z, pad = 0) => x >= r.x0 - pad && x <= r.x1 + pad && z >= r.z
 
 /** The height of the pier/dock surface here (null if you're not on it). */
 export function pierHeight(x, z) {
+  x -= PIER_DX;
   if (inR(RAMP, x, z)) return 0.1 + (PIER_Y - 0.1) * Math.min(1, Math.max(0, (z - RAMP.z0) / (RAMP.z1 - RAMP.z0)));
   if (inR(STAIRS, x, z)) return DOCK_Y + (PIER_Y - DOCK_Y) * Math.min(1, Math.max(0, (x - STAIRS.x0) / (STAIRS.x1 - STAIRS.x0)));
   if (inR(PIER_WALK, x, z) || inR(PIER_PARK, x, z) || inR(PIER_END, x, z)) return PIER_Y;
@@ -27,21 +30,20 @@ export function pierHeight(x, z) {
   return null;
 }
 /** Is (x, z) anywhere on the pier's footprint (so nothing else goes there)? */
-export const onPierFootprint = (x, z, pad = 0) => [PIER_WALK, PIER_PARK, PIER_END, DOCK, DOCK2, RAMP].some((r) => inR(r, x, z, pad));
+export const onPierFootprint = (x, z, pad = 0) => (x -= PIER_DX, [PIER_WALK, PIER_PARK, PIER_END, DOCK, DOCK2, RAMP].some((r) => inR(r, x, z, pad)));
 
 const SHOPS = [
   // side: -1 west row (facing east), +1 east row (facing west)
   { side: -1, z: 14, name: 'Shrimp Shack', font: 'chunky', body: '#e8f0ff', trim: '#3b82f6', awn: ['#3b82f6', '#ffffff'], sign: '#ff5d73', kind: 'food' },
-  { side: -1, z: 32, name: 'Taco Surf', font: 'racing', body: '#fff0c8', trim: '#ff9f43', awn: ['#ff9f43', '#fff4d6'], sign: '#2fb87a', kind: 'food' },
-  { side: -1, z: 50, name: 'Bait & Tackle', font: 'medieval', body: '#d9c29a', trim: '#6b4226', awn: ['#2f7fe0', '#ffffff'], sign: '#ffd84d', kind: 'bait' },
-  { side: -1, z: 68, name: 'Pier Gifts', font: 'script', body: '#ffe0ef', trim: '#ff5fa8', awn: ['#ff5fa8', '#ffffff'], sign: '#ffffff', kind: 'gift', even: false },
+  { side: -1, z: 34, name: 'Taco Surf', font: 'racing', body: '#fff0c8', trim: '#ff9f43', awn: ['#ff9f43', '#fff4d6'], sign: '#2fb87a', kind: 'food' },
+  { side: -1, z: 54, name: 'Bait & Tackle', font: 'medieval', body: '#d9c29a', trim: '#6b4226', awn: ['#2f7fe0', '#ffffff'], sign: '#ffd84d', kind: 'bait' },
+  { side: 1, z: 64, name: 'Pier Gifts', font: 'script', body: '#ffe0ef', trim: '#ff5fa8', awn: ['#ff5fa8', '#ffffff'], sign: '#ffffff', kind: 'gift', even: false },
   { side: 1, z: 36, name: 'Pizza Pier', font: 'chunky', body: '#fff4e0', trim: '#e0463c', awn: ['#e0463c', '#ffffff'], sign: '#ffd84d', kind: 'food' },
-  { side: 1, z: 54, name: 'Churros', font: 'chewy', body: '#ffe9c4', trim: '#c9772a', awn: ['#ffd84d', '#ff7a2e'], sign: '#fff6e0', kind: 'food' },
-  { side: 1, z: 72, name: 'Lemonade', font: 'chewy', body: '#fffbd0', trim: '#e8c21a', awn: ['#ffe14d', '#ffffff'], sign: '#ff5fa8', kind: 'food' },
 ];
 
 export function buildPier(root, { anim, lights, solids, spots }) {
-  const g = group(root);
+  const g = group(root, PIER_DX, 0, 0);
+  const s0 = solids.length, p0 = spots.length;
   const r = seeded(31);
   const deckMat = plank(8, 60, '#e8d2b0');
   const deck = (rect, rep) => add(g, box(rect.x1 - rect.x0, 0.4, rect.z1 - rect.z0), plank(rep[0], rep[1], '#e8d2b0'), { p: [(rect.x0 + rect.x1) / 2, PIER_Y - 0.2, (rect.z0 + rect.z1) / 2], outline: true });
@@ -98,6 +100,15 @@ export function buildPier(root, { anim, lights, solids, spots }) {
   const sub = letterSign('amusement park · restaurants · fishing', { font: 'chunky', w: 18, h: 0.7, face: '#8ff2ff', side: '#1a3a8a', depth: 0.1, glow: 0.8 });
   sub.position.set(0, 8.35, 0.45);
   arch.add(sub);
+  // (and the same on the back, for the walk home)
+  const back = letterSign('CORAL PIER', { font: 'chunky', w: 22, h: 2, face: '#fff6d0', side: '#ff9f43', depth: 0.35, bulbs: true, glow: 0.7 });
+  back.position.set(0, 9.6, -0.45);
+  back.rotation.y = Math.PI;
+  arch.add(back);
+  const backSub = letterSign('see you soon!', { font: 'chunky', w: 9, h: 0.7, face: '#8ff2ff', side: '#1a3a8a', depth: 0.1, glow: 0.8 });
+  backSub.position.set(0, 8.35, -0.45);
+  backSub.rotation.y = Math.PI;
+  arch.add(backSub);
   const neon = add(arch, box(27, 0.12, 0.12), basic('#39e6ff'), { p: [0, 12.05, 0.45], cast: false });
   anim.push((t, dt, n) => { neon.material.color.setHSL(0.52 + Math.sin(t * 2) * 0.04, 1, 0.55 + n * 0.15); });
 
@@ -227,7 +238,13 @@ export function buildPier(root, { anim, lights, solids, spots }) {
       c.lookAt(p.x + tan.x, p.y + 0.2 + tan.y, p.z + tan.z);
     });
   });
-  spots.push({ kind: 'coaster', name: 'the roller coaster', x: 112, z: 100, y: PIER_Y, path });
+  // the station: a little platform where the train starts
+  add(g, box(4, 0.5, 6), toon('#e0463c'), { p: [116, PIER_Y + 0.25, 101], outline: true });
+  const st = letterSign('COASTER', { font: 'chunky', w: 3.6, h: 0.6, face: '#ffffff', side: '#e0463c', depth: 0.12 });
+  st.position.set(116, PIER_Y + 3.4, 104.2);
+  g.add(st);
+  for (const sx of [-1.7, 1.7]) add(g, cyl(0.08, 0.08, 3, 6), toon('#ffffff'), { p: [116 + sx, PIER_Y + 1.5, 104] });
+  spots.push({ kind: 'coaster', name: 'the roller coaster', x: 116, z: 106.5, y: PIER_Y, path });
 
   // drop tower: the ring climbs slowly, hangs, then drops
   const tower = group(g, 185, PIER_Y, 96);
@@ -244,32 +261,6 @@ export function buildPier(root, { anim, lights, solids, spots }) {
   });
   solids.push({ x: 185, z: 96, r: 3 });
   spots.push({ kind: 'drop', name: 'the drop tower', x: 185, z: 101.5, y: PIER_Y, ring, tower });
-
-  // Playland arcade: a long building with a lit marquee
-  const pl = group(g, 150, PIER_Y, 150, Math.PI);
-  add(pl, box(26, 6, 10), toon('#2b1d57'), { p: [0, 3, 0], outline: true });
-  add(pl, box(27, 0.5, 11), toon('#ff4fd8'), { p: [0, 6.2, 0], outline: true });
-  for (let k = -2; k <= 2; k++) add(pl, box(3.5, 3, 0.1), windowMat(lights, '#8b6bff'), { p: [k * 5, 2.6, 5.06], cast: false });
-  const plSign = letterSign('PLAYLAND', { font: 'arcade', w: 18, h: 1.6, face: '#7df9ff', side: '#2b1d57', depth: 0.25, glow: 0.8 });
-  plSign.position.set(0, 6.6, 4.4);
-  pl.add(plSign);
-  solids.push({ x: 150, z: 150, w: 26, d: 10 });
-  spots.push({ kind: 'playland', name: 'Playland', x: 150, z: 143, y: PIER_Y });
-
-  // food trucks and a candy stand on the deck
-  [[118, 108, '#ff9f43', 'Burgers'], [118, 140, '#6ee7a0', 'Smoothies'], [165, 106, '#ff5fa8', 'Cotton Candy']].forEach(([x, z, c, name]) => {
-    const tr = group(g, x, PIER_Y, z, x < 150 ? Math.PI / 2 : -Math.PI / 2);
-    add(tr, box(6, 3, 3), toon(c), { p: [0, 2, 0], outline: true });
-    add(tr, box(2, 2, 3), toon('#ffffff'), { p: [3.8, 1.6, 0], outline: true });
-    for (const wx of [-2, 2]) for (const wz of [-1.4, 1.4]) add(tr, cyl(0.5, 0.5, 0.4, 12), toon('#23263f'), { p: [wx, 0.5, wz], r: [Math.PI / 2, 0, 0] });
-    add(tr, box(3.6, 1.2, 0.1), windowMat(lights, '#fff3c4'), { p: [-0.4, 2.2, 1.52] });
-    add(tr, box(4.2, 0.12, 1.4), stripeMat(c, '#ffffff', 2), { p: [-0.4, 3.1, 2.1], r: [0.3, 0, 0] });
-    const sg = letterSign(name, { font: 'chewy', w: 4.5, h: 0.7, face: '#ffffff', side: c, depth: 0.12 });
-    sg.position.set(-0.4, 3.7, 1.5);
-    tr.add(sg);
-    solids.push({ x, z, w: 3.4, d: 8 });
-    spots.push({ kind: 'food', name, x: x + (x < 150 ? 3.2 : -3.2), z, y: PIER_Y });
-  });
 
   // ---- the fishing platform at the end: benches, a bait bucket at each spot, coin-op binoculars
   const fishing = [];
@@ -295,21 +286,13 @@ export function buildPier(root, { anim, lights, solids, spots }) {
   g.add(endSign);
   for (const sx of [-1, 1]) add(g, cyl(0.15, 0.15, 3.4, 8), toon('#ffffff'), { p: [150 + sx * 5.5, PIER_Y + 1.7, PIER_END.z0 + 0.3] });
 
-  // lamps all the way down, and strings of bulbs across the long walk
-  for (let z = 4; z < 208; z += 14) for (const x of [PIER_WALK.x0 + 0.6, PIER_WALK.x1 - 0.6]) if (!(z > 84 && z < 166)) lamp(g, lights, x, z, { y: PIER_Y, h: 4.6, color: '#ffffff' });
-  for (const [x, z] of [[110, 90], [110, 160], [190, 160], [190, 90], [140, 118], [160, 132]]) lamp(g, lights, x, z, { y: PIER_Y, h: 5.4, color: '#ffffff' });
-  const strings = new THREE.Group();
-  g.add(strings);
-  const bulbGeo = sph(0.13, 6, 4);
-  const stringBulbs = [];
-  for (let z = 10; z < 84; z += 7) {
-    for (let k = 0; k <= 12; k++) {
-      const u = k / 12;
-      const b = add(strings, bulbGeo, basic(['#ffd84d', '#ff5d73', '#39c6ff', '#6ee7a0'][k % 4]), { p: [PIER_WALK.x0 + 1 + u * 28, PIER_Y + 5.4 - Math.sin(u * Math.PI) * 1.2, z], cast: false });
-      stringBulbs.push(b);
-    }
+  // lamps down both rails (lanterns hanging out over the deck)
+  for (let z = 8; z < 208; z += 22) {
+    if (z > 84 && z < 166) continue;
+    lamp(g, lights, PIER_WALK.x0 + 0.5, z, { y: PIER_Y, ry: Math.PI / 2 });
+    lamp(g, lights, PIER_WALK.x1 - 0.5, z + 11, { y: PIER_Y, ry: -Math.PI / 2 });
   }
-  anim.push((t, dt, n) => { const st = Math.floor(t * 3); stringBulbs.forEach((b, i) => { b.scale.setScalar((0.8 + n * 0.5) * ((st + i) % 7 === 0 ? 1.4 : 1)); }); });
+  for (const [x, z, ry] of [[106, 90, Math.PI / 2], [106, 160, Math.PI / 2], [194, 160, -Math.PI / 2], [194, 112, -Math.PI / 2]]) lamp(g, lights, x, z, { y: PIER_Y, ry });
 
   // gulls perched on the railing posts
   const perched = [];
@@ -324,5 +307,7 @@ export function buildPier(root, { anim, lights, solids, spots }) {
   }
   anim.push((t) => perched.forEach((gl, i) => { gl.rotation.y += Math.sin(t * 0.7 + i * 3) * 0.004; gl.children[1].rotation.z = Math.sin(t * 3 + i) * 0.2; }));
 
+  for (let i = s0; i < solids.length; i++) solids[i].x += PIER_DX;
+  for (let i = p0; i < spots.length; i++) { spots[i].x += PIER_DX; if (spots[i].center) spots[i].center = spots[i].center.clone().setX(spots[i].center.x + PIER_DX); }
   return g;
 }

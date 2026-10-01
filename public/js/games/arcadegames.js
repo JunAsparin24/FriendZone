@@ -6,6 +6,7 @@ import { S, esc, fmt, nameOf } from '../state.js';
 import { sfx } from '../sfx.js';
 import { listen } from './util.js';
 import { touch } from '../touch.js';
+import { spriteFrame } from '../three/portrait.js';
 
 const W = 480, H = 560;
 const TAU = Math.PI * 2;
@@ -502,6 +503,8 @@ const SURF = {
   init(G) {
     G.y = 400; G.vy = 0; G.air = false; G.rot = 0; G.airT = 0; G.spd = 230; G.t = 0; G.hold = false;
     G.things = []; G.next = 1.2; G.pops = []; G.spray = [];
+    // your own character rides the board (a crouched surf stance)
+    try { G.me = spriteFrame(S.players[S.me]?.look, 'idle', 0); } catch { G.me = null; }
     G.up = () => { G.hold = false; };
     window.addEventListener('pointerup', G.up);
   },
@@ -568,9 +571,14 @@ const SURF = {
     if (G.done && G.up) { window.removeEventListener('pointerup', G.up); G.up = null; }
     const t = G.t;
     const sky = ctx.createLinearGradient(0, 0, 0, 300);
-    sky.addColorStop(0, '#5ec8ff'); sky.addColorStop(1, '#c9f0ff');
+    sky.addColorStop(0, '#3fa9ff'); sky.addColorStop(0.6, '#9fe0ff'); sky.addColorStop(1, '#ffe6c4');
     ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.translate(380, 90);
+    for (let i = 0; i < 12; i++) { ctx.rotate(TAU / 12); ctx.fillStyle = 'rgba(255,240,160,.18)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(160, -14); ctx.lineTo(160, 14); ctx.fill(); }
+    ctx.restore();
     ctx.fillStyle = '#fff3a0'; ctx.beginPath(); ctx.arc(380, 90, 36, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    for (let i = 0; i < 4; i++) { const cx = ((i * 150 - t * 18) % 640 + 640) % 640 - 80, cy = 40 + (i % 2) * 40; ctx.beginPath(); ctx.ellipse(cx, cy, 34, 12, 0, 0, TAU); ctx.ellipse(cx + 22, cy - 8, 22, 12, 0, 0, TAU); ctx.fill(); }
     ctx.fillStyle = '#6fb38a';
     for (let i = 0; i < 3; i++) { const x = ((i * 220 - t * 12) % 700 + 700) % 700 - 100; ctx.beginPath(); ctx.ellipse(x, 245, 90, 26, 0, Math.PI, 0); ctx.fill(); }
     // the swell, rising towards the right
@@ -600,11 +608,11 @@ const SURF = {
     ctx.rotate(G.air ? -G.rot : Math.max(-0.5, Math.min(0.4, G.vy / 900)));
     ctx.fillStyle = '#ff9f43'; ctx.beginPath(); ctx.ellipse(0, 0, 38, 7, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.fillRect(-30, -1.5, 60, 3);
-    ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-10, -4); ctx.lineTo(-4, -24); ctx.lineTo(8, -4); ctx.stroke();
-    ctx.strokeStyle = '#3b6fd0'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(-4, -24); ctx.lineTo(0, -46); ctx.stroke();
-    ctx.strokeStyle = INK; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-2, -40); ctx.lineTo(-22, -34); ctx.moveTo(2, -40); ctx.lineTo(22, -46); ctx.stroke();
-    ctx.fillStyle = '#c68642'; ctx.beginPath(); ctx.arc(1, -56, 10, 0, TAU); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.stroke();
+    if (G.me) {
+      // the sprite faces right, feet at its anchor; ~70px tall on the board
+      const k = 100 / (G.me.canvas.height * 0.8);
+      ctx.drawImage(G.me.canvas, -G.me.ax * k, -G.me.ay * k - 2, G.me.canvas.width * k, G.me.canvas.height * k);
+    }
     ctx.restore();
     for (const q of G.pops) text(ctx, q.text, q.x, q.y, 22, '#ffd84d');
     if (G.air) text(ctx, G.rot > 0.5 ? `spin ${Math.floor((G.rot / TAU) * 10) / 10}` : 'AIR!', 150, G.y - 90, 18, '#fff');

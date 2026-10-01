@@ -13,15 +13,32 @@ import { sfx } from '../sfx.js';
 import { buildDoor, doorImage } from '../three/doors.js';
 import { iconSvg } from '../icons.js';
 
-const N = 10;         // room size in tiles (HOUSE_SIZE on the server)
+let NX = 10, NZ = 10;  // this room's size in tiles (width x depth: bigger with house upgrades)
 const T = 1.6;        // world units per tile, so furniture is people-sized
 const WALL_H = 3.2;   // in tiles
 const WALL_Y = 1.75;  // height of wall decorations (tiles)
-const DOOR = { x0: N / 2 - 1, x1: N / 2 + 1, h: 2.2 }; // the front door, in tiles
+let DOOR = { x0: NX / 2 - 1, x1: NX / 2 + 1, h: 2.2 }; // the front door, in tiles (middle of the front wall)
+function setDims([w, d] = [10, 10]) {
+  NX = w; NZ = d;
+  DOOR = { x0: NX / 2 - 1, x1: NX / 2 + 1, h: 2.2 };
+}
+/** A plane whose texture repeats every 2 tiles, however big it is (so walls of any length match). */
+function tiledPlane(w, h) {
+  const g = new THREE.PlaneGeometry(w, h);
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 2, uv.getY(i) * h / 2);
+  return g;
+}
 const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 const kindOf = (id) => FURN[id]?.kind ?? 'floor';
 const owned = (id) => me().furni?.[id] ?? 0;
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
+const MIN_SIZE = 6; // (HOUSE_MIN on the server)
+/** The biggest room you can have, from the house upgrades you own: [width, depth]. */
+function maxSize() {
+  const have = CATALOG.houseSizes.filter((z) => z.free || owned(z.id) > 0);
+  return [Math.max(...have.map((z) => z.w)), Math.max(...have.map((z) => z.d))];
+}
 // where you sit on things (in tiles above the floor)
 const BEDS = new Set(['bed', 'bed_princess']);
 // top: the height of the cushion/mattress; front: how far its front edge is from the middle (model units)
@@ -29,6 +46,9 @@ const SEATS = {
   chair: { top: 0.525, front: 0.25 }, armchair: { top: 0.53, front: 0.41 }, sofa: { top: 0.53, front: 0.41, n: 2 },
   beanbag: { top: 0.5, front: 0.3 }, bed: { top: 0.6, front: 0 }, sofa_pink: { top: 0.53, front: 0.41, n: 2 },
   armchair_pink: { top: 0.53, front: 0.41 }, beanbag_pink: { top: 0.5, front: 0.3 }, bed_princess: { top: 0.6, front: 0 },
+  sofa_leather: { top: 0.53, front: 0.41, n: 2 }, armchair_leather: { top: 0.53, front: 0.41 },
+  sofa_gray: { top: 0.53, front: 0.41, n: 2 }, armchair_gray: { top: 0.53, front: 0.41 },
+  gaming_chair: { top: 0.56, front: 0.25 }, piano_bench: { top: 0.53, front: 0.19 }, toilet: { top: 0.52, front: 0.28 },
 };
 // pictures of the real thing: a 3D snapshot of furniture, the actual texture for floors and walls
 const furniImg = (id) => `<img class="fem-img" src="${furnitureThumb(id)}" alt="">`;
@@ -59,10 +79,10 @@ function fits(it) {
   if (kindOf(it.id) === 'wall') {
     const start = it.r % 2 === 0 ? it.x : it.y;
     if (it.r % 4 === 2 && start < DOOR.x1 && start + f.w > DOOR.x0) return false; // not over the door
-    return start >= 0 && start + f.w <= N;
+    return start >= 0 && start + f.w <= (it.r % 2 === 0 ? NX : NZ);
   }
   const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
-  return it.x >= 0 && it.y >= 0 && it.x + w <= N && it.y + d <= N;
+  return it.x >= 0 && it.y >= 0 && it.x + w <= NX && it.y + d <= NZ;
 }
 const footprint = (it) => { const f = FURN[it.id]; return it.r % 2 ? [f.d, f.w] : [f.w, f.d]; };
 
@@ -74,20 +94,22 @@ function buildRoom() {
   const g = new THREE.Group();
   g.scale.setScalar(T);
   const floorMat = new THREE.MeshToonMaterial({ color: '#ffffff' });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(N, N), floorMat);
+  const floor = new THREE.Mesh(tiledPlane(NX, NZ), floorMat);
   floor.rotation.x = -Math.PI / 2;
-  floor.position.set(N / 2, 0, N / 2);
+  floor.position.set(NX / 2, 0, NZ / 2);
   floor.receiveShadow = true;
   g.add(floor);
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(N + 0.6, 0.4, N + 0.6), toon('#6b4a2b'));
-  slab.position.set(N / 2, -0.201, N / 2);
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(NX + 0.6, 0.4, NZ + 0.6), toon('#6b4a2b'));
+  slab.position.set(NX / 2, -0.201, NZ / 2);
   g.add(slab);
   const wallMat = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide });
+  // (room walls you build inside fade out when they're between the camera and you)
+  const wallFade = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, opacity: 0.22, depthWrite: false });
   const outside = toon('#e8d6b8');
   const trim = toon('#f4f0ff');
   const wall = (w, h, x, y, z, ry, skirting = true) => {
     const grp = new THREE.Group();
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
+    const face = new THREE.Mesh(tiledPlane(w, h), wallMat);
     face.receiveShadow = true;
     const shell = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.25), outside);
     shell.position.z = -0.14;
@@ -101,72 +123,74 @@ function buildRoom() {
     return { grp, face };
   };
   const walls = {
-    back: wall(N, WALL_H, N / 2, WALL_H / 2, 0, 0),
-    left: wall(N, WALL_H, 0, WALL_H / 2, N / 2, Math.PI / 2),
-    right: wall(N, WALL_H, N, WALL_H / 2, N / 2, -Math.PI / 2),
+    back: wall(NX, WALL_H, NX / 2, WALL_H / 2, 0, 0),
+    left: wall(NZ, WALL_H, 0, WALL_H / 2, NZ / 2, Math.PI / 2),
+    right: wall(NZ, WALL_H, NX, WALL_H / 2, NZ / 2, -Math.PI / 2),
   };
   // the front wall is three pieces around the doorway
   const front = new THREE.Group();
-  const lw = DOOR.x0, rw = N - DOOR.x1;
-  const fl = wall(lw, WALL_H, lw / 2, WALL_H / 2, N, Math.PI);
-  const fr = wall(rw, WALL_H, DOOR.x1 + rw / 2, WALL_H / 2, N, Math.PI);
-  const ft = wall(DOOR.x1 - DOOR.x0, WALL_H - DOOR.h, N / 2, DOOR.h + (WALL_H - DOOR.h) / 2, N, Math.PI, false);
+  const lw = DOOR.x0, rw = NX - DOOR.x1;
+  const fl = wall(lw, WALL_H, lw / 2, WALL_H / 2, NZ, Math.PI);
+  const fr = wall(rw, WALL_H, DOOR.x1 + rw / 2, WALL_H / 2, NZ, Math.PI);
+  const ft = wall(DOOR.x1 - DOOR.x0, WALL_H - DOOR.h, NX / 2, DOOR.h + (WALL_H - DOOR.h) / 2, NZ, Math.PI, false);
   for (const p of [fl, ft, fr]) front.add(p.grp);
   g.add(front);
   // the front door (closed: walk up to it to go outside), in whichever style the owner picked
   const doorSlot = new THREE.Group();
-  doorSlot.position.set(N / 2, 0, N);
+  doorSlot.position.set(NX / 2, 0, NZ);
   front.add(doorSlot);
   const ceilingMat = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide });
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(N, N), ceilingMat);
+  const ceiling = new THREE.Mesh(tiledPlane(NX, NZ), ceilingMat);
   ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.set(N / 2, WALL_H, N / 2);
+  ceiling.position.set(NX / 2, WALL_H, NZ / 2);
   g.add(ceiling);
   // a pitched roof on top (seen from outside while decorating)
   const roof = new THREE.Group();
-  const rise = 2.2;
+  const rise = 2.2 * Math.min(1.5, NX / 10);
   const roofShape = new THREE.Shape();
-  roofShape.moveTo(-N / 2 - 0.4, 0); roofShape.lineTo(N / 2 + 0.4, 0); roofShape.lineTo(0, rise); roofShape.closePath();
-  const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: N + 0.8, bevelEnabled: false });
+  roofShape.moveTo(-NX / 2 - 0.4, 0); roofShape.lineTo(NX / 2 + 0.4, 0); roofShape.lineTo(0, rise); roofShape.closePath();
+  const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: NZ + 0.8, bevelEnabled: false });
   const roofMesh = new THREE.Mesh(roofGeo, toon('#b3403a'));
-  roofMesh.position.set(N / 2, WALL_H + 0.02, -0.4);
+  roofMesh.position.set(NX / 2, WALL_H + 0.02, -0.4);
   roof.add(roofMesh);
   g.add(roof);
   const mat = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), toon('#b3203a'));
   mat.rotation.x = -Math.PI / 2;
-  mat.position.set(N / 2, 0.01, N - 0.45);
+  mat.position.set(NX / 2, 0.01, NZ - 0.45);
   g.add(mat);
   walls.front = { grp: front, faces: [fl.face, fr.face, ft.face] };
   // outside: a lawn with a path to the door, so the doorway never looks into a void
-  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), toon('#5fae55'));
+  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(110, 110), toon('#5fae55'));
   lawn.rotation.x = -Math.PI / 2;
-  lawn.position.set(N / 2, -0.4, N / 2);
+  lawn.position.set(NX / 2, -0.4, NZ / 2);
   lawn.receiveShadow = true;
   g.add(lawn);
   const path = new THREE.Mesh(new THREE.PlaneGeometry(2, 6), toon('#d8bd88'));
   path.rotation.x = -Math.PI / 2;
-  path.position.set(N / 2, -0.39, N + 3.2);
+  path.position.set(NX / 2, -0.39, NZ + 3.2);
   g.add(path);
   for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * Math.PI * 2, r = 11 + (i % 3) * 2.5;
+    const a = (i / 14) * Math.PI * 2, r = Math.max(NX, NZ) / 2 + 6 + (i % 3) * 2.5;
     const tree = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 1.4, 8), toon('#7a4a28'));
     trunk.position.y = 0.3;
     const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(1 + (i % 2) * 0.3, 1), toon(i % 3 ? '#3f9a4a' : '#57b35a'));
     leaves.position.y = 1.6;
     tree.add(trunk, leaves);
-    tree.position.set(N / 2 + Math.cos(a) * r, -0.4, N / 2 + Math.sin(a) * r);
+    tree.position.set(NX / 2 + Math.cos(a) * r, -0.4, NZ / 2 + Math.sin(a) * r);
     g.add(tree);
   }
   // editing helpers
   const gridPts = [];
-  for (let i = 0; i <= N; i++) gridPts.push(i, 0.015, 0, i, 0.015, N, 0, 0.015, i, N, 0.015, i);
+  for (let i = 0; i <= NX; i++) gridPts.push(i, 0.015, 0, i, 0.015, NZ);
+  for (let i = 0; i <= NZ; i++) gridPts.push(0, 0.015, i, NX, 0.015, i);
   const gridGeo = new THREE.BufferGeometry();
   gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridPts, 3));
   const grid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35 }));
   // fainter quarter-tile lines: furniture snaps to these
   const finePts = [];
-  for (let i = 0.25; i < N; i += 0.25) if (i % 1) finePts.push(i, 0.012, 0, i, 0.012, N, 0, 0.012, i, N, 0.012, i);
+  for (let i = 0.25; i < NX; i += 0.25) if (i % 1) finePts.push(i, 0.012, 0, i, 0.012, NZ);
+  for (let i = 0.25; i < NZ; i += 0.25) if (i % 1) finePts.push(0, 0.012, i, NX, 0.012, i);
   const fineGeo = new THREE.BufferGeometry();
   fineGeo.setAttribute('position', new THREE.Float32BufferAttribute(finePts, 3));
   grid.add(new THREE.LineSegments(fineGeo, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.1 })));
@@ -178,23 +202,23 @@ function buildRoom() {
   const items = new THREE.Group();
   g.add(items);
   g.traverse((o) => { if (o.isMesh && o !== floor && o !== lawn) o.castShadow = true; });
-  return { group: g, floor, floorMat, wallMat, ceiling, ceilingMat, roof, walls, grid, marker, items, doorSlot };
+  return { group: g, floor, floorMat, wallMat, wallFade, ceiling, ceilingMat, roof, walls, grid, marker, items, doorSlot };
 }
 
 // ---------------------------------------------------------------------------
 
 export function house(stage) {
-  const W = N * T;
+  const WX = () => NX * T, WZ = () => NZ * T; // the room in world units
   const sun = stage.lights({ background: '#9fd4ff', sky: 0xfff4e6, ground: 0x6a5a8a, hemi: 1.35, sun: 1.7, box: 16 });
-  sun.position.set(W / 2 + 6, 40, W / 2 + 12); // high overhead so the walls don't shade the floor
-  sun.target.position.set(W / 2, 0, W / 2);
-  const room = buildRoom();
+  sun.position.set(WX() / 2 + 6, 40, WZ() / 2 + 12); // high overhead so the walls don't shade the floor
+  sun.target.position.set(WX() / 2, 0, WZ() / 2);
+  let room = buildRoom();
   stage.scene.add(room.group);
 
   const solids = [];
+  const bounds = { minX: 0.1, maxX: WX() - 0.1, minZ: 0.1, maxZ: WZ() - 0.1 };
   const walker = stage.walker({
-    spawn: { x: W / 2, z: W - 4.2 }, speed: 5, solids,
-    bounds: { minX: 0.1, maxX: W - 0.1, minZ: 0.1, maxZ: W - 0.1 },
+    spawn: { x: WX() / 2, z: WZ() - 4.2 }, speed: 5, solids, bounds,
     orbit: { yaw: 0, pitch: 0.72, dist: 11, minDist: 5, maxDist: 20 },
     ceiling: WALL_H * T - 0.3,
   });
@@ -217,7 +241,7 @@ export function house(stage) {
   let buyThenUse = null;   // put this up as soon as the purchase goes through
   let entries = [];           // built items: { group, use, A, it, bounce, inter }
   const mine = () => viewKey === S.me;
-  const payload = () => ({ floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', items: home.items.map(({ id, x, y, r }) => ({ id, x, y, r })) });
+  const payload = () => ({ floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [10, 10], items: home.items.map(({ id, x, y, r }) => ({ id, x, y, r })) });
 
   // ---- building the furniture ------------------------------------------------------
 
@@ -227,8 +251,8 @@ export function house(stage) {
       const r = it.r % 4;
       if (r === 0) { g.position.set(it.x + f.w / 2, WALL_Y, 0); g.rotation.y = 0; }
       else if (r === 1) { g.position.set(0, WALL_Y, it.y + f.w / 2); g.rotation.y = Math.PI / 2; }
-      else if (r === 2) { g.position.set(it.x + f.w / 2, WALL_Y, N); g.rotation.y = Math.PI; }
-      else { g.position.set(N, WALL_Y, it.y + f.w / 2); g.rotation.y = -Math.PI / 2; }
+      else if (r === 2) { g.position.set(it.x + f.w / 2, WALL_Y, NZ); g.rotation.y = Math.PI; }
+      else { g.position.set(NX, WALL_Y, it.y + f.w / 2); g.rotation.y = -Math.PI / 2; }
       return;
     }
     const [w, d] = footprint(it);
@@ -250,11 +274,23 @@ export function house(stage) {
       const kind = kindOf(it.id);
       const [w, d] = footprint(it);
       const wr = it.r % 4, half = FURN[it.id].w / 2;
-      const cx = kind === 'wall' ? [it.x + half, 0.6, it.x + half, N - 0.6][wr] : it.x + w / 2;
-      const cz = kind === 'wall' ? [0.6, it.y + half, N - 0.6, it.y + half][wr] : it.y + d / 2;
-      if (kind === 'floor') solids.push({ x: cx * T, z: cz * T, w: w * T - 0.15, d: d * T - 0.15 });
+      const cx = kind === 'wall' ? [it.x + half, 0.6, it.x + half, NX - 0.6][wr] : it.x + w / 2;
+      const cz = kind === 'wall' ? [0.6, it.y + half, NZ - 0.6, it.y + half][wr] : it.y + d / 2;
+      const f0 = FURN[it.id];
+      if (f0.room) {
+        // walls you build inside: papered like the room, and solid right up to their ends
+        built.group.traverse((o) => { if (o.userData.wallpaper) o.material = room.wallMat; });
+        entry.roomWall = true;
+        if (f0.doorway) {
+          // a doorway: only the posts either side are solid, so you can walk through the middle
+          const post = 0.5;
+          if (w >= d) for (const px of [it.x + post / 2, it.x + w - post / 2]) solids.push({ x: px * T, z: cz * T, w: post * T, d: d * T + 0.1 });
+          else for (const pz of [it.y + post / 2, it.y + d - post / 2]) solids.push({ x: cx * T, z: pz * T, w: w * T + 0.1, d: post * T });
+        } else solids.push({ x: cx * T, z: cz * T, w: w * T + 0.1, d: d * T + 0.1 });
+      } else if (kind === 'floor') solids.push({ x: cx * T, z: cz * T, w: w * T - 0.15, d: d * T - 0.15 });
       const f = FURN[it.id];
       const seat = SEATS[it.id] != null;
+      if (f.room) return entry; // (nothing to use on a wall)
       entry.inter = stage.interactable({
         x: cx * T, z: cz * T, r: Math.max(w, d) * T * 0.5 + 1.1, obj: built.group,
         label: seat ? `${BEDS.has(it.id) ? 'lie on' : 'sit on'} the ${f.name.toLowerCase()}` : f.action === 'wardrobe' ? 'open your wardrobe' : `use the ${f.name.toLowerCase()}`,
@@ -279,15 +315,16 @@ export function house(stage) {
     if (!home) return;
     const floor = preview.floor ?? home.floor;
     const wall = preview.wall ?? home.wall;
+    // (the room's planes carry their own tiling in their UVs, so every texture repeats once per 2 tiles)
     room.floorMat.map = floorTexture(floor);
-    room.floorMat.map.repeat.set(N / 2, N / 2);
+    room.floorMat.map.repeat.set(1, 1);
     room.floorMat.needsUpdate = true;
     const wt = wallTexture(wall);
-    wt.repeat.set(N / 2, WALL_H / 2);
-    room.wallMat.map = wt;
-    room.wallMat.needsUpdate = true;
+    wt.repeat.set(1, 1);
+    room.wallMat.map = room.wallFade.map = wt;
+    room.wallMat.needsUpdate = room.wallFade.needsUpdate = true;
     const ct = ceilingTexture(preview.ceiling ?? home.ceiling ?? 'ceil_plain');
-    ct.repeat.set(N / 2, N / 2);
+    ct.repeat.set(1, 1);
     room.ceilingMat.map = ct;
     room.ceilingMat.needsUpdate = true;
     const doorId = preview.door ?? home.door ?? 'door_classic';
@@ -388,7 +425,7 @@ export function house(stage) {
     const tries = [[fx, fz], [-fx, -fz], [fz, -fx], [-fz, fx]];
     for (const [dx, dz] of tries) {
       const x = (it.x + w / 2 + dx * (w / 2 + 0.6)) * T, z = (it.y + d / 2 + dz * (d / 2 + 0.6)) * T;
-      if (x > 0.5 && z > 0.5 && x < W - 0.5 && z < W - 0.5 && !solids.some((s) => Math.abs(x - s.x) < s.w / 2 + 0.4 && Math.abs(z - s.z) < s.d / 2 + 0.4)) {
+      if (x > 0.5 && z > 0.5 && x < WX() - 0.5 && z < WZ() - 0.5 && !solids.some((s) => Math.abs(x - s.x) < s.w / 2 + 0.4 && Math.abs(z - s.z) < s.d / 2 + 0.4)) {
         p.x = x; p.z = z; break;
       }
     }
@@ -456,8 +493,8 @@ export function house(stage) {
       const r = it.r % 4;
       if (r === 0) { m.rotation.set(0, 0, 0); m.position.set(it.x + f.w / 2, WALL_Y, 0.02); }
       else if (r === 1) { m.rotation.set(0, Math.PI / 2, 0); m.position.set(0.02, WALL_Y, it.y + f.w / 2); }
-      else if (r === 2) { m.rotation.set(0, Math.PI, 0); m.position.set(it.x + f.w / 2, WALL_Y, N - 0.02); }
-      else { m.rotation.set(0, -Math.PI / 2, 0); m.position.set(N - 0.02, WALL_Y, it.y + f.w / 2); }
+      else if (r === 2) { m.rotation.set(0, Math.PI, 0); m.position.set(it.x + f.w / 2, WALL_Y, NZ - 0.02); }
+      else { m.rotation.set(0, -Math.PI / 2, 0); m.position.set(NX - 0.02, WALL_Y, it.y + f.w / 2); }
     } else {
       const [w, d] = footprint(it);
       m.rotation.set(-Math.PI / 2, 0, 0);
@@ -470,7 +507,7 @@ export function house(stage) {
   function blocksDoor(it) {
     if (kindOf(it.id) !== 'floor') return false;
     const [w, d] = footprint(it);
-    return it.x < DOOR.x1 && it.x + w > DOOR.x0 && it.y + d > N - 1;
+    return it.x < DOOR.x1 && it.x + w > DOOR.x0 && it.y + d > NZ - 1;
   }
 
   function aimPlacement() {
@@ -483,15 +520,15 @@ export function house(stage) {
       const local = room.group.worldToLocal(h.point.clone());
       const r = h.object === room.walls.back.face ? 0 : h.object === room.walls.left.face ? 1 : h.object === room.walls.right.face ? 3 : 2;
       placing.r = r;
-      if (r % 2 === 0) { placing.y = 0; placing.x = Math.max(0, Math.min(N - f.w, snap(local.x - f.w / 2))); }
-      else { placing.x = 0; placing.y = Math.max(0, Math.min(N - f.w, snap(local.z - f.w / 2))); }
+      if (r % 2 === 0) { placing.y = 0; placing.x = Math.max(0, Math.min(NX - f.w, snap(local.x - f.w / 2))); }
+      else { placing.x = 0; placing.y = Math.max(0, Math.min(NZ - f.w, snap(local.z - f.w / 2))); }
       return;
     }
     const p = stage.pointerOnPlane(0);
     if (!p) { placing.x = -1; return; }
     const [w, d] = footprint(placing);
-    placing.x = Math.max(0, Math.min(N - w, snap(p.x / T - w / 2)));
-    placing.y = Math.max(0, Math.min(N - d, snap(p.z / T - d / 2)));
+    placing.x = Math.max(0, Math.min(NX - w, snap(p.x / T - w / 2)));
+    placing.y = Math.max(0, Math.min(NZ - d, snap(p.z / T - d / 2)));
   }
 
   function startPlacing(id, from = -1) {
@@ -707,9 +744,13 @@ export function house(stage) {
   function renderShop() {
     const furn = CATALOG.furniture.filter((f) => f.price);
     const earn = CATALOG.furniture.filter((f) => !f.price);
+    // matching sets get their own shelf
+    const sets = [...new Set(furn.map((f) => f.set).filter(Boolean))];
+    const SET_LABEL = { Rooms: '🧱 Build rooms (walls &amp; doorways)', Rustic: '🪵 Rustic set', Modern: '🤍 Modern set', Bathroom: '🛁 Bathroom', Plants: '🪴 Plants', Gamer: '🎮 Gamer set' };
     panel.innerHTML = `
       <p class="muted small">You have <b>${fmt(me().coins)}</b> 🪙</p>
-      <div class="wd-label">Furniture</div><div class="furni-grid">${furn.map((f) => shopTile(f, 'furni')).join('')}</div>
+      <div class="wd-label">Furniture</div><div class="furni-grid">${furn.filter((f) => !f.set).map((f) => shopTile(f, 'furni')).join('')}</div>
+      ${sets.map((s) => `<div class="wd-label">${SET_LABEL[s] ?? esc(s)}</div><div class="furni-grid">${furn.filter((f) => f.set === s).map((f) => shopTile(f, 'furni')).join('')}</div>`).join('')}
       <div class="wd-label">Floors</div><div class="furni-grid">${CATALOG.floors.filter((d) => !d.free).map((d) => shopTile(d, 'floor')).join('')}</div>
       <div class="wd-label">Wallpaper</div><div class="furni-grid">${CATALOG.walls.filter((d) => !d.free).map((d) => shopTile(d, 'wall')).join('')}</div>
       <div class="wd-label">Ceilings</div><div class="furni-grid">${CATALOG.ceilings.filter((d) => !d.free).map((d) => shopTile(d, 'ceiling')).join('')}</div>
@@ -728,16 +769,31 @@ export function house(stage) {
       return pd ? `<div class="preview-bar"><span>👀 Trying on <b>${esc(pd.name)}</b> ${field === 'floor' ? 'floor' : field === 'ceiling' ? 'ceiling' : field === 'door' ? 'door' : 'wallpaper'}</span>
         <button class="btn primary small" data-preview-buy="${field}">Buy · 🪙 ${fmt(pd.price)}</button><button class="btn ghost small" data-preview-stop="${field}">Put back</button></div>` : '';
     }).join('');
-    panel.innerHTML = `${bar}<div class="wd-label">Floor</div><div class="style-grid">${pick(CATALOG.floors, 'floor')}</div>
+    // room size: any width and depth up to the biggest house upgrade you own
+    const [mw, md] = maxSize(), [sw, sd] = home?.size ?? [10, 10];
+    const stepper = (axis, v, max) => `<span class="size-step"><button class="btn small" data-size="${axis}:-1" ${v <= MIN_SIZE ? 'disabled' : ''}>−</button><b>${v}</b><button class="btn small" data-size="${axis}:1" ${v >= max ? 'disabled' : ''}>+</button></span>`;
+    const sizeTiles = CATALOG.houseSizes.filter((z) => !z.free).map((z) => {
+      const have = owned(z.id) > 0;
+      return `<button class="furni ${have ? 'locked' : ''} ${confirmBuy === z.id ? 'confirm' : ''}" ${have ? '' : `data-buy="${z.id}"`}>
+        <span class="fem size-em">🏠<small>${z.w}×${z.d}</small></span><span class="fname">${esc(z.name)}</span>
+        <span class="fcount">${have ? 'Owned ✓' : confirmBuy === z.id ? `Buy for ${fmt(z.price)}?` : `🪙 ${fmt(z.price)}`}</span></button>`;
+    }).join('');
+    panel.innerHTML = `${bar}<div class="wd-label">Room size</div>
+      <div class="size-pick"><span>Width ${stepper('w', sw, mw)}</span><span>Depth ${stepper('d', sd, md)}</span></div>
+      <p class="muted small">Your house can be up to <b>${mw} × ${md}</b> tiles. Bigger houses:</p>
+      <div class="furni-grid">${sizeTiles}</div>
+      <p class="muted small">Split it into rooms with 🧱 walls and doorways from the Shop.</p>
+      <div class="wd-label">Floor</div><div class="style-grid">${pick(CATALOG.floors, 'floor')}</div>
       <div class="wd-label">Wallpaper</div><div class="style-grid">${pick(CATALOG.walls, 'wall')}</div>
       <div class="wd-label">Ceiling</div><div class="style-grid">${pick(CATALOG.ceilings, 'ceiling')}</div>
       <div class="wd-label">Front door</div><div class="style-grid">${pick(CATALOG.doors, 'door')}</div>`;
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop]');
+    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size]');
     if (!t) return;
     const ds = t.dataset;
+    if (ds.size) { resize(ds.size); return; }
     if (ds.previewBuy != null) {
       const id = preview[ds.previewBuy];
       if (id) { buyThenUse = { field: ds.previewBuy, id }; net.send('house_buy', { id }); }
@@ -787,6 +843,30 @@ export function house(stage) {
     }
   });
 
+  /** Make your room a tile wider/narrower or deeper/shallower ("w:1", "d:-1"); anything that no
+   *  longer fits goes back in your inventory. */
+  function resize(step) {
+    if (!home || !mine()) return;
+    const [axis, delta] = step.split(':');
+    const [mw, md] = maxSize();
+    const size = [...(home.size ?? [10, 10])];
+    const i = axis === 'w' ? 0 : 1;
+    size[i] = Math.max(MIN_SIZE, Math.min(i ? md : mw, size[i] + Number(delta)));
+    if (size[0] === home.size?.[0] && size[1] === home.size?.[1]) return;
+    home.size = size;
+    applySize(size);
+    const keep = [], taken = new Set();
+    let dropped = 0;
+    for (const it of home.items) {
+      const cells = cellsOf(it);
+      if (fits(it) && !blocksDoor(it) && !cells.some((c) => taken.has(c))) { keep.push(it); cells.forEach((c) => taken.add(c)); } else dropped++;
+    }
+    home.items = keep;
+    selected = -1;
+    if (dropped) toast(`📦 Put away ${dropped} thing${dropped > 1 ? 's' : ''} that didn't fit any more.`);
+    commit('place');
+  }
+
   function setEdit(on) {
     edit = on && mine();
     if (stage.camRoom) stage.camRoom.off = edit; // decorating gets the bird's-eye view over the walls
@@ -818,7 +898,7 @@ export function house(stage) {
     while (room.items.children.length) room.items.remove(room.items.children[0]);
     stage.interactables = stage.interactables.filter((i) => !i.house);
     solids.length = 0;
-    Object.assign(walker.me, { x: W / 2, z: W - 4.2, heading: Math.PI });
+    Object.assign(walker.me, { x: WX() / 2, z: WZ() - 4.2, heading: Math.PI });
     net.send('scene', { scene: `house:${k}` });
     net.send('house_get', { k });
     sfx('knock');
@@ -827,7 +907,30 @@ export function house(stage) {
   }
 
   // leave through the front door
-  stage.interactable({ x: W / 2, z: W - 0.6, r: 2.3, label: 'go back outside', use: () => stage.onExit?.() });
+  const exitDoor = stage.interactable({ x: WX() / 2, z: WZ() - 0.6, r: 2.3, label: 'go back outside', use: () => stage.onExit?.() });
+
+  /** Build the room at this house's size (only when it changes: visiting a bigger house, or resizing yours). */
+  function applySize(size = [10, 10]) {
+    if (size[0] === NX && size[1] === NZ && room) return;
+    const wasIn = { x: walker.me.x / WX(), z: walker.me.z / WZ() };
+    setDims(size);
+    if (ghost) room.group.remove(ghost);
+    stage.scene.remove(room.group);
+    room = buildRoom();
+    stage.scene.add(room.group);
+    room.grid.visible = edit;
+    ghost = null;
+    buildGhost();
+    Object.assign(bounds, { maxX: WX() - 0.1, maxZ: WZ() - 0.1 });
+    if (stage.camRoom) Object.assign(stage.camRoom, { maxX: WX() - 0.1, maxZ: WZ() - 0.1 });
+    Object.assign(exitDoor, { x: WX() / 2, z: WZ() - 0.6 });
+    center.set(WX() / 2, 0, WZ() / 2);
+    sun.position.set(WX() / 2 + 6, 40, WZ() / 2 + 12);
+    sun.target.position.set(WX() / 2, 0, WZ() / 2);
+    // stay at the same spot in the room, relatively (resizing your own house while standing in it)
+    walker.me.x = Math.min(WX() - 0.6, Math.max(0.6, wasIn.x * WX()));
+    walker.me.z = Math.min(WZ() - 0.6, Math.max(0.6, wasIn.z * WZ()));
+  }
 
   // ---- network ------------------------------------------------------------------------
 
@@ -863,12 +966,13 @@ export function house(stage) {
         if (echoes > 0 || saveTimer) { home.likes = m.house.likes; renderHeader(); return; }
       }
       const fresh = !home;
-      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', items: m.house.items });
+      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', size: m.house.size ?? [10, 10], items: m.house.items });
       const newLikes = home && m.house.likes.length > home.likes.length;
       if (same) home.likes = m.house.likes;
       else {
         if (seated) standUp();
-        home = { ...m.house, items: m.house.items.map((it) => ({ ...it })) };
+        home = { ...m.house, size: m.house.size ?? [10, 10], items: m.house.items.map((it) => ({ ...it })) };
+        applySize(home.size);
         rebuildItems();
         if (!fresh && !mine()) sfx('pop', { vol: 0.4 }); // the owner is redecorating while you watch
       }
@@ -877,6 +981,8 @@ export function house(stage) {
     }),
     net.on('house_bought', (m) => {
       sfx('buy');
+      const upgrade = CATALOG.houseSizes.find((z) => z.id === m.id);
+      if (upgrade) { toast(`🏠 Your house can now be up to ${upgrade.w} × ${upgrade.d}! Make it bigger in 🎨 Style.`); return; }
       const item = FURN[m.id] ?? [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings, ...CATALOG.doors].find((d) => d.id === m.id);
       toast(`🛒 Bought ${item?.name ?? 'it'}!${FURN[m.id] ? ' Find it in 🛋️ Items.' : ' Pick it in 🎨 Style.'}`);
     }),
@@ -892,7 +998,8 @@ export function house(stage) {
 
   // ---- per frame --------------------------------------------------------------------
 
-  const center = new THREE.Vector3(W / 2, 0, W / 2);
+  const center = new THREE.Vector3(WX() / 2, 0, WZ() / 2);
+  const coreFade = basic('#e8d6b8', { transparent: true, opacity: 0.18, depthWrite: false });
   const baseHeight = orbit.height;
   stage.onFrame((dt, now) => {
     const t = now / 1000;
@@ -909,7 +1016,7 @@ export function house(stage) {
       if (preview.door) {
         // trying on a door: look at it from inside the room
         if (orbit.fps) { orbit.fps = false; orbit.height = baseHeight; }
-        orbit.target.set(W / 2, 0, W * 0.6);
+        orbit.target.set(WX() / 2, 0, WZ() * 0.6);
         orbit.yaw += (Math.PI - orbit.yaw) * Math.min(1, dt * 4);
         orbit.dist += (7 - orbit.dist) * Math.min(1, dt * 4);
         orbit.pitch += (0.2 - orbit.pitch) * Math.min(1, dt * 4);
@@ -924,7 +1031,8 @@ export function house(stage) {
         // decorating: pull the camera up for an overview of the whole room
         if (orbit.fps) { orbit.fps = false; orbit.height = baseHeight; orbit.pitch = 0.95; }
         orbit.target.copy(center);
-        orbit.dist += (19 - orbit.dist) * Math.min(1, dt * 4);
+        const far = 19 * Math.max(1, Math.max(NX, NZ) / 10);
+        orbit.dist += (far - orbit.dist) * Math.min(1, dt * 4);
         orbit.pitch += (0.95 - orbit.pitch) * Math.min(1, dt * 4);
       }
     } else if (orbit.dist > 15) orbit.dist += (11 - orbit.dist) * Math.min(1, dt * 3);
@@ -942,10 +1050,27 @@ export function house(stage) {
     if (!edit && orbit.fps) { orbit.fps = false; orbit.height = baseHeight; }
     room.ceiling.visible = !edit || !!preview.ceiling;
     room.roof.visible = !edit;
-    room.walls.front.grp.visible = c.z < W - 0.2;
+    room.walls.front.grp.visible = c.z < WZ() - 0.2;
     room.walls.back.grp.visible = c.z > 0.2;
     room.walls.left.grp.visible = c.x > 0.2;
-    room.walls.right.grp.visible = c.x < W - 0.2;
+    room.walls.right.grp.visible = c.x < WX() - 0.2;
+    // walls you've built inside fade when they're between the camera and you
+    for (const e of entries) {
+      if (!e.roomWall) continue;
+      const [w, d] = footprint(e.it);
+      const fade = !edit && segHitsRect(c.x, c.z, p.x, p.z, e.it.x * T, e.it.y * T, (e.it.x + w) * T, (e.it.y + d) * T);
+      if (e.faded !== fade) {
+        e.faded = fade;
+        e.group.traverse((o) => {
+          if (!o.isMesh) return;
+          if (o.userData.outline) { o.visible = !fade; return; }
+          if (o.userData.wallpaper) { o.material = fade ? room.wallFade : room.wallMat; return; }
+          o.userData.solidMat ??= o.material;
+          o.material = fade ? coreFade : o.userData.solidMat;
+          o.castShadow = !fade;
+        });
+      }
+    }
   });
 
   visit(S.me);
@@ -957,5 +1082,19 @@ export function house(stage) {
     if (saveTimer && home && mine()) net.send('house_save', payload()); // flush a pending save
     clearTimeout(saveTimer);
     stage.scene?.remove(room.group);
+    setDims([10, 10]);
   };
+}
+
+/** Does the line from (x0, z0) to (x1, z1) pass through the box [ax..bx] x [az..bz]? */
+function segHitsRect(x0, z0, x1, z1, ax, az, bx, bz) {
+  let t0 = 0, t1 = 1;
+  const dx = x1 - x0, dz = z1 - z0;
+  for (const [p, q] of [[-dx, x0 - ax], [dx, bx - x0], [-dz, z0 - az], [dz, bz - z0]]) {
+    if (p === 0) { if (q < 0) return false; continue; }
+    const r = q / p;
+    if (p < 0) t0 = Math.max(t0, r); else t1 = Math.min(t1, r);
+    if (t0 > t1) return false;
+  }
+  return true;
 }

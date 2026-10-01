@@ -24,10 +24,12 @@ function setup() {
   scene.add(char.root);
 }
 
-function prepare(look, { pose = 'idle', phase = 0, time = 0, yaw = 0 }) {
+function prepare(look, { pose = 'idle', phase = 0, time = 0, yaw = 0, ride = false }) {
   setup();
   char.setLook(look);
-  char.setPose(pose, phase);
+  const riding = ride && char.setRiding(true);
+  if (!ride && char.riding) char.setRiding(false);
+  char.setPose(riding ? 'ride' : pose, phase);
   char.jumpT = 1;
   char.blinkAt = 5;
   char.update(0, time, false);
@@ -44,7 +46,7 @@ function size(w, h) {
  * zoom: 'body' | 'head'; yaw rotates the character (0 faces the camera).
  */
 export function renderPortrait(look, w, h, { zoom = 'body', yaw = 0.45, pose = 'idle', phase = 0, time = 0 } = {}) {
-  prepare(look, { pose, phase, time, yaw });
+  prepare(look, { pose, phase, time, yaw: zoom === 'mount' ? yaw + 0.5 : yaw, ride: zoom === 'mount' });
   size(w, h);
   persp.aspect = w / h;
   for (const o of char.root.children) o.visible = zoom !== 'pet' || o === char.rig.pet;
@@ -54,6 +56,12 @@ export function renderPortrait(look, w, h, { zoom = 'body', yaw = 0.45, pose = '
     persp.fov = 24;
     persp.position.set(px, 1.5, pz + 5.2);
     persp.lookAt(px, 0.72, pz);
+  } else if (zoom === 'mount') {
+    // riding: pull back to fit the mount too
+    persp.fov = 24;
+    const dist = Math.max(8.4, 8.4 / Math.min(1, persp.aspect * 1.1));
+    persp.position.set(0, 2.1, dist);
+    persp.lookAt(0, 1.25, 0);
   } else if (zoom === 'bust') {
     const dy = char.rig.head.position.y - 1.52;
     persp.fov = 24;

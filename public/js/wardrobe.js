@@ -17,20 +17,21 @@ const TABS = [
   { id: 'back', icon: '🪽', label: 'Back' },
   { id: 'aura', icon: '✨', label: 'Aura' },
   { id: 'pet', icon: '🐾', label: 'Pet' },
+  { id: 'mount', icon: '🐴', label: 'Mount' },
   { id: 'crates', icon: '🎁', label: 'Crates' },
 ];
 const TITLES = {
   body: 'Body & skin', eyes: 'Eyes', hair: 'Hairstyle', top: 'Tops', bottom: 'Bottoms', hat: 'Hats',
-  face: 'Glasses & masks', back: 'Backpacks & wings', aura: 'Auras', pet: 'Pets', crates: 'Mystery crates',
+  face: 'Glasses & masks', back: 'Backpacks & wings', aura: 'Auras', pet: 'Pets', mount: 'Mounts', crates: 'Mystery crates',
 };
 const HEAD_SLOTS = new Set(['hair', 'hat', 'face']);
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic', 'exclusive'];
 const DRAFT_DEFAULTS = {
-  bottom: 'bottom_pants', shoeColor: '#23263f', eyeColor: '#1d1b2e', eyes: 'eyes_round', height: 'height_medium', build: 'build_regular', pet: 'pet_none',
+  bottom: 'bottom_pants', shoeColor: '#23263f', eyeColor: '#1d1b2e', eyes: 'eyes_round', height: 'height_medium', build: 'build_regular', pet: 'pet_none', mount: 'mount_none',
 };
 const TILE = 98;
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
-const zoomFor = (slot) => (slot === 'pet' ? 'pet' : HEAD_SLOTS.has(slot) || slot === 'eyes' ? 'head' : 'body');
+const zoomFor = (slot) => (slot === 'pet' ? 'pet' : slot === 'mount' ? 'mount' : HEAD_SLOTS.has(slot) || slot === 'eyes' ? 'head' : 'body');
 
 export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSaved } = {}) {
   const creating = mode === 'create';
@@ -45,7 +46,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       <aside class="wd2-stage">
         <h2 class="wd2-title">${creating ? '✨ Create your character' : mode === 'shop' ? '👕 Style Shop' : '🪞 Wardrobe'}</h2>
         <div class="wd2-preview"><canvas class="wd-canvas"></canvas>
-          <div class="wd2-zoom"><button data-zoom="body" class="on" title="Full body">🧍</button><button data-zoom="head" title="Close-up">🙂</button><button data-zoom="pet" title="Your pet">🐾</button></div>
+          <div class="wd2-zoom"><button data-zoom="body" class="on" title="Full body">🧍</button><button data-zoom="head" title="Close-up">🙂</button><button data-zoom="pet" title="Your pet">🐾</button><button data-zoom="mount" title="Your mount">🐴</button></div>
         </div>
         <div class="wd-name"></div>
         <div class="wd-collection muted small"></div>
@@ -165,7 +166,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
     } else if (tab === 'eyes') {
       content.innerHTML = choices('Eye style', 'eyes', CATALOG.eyeStyles, 'head') + swatches('Eye color', 'eyeColor', CATALOG.eyeColors);
     } else {
-      content.innerHTML = `<div class="wd2-card">${itemTiles(tab)}${tab === 'pet' ? '<p class="muted small">Buy pets here, or hatch a random one from an egg at the 🐾 Pet Shop in town (cheaper!).</p>' : ''}</div>`
+      content.innerHTML = `<div class="wd2-card">${itemTiles(tab)}${tab === 'pet' ? '<p class="muted small">Buy pets here, or hatch a random one from an egg at the 🐾 Pet Shop in town (cheaper!).</p>' : ''}${tab === 'mount' ? '<p class="muted small">Wear a mount, then press <kbd>G</kbd> (or tap 🐴) out in town to hop on and ride: much faster than walking!</p>' : ''}</div>`
         + (tab === 'hair' ? swatches('Hair color', 'hairColor', CATALOG.hairColors) + (ITEMS[draft.hair]?.tie ? swatches('Hair tie color', 'hairTie', CATALOG.clothColors, { original: true }) : '') : '')
         + (tab === 'top' ? topPickers() : '')
         + (tab === 'bottom' ? swatches('Bottoms color', 'bottomColor', CATALOG.clothColors)

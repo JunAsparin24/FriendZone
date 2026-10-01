@@ -1,7 +1,7 @@
 // Cosmetics + fish catalog, shared with the server via cosmetics.json.
 export const CATALOG = await (await fetch('cosmetics.json')).json();
 export const ITEMS = Object.fromEntries(CATALOG.items.map((i) => [i.id, i]));
-export const SLOTS = ['hair', 'top', 'bottom', 'hat', 'face', 'back', 'aura', 'pet'];
+export const SLOTS = ['hair', 'top', 'bottom', 'hat', 'face', 'back', 'aura', 'pet', 'mount'];
 
 export const RARITY = {
   junk: { label: 'Junk', color: '#8a8fa8' },

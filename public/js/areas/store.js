@@ -280,6 +280,22 @@ export function styleShopArea(stage) {
   stage.interactable({ x: 4, z: 2.8, r: 2.2, label: 'change your outfit', icon: 'wardrobe', obj: mirror, use: () => stage.openPanel({ wide: true, mount: (body) => wardrobe(body) }) });
   sign(g, 'FITTING MIRROR', { x: 4, z: 1.5, y: 4.2, w: 3.2, h: 0.7, bg: '#ffb13b' });
 
+  // mounts: a mannequin riding a horse on a slowly turning stage
+  const mountStand = new THREE.Group();
+  mountStand.position.set(-4.2, 0, 6.2);
+  g.add(mountStand);
+  add(mountStand, new THREE.CylinderGeometry(1.5, 1.6, 0.3, 32), toon('#ffffff'), { p: [0, 0.15, 0], outline: true });
+  add(mountStand, new THREE.CylinderGeometry(1.52, 1.52, 0.08, 32), toon('#ff9f43'), { p: [0, 0.32, 0] });
+  const rider = new Character({ ...DEFAULT_LOOK, skin: '#e8e2f4', hair: 'hair_none', hairColor: '#e8e2f4', eyes: 'eyes_happy', hat: 'hat_cowboy', mount: 'mount_horse' });
+  rider.setRiding(true);
+  rider.setPose('ride');
+  rider.root.position.y = 0.36;
+  mountStand.add(rider.root);
+  anim.push((t, dt) => { rider.update(dt, t, false); rider.root.rotation.y = t * 0.3; });
+  solids.push({ x: -4.2, z: 6.2, r: 1.6 });
+  stage.interactable({ x: -4.2, z: 4.4, r: 2.4, label: 'browse mounts', icon: 'shop', obj: mountStand, use: shop('mount') });
+  sign(g, 'MOUNTS', { x: -4.2, z: 6.2, y: 4.0, ry: Math.PI, w: 2.4, h: 0.75, bg: '#ff9f43' });
+
   // counter + shopkeeper, plants, a rug
   counter(g, 8, 5.5, 4, '#2ed8c3');
   solids.push({ x: 8, z: 5.5, w: 4.2, d: 1.1 });

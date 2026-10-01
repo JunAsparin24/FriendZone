@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { net } from '../net.js';
 import { S, esc, nameOf, colorOf } from '../state.js';
+import { CATALOG } from '../catalog.js';
 import { toon, basic, shiny, canvasTexture, outlineMaterial, additive, glowTexture, TAU } from '../three/materials.js';
 import { Sparks, FloatText, crowd } from '../three/fx.js';
 import { sfx } from '../sfx.js';
@@ -583,7 +584,17 @@ function buildTrack() {
   return { group: g, lamps, cheer, pads, boxes, balloons, turbines };
 }
 
-function buildKart(color) {
+// The garage: what you can race in. They all drive the same; it's how you look doing it.
+export const VEHICLES = [
+  { id: 'kart', name: 'Go-Kart', icon: '🏎️' },
+  { id: 'moto', name: 'Motorbike', icon: '🏍️' },
+  { id: 'buggy', name: 'Dune Buggy', icon: '🚙' },
+  { id: 'f1', name: 'F1 Car', icon: '🏁' },
+  { id: 'truck', name: 'Monster Truck', icon: '🛻' },
+];
+
+/** Build a vehicle: { g, body, wheels, flames, bubble, color, paint, seatY, seatZ, pose }. */
+function buildKart(color, { type = 'kart', accent = '#23263f' } = {}) {
   const g = new THREE.Group();
   const body = new THREE.Group();
   g.add(body);
@@ -597,37 +608,110 @@ function buildKart(color) {
     return m;
   };
   const paint = toon(color).clone(); // its own material, so a Star can make it shimmer
-  add(new THREE.BoxGeometry(1.5, 0.35, 2.6), paint, [0, 0.45, 0]);
-  add(new THREE.BoxGeometry(1.2, 0.3, 0.9), toon(color), [0, 0.55, 1.35], [0.25, 0, 0]);
-  add(new THREE.BoxGeometry(1.7, 0.12, 0.5), toon('#23263f'), [0, 0.5, 1.75]);
-  add(new THREE.BoxGeometry(1.6, 0.4, 0.3), toon('#23263f'), [0, 0.85, -1.2]);
-  add(new THREE.BoxGeometry(1.9, 0.1, 0.5), toon(color), [0, 1.25, -1.35]); // spoiler
-  for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.08, 0.4, 0.3), toon('#23263f'), [s * 0.7, 1.05, -1.35], null, false);
-  add(new THREE.CylinderGeometry(0.18, 0.18, 0.06, 16), toon('#23263f'), [0, 1.0, 0.75], [1.1, 0, 0], false);
+  const trim = toon(accent), dark = toon('#23263f'), chrome = shiny('#c0c6d4');
   const wheels = [];
-  for (const [x, z] of [[-0.85, 0.9], [0.85, 0.9], [-0.85, -0.9], [0.85, -0.9]]) {
-    const w = new THREE.Group();
-    w.position.set(x, 0.36, z);
-    const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.34, 16), toon('#1b1b24'));
+  const wheel = (x, y, z, r, w, rim = '#c0c6d4') => {
+    const grp = new THREE.Group();
+    grp.position.set(x, y, z);
+    const tire = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, 18), toon('#1b1b24'));
     tire.rotation.z = Math.PI / 2;
     tire.castShadow = true;
-    const hub = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.5, 0.08), shiny('#c0c6d4'));
-    w.add(tire, hub);
-    body.add(w);
-    wheels.push(w);
+    tire.add(new THREE.Mesh(tire.geometry, OUT));
+    const hub = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, r * 1.3, r * 0.22), shiny(rim));
+    grp.add(tire, hub);
+    body.add(grp);
+    wheels.push(grp);
+    return grp;
+  };
+  const tube = (a, b, r, mat) => {
+    const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), d = B.clone().sub(A);
+    const m = add(new THREE.CylinderGeometry(r, r, d.length(), 8), mat, [0, 0, 0], null, false);
+    m.position.copy(A).add(B).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  };
+  let seatY = 0.45, seatZ = -0.2, pose = 'sit', exhaust = [[-0.45, 0.6, -1.6], [0.45, 0.6, -1.6]], bubbleY = 0.9;
+  if (type === 'moto') {
+    // a sport bike: two big wheels, a fat tank, a fairing and clip-on bars; you lean right over it
+    wheel(0, 0.42, 1.0, 0.42, 0.2);
+    wheel(0, 0.42, -0.95, 0.42, 0.26);
+    add(new THREE.SphereGeometry(0.34, 18, 14), paint, [0, 0.98, 0.28], null, true).scale.set(0.8, 0.7, 1.25); // tank
+    add(new THREE.BoxGeometry(0.5, 0.45, 0.7), paint, [0, 0.72, 0.35], [-0.35, 0, 0]); // fairing
+    add(new THREE.BoxGeometry(0.42, 0.14, 0.75), dark, [0, 0.95, -0.38], [0.08, 0, 0]); // seat
+    add(new THREE.BoxGeometry(0.46, 0.3, 0.55), trim, [0, 0.98, -0.85], [0.25, 0, 0]); // tail
+    add(new THREE.BoxGeometry(0.4, 0.32, 0.06), toon('#bfe8ff', { transparent: true, opacity: 0.7 }), [0, 1.18, 0.62], [-0.6, 0, 0], false); // screen
+    add(new THREE.SphereGeometry(0.1, 12, 8), basic('#fff6c9'), [0, 0.9, 0.78], null, false); // headlight
+    tube([-0.32, 1.12, 0.5], [0.32, 1.12, 0.5], 0.03, dark);
+    tube([0, 0.42, 1.0], [0, 1.08, 0.62], 0.045, chrome); // forks
+    tube([0, 0.42, -0.95], [0, 0.72, -0.15], 0.05, trim); // swingarm
+    add(new THREE.BoxGeometry(0.36, 0.4, 0.5), dark, [0, 0.55, 0.0]); // engine
+    tube([0.18, 0.45, 0.1], [0.24, 0.62, -0.95], 0.06, chrome); // exhaust
+    add(new THREE.BoxGeometry(0.06, 0.04, 0.9), trim, [0.27, 0.78, 0.25], null, false); // a stripe
+    add(new THREE.BoxGeometry(0.06, 0.04, 0.9), trim, [-0.27, 0.78, 0.25], null, false);
+    seatY = 0.98; seatZ = -0.3; pose = 'drive'; exhaust = [[0.24, 0.62, -1.05]]; bubbleY = 1.1;
+  } else if (type === 'buggy') {
+    // a dune buggy: chunky off-road tyres, an open tub and a roll cage
+    for (const [x, z] of [[-0.95, 1.0], [0.95, 1.0], [-1.0, -0.95], [1.0, -0.95]]) wheel(x, 0.52, z, 0.52, 0.48, accent);
+    add(new THREE.BoxGeometry(1.3, 0.4, 2.5), paint, [0, 0.72, 0]);
+    add(new THREE.BoxGeometry(1.2, 0.28, 0.7), paint, [0, 0.82, 1.3], [0.35, 0, 0]);
+    add(new THREE.BoxGeometry(1.5, 0.18, 0.3), trim, [0, 0.7, 1.7]); // bull bar
+    for (const s of [-1, 1]) {
+      tube([s * 0.55, 0.9, 0.45], [s * 0.5, 1.75, 0.0], 0.05, trim);
+      tube([s * 0.55, 0.9, -0.9], [s * 0.5, 1.75, -0.55], 0.05, trim);
+      tube([s * 0.5, 1.75, 0.0], [s * 0.5, 1.75, -0.55], 0.05, trim);
+    }
+    tube([-0.5, 1.75, 0.0], [0.5, 1.75, 0.0], 0.05, trim);
+    tube([-0.5, 1.75, -0.55], [0.5, 1.75, -0.55], 0.05, trim);
+    for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.1, 10, 8), basic('#fff6c9'), [s * 0.3, 1.78, 0.05], null, false); // roof lights
+    add(new THREE.BoxGeometry(0.5, 0.5, 0.4), dark, [0, 0.95, -1.15]); // the engine out back
+    seatY = 0.82; seatZ = -0.25; exhaust = [[-0.2, 0.9, -1.4], [0.2, 0.9, -1.4]]; bubbleY = 1.1;
+  } else if (type === 'f1') {
+    // a single-seater: long and low, a needle nose, front and rear wings, big open wheels
+    for (const [x, z, r] of [[-0.95, 1.25, 0.36], [0.95, 1.25, 0.36], [-0.95, -1.15, 0.42], [0.95, -1.15, 0.42]]) wheel(x, r, z, r, 0.42);
+    add(new THREE.BoxGeometry(0.75, 0.32, 2.6), paint, [0, 0.42, -0.1]);
+    add(new THREE.ConeGeometry(0.3, 1.3, 4), paint, [0, 0.38, 1.75], [Math.PI / 2, Math.PI / 4, 0]); // nose
+    add(new THREE.BoxGeometry(2.0, 0.06, 0.4), trim, [0, 0.2, 2.15]); // front wing
+    add(new THREE.BoxGeometry(1.7, 0.08, 0.45), trim, [0, 1.05, -1.6]); // rear wing
+    for (const s of [-1, 1]) {
+      add(new THREE.BoxGeometry(0.06, 0.6, 0.5), trim, [s * 0.82, 0.8, -1.6], null, false);
+      add(new THREE.BoxGeometry(0.42, 0.3, 1.1), paint, [s * 0.55, 0.38, -0.3]); // sidepods
+    }
+    add(new THREE.BoxGeometry(0.3, 0.4, 0.7), dark, [0, 0.72, -0.85]); // air box
+    add(new THREE.TorusGeometry(0.22, 0.03, 6, 16, Math.PI), trim, [0, 0.72, 0.15], [0, 0, 0], false); // halo
+    seatY = 0.36; seatZ = -0.05; exhaust = [[0, 0.5, -1.55]]; bubbleY = 0.8;
+  } else if (type === 'truck') {
+    // a monster truck: huge tyres and a pickup body up on big springs
+    for (const [x, z] of [[-1.05, 1.0], [1.05, 1.0], [-1.05, -1.0], [1.05, -1.0]]) wheel(x, 0.78, z, 0.78, 0.6, accent);
+    for (const s of [-1, 1]) for (const z of [-1.0, 1.0]) tube([s * 0.7, 0.78, z], [s * 0.6, 1.25, z * 0.85], 0.07, chrome); // springs
+    add(new THREE.BoxGeometry(1.6, 0.5, 2.7), paint, [0, 1.45, 0]);
+    add(new THREE.BoxGeometry(1.5, 0.55, 1.0), paint, [0, 1.95, 0.05]); // cab
+    add(new THREE.BoxGeometry(1.3, 0.38, 0.06), toon('#bfe8ff', { transparent: true, opacity: 0.75 }), [0, 1.98, 0.57], [-0.3, 0, 0], false);
+    add(new THREE.BoxGeometry(1.7, 0.16, 0.3), trim, [0, 1.3, 1.45]); // bumper
+    add(new THREE.BoxGeometry(1.4, 0.1, 0.5), trim, [0, 2.25, -0.1]); // roof lights bar
+    for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.1, 10, 8), basic('#fff6c9'), [s * 0.45, 2.33, -0.05], null, false);
+    seatY = 1.75; seatZ = -0.35; exhaust = [[-0.45, 1.5, -1.45], [0.45, 1.5, -1.45]]; bubbleY = 1.6;
+  } else {
+    // the classic go-kart
+    add(new THREE.BoxGeometry(1.5, 0.35, 2.6), paint, [0, 0.45, 0]);
+    add(new THREE.BoxGeometry(1.2, 0.3, 0.9), paint, [0, 0.55, 1.35], [0.25, 0, 0]);
+    add(new THREE.BoxGeometry(1.7, 0.12, 0.5), trim, [0, 0.5, 1.75]);
+    add(new THREE.BoxGeometry(1.6, 0.4, 0.3), dark, [0, 0.85, -1.2]);
+    add(new THREE.BoxGeometry(1.9, 0.1, 0.5), trim, [0, 1.25, -1.35]); // spoiler
+    for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.08, 0.4, 0.3), dark, [s * 0.7, 1.05, -1.35], null, false);
+    add(new THREE.CylinderGeometry(0.18, 0.18, 0.06, 16), dark, [0, 1.0, 0.75], [1.1, 0, 0], false);
+    for (const [x, z] of [[-0.85, 0.9], [0.85, 0.9], [-0.85, -0.9], [0.85, -0.9]]) wheel(x, 0.36, z, 0.36, 0.34);
   }
-  const flames = [-0.45, 0.45].map((x) => {
+  const flames = exhaust.map(([x, y, z]) => {
     const f = new THREE.Sprite(additive(glowTexture, 0xff8a2a, 0));
     f.scale.set(0.8, 0.8, 1);
-    f.position.set(x, 0.6, -1.6);
+    f.position.set(x, y, z);
     body.add(f);
     return f;
   });
-  const bubble = new THREE.Mesh(new THREE.SphereGeometry(2.1, 20, 14), new THREE.MeshBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.22, depthWrite: false }));
-  bubble.position.y = 0.9;
+  const bubble = new THREE.Mesh(new THREE.SphereGeometry(type === 'truck' ? 2.6 : 2.1, 20, 14), new THREE.MeshBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.22, depthWrite: false }));
+  bubble.position.y = bubbleY;
   bubble.visible = false;
   g.add(bubble);
-  return { g, body, wheels, flames, bubble, color, paint };
+  return { g, body, wheels, flames, bubble, color, paint, seatY, seatZ, pose };
 }
 
 // items: what they are and how likely you are to get them (front of the pack vs the back)
@@ -666,6 +750,7 @@ export function racing(stage) {
     <canvas class="race-map"></canvas>
     <div class="race-count hidden"></div>
     <div class="hud-panel race-actions"></div>
+    <div class="hud-panel race-garage hidden"></div>
     <p class="hud-panel arena-help"><kbd>W</kbd> gas · <kbd>S</kbd> brake · <kbd>A</kbd>/<kbd>D</kbd> steer · hold <kbd>Space</kbd> to drift (let go for a mini-turbo) · <kbd>Shift</kbd>/<kbd>E</kbd> use your item · hit the ⚡ pads and ❓ boxes!</p>`;
   const $h = (s) => stage.hud.querySelector(s);
   const posEl = $h('.race-pos'), lapEl = $h('.race-lap'), timeEl = $h('.race-time'), speedEl = $h('.race-speed b'), countEl = $h('.race-count');
@@ -701,18 +786,29 @@ export function racing(stage) {
     renderItem();
   }
 
+  const carOf = (k) => S.race?.cars?.[k] ?? { type: 'kart', color: colorOf(k), accent: '#23263f' };
   function kartOf(k) {
     let v = karts.get(k);
-    if (v) return v;
-    const kart = buildKart(colorOf(k));
+    const car = carOf(k), vkey = JSON.stringify(car);
+    if (v && v.vkey === vkey) return v;
+    if (v) {
+      // they've been to the garage: swap the vehicle, keep the driver
+      stage.scene.remove(v.kart.g);
+      v.kart = buildKart(car.color, car);
+      v.vkey = vkey;
+      stage.scene.add(v.kart.g);
+      v.p.char.pose = v.kart.pose;
+      return v;
+    }
+    const kart = buildKart(car.color, car);
     stage.scene.add(kart.g);
     const p = stage.person(k);
-    p.char.pose = 'sit';
+    p.char.pose = kart.pose;
     p.char.petOnLap = true; // your pet rides in your lap
     p.smooth = false;
     p.labelLift = 0.3;
     const g = gridSpot(k);
-    v = { kart, p, x: g.x, z: g.z, h: g.heading, v: 0, tx: g.x, tz: g.z, th: g.heading, prog: 0, flags: '' };
+    v = { kart, p, vkey, x: g.x, z: g.z, h: g.heading, v: 0, tx: g.x, tz: g.z, th: g.heading, prog: 0, flags: '' };
     karts.set(k, v);
     return v;
   }
@@ -733,11 +829,14 @@ export function racing(stage) {
     syncKarts();
     const joined = inRace();
     const canJoin = !joined && (r.state === 'idle' || r.state === 'waiting');
+    const ready = r.ready ?? [], imReady = ready.includes(S.me), n = racers().length;
     actions.innerHTML = [
       canJoin ? '<button class="btn primary" data-a="join">Join race</button>' : '',
-      joined && r.state === 'waiting' ? (racers().length >= 2 ? '<button class="btn primary" data-a="start">🏁 Start race!</button>' : '<button class="btn primary" disabled title="Needs 2+ racers">🏁 Waiting for racers…</button>') : '',
+      joined && r.state === 'waiting' ? `<button class="btn ${imReady ? '' : 'primary'}" data-a="ready">${imReady ? '✋ Not ready' : '✅ Ready!'}</button>` : '',
+      r.state === 'waiting' || r.state === 'idle' ? '<button class="btn" data-a="garage">🔧 Garage</button>' : '',
       joined && r.state === 'waiting' ? '<button class="btn ghost" data-a="leave">Leave grid</button>' : '',
-      r.state === 'waiting' ? `<span class="muted">${racers().length} on the grid. ${racers().length >= 2 ? 'Anyone on it can start.' : 'A race needs at least 2 racers.'} Practice laps until then!</span>` : '',
+      r.state === 'waiting' ? `<span class="muted race-ready">${n < 2 ? 'A race needs at least 2 racers. Practice laps until someone joins!'
+        : `<b>${ready.length}/${n} ready.</b> It starts when everyone is! ${racers().map((k) => `<span class="${ready.includes(k) ? 'win' : ''}">${ready.includes(k) ? '✅' : '⏳'} ${esc(nameOf(k))}</span>`).join(' ')}`}</span>` : '',
       !joined && !canJoin ? '<span class="muted">Race in progress. You\'re up next!</span>' : '',
     ].join('');
     actions.classList.toggle('hidden', !actions.innerHTML);
@@ -881,10 +980,40 @@ export function racing(stage) {
   };
   actions.onclick = (e) => {
     const a = e.target.closest('[data-a]')?.dataset.a;
-    if (a) net.send(`race_${a}`);
+    if (a === 'ready') net.send('race_ready', { ready: !(S.race?.ready ?? []).includes(S.me) });
+    else if (a === 'garage') { garageEl.classList.toggle('hidden'); renderGarage(); }
+    else if (a) net.send(`race_${a}`);
+    e.target.blur?.();
+  };
+
+  // ---- the garage: pick your ride and paint it ----
+  const garageEl = $h('.race-garage');
+  const PAINT = CATALOG.clothColors;
+  function renderGarage() {
+    if (garageEl.classList.contains('hidden')) return;
+    const car = carOf(S.me);
+    const swatches = (field) => PAINT.map((c) => `<button class="gar-sw ${car[field] === c ? 'on' : ''}" data-g="${field}:${c}" style="--c:${c}" title="${c}"></button>`).join('');
+    garageEl.innerHTML = `<div class="gar-head"><b>🔧 Garage</b><button class="btn small ghost" data-g="close">✕</button></div>
+      <div class="gar-types">${VEHICLES.map((v) => `<button class="gar-type ${car.type === v.id ? 'on' : ''}" data-g="type:${v.id}"><span>${v.icon}</span>${v.name}</button>`).join('')}</div>
+      <div class="gar-label">Paint</div><div class="gar-sws">${swatches('color')}</div>
+      <div class="gar-label">Trim</div><div class="gar-sws">${swatches('accent')}</div>
+      <p class="muted small">Every ride handles the same. It's all about the style!</p>`;
+  }
+  garageEl.onclick = (e) => {
+    const g = e.target.closest('[data-g]')?.dataset.g;
+    if (!g) return;
+    if (g === 'close') { garageEl.classList.add('hidden'); return; }
+    const [field, value] = g.split(':');
+    const car = { ...carOf(S.me), [field]: value };
+    if (!PAINT.includes(car.color)) car.color = PAINT[0];
+    net.send('race_vehicle', car);
+    // show it straight away (the server confirms with the next race update)
+    if (S.race) { S.race.cars = { ...(S.race.cars ?? {}), [S.me]: car }; if (inRace()) kartOf(S.me); }
+    sfx('pop', { vol: 0.5 });
+    renderGarage();
   };
   const off = listen({
-    race: renderControls,
+    race: () => { renderControls(); renderGarage(); },
     race_kp: (m) => {
       const v = kartOf(m.k);
       Object.assign(v, { tx: m.x, tz: m.z, th: m.h, v: m.v, prog: m.p, flags: m.f });
@@ -1091,9 +1220,9 @@ export function racing(stage) {
       const star = v.flags.includes('S');
       if (star) v.kart.paint.color.setHSL(((now / 5) % 360) / 360, 0.9, 0.6);
       else v.kart.paint.color.set(v.kart.color);
-      v.p.x = v.x - Math.sin(v.h) * 0.2;
-      v.p.y = 0.45 * kg.scale.x + kg.position.y;
-      v.p.z = v.z - Math.cos(v.h) * 0.2;
+      v.p.x = v.x + Math.sin(v.h) * v.kart.seatZ * kg.scale.x;
+      v.p.y = v.kart.seatY * kg.scale.x + kg.position.y;
+      v.p.z = v.z + Math.cos(v.h) * v.kart.seatZ * kg.scale.x;
       v.p.heading = kg.rotation.y;
       v.p.char.root.scale.setScalar(zapped ? 0.6 : 1);
       v.p.sub.textContent = r.order.includes(k) ? ['🥇', '🥈', '🥉'][r.order.indexOf(k)] ?? '🏁' : '';

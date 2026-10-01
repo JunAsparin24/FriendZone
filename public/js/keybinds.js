@@ -15,6 +15,7 @@ export const ACTIONS = [
   { id: 'turnLeft', label: 'Turn camera left', def: 'q' },
   { id: 'turnRight', label: 'Turn camera right', def: 'r' },
   { id: 'map', label: 'Big map', def: 'm' },
+  { id: 'ride', label: 'Ride / get off your mount', def: 'g' },
   { id: 'chat', label: 'Chat', def: 'Enter' },
   { id: 'look', label: 'Mouse look (hide cursor)', def: 'Control' },
 ];

@@ -55,12 +55,13 @@ MAX_MEMBERS = 50
 
 SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "archery", "shop", "petshop", "arcade", "tavern", "beach"}
 AREA_SCENES = {"casino", "shop", "petshop", "arcade", "tavern", "beach"}  # 3D rooms you walk around in; positions are relayed to everyone inside
+COVE_OPEN = False  # Coral Cove is still being built: only admins can go through the portal for now
 
 
 def is_area(scene):
     """Walk-around rooms: the casino, and every member's house ("house:<owner>")."""
     return scene in AREA_SCENES or (isinstance(scene, str) and scene.startswith("house:"))
-POSES = {"fish", "cast", "bite", "reel", "catch", "bench"}
+POSES = {"fish", "cast", "bite", "reel", "catch", "bench", "ride"}
 WORLD_W, WORLD_H = 7200, 4800
 START_COINS = 500
 DAILY_BONUS = 300
@@ -299,7 +300,7 @@ def near_miss(a, b):
     return any(long_[:i] + long_[i + 1:] == short for i in range(len(long_)))
 
 
-HOUSE_SIZE = 10  # rooms are HOUSE_SIZE x HOUSE_SIZE tiles
+HOUSE_SIZE = 10  # a new house is HOUSE_SIZE x HOUSE_SIZE tiles (bigger with house upgrades)
 HOUSE_MAX_ITEMS = 80
 
 # Cosmetics and fish are shared with the client through one catalog file.
@@ -357,12 +358,22 @@ FLOORS = {f["id"]: f for f in CATALOG["floors"]}
 WALLS = {f["id"]: f for f in CATALOG["walls"]}
 CEILINGS = {f["id"]: f for f in CATALOG["ceilings"]}
 DOORS = {f["id"]: f for f in CATALOG["doors"]}
-HOUSE_DOOR = (4, 6)  # the front door's columns (nothing hangs on the wall there)
-LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura", "pet")
+HOUSE_SIZES = {f["id"]: f for f in CATALOG["houseSizes"]}  # room size upgrades
+HOUSE_MIN = 6  # the smallest a room can be made (tiles)
+LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura", "pet", "mount")
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
                "shoeColor": "clothColors", "eyeColor": "eyeColors", "sockColor": "clothColors"}
 LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds", "shoes": "shoeStyles", "socks": "sockStyles"}
-LOOK_EXTRAS = {"pet": "pet_none", "bottom": "bottom_pants", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
+# racing vehicles you can pick in the garage (all race the same; it's how you look doing it)
+VEHICLE_TYPES = ("kart", "moto", "buggy", "f1", "truck")
+
+
+def vehicle_of(p):
+    v = p.get("vehicle") or {}
+    return {"type": v.get("type", "kart"), "color": v.get("color", p["color"]), "accent": v.get("accent", "#23263f")}
+
+
+LOOK_EXTRAS = {"pet": "pet_none", "mount": "mount_none", "bottom": "bottom_pants", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
                "shoes": "shoes_sneakers", "socks": "socks_none", "sockColor": "#f5f5f5",
                "height": "height_medium", "build": "build_regular"}
 STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBest", "jackpots", "bossKills", "houseLikes",
@@ -684,6 +695,17 @@ def owns_deco(p, deco_id):
     return bool(deco) and (deco.get("free") or p["furni"].get(deco_id, 0) > 0)
 
 
+def max_house(p):
+    """The biggest room this player can have (width, depth), from the size upgrades they own."""
+    sizes = [s for s in HOUSE_SIZES.values() if s.get("free") or p["furni"].get(s["id"], 0) > 0]
+    return max(s["w"] for s in sizes), max(s["d"] for s in sizes)
+
+
+def house_dims(h):
+    w, d = (h.get("size") or [HOUSE_SIZE, HOUSE_SIZE])[:2]
+    return int(w), int(d)
+
+
 def met(p, cond):
     if "level" in cond:
         return level_for(p["xp"]) >= cond["level"]
@@ -711,6 +733,14 @@ def clean_house(p, data):
     door = data.get("door") or "door_classic"
     if door not in DOORS or not owns_deco(p, door):
         raise GameError("You don't own that door yet.")
+    try:
+        W, D = (int(v) for v in (data.get("size") or [HOUSE_SIZE, HOUSE_SIZE])[:2])
+    except (TypeError, ValueError):
+        raise GameError("That isn't a room size.")
+    max_w, max_d = max_house(p)
+    if not (HOUSE_MIN <= W <= max_w and HOUSE_MIN <= D <= max_d):
+        raise GameError("Buy a bigger house upgrade first!")
+    door_x = (W / 2 - 1, W / 2 + 1)
     items = data.get("items")
     if not isinstance(items, list) or len(items) > HOUSE_MAX_ITEMS:
         raise GameError(f"A house can hold up to {HOUSE_MAX_ITEMS} things.")
@@ -729,27 +759,28 @@ def clean_house(p, data):
             # which wall: r 0 back (column x), 1 left (row y), 2 front (column x), 3 right (row y)
             start = x if r % 2 == 0 else y
             x, y = (x, 0) if r % 2 == 0 else (0, y)
-            cells = {("wall", r, round(start * HOUSE_SNAP) + i) for i in range(f["w"] * HOUSE_SNAP)}
-            if start < 0 or start + f["w"] > HOUSE_SIZE:
+            cells = {("wall", r, round(start * HOUSE_SNAP) + i) for i in range(round(f["w"] * HOUSE_SNAP))}
+            if start < 0 or start + f["w"] > (W if r % 2 == 0 else D):
                 raise GameError("That doesn't fit on the wall.")
-            if r == 2 and start < HOUSE_DOOR[1] and start + f["w"] > HOUSE_DOOR[0]:
+            if r == 2 and start < door_x[1] and start + f["w"] > door_x[0]:
                 raise GameError("That's where the door is.")
         else:
             w, d = (f["w"], f["d"]) if r % 2 == 0 else (f["d"], f["w"])
-            if x < 0 or y < 0 or x + w > HOUSE_SIZE or y + d > HOUSE_SIZE:
+            if x < 0 or y < 0 or x + w > W or y + d > D:
                 raise GameError("That doesn't fit in the room.")
             x0, y0 = round(x * HOUSE_SNAP), round(y * HOUSE_SNAP)
-            cells = {(kind, x0 + i, y0 + j) for i in range(w * HOUSE_SNAP) for j in range(d * HOUSE_SNAP)}
+            cells = {(kind, x0 + i, y0 + j) for i in range(round(w * HOUSE_SNAP)) for j in range(round(d * HOUSE_SNAP))}
         if cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
         clean_items.append({"id": f["id"], "x": x, "y": y, "r": r})
-    return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "items": clean_items}
+    return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items}
 
 
 def house_view(p):
     h = p["house"]
-    return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"), "items": h["items"], "likes": h["likes"]}
+    return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"),
+            "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"]}
 
 
 def public(p, client):
@@ -868,7 +899,7 @@ PRE_AUTH = {"create", "join", "resume", "zones_online"}
 IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
-    "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
+    "race_join", "race_leave", "race_start", "race_ready", "race_vehicle", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "crab_bet", "ball", "ball_steal", "ball_event", "court_join", "court_ready", "court_leave", "court_score", "golf_done", "boat", "boat_take", "boat_leave", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "arcade_score", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
@@ -1008,7 +1039,7 @@ class Game:
             "zone": {"code": code, "name": room.zone["name"], "owner": room.zone["owner"]},
             "players": [public(p, room.clients.get(k)) for k, p in room.zone["players"].items()],
             "chat": room.chat, "feed": room.feed, "race": self.race_view(room), "arcade": room.zone.get("arcade", {}),
-            "rain": raining(room), "weather": weather(room),
+            "rain": raining(room), "weather": weather(room), "admin": c.admin,
         })
         self.check_unlocks(c)
         self.push_player(room, key)
@@ -1213,6 +1244,8 @@ class Game:
 
     def on_scene(self, c, m):
         scene = m.get("scene")
+        if scene == "beach" and not COVE_OPEN and not c.admin:
+            return self.sys(c, "🚧 Coral Cove is coming soon!")
         if scene in SCENES:
             self.set_scene(c, scene)
         elif isinstance(scene, str) and scene.startswith("house:") and scene[6:] in c.room.zone["players"]:
@@ -1578,6 +1611,7 @@ class Game:
                 c.admin_fails += 1
                 return self.sys(c, "Wrong password.", "error")
             c.admin = True
+            c.ws.send({"t": "admin", "on": True})
             print(f"[admin] {c.player['name']} turned on admin mode in zone {c.room.zone['code']}", flush=True)
             return self.sys(c, "🛡️ Admin mode on! Type /help to see what you can do.", "ok")
         if cmd == "help":
@@ -1826,6 +1860,7 @@ class Game:
 
     def admin_unadmin(self, c, args):
         c.admin = False
+        c.ws.send({"t": "admin", "on": False})
         self.sys(c, "Admin mode off.")
 
     def on_emote(self, c, m):
@@ -2089,7 +2124,10 @@ class Game:
 
     def race_view(self, room):
         r = room.race
+        players = room.zone["players"]
         return {"state": r["state"], "racers": r["racers"], "order": r["order"], "laps": RACE_LAPS,
+                "ready": sorted(r.get("ready", set()) & set(r["racers"])),
+                "cars": {k: vehicle_of(players[k]) for k in r["racers"] if k in players},
                 "since": round(time.monotonic() - r.get("goAt", time.monotonic()), 2) if r["state"] == "running" else 0,
                 "times": r.get("times", {}),
                 # the starting order is fixed once a race starts; before that it's whoever is on the grid
@@ -2106,7 +2144,35 @@ class Game:
             raise GameError("A race is underway. You're in the next one!")
         r["racers"][c.key] = 0
         r["state"] = "waiting"
+        r.setdefault("ready", set()).discard(c.key)
         self.race_sync(c.room)
+
+    def on_race_ready(self, c, m):
+        """Ready up on the grid (or stand down). When everyone on it is ready, the race starts."""
+        room, r = c.room, c.room.race
+        if c.key not in r["racers"] or r["state"] != "waiting":
+            return
+        ready = r.setdefault("ready", set())
+        if m.get("ready", True):
+            ready.add(c.key)
+        else:
+            ready.discard(c.key)
+        if len(r["racers"]) >= 2 and all(k in ready for k in r["racers"]):
+            self.race_begin(room)
+        else:
+            self.race_sync(room)
+
+    def on_race_vehicle(self, c, m):
+        """Pick your ride in the garage: a kart, a motorbike, a buggy, an F1 car or a monster truck, in your colours."""
+        if not c.ready("race_vehicle", 0.2):
+            return
+        kind, color, accent = m.get("type"), m.get("color"), m.get("accent")
+        if kind not in VEHICLE_TYPES or color not in CATALOG["clothColors"] or accent not in CATALOG["clothColors"]:
+            raise GameError("That isn't something the garage can build.")
+        c.player["vehicle"] = {"type": kind, "color": color, "accent": accent}
+        self.store.mark()
+        if c.key in c.room.race["racers"]:
+            self.race_sync(c.room)
 
     def on_race_leave(self, c, m):
         self.race_remove(c)
@@ -2116,21 +2182,25 @@ class Game:
         if c.key not in r["racers"]:
             return
         del r["racers"][c.key]
+        r.setdefault("ready", set()).discard(c.key)
         if not r["racers"]:
             r.update(id=r["id"] + 1, state="idle", order=[])
         elif r["state"] == "running" and all(k in r["order"] for k in r["racers"]):
             self.race_finish(room, r["id"])
             return
+        elif r["state"] == "waiting" and len(r["racers"]) >= 2 and all(k in r["ready"] for k in r["racers"]):
+            self.race_begin(room)  # the one holding everyone up left
+            return
         self.race_sync(room)
 
     def on_race_start(self, c, m):
-        room, r = c.room, c.room.race
-        if c.key not in r["racers"] or r["state"] != "waiting":
-            return
-        if len(r["racers"]) < 2:
-            raise GameError("You need at least one other racer on the grid to start. Practice laps until someone joins!")
+        # (older clients: "start" now just means you're ready)
+        self.on_race_ready(c, {"ready": True})
+
+    def race_begin(self, room):
+        r = room.race
         r.update(id=r["id"] + 1, state="countdown", order=[], field=len(r["racers"]), times={},
-                 grid=list(r["racers"]))
+                 grid=list(r["racers"]), ready=set())
         for k in r["racers"]:
             r["racers"][k] = 0
         self.race_sync(room)
@@ -2156,7 +2226,7 @@ class Game:
         r = room.race
         if r["id"] != rid or r["state"] != "done":
             return
-        r.update(state="waiting" if r["racers"] else "idle", order=[])
+        r.update(state="waiting" if r["racers"] else "idle", order=[], ready=set())
         for k in r["racers"]:
             r["racers"][k] = 0
         self.race_sync(room)
@@ -3624,7 +3694,7 @@ class Game:
     def on_house_buy(self, c, m):
         p = c.player
         item_id = str(m.get("id", ""))
-        item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id) or CEILINGS.get(item_id) or DOORS.get(item_id)
+        item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id) or CEILINGS.get(item_id) or DOORS.get(item_id) or HOUSE_SIZES.get(item_id)
         if not item or "price" not in item:
             raise GameError("That isn't for sale.")
         have = p["furni"].get(item_id, 0)

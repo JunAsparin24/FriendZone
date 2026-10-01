@@ -1101,6 +1101,27 @@ BUILDERS.portal = function portal(g, w, d, anim) {
   }
   add(g, new THREE.CylinderGeometry(1.3, 1.5, 0.06, 20), toon('#f2d9a0'), { p: [0, 0.37, 0.8], cast: false });
   signBoard(g, null, 'CORAL COVE', { font: 'chunky', face: '#ffffff', bg: ['#ff7a59'], rail: '#6b4226', w: 4.6, h: 0.75, p: [0, 5.75, 0] });
+  // not open yet: caution tape across the doorway, cones at its feet and a COMING SOON sign up top
+  const tapeTex = canvasTexture(512, 48, (c) => {
+    c.fillStyle = '#ffd400'; c.fillRect(0, 0, 512, 48);
+    c.fillStyle = '#1b1b1b'; c.fillRect(0, 0, 512, 5); c.fillRect(0, 43, 512, 5);
+    c.font = '900 26px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (let k = 0; k < 2; k++) c.fillText('CAUTION', 128 + k * 256, 25);
+  });
+  tapeTex.wrapS = THREE.RepeatWrapping;
+  const tape = (x0, y0, x1, y1, z) => {
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    const tex = tapeTex.clone(); tex.repeat.set(len / 2.4, 1); tex.needsUpdate = true;
+    add(g, new THREE.BoxGeometry(len, 0.32, 0.03), new THREE.MeshToonMaterial({ map: tex, gradientMap: toon('#fff').gradientMap }),
+      { p: [(x0 + x1) / 2, (y0 + y1) / 2, z], r: [0, 0, Math.atan2(y1 - y0, x1 - x0)], cast: false });
+  };
+  tape(-2.1, 0.8, 2.1, 4.0, 0.12);
+  tape(-2.1, 4.0, 2.1, 0.8, 0.16);
+  tape(-2.1, 2.3, 2.1, 2.5, 0.2);
+  const deck = sub(g, 0, 0.35, 0); // (on top of the stone base)
+  cone(deck, -1.2, 1.3);
+  cone(deck, 1.3, 1.4);
+  signBoard(g, null, 'COMING SOON', { font: 'chunky', face: '#1b1b1b', bg: ['#ffd400'], rail: '#1b1b1b', w: 5.2, h: 0.8, p: [0, 6.95, 0] });
 };
 
 // the fish market stall by the pond: a counter of fish on ice, and the fishmonger who buys your catch

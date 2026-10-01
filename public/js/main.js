@@ -40,7 +40,7 @@ let viewing = null;        // whose profile the lobby card shows
 let modal = null;          // { activity, cleanup }
 let area = null;           // the 3D area you're in (casino, arena…), if any
 
-export const world = new World($('#worldCanvas'), { onActivity: openActivity, onNear: showPrompt });
+export const world = new World($('#worldCanvas'), { onActivity: openActivity, onNear: showPrompt, onRide: (on) => $('#rideBtn').classList.toggle('on', on) });
 
 // ---------------------------------------------------------------------------
 // Zones remembered on this device
@@ -72,8 +72,8 @@ fetch('/version.json', { cache: 'no-store' }).then((r) => r.json()).then((v) => 
 function show(id) {
   screen = id;
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('hidden', s.id !== id));
-  $('#versionTag').hidden = id === 'world'; // (menus only)
-  $('#chatBtn').hidden = id !== 'world';
+  $('#versionTag').hidden = $('#feedbackBtn').hidden = id === 'world'; // (menus only)
+  $('#chatBtn').hidden = $('#rideBtn').hidden = id !== 'world';
   $('.chat').classList.remove('open');
   if (id === 'home') renderHome();
   if (id === 'lobby') renderLobby();
@@ -307,7 +307,7 @@ $('#playBtn').onclick = () => {
   // you were in Coral Cove last time: back you go
   let town = null;
   try { town = localStorage.getItem('fz.town'); } catch { /* private mode */ }
-  if (town === 'cove') setTimeout(() => openActivity('portal'), 300);
+  if (town === 'cove' && S.admin) setTimeout(() => openActivity('portal'), 300);
 };
 window.addEventListener('fz:lobby', () => $('#backLobby').click());
 
@@ -397,13 +397,17 @@ function renderChat() {
 function showPrompt(spot) {
   const el = $('#hudPrompt');
   el.classList.toggle('hidden', !spot);
-  if (spot) el.innerHTML = `${actionHint()} ${spot.verb ?? 'enter'} <span class="prompt-ico">${iconSvg(spot.id) || spot.emoji}</span> ${esc(spot.name)}`;
+  if (spot?.id === 'portal' && !S.admin) el.innerHTML = '🚧 Coral Cove is coming soon!';
+  else if (spot) el.innerHTML = `${actionHint()} ${spot.verb ?? 'enter'} <span class="prompt-ico">${iconSvg(spot.id) || spot.emoji}</span> ${esc(spot.name)}`;
   el.onclick = spot ? (spot.action ?? (() => openActivity(spot.id))) : null;
 }
 
 export function openActivity(id) {
   const activity = ACTIVITIES[id];
   if (!activity || modal || area) return;
+  if (world.riding && id !== 'wardrobe') world.toggleRide(false); // (hop off to go inside)
+  // Coral Cove is still being built: only admins can go through the portal for now
+  if (id === 'portal' && !S.admin) { sfx('error'); toast('🚧 Coral Cove is coming soon!'); return; }
   if (activity.world) world.startActivity(activity.world);
   else if (activity.area) openArea(activity);
   else openModal(activity);
@@ -501,8 +505,10 @@ net.on('sys', (m) => {
   renderChat();
   if (m.kind === 'ok' || m.kind === 'error') toast(m.text.split('\n')[0], m.kind === 'error' ? 'error' : undefined);
 });
+net.on('admin', (m) => { S.admin = !!m.on; });
 net.on('kicked', (m) => { leaveZone(); toast(m.msg, 'error'); });
 
+$('#rideBtn').onclick = (e) => { e.currentTarget.blur(); world.toggleRide(); };
 $('#chatBtn').onclick = () => {
   const open = $('.chat').classList.toggle('open');
   $('#chatBtn').classList.toggle('on', open);
@@ -551,7 +557,8 @@ net.on('welcome', (m) => {
   S.arcade = m.arcade ?? {};
   S.rain = !!m.rain;
   S.weather = weatherState.kind = m.weather ?? (m.rain ? 'rain' : 'sunny');
-  session = { code: m.zone.code, name: me().name, token: m.token };
+  S.admin = !!m.admin;
+  session ={ code: m.zone.code, name: me().name, token: m.token };
   rememberZone({ ...session, zoneName: m.zone.name });
   for (const form of [$('#createForm'), $('#joinForm')]) {
     form.reset();

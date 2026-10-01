@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { wind } from './three/wind.js';
 import { watchContext } from './gfxguard.js';
 import { net } from './net.js';
-import { S, isTyping, esc } from './state.js';
+import { S, isTyping, esc, toast } from './state.js';
+import { mountSpeed } from './three/mounts.js';
 import * as M from './map.js';
 import { Character } from './three/character.js';
 import { buildEnvironment } from './three/environment.js';
@@ -38,7 +39,7 @@ const SPOT_COLORS = {
 const dayLight = () => Math.min(1, Math.max(0, (Math.sin(dayPhase() * Math.PI * 2) + 0.12) / 0.34));
 // how far a point is from a spot: the lake by its real shoreline, buildings by their footprint
 const spotDist = (s, p) => (s.kind === 'pond' ? Math.max(0, M.lakeDist(p.x, p.y)) : M.distToRect(p, s));
-const BUILDING_HEIGHT = { fishstand: 7, garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4, portal: 7 };
+const BUILDING_HEIGHT = { fishstand: 7, garage: 8.2, cave: 7.6, colosseum: 7.2, range: 7.4, casino: 8.4, market: 6.2, boutique: 8.2, houses: 7.4, pond: 2.2, studio: 8.4, dome: 6.4, petshop: 7.4, portal: 8.2 };
 
 export class World {
   constructor(canvas, hooks) {
@@ -285,6 +286,14 @@ export class World {
     const a = this.actors.get(k);
     if (!a || k === S.me) return;
     a.pose = m.pose ?? null;
+    if (a.pose === 'ride') {
+      a.char.setProp(null);
+      a.lift = 0;
+      a.line?.show(false);
+      a.char.setPose(a.char.setRiding(true) ? 'ride' : 'idle');
+      return;
+    }
+    if (a.char.riding) a.char.setRiding(false);
     if (a.pose === 'bench') {
       a.char.setProp(null);
       a.char.setPose('bench');
@@ -320,6 +329,7 @@ export class World {
   sit(bench) {
     const me = this.actors.get(S.me);
     if (!me || this.seated || this.fishing) return;
+    if (this.riding) this.toggleRide(false);
     // pick the seat nearer to you, skipping one someone else is sitting on
     const along = { x: Math.cos(bench.h), y: -Math.sin(bench.h) }; // the bench's long axis, in map px
     const seats = [-1, 1].map((s) => ({ x: bench.x + along.x * 10 * s, y: bench.y + along.y * 10 * s }))
@@ -359,8 +369,33 @@ export class World {
   }
 
   /** Things that happen right here in the world instead of in a panel or 3D area. */
+  /** Hop on (or off) the mount you're wearing. */
+  toggleRide(on = !this.riding) {
+    const me = this.actors.get(S.me);
+    if (!me || on === this.riding) return;
+    if (on) {
+      if (this.seated || this.fishing) return;
+      if (!me.char.setRiding(true)) {
+        toast('🐴 You need a mount! Get one at the 👕 Style Shop (Mounts).');
+        return;
+      }
+      this.riding = true;
+      me.char.setPose('ride');
+      net.send('pose', { pose: 'ride' });
+      sfx('whoosh');
+    } else {
+      this.riding = false;
+      me.char.setRiding(false);
+      me.char.setPose('idle');
+      net.send('pose', { pose: null });
+      sfx('land');
+    }
+    this.hooks.onRide?.(this.riding);
+  }
+
   startActivity(kind) {
     if (kind !== 'fishing' || this.fishing || !this.actors.has(S.me)) return;
+    if (this.riding) this.toggleRide(false);
     const pond = SPOTS.find((s) => s.kind === 'pond');
     const pa = M.to3(pond.x, pond.y), pb = M.to3(pond.x + pond.w, pond.y + pond.h);
     const dockX = (pa.x + pb.x) / 2;
@@ -465,6 +500,7 @@ export class World {
       return;
     }
     if (key === 'm' && !e.repeat) { this.toggleMap(); return; }
+    if (key === 'g' && !e.repeat) { this.toggleRide(); return; }
     if (key === 'escape' && this.minimap.classList.contains('big')) { this.toggleMap(false); return; }
     const emoteIndex = '123456'.indexOf(key);
     if (emoteIndex >= 0 && !e.repeat) {
@@ -807,8 +843,15 @@ export class World {
       else { dx = vx / d; dy = vy / d; }
     }
     const len = Math.hypot(dx, dy);
-    const sprint = (this.keys.has('shift') || (touch.stick.active && touch.stick.run)) && !this.paused ? SPRINT : 1;
+    let sprint = (this.keys.has('shift') || (touch.stick.active && touch.stick.run)) && !this.paused ? SPRINT : 1;
     me.speed = sprint > 1 ? 1.85 : 1.0;
+    // riding: much quicker than walking (a little more with Shift); the mount was taken off: hop down
+    if (this.riding && !me.char.riding) this.toggleRide(false);
+    if (this.riding) {
+      const fast = sprint > 1;
+      sprint = mountSpeed(S.players[S.me]?.look?.mount) * (fast ? 1.2 : 1);
+      me.speed = fast ? 1.3 : 1;
+    }
     me.moving = false;
     if (len) {
       const bx = me.x, by = me.y;

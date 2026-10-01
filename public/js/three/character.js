@@ -1754,6 +1754,13 @@ export class Character {
       frame.add(arrow);
       this.bow = { R, a, strings, arrow, frame, held: false };
       g.add(frame);
+    } else if (kind === 'shovel') {
+      // a beach spade: wooden handle through the fist, a metal blade at the far end
+      g.rotation.x = -0.4;
+      part(g, cyl(0.03, 0.03, 1.1, 8), toon('#a8743f'), { p: [0, -0.35, 0], outline: OUT_THIN });
+      part(g, box(0.16, 0.06, 0.05), toon('#6b4226'), { p: [0, 0.2, 0], outline: null });
+      const blade = part(g, box(0.24, 0.3, 0.03), shiny('#c0c6d4'), { p: [0, -0.98, 0.02], outline: OUT_THIN });
+      part(blade, cone(0.12, 0.12, 4), shiny('#c0c6d4'), { p: [0, -0.2, 0], r: [Math.PI, Math.PI / 4, 0], s: [1, 1, 0.25], outline: null });
     } else if (kind === 'rod') {
       g.rotation.x = -0.6;
       buildRod(g, ROD_STYLES[this.propColor] ?? { ...ROD_STYLES.rod_twig, blank: this.propColor ?? '#3b2a1a' });
@@ -2277,7 +2284,7 @@ export class Character {
   emote(name) {
     this.emoteName = name;
     this.emoteT = 0;
-    if (name === 'gg' || name === 'wow') this.jump();
+    if (name === 'gg' || name === 'wow' || name === 'shoot' || name === 'bump') this.jump();
   }
 
   /**
@@ -2372,6 +2379,42 @@ export class Character {
         arms[1].rotation.set(-1.3, 0, -0.45);
         elbows[1].rotation.set(-0.35, 0, 0);
       }
+    } else if (this.pose === 'swim') {
+      // swimming: front crawl when moving (flat in the water, arms windmilling, legs fluttering);
+      // treading water when still (upright, arms sculling, legs cycling)
+      const sw = this.swimW = (this.swimW ?? 0) + ((moving ? 1 : 0) - (this.swimW ?? 0)) * Math.min(1, dt * 4);
+      const st = time * 5.5;
+      const lean = 0.2 + sw * 1.15;
+      body.rotation.set(lean, 0, Math.sin(st) * 0.18 * sw);
+      body.position.set(0, -0.05 - sw * 0.35 + Math.sin(time * 2) * 0.03, 0);
+      head.rotation.set(-lean * 0.85, Math.sin(st) * 0.25 * sw, 0);
+      const stroke = [st, st + Math.PI];
+      arms.forEach((a, i) => {
+        a.rotation.x = -(stroke[i] % TAU) * sw + (1 - sw) * (-0.3 + Math.sin(time * 3 + i) * 0.15);
+        a.rotation.z = (i ? 1 : -1) * ((1 - sw) * (1.0 + Math.sin(time * 3 + i * Math.PI) * 0.35) + sw * 0.15);
+      });
+      elbows.forEach((e, i) => { e.rotation.set(-0.25 - Math.max(0, Math.sin(stroke[i])) * 0.6 * sw, 0, 0); });
+      legs.forEach((l, i) => { l.rotation.x = Math.sin(st * 2 + i * Math.PI) * (0.35 * sw + 0.25 * (1 - sw)); });
+      knees.forEach((k, i) => { k.rotation.x = 0.15 + Math.max(0, Math.sin(st * 2 + i * Math.PI)) * 0.4; });
+    } else if (this.pose === 'dig') {
+      // digging: drive the spade in, lever it back, toss the sand over the shoulder
+      const dg = (time * 1.6) % 1;
+      const push = dg < 0.4 ? dg / 0.4 : dg < 0.7 ? 1 - (dg - 0.4) / 0.3 * 0.6 : 0.4 - (dg - 0.7) / 0.3 * 0.4;
+      body.rotation.set(0.25 + push * 0.35, -0.2, 0);
+      body.position.set(0, -push * 0.08, 0);
+      arms.forEach((a, i) => { a.rotation.x = -0.9 + push * 0.55 - (i ? 0.25 : 0); a.rotation.z = (i ? 1 : -1) * 0.15; });
+      elbows.forEach((e) => { e.rotation.x = -0.5 - (1 - push) * 0.4; });
+      legs.forEach((l, i) => { l.rotation.x = i ? -0.35 * push : 0.2; });
+      knees.forEach((k) => { k.rotation.x = 0.2 + push * 0.45; });
+      head.rotation.x = 0.35;
+    } else if (this.pose === 'drive') {
+      // riding a jet ski / at the wheel: seated, hands forward on the bars
+      legs.forEach((l, i) => { l.rotation.x = -1.3; l.rotation.z = (i ? -1 : 1) * 0.25; });
+      knees.forEach((k) => { k.rotation.x = 1.35; });
+      arms.forEach((a, i) => { a.rotation.x = -1.2; a.rotation.z = (i ? -1 : 1) * 0.2; });
+      elbows.forEach((e) => { e.rotation.x = -0.3; });
+      body.position.set(0, 0, 0);
+      body.rotation.set(0.15, 0, this.lean ?? 0);
     } else if (this.pose === 'fish') {
       arms.forEach((a, i) => { a.rotation.x = -1.2; a.rotation.z = i ? -0.25 : 0.25; });
       elbows.forEach((e) => { e.rotation.x = -0.45; });
@@ -2405,7 +2448,7 @@ export class Character {
     let mouthWide = false;
     if (this.emoteName) {
       this.emoteT += dt;
-      const t = this.emoteT, dur = 1.9;
+      const t = this.emoteT, dur = { shoot: 0.8, throw: 0.8, kick: 0.6, bump: 0.7 }[this.emoteName] ?? 1.9;
       const k = Math.max(0, Math.min(1, t / 0.15, (dur - t) / 0.25));
       const to = (o, axis, v) => { o.rotation[axis] += (v - o.rotation[axis]) * k; };
       switch (this.emoteName) {
@@ -2437,6 +2480,26 @@ export class Character {
         case 'gg':
           arms.forEach((a, i) => { to(a, 'z', (i ? 1 : -1) * 2.5); to(a, 'x', 0); });
           elbows.forEach((e, i) => to(e, 'z', (i ? 1 : -1) * 0.15));
+          break;
+        case 'shoot': // a jump shot: both hands up, flick the wrist at the top
+          arms.forEach((a, i) => { to(a, 'x', -2.9 + Math.min(1, t * 3) * 0.3); to(a, 'z', (i ? 1 : -1) * 0.15); });
+          elbows.forEach((e) => to(e, 'x', -0.9 + Math.min(1, t * 4) * 0.8));
+          break;
+        case 'throw': // a football pass: the right arm winds back and whips over
+          to(arms[1], 'x', t < 0.35 ? -2.6 : -1.2); to(arms[1], 'z', 0.3);
+          to(elbows[1], 'x', t < 0.35 ? -1.4 : -0.1);
+          to(arms[0], 'x', -1.0); to(body, 'y', t < 0.35 ? 0.4 : -0.3);
+          break;
+        case 'kick':
+          to(legs[1], 'x', t < 0.25 ? 0.7 : -1.2); to(knees[1], 'x', t < 0.25 ? 1.2 : 0.1);
+          arms.forEach((a, i) => to(a, 'z', (i ? 1 : -1) * 0.7));
+          to(body, 'x', -0.1);
+          break;
+        case 'bump': // a volleyball dig: arms together, straight out in front, a little knee bend
+          arms.forEach((a, i) => { to(a, 'x', -1.35); to(a, 'z', (i ? -1 : 1) * 0.25); });
+          elbows.forEach((e) => to(e, 'x', 0));
+          knees.forEach((k) => to(k, 'x', 0.45));
+          to(body, 'x', 0.15);
           break;
         case 'wow':
           to(body, 'x', -0.16);

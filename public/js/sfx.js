@@ -298,6 +298,20 @@ const SOUNDS = {
   // ---- fishing ----
   charge: () => { tone({ f: 300, to: 700, dur: 0.6, vol: 0.03, attack: 0.3 }); },
   cast: () => { whoosh(0, 0.8, 500, 2600, 0.3); for (let i = 0; i < 10; i++) tick(0.12 + i * 0.035, 0.7, 2600); },
+  // ---- weather + the beach ----
+  thunder: () => {
+    noise({ f: 180, to: 60, dur: 2.6, vol: 0.5, attack: 0.02 });
+    noise({ f: 900, to: 120, dur: 0.5, vol: 0.25 });
+    for (let i = 0; i < 4; i++) noise({ f: rnd(90, 160), dur: 0.5, vol: 0.18, at: 0.3 + i * rnd(0.25, 0.45) });
+  },
+  gull: () => { tone({ type: 'sawtooth', f: 1300, to: 900, dur: 0.18, vol: 0.05, lp: 2200 }); tone({ type: 'sawtooth', f: 1250, to: 820, dur: 0.22, vol: 0.05, at: 0.22, lp: 2200 }); },
+  dig: () => { noise({ type: 'bandpass', f: rnd(700, 1100), q: 1.2, dur: 0.16, vol: 0.2 }); noise({ f: 300, dur: 0.12, vol: 0.12, at: 0.05 }); },
+  swim: () => { noise({ type: 'bandpass', f: rnd(900, 1500), q: 0.8, dur: 0.3, vol: 0.12, attack: 0.05 }); },
+  kick: () => { tone({ f: 160, to: 70, dur: 0.1, vol: 0.25 }); noise({ f: 1200, dur: 0.05, vol: 0.12 }); },
+  bounce: () => { tone({ f: 120, to: 90, dur: 0.09, vol: 0.2 }); noise({ type: 'bandpass', f: 600, q: 2, dur: 0.06, vol: 0.1 }); },
+  swish: () => { noise({ type: 'highpass', f: 3000, dur: 0.25, vol: 0.12, attack: 0.03 }); seq([84, 88], { step: 0.06, dur: 0.15, type: 'triangle', vol: 0.06 }); },
+  whistle: () => { tone({ type: 'square', f: 2300, dur: 0.35, vol: 0.05, vib: [40, 0.02], lp: 4000 }); },
+  horn: () => { tone({ type: 'sawtooth', f: 110, dur: 0.9, vol: 0.12, lp: 600 }); tone({ type: 'sawtooth', f: 138, dur: 0.9, vol: 0.08, lp: 600 }); },
   splash: () => { noise({ f: 1600, to: 250, dur: 0.38, vol: 0.28 }); tone({ f: 520, to: 140, dur: 0.12, vol: 0.12 }); },
   plop: () => { tone({ f: 700, to: 200, dur: 0.09, vol: 0.12 }); noise({ f: 900, dur: 0.12, vol: 0.08 }); },
   bite: () => { tone({ f: 420, to: 240, dur: 0.1, vol: 0.2 }); tone({ f: 420, to: 240, dur: 0.1, vol: 0.2, at: 0.14 }); bell(93, 0.05, 0.08, 0.3); },
@@ -482,9 +496,51 @@ function rainAmbient() {
   };
 }
 
+/** Surf rolling in and out, a howling wind, or a boat's motor (set(v, pitch) for the engine). */
+function swellAmbient(kind) {
+  let src = null, gain = null, filter = null, osc = null, stopped = false, level = 0, t0 = 0;
+  const start = () => {
+    if (src || stopped || !gestured || !ensure()) return;
+    src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    filter = ac.createBiquadFilter();
+    filter.type = kind === 'waves' ? 'lowpass' : 'bandpass';
+    filter.frequency.value = kind === 'waves' ? 700 : kind === 'wind' ? 450 : 300;
+    filter.Q.value = kind === 'wind' ? 4 : 0.7;
+    gain = ac.createGain(); gain.gain.value = 0;
+    src.connect(filter); filter.connect(gain); gain.connect(sfxBus); src.start();
+    if (kind === 'engine') {
+      osc = ac.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 55;
+      const og = ac.createGain(); og.gain.value = 0.35; osc.connect(og); og.connect(filter); osc.start();
+    }
+    t0 = ac.currentTime;
+  };
+  const iv = setInterval(() => {
+    if (!gain || stopped) return;
+    const t = ac.currentTime - t0;
+    // waves swell every few seconds; wind gusts and whistles
+    const swell = kind === 'waves' ? 0.45 + 0.55 * Math.max(0, Math.sin(t * 0.9)) ** 2 : kind === 'wind' ? 0.6 + 0.4 * Math.sin(t * 0.7) * Math.sin(t * 0.23) : 1;
+    gain.gain.setTargetAtTime(level * swell * (kind === 'engine' ? 0.12 : 0.13), ac.currentTime, 0.25);
+    if (kind === 'wind') filter.frequency.setTargetAtTime(380 + 260 * Math.sin(t * 0.5), ac.currentTime, 0.3);
+  }, 120);
+  return {
+    set(v, pitch = 1) {
+      start();
+      level = Math.max(0, v);
+      if (osc) osc.frequency.setTargetAtTime(45 + pitch * 70, ac.currentTime, 0.1);
+      if (kind === 'engine' && filter) filter.frequency.setTargetAtTime(250 + pitch * 500, ac.currentTime, 0.1);
+    },
+    stop() {
+      stopped = true; clearInterval(iv);
+      try { src?.stop(); osc?.stop(); } catch { /* already stopped */ }
+      src = osc = null;
+    },
+  };
+}
+
 /** Looping ambience; returns { set(volume), stop() }. */
 export function ambient(kind) {
   if (kind === 'rain') return rainAmbient();
+  if (kind === 'waves' || kind === 'wind' || kind === 'engine') return swellAmbient(kind);
   let src = null, gain = null, stopped = false;
   const start = () => {
     if (src || stopped || !gestured || !ensure()) return;

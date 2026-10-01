@@ -20,7 +20,8 @@ const myRod = () => RODS[me().rod] ?? CATALOG.rods[0];
 const barHeight = () => BASE_BAR + (myRod().bar ?? 0);
 const WATER_Y = 0.1;
 // some fish stay a secret until somebody catches one
-const journalFish = (dex) => CATALOG.fish.filter((f) => f.rarity !== 'mythic' || dex[f.name]);
+/** The fish of one water ('pond' or 'ocean'); secret mythics only once somebody's caught one. */
+const journalFish = (dex, water = 'pond') => CATALOG.fish.filter((f) => (f.water ?? 'pond') === water && (f.rarity !== 'mythic' || dex[f.name]));
 const HINTS = {
   hooking: 'Hooked! Get ready…',
   idle: '<b>Hold</b> click or <kbd>Space</kbd> to charge your cast, <b>release</b> to throw.',
@@ -96,7 +97,9 @@ export class Fishing {
   constructor(world, spot) {
     this.world = world;
     this.spot = spot;
-    this.actor = world.actors.get(S.me);
+    // (the world, or another place that offers fishing: it hands over your actor, a HUD root and its water)
+    this.water = world.water ?? 'pond';
+    this.actor = world.fishActor ? world.fishActor() : world.actors.get(S.me);
     this.line = new Line(world.scene);
     this.state = 'idle';
     this.holding = false;
@@ -144,11 +147,11 @@ export class Fishing {
       <div class="fish-result hidden"></div>
       <div class="fish-rods hidden"></div>
       <div class="fish-actions"><button class="btn small" data-rods>🎣 Rods</button><button class="btn small" data-journal></button><button class="btn small" data-stop>← Stop fishing</button></div>`;
-    document.getElementById('world').append(el);
+    (this.world.hudRoot ?? document.getElementById('world')).append(el);
     this.el = el;
     this.ctx = hiDpiCanvas($(el, 'canvas'), TRACK.w + 90, TRACK.h + 70);
     $(el, '[data-stop]').onclick = () => this.world.stopActivity();
-    $(el, '[data-journal]').onclick = () => window.dispatchEvent(new CustomEvent('fz:open', { detail: 'journal' }));
+    $(el, '[data-journal]').onclick = () => window.dispatchEvent(new CustomEvent('fz:open', { detail: this.water === 'ocean' ? 'journalOcean' : 'journal' }));
     // the result card and HUD buttons should not count as a "press" for casting
     el.addEventListener('pointerdown', (e) => e.stopPropagation());
     $(el, '.fish-result').onclick = () => this.reset();
@@ -180,8 +183,8 @@ export class Fishing {
 
   renderJournalBtn() {
     const dex = me().fishdex ?? {};
-    const found = CATALOG.fish.filter((f) => dex[f.name]).length;
-    $(this.el, '[data-journal]').textContent = `📖 Journal ${found}/${journalFish(dex).length}`;
+    const list = journalFish(dex, this.water);
+    $(this.el, '[data-journal]').textContent = `📖 Journal ${list.filter((f) => dex[f.name]).length}/${list.length}`;
   }
 
   setState(s) {
@@ -216,7 +219,7 @@ export class Fishing {
     let dist = 3 + this.power * 9;
     const s = this.spot;
     // from the shore, a cast that would land on the far bank comes up short in the water instead
-    const wet = (d) => M.inLake(s.X * M.PX + M.CENTER.x + Math.sin(s.heading) * d * M.PX, s.Z * M.PX + M.CENTER.y + Math.cos(s.heading) * d * M.PX);
+    const wet = this.world.isWater ? (d) => this.world.isWater(s.X + Math.sin(s.heading) * d, s.Z + Math.cos(s.heading) * d) : (d) => M.inLake(s.X * M.PX + M.CENTER.x + Math.sin(s.heading) * d * M.PX, s.Z * M.PX + M.CENTER.y + Math.cos(s.heading) * d * M.PX);
     while (dist > 1.5 && !wet(dist)) dist -= 0.5;
     const to = new THREE.Vector3(s.X + Math.sin(s.heading) * dist + (Math.random() - 0.5) * 0.6, WATER_Y, s.Z + Math.cos(s.heading) * dist + (Math.random() - 0.5) * 0.6);
     const from = this.tip() ?? new THREE.Vector3(s.X, 2, s.Z);
@@ -492,21 +495,24 @@ export class Fishing {
 }
 
 /** The fish journal + the zone's pond records, as a panel. */
-export function fishJournal(body) {
+export function fishJournal(body, { water: start = 'pond' } = {}) {
+  let water = start;
+  body.addEventListener('click', (e) => { const t = e.target.closest('[data-water]'); if (t) { water = t.dataset.water; render(); } });
   const render = () => {
     const dex = me().fishdex ?? {};
-    const found = CATALOG.fish.filter((f) => dex[f.name]).length;
-    const list = journalFish(dex);
+    const list = journalFish(dex, water);
+    const found = list.filter((f) => dex[f.name]).length;
     const records = [];
     for (const p of Object.values(S.players)) {
       for (const [name, d] of Object.entries(p.fishdex ?? {})) {
         const f = CATALOG.fish.find((x) => x.name === name);
-        if (f) records.push({ p, f, best: d.best });
+        if (f && (f.water ?? 'pond') === water) records.push({ p, f, best: d.best });
       }
     }
     records.sort((a, b) => b.best - a.best);
     body.innerHTML = `
       <h2>📖 Fish Journal <small class="muted">${found}/${list.length} found</small></h2>
+      <div class="journal-tabs"><button class="btn small ${water === 'pond' ? 'primary' : 'ghost'}" data-water="pond">🎣 Pond</button><button class="btn small ${water === 'ocean' ? 'primary' : 'ghost'}" data-water="ocean">🌊 Ocean</button></div>
       <div class="journal">${list.map((f) => {
         const d = dex[f.name];
         const r = RARITY[f.rarity];
@@ -514,7 +520,7 @@ export function fishJournal(body) {
           <div class="jemoji">${d ? `<img class="fish-img" src="${fishThumb(f)}" alt="">` : '❓'}</div><div class="jname">${d ? esc(f.name) : '???'}</div>
           <div class="jrar">${r.label}</div>${d ? `<div class="jmeta">×${d.n} · best ${d.best}"</div>` : ''}</div>`;
       }).join('')}</div>
-      <h3>🏆 Pond records (biggest catches in the zone)</h3>
+      <h3>🏆 ${water === 'ocean' ? 'Ocean' : 'Pond'} records (biggest catches in the zone)</h3>
       <ol class="records">${records.slice(0, 8).map((x) => `<li><span><img class="fish-img sm" src="${fishThumb(x.f)}" alt=""> ${esc(x.f.name)}</span><b>${x.best}"</b><small>${esc(x.p.name)}</small></li>`).join('') || '<li class="muted">Nobody has caught anything yet!</li>'}</ol>`;
   };
   render();

@@ -35,7 +35,8 @@ const PLAN_SPOTS = [
   { id: 'house', emoji: '🏠', name: 'Houses', kind: 'houses', x: 2230, y: 2330, w: 380, h: 270, face: 'n' },
   { id: 'pets', emoji: '🐾', name: 'Pet Shop', kind: 'petshop', x: 3230, y: 1720, w: 280, h: 210, face: 'n' },
   // the portal to Coral Cove, the beach town, just off the square
-  { id: 'portal', emoji: '🌀', name: 'Portal to Coral Cove', kind: 'portal', x: 2530, y: 1745, w: 100, h: 60, face: 'n' },
+  // (face 'c': it turns to face the middle of the square)
+  { id: 'portal', emoji: '🌀', name: 'Portal to Coral Cove', kind: 'portal', x: 2555, y: 1755, w: 80, h: 80, face: 'c' },
 ];
 /** The towns: this one (the map above), and the beach town through the portal. */
 export const TOWN_NAME = 'Maplewood';
@@ -93,7 +94,10 @@ export const SPOTS = PLAN_SPOTS.map((s) => {
 
 /** The part of a building you can't walk through (the lake uses its shoreline instead: lakeDist). */
 export const solidOf = (s) => ({ x: s.x, y: s.y + s.h * 0.42, w: s.w, h: s.h * 0.58 });
+/** Unit vector (map px) from a spot that faces the square ('c') towards the square's middle. */
+const toCenter = (s) => { const dx = CENTER.x - (s.x + s.w / 2), dy = CENTER.y - (s.y + s.h / 2), l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l]; };
 export function doorOf(s) {
+  if (s.face === 'c') { const [dx, dy] = toCenter(s); const r = Math.max(s.w, s.h) / 2 + 20; return { x: s.x + s.w / 2 + dx * r, y: s.y + s.h / 2 + dy * r }; }
   if (s.kind === 'pond') return { x: s.x + s.w / 2, y: s.y - 30 };
   if (s.face === 'n') return { x: s.x + s.w / 2, y: s.y - 20 };
   if (s.face === 'e') return { x: s.x + s.w + 20, y: s.y + s.h / 2 };
@@ -101,7 +105,7 @@ export function doorOf(s) {
   return { x: s.x + s.w / 2, y: s.y + s.h + 20 };
 }
 /** Unit vector pointing out of the door. */
-export const doorDir = (s) => ({ n: [0, -1], e: [1, 0], w: [-1, 0] }[s.kind === 'pond' ? 'n' : s.face] ?? [0, 1]);
+export const doorDir = (s) => (s.face === 'c' ? toCenter(s) : { n: [0, -1], e: [1, 0], w: [-1, 0] }[s.kind === 'pond' ? 'n' : s.face] ?? [0, 1]);
 
 export function distToRect(p, r) {
   const dx = Math.max(r.x - p.x, 0, p.x - (r.x + r.w));
@@ -185,7 +189,7 @@ const ROADS = [
   { name: 'Stadium Way', w: 0.9, lamps: true, ctrl: [P(2950, 1640), P(3060, 1260), door('arcade')] },
   { name: 'Stadium Way', w: 0.85, ctrl: [P(3060, 1260), P(3420, 1070), door('arena')] },
   { name: 'Pet Walk', w: 0.7, ctrl: [P(3370, 1618), door('pets')] },
-  { name: 'Portal Walk', w: 0.7, ctrl: [edge(0.62, 0.78), door('portal')] },
+  { name: 'Portal Walk', w: 1.1, lamps: true, ctrl: [edge(0.707, 0.707), door('portal')] },
   { name: 'Studio Walk', w: 0.7, ctrl: [door('doodle'), P(2190, 1420), edge(-0.62, -0.78)] },
   { name: 'Shop Walk', w: 0.7, ctrl: [door('shop'), P(2700, 1400), edge(0.62, -0.78)] },
 ];
@@ -500,8 +504,8 @@ const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
   // ---- benches: `h` is the direction the seat faces (as a 3D heading); a handful, where people hang out
   const benches = [];
   const facing = (b, tx, ty) => Math.atan2(tx - b.x, ty - b.y);
-  for (let i = 0; i < 4; i++) { // on the square, between the streets, facing the fountain
-    const a = ((i + 0.5) / 4) * TAU;
+  for (const deg of [67, 135, 205]) { // on the square, between the streets (and clear of the portal walk), facing the fountain
+    const a = (deg / 360) * TAU;
     const p = { x: CENTER.x + Math.cos(a) * 150, y: CENTER.y + Math.sin(a) * 150 };
     benches.push({ ...p, h: facing(p, CENTER.x, CENTER.y) });
   }

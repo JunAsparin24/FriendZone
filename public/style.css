@@ -1386,3 +1386,12 @@ html.touch .arc-modal .arc-board li { padding: 3px 8px; font-size: 12px; }
 }
 html.touch .modal.arc-full { padding: 0; place-items: stretch; }
 html.touch .modal-box.arc-modal { overflow: hidden; }
+
+.journal-tabs { display: flex; gap: 8px; margin: 4px 0 12px; }
+
+/* Coral Cove: what F does right now, and the Playland game picker */
+.beach-ctx { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); padding: 6px 14px; font-size: 14px; pointer-events: none; white-space: nowrap; }
+.playland { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+.playland-game { padding: 18px 10px; border-radius: 14px; border: 3px solid var(--c); background: #0d1f4a; color: #fff; font: 18px var(--pixel); cursor: pointer; box-shadow: 0 0 18px color-mix(in srgb, var(--c) 40%, transparent); }
+.playland-game:hover { transform: translateY(-2px); }
+html.touch .beach-ctx { bottom: 150px; }

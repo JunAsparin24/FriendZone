@@ -1,6 +1,7 @@
 // The shared 3D overworld: walk around, see friends, chat, emote and enter activities.
 // Movement and networking use map pixels (like the server); rendering happens in Three.js.
 import * as THREE from 'three';
+import { wind } from './three/wind.js';
 import { watchContext } from './gfxguard.js';
 import { net } from './net.js';
 import { S, isTyping, esc } from './state.js';
@@ -219,6 +220,7 @@ export class World {
     this.canvas.addEventListener('contextmenu', this.onContext);
     this.fountain = ambient('fountain');
     this.rainSound = ambient('rain');
+    this.windSound = ambient('wind');
     this.resize();
     net.send('scene', { scene: 'world' });
     this.last = performance.now();
@@ -246,6 +248,8 @@ export class World {
     this.fountain = null;
     this.rainSound?.stop();
     this.rainSound = null;
+    this.windSound?.stop();
+    this.windSound = null;
     this.labels?.classList.add('hidden');
     this.keys.clear();
     this.target = this.pendingSpot = this.near = null;
@@ -853,10 +857,12 @@ export class World {
     this.camera.lookAt(c.x, c.y + lift, c.z);
     const dn = this.dayNight.update(c);
     this.rainSound?.set(dn.storm * (this.paused ? 0.3 : 1));
+    this.windSound?.set(Math.max(0, wind.strength.value - 1.4) * 0.5 * (this.paused ? 0.3 : 1));
     if (this.clockEl && performance.now() - (this.clockAt ?? 0) > 1000) {
       this.clockAt = performance.now();
       const tod = timeOfDay(dn.phase);
-      this.clockEl.textContent = `${S.rain ? '🌧️' : tod.icon} ${tod.clock}`;
+      const wIcon = { rain: '🌧️', storm: '⛈️', cloudy: '☁️', windy: '💨' }[S.weather];
+      this.clockEl.textContent = `${wIcon ?? tod.icon} ${tod.clock}`;
       this.clockEl.classList.toggle('night', tod.night);
       music.setNight(!!tod.night && settings.dayNight !== false); // chill music after dark
     }

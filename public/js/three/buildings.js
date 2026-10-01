@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { TAU, toon, basic, shiny, outlineMaterial, canvasTexture, additive, glowTexture } from './materials.js';
 import { Character } from './character.js';
-import { PX, CENTER, heightAt } from '../map.js';
+import { PX, CENTER, heightAt, doorDir } from '../map.js';
 import { letterSign } from './signs3d.js';
 
 const faceted = (geo) => { const g = geo.index ? geo.toNonIndexed() : geo; g.computeVertexNormals(); return g; };
@@ -1193,7 +1193,8 @@ export function buildBuilding(spot, anim, ctx) {
   g.scale.setScalar(k);
   const cx = (spot.x + spot.w / 2 - CENTER.x) / PX, cz = (spot.y + spot.h / 2 - CENTER.y) / PX;
   g.position.set(cx, heightAt(spot.x + spot.w / 2, spot.y + spot.h / 2), cz);
-  g.rotation.y = { n: Math.PI, e: Math.PI / 2, w: -Math.PI / 2 }[spot.face] ?? 0;
+  if (spot.face === 'c') { const [dx, dy] = doorDir(spot); g.rotation.y = Math.atan2(dx, dy); } // faces the square
+  else g.rotation.y = { n: Math.PI, e: Math.PI / 2, w: -Math.PI / 2 }[spot.face] ?? 0;
   g.userData.spot = spot;
   return g;
 }

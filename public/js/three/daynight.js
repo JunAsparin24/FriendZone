@@ -4,6 +4,8 @@
 import * as THREE from 'three';
 import { additive, glowTexture, TAU } from './materials.js';
 import { settings } from '../settings.js';
+import { wind, weatherState, WEATHER_LOOK } from './wind.js';
+import { sfx } from '../sfx.js';
 
 export const DAY_MS = 20 * 60 * 1000;
 
@@ -83,7 +85,24 @@ export class DayNight {
     this.cloudCol = new THREE.Color();
   }
 
-  setRain(on) { this.rain = !!on; }
+  setRain(on) { weatherState.kind = on ? 'rain' : 'sunny'; }
+
+  /** Ease the weather towards the forecast: rain, sky greyness, cloud cover, wind and lightning. */
+  updateWeather(dt) {
+    const w = (this.w ||= { rain: 0, grey: 0, cover: 0.3, wind: 1, flash: 0, nextBolt: 4 });
+    const want = WEATHER_LOOK[weatherState.kind] ?? WEATHER_LOOK.sunny;
+    const k = Math.min(1, dt * 0.35);
+    for (const key of ['rain', 'grey', 'cover', 'wind']) w[key] += (want[key] - w[key]) * k;
+    wind.strength.value = w.wind;
+    // thunderstorms: a bright flash every so often, and the rumble a moment later
+    w.flash = Math.max(0, w.flash - dt * 3.5);
+    if (want.bolt && w.grey > 0.7 && (w.nextBolt -= dt) <= 0) {
+      w.nextBolt = 5 + Math.random() * 11;
+      w.flash = 1;
+      setTimeout(() => sfx('thunder', { vol: 0.6 + Math.random() * 0.4 }), 300 + Math.random() * 1500);
+    }
+    return w;
+  }
 
   updateRain(center, dt, storm) {
     const on = storm > 0.02;
@@ -107,7 +126,7 @@ export class DayNight {
       const d = this.drops[i];
       if (d.fresh || Math.abs(d.x - center.x) > RAIN_BOX * 1.3 || Math.abs(d.z - center.z) > RAIN_BOX * 1.3) respawn(d, true);
       d.y -= d.v * dt;
-      d.x += WIND * dt;
+      d.x += WIND * wind.strength.value * dt;
       if (d.y <= d.g) {
         // splash (only near you, where you can see it)
         const dx = d.x - center.x, dz = d.z - center.z;
@@ -153,8 +172,9 @@ export class DayNight {
     const dusk = Math.max(0, 1 - Math.abs(elev) / 0.3) * (1 - smooth(0.2, 0.3, elev)); // near the horizon
     const dt = this.lastNow == null ? 0 : Math.min(0.2, Math.max(0, (now - this.lastNow) / 1000)); // (clocks can jump)
     this.lastNow = now;
-    this.storm += ((this.rain ? 1 : 0) - this.storm) * Math.min(1, dt * 0.35);
-    const storm = this.storm;
+    const w = this.updateWeather(dt);
+    this.storm = w.rain;
+    const storm = w.grey; // (how grey and gloomy it is)
     const t = this.tmp;
     for (const k of Object.keys(t)) {
       t[k].copy(NIGHT[k]).lerp(DAY[k], day);
@@ -181,7 +201,7 @@ export class DayNight {
     }
     u.cloudCol.value.copy(cc).lerp(t.top, 0.08);
     u.cloudShade.value.copy(cc).multiplyScalar(0.78).lerp(t.mid, 0.25);
-    u.cover.value = 0.4 + storm * 0.5;
+    u.cover.value = w.cover;
     u.glow.value = (0.35 + day * 0.65) * (1 - storm * 0.85);
     u.time.value = now / 1000;
     u.sunCol.value.set(dusk > 0.3 ? '#ffb070' : day > 0.2 ? '#fff2c0' : '#9fb4ff');
@@ -208,7 +228,7 @@ export class DayNight {
     this.moonDisc.material.opacity *= 1 - storm * 0.9;
 
     // falling rain around the player, splashing where it lands
-    this.updateRain(center, dt, storm);
+    this.updateRain(center, dt, w.rain);
     this.stars.visible = this.stars.material.opacity > 0.01;
 
     // every lamp glows the same at night: a lit lantern, a soft halo and a pool of light on the ground
@@ -219,6 +239,13 @@ export class DayNight {
     lit.haloMat.opacity = 0.05 + lampOn * 0.3;
     lit.poolMat.opacity = lampOn * 0.55;
     for (const m of this.env.windows) m.emissiveIntensity = lampOn * 0.9;
-    return { phase, day, night: lampOn, storm };
+    // lightning lights up everything for a blink
+    if (w.flash > 0) {
+      const f = w.flash * w.flash;
+      this.hemi.intensity += f * 2.2;
+      u.top.value.lerp(new THREE.Color('#dfe6ff'), f * 0.7);
+      u.mid.value.lerp(new THREE.Color('#eef2ff'), f * 0.7);
+    }
+    return { phase, day, night: lampOn, storm: Math.min(1, w.rain), weather: weatherState.kind };
   }
 }

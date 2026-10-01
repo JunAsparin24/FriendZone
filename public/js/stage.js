@@ -480,7 +480,7 @@ class Stage {
    * Let the player walk around a room with WASD/click-to-walk, with others in the same scene
    * synced through area_move. solids: [{ x, z, w, d }] boxes (centre + size) or [{ x, z, r }] circles.
    */
-  walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {}, ceiling = 4.6 }) {
+  walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {}, ceiling = 4.6, speedOf = null, frozen = null, blockedAt = null }) {
     // keep the camera inside the room: it can zoom out only as far as the walls (and stays under their top)
     this.camRoom = bounds ? { ...bounds, maxY: ceiling, off: false } : null;
     const me = this.person(S.me);
@@ -490,6 +490,7 @@ class Stage {
     const R = 0.4;
     const blocked = (x, z) => {
       if (bounds && (x < bounds.minX + R || x > bounds.maxX - R || z < bounds.minZ + R || z > bounds.maxZ - R)) return true;
+      if (blockedAt?.(x, z)) return true;
       return solids.some((s) => (s.r != null ? Math.hypot(x - s.x, z - s.z) < s.r + R
         : Math.abs(x - s.x) < s.w / 2 + R && Math.abs(z - s.z) < s.d / 2 + R));
     };
@@ -540,8 +541,9 @@ class Stage {
       const run = k.has('shift') || (touch.stick.active && touch.stick.run) ? 1.65 : 0.7;
       me.moving = false;
       me.speed = run > 1 ? 1.75 : 0.85;
-      if (len) {
-        const step = speed * run * dt;
+      if (frozen?.()) { dx = dz = 0; target = null; } // (driving a boat, fishing…)
+      if (Math.hypot(dx, dz)) {
+        const step = (speedOf ? speedOf() : speed) * run * dt;
         const nx = me.x + (dx / len) * step, nz = me.z + (dz / len) * step;
         const bx = me.x, bz = me.z;
         if (!blocked(nx, me.z)) me.x = nx;

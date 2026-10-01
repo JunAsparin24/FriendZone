@@ -61,7 +61,7 @@ def beach_spot():
     x0, x1, z0, z1 = BEACH_SAND
     while True:
         x, z = random.uniform(x0, x1), random.uniform(z0, z1)
-        if not (35 < x < 105 and 0 < z < 32) and not (-80 < x < -52 and 2 < z < 18) and not (-34 < x < -22 and 30 < z < 42):  # not under the crab track or the surf shack
+        if not (35 < x < 105 and 0 < z < 32) and not (-80 < x < -52 and 2 < z < 18) and not (-34 < x < -22 and 30 < z < 42) and not (128 < x < 172) and not (-132 < x < -108 and 22 < z < 38) and not (10 < x < 18 and 40 < z < 48):  # not under the crab track or the surf shack
             return {"x": round(x, 1), "z": round(z, 1)}
 
 
@@ -316,6 +316,7 @@ ITEMS = {item["id"]: item for item in CATALOG["items"]}
 FISH = CATALOG["fish"]
 FISH_BAG_MAX = 60
 FISH_BY_NAME = {f["name"]: f for f in FISH}
+FISH_RENAMED = {"Shark": "Great White Shark", "Tuna": "Yellowfin Tuna", "Crab": "Dungeness Crab", "Seaweed Clump": "Pond Weed", "Eel": "Freshwater Eel"}
 
 
 def fish_price(fish, size):
@@ -332,14 +333,32 @@ FISH_FIGHT = {"junk": 0.2, "common": 0.35, "uncommon": 0.5, "rare": 0.7, "epic":
 WEATHER_BLOCK = 480  # the forecast changes every 8 minutes
 
 
-def rain_scheduled(now=None):
-    """About one 8-minute spell in five is rainy. Clients get told; nothing else hints at it."""
+# the forecast: each 8-minute spell is one of these (out of 256)
+WEATHER_ODDS = (("sunny", 90), ("cloudy", 50), ("windy", 40), ("rain", 52), ("storm", 24))
+WEATHER_KINDS = tuple(k for k, _ in WEATHER_ODDS)
+
+
+def weather_scheduled(now=None):
     block = int((now if now is not None else time.time()) // WEATHER_BLOCK)
-    return ((block * 2654435761) & 0xFFFFFFFF) >> 8 & 0xFF < 52
+    roll = ((block * 2654435761) & 0xFFFFFFFF) >> 8 & 0xFF
+    for kind, n in WEATHER_ODDS:
+        if roll < n:
+            return kind
+        roll -= n
+    return "sunny"
+
+
+def rain_scheduled(now=None):
+    return weather_scheduled(now) in ("rain", "storm")
+
+
+def weather(room):
+    return room.weather_override or weather_scheduled()
 
 
 def raining(room):
-    return room.rain_override if room.rain_override is not None else rain_scheduled()
+    """Rain or a thunderstorm (when the mythic fish come out)."""
+    return weather(room) in ("rain", "storm")
 RODS = {r["id"]: r for r in CATALOG["rods"]}
 FURN = {f["id"]: f for f in CATALOG["furniture"]}
 FLOORS = {f["id"]: f for f in CATALOG["floors"]}
@@ -552,7 +571,8 @@ ADMIN_HELP = [
     "/unboot <name> — let someone booted come back early",
     "/announce <message> — post to the zone news",
     "/players — who's here, with coins",
-    "/rain <on|off|auto> — change the weather",
+    "/rain <on|off|auto> — rain on or off",
+    "/weather <sunny|cloudy|windy|rain|storm|auto> — change the weather",
     "/filter <on|off> — the chat filter for this zone (on by default)",
     "/unadmin — turn admin mode off",
 ]
@@ -630,6 +650,15 @@ def migrate(p):
     p.setdefault("owned", [])
     p.setdefault("fishdex", {})
     p.setdefault("fishbag", [])   # caught fish waiting to be sold at the Fish Market: {id, name, size}
+    # fish that were renamed when the ocean got its own fish
+    for old, new in FISH_RENAMED.items():
+        if old in p["fishdex"]:
+            was = p["fishdex"].pop(old)
+            cur = p["fishdex"].setdefault(new, {"n": 0, "best": 0})
+            cur["n"] += was.get("n", 0)
+            cur["best"] = max(cur["best"], was.get("best", 0))
+    for f in p["fishbag"]:
+        f["name"] = FISH_RENAMED.get(f["name"], f["name"])
     p.setdefault("rods", ["rod_twig"])
     p.setdefault("rod", "rod_twig")
     p.setdefault("furni", {f["id"]: 1 for f in CATALOG["furniture"] if f.get("starter")})
@@ -747,6 +776,7 @@ class Client:
         self.x = self.y = None  # last position in the world
         self.ax = self.az = self.ah = None  # position inside a 3D area (casino floor)
         self.aseat = None  # [furniture index, seat] while sitting on something in a house
+        self.apose = None  # what you're doing in a 3D area others should see: {"p": pose, "v": vehicle id…}
         self.pose = None  # e.g. fishing at the pond, sitting on a bench
         self.pose_extra = {}
         self.cooldowns = {}
@@ -781,7 +811,7 @@ class Room:
         self.arena_map = int(os.environ.get("FZ_ARENA_MAP", 0))  # index into ARENA_MAPS
         self.arena_break = 0.0      # while now < this, it's the scoreboard break between rounds
         self.dungeons = []  # live DungeonRun instances
-        self.rain_override = None  # admin /rain on|off; None follows the forecast
+        self.weather_override = None  # admin /weather (or /rain); None follows the forecast
         self.rain_sent = None
         self.arena_items = {}
         self.arena_item_seq = 0
@@ -792,6 +822,9 @@ class Room:
         self.trade_seq = 0
         self.roulette = {"id": 0, "state": "idle", "ends": 0.0, "bets": {}, "history": [], "result": None}
         self.treasure = [beach_spot() for _ in range(BEACH_TREASURES)]
+        self.balls = {}   # Coral Cove: id -> last known state
+        self.courts = {}  # Coral Cove: court -> {"s": [home, away]}
+        self.boats = {}   # Coral Cove: id -> {"driver", x, z, h, v}
         self.crabs = {"id": 0, "state": "idle", "ends": 0.0, "bets": {}, "times": [], "winner": None, "history": []}
 
     def in_scene(self, scene):
@@ -840,7 +873,7 @@ IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
     "race_join", "race_leave", "race_start", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
-    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "beach_dig", "crab_bet", "pose",
+    "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "beach_dig", "crab_bet", "ball", "court_score", "boat", "boat_take", "boat_leave", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "arcade_score", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
     "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
@@ -979,7 +1012,7 @@ class Game:
             "zone": {"code": code, "name": room.zone["name"], "owner": room.zone["owner"]},
             "players": [public(p, room.clients.get(k)) for k, p in room.zone["players"].items()],
             "chat": room.chat, "feed": room.feed, "race": self.race_view(room), "arcade": room.zone.get("arcade", {}),
-            "rain": raining(room),
+            "rain": raining(room), "weather": weather(room),
         })
         self.check_unlocks(c)
         self.push_player(room, key)
@@ -1200,6 +1233,9 @@ class Game:
             room.broadcast({"t": "area_del", "k": c.key}, scene=prev, exclude=c)
             c.ax = c.az = c.ah = None
             c.aseat = None
+            c.apose = None
+            if prev == "beach":
+                self.boat_release(room, c.key)
         if prev == "arena" and scene != "arena":
             self.arena_leave(c)
         if prev == "race" and scene != "race":
@@ -1233,7 +1269,7 @@ class Game:
         elif scene == "beach":
             self.beach_join(c)
         if is_area(scene):
-            c.ws.send({"t": "area", "others": [{"k": o.key, "x": o.ax, "z": o.az, "h": o.ah, "seat": o.aseat} for o in room.clients.values()
+            c.ws.send({"t": "area", "others": [{"k": o.key, "x": o.ax, "z": o.az, "h": o.ah, "seat": o.aseat, "pose": o.apose} for o in room.clients.values()
                                                 if o.scene == scene and o is not c and o.ax is not None]})
         elif scene == "race":
             c.ws.send({"t": "race", "race": self.race_view(room)})
@@ -1251,6 +1287,80 @@ class Game:
         c.ax, c.az, c.ah = num(m["x"], -260, 260), num(m["z"], -260, 260), num(m.get("h", 0), -7, 7)
         c.room.broadcast({"t": "area_pos", "k": c.key, "x": round(c.ax, 2), "z": round(c.az, 2), "h": round(c.ah, 2)},
                          scene=c.scene, exclude=c)
+
+    def on_area_pose(self, c, m):
+        """Swimming, digging, driving a boat…: a small dict everyone else in the area gets."""
+        if not is_area(c.scene) or not c.ready("apose", 0.05):
+            return
+        raw = m.get("pose")
+        pose = None
+        if isinstance(raw, dict):
+            pose = {k: v for k, v in raw.items() if k in ("p", "v", "prop", "y") and isinstance(v, (str, int, float)) and len(str(v)) < 24}
+        c.apose = pose
+        c.room.broadcast({"t": "area_pose", "k": c.key, "pose": pose}, scene=c.scene, exclude=c)
+
+    # ---- Coral Cove: shared balls, court scores and boats ----------------------------------
+    # Balls are simulated by whoever touched them last (they send their state); everyone else follows.
+
+    def on_ball(self, c, m):
+        if c.scene != "beach" or not c.ready("ball", 0.04):
+            return
+        bid = str(m.get("id", ""))[:12]
+        try:
+            st = {k: round(num(m[k], -300, 300), 3) for k in ("x", "y", "z", "vx", "vy", "vz")}
+        except (KeyError, TypeError, ValueError):
+            return
+        st.update(id=bid, own=c.key, held=m.get("held") if isinstance(m.get("held"), str) else None)
+        c.room.balls[bid] = st
+        c.room.broadcast({"t": "ball", **st}, scene="beach", exclude=c)
+
+    def on_court_score(self, c, m):
+        if c.scene != "beach" or not c.ready("score", 0.5):
+            return
+        court = str(m.get("court", ""))[:12]
+        side = 1 if m.get("side") == 1 else 0
+        pts = int(num(m.get("pts", 1), 1, 7))
+        board = c.room.courts.setdefault(court, {"s": [0, 0], "at": 0})
+        if time.time() - board["at"] > 600:
+            board["s"] = [0, 0]  # a fresh game after a quiet spell
+        board["s"][side] += pts
+        board["at"] = time.time()
+        c.room.broadcast({"t": "court_score", "court": court, "s": board["s"], "by": c.key, "pts": pts}, scene="beach")
+        if pts >= 3 and c.ready("scorexp", 3):
+            self.reward(c, coins=pts * 2, xp=pts)
+
+    def boat_release(self, room, key):
+        for bid, b in room.boats.items():
+            if b.get("driver") == key:
+                b["driver"] = None
+                room.broadcast({"t": "boat", "id": bid, **b}, scene="beach")
+
+    def on_boat_take(self, c, m):
+        if c.scene != "beach":
+            return
+        bid = str(m.get("id", ""))[:12]
+        b = c.room.boats.setdefault(bid, {"driver": None})
+        if b.get("driver") and b["driver"] != c.key and b["driver"] in c.room.clients:
+            raise GameError("Someone's already driving that!")
+        self.boat_release(c.room, c.key)
+        b["driver"] = c.key
+        c.room.broadcast({"t": "boat", "id": bid, **b}, scene="beach")
+
+    def on_boat_leave(self, c, m):
+        self.boat_release(c.room, c.key)
+
+    def on_boat(self, c, m):
+        if c.scene != "beach" or not c.ready("boat", 0.04):
+            return
+        bid = str(m.get("id", ""))[:12]
+        b = c.room.boats.get(bid)
+        if not b or b.get("driver") != c.key:
+            return
+        try:
+            b.update(x=round(num(m["x"], -400, 400), 2), z=round(num(m["z"], -400, 400), 2), h=round(num(m["h"], -50, 50), 3), v=round(num(m.get("v", 0), -60, 60), 2))
+        except (KeyError, TypeError, ValueError):
+            return
+        c.room.broadcast({"t": "boat", "id": bid, **b}, scene="beach", exclude=c)
 
     def on_area_sit(self, c, m):
         """Sitting on a seat in a house (a sofa has two); one person per seat. seat: [item, seat] or None."""
@@ -1540,16 +1650,24 @@ class Game:
         mode = (args[0].lower() if args else "")
         if mode not in ("on", "off", "auto"):
             raise GameError("Like: /rain on, /rain off or /rain auto")
-        c.room.rain_override = None if mode == "auto" else mode == "on"
+        c.room.weather_override = None if mode == "auto" else "rain" if mode == "on" else "sunny"
         self.weather_tick()
         self.sys(c, f"Weather: {'following the forecast' if mode == 'auto' else 'rain' if mode == 'on' else 'clear skies'}.", "ok")
 
+    def admin_weather(self, c, args):
+        mode = (args[0].lower() if args else "")
+        if mode not in WEATHER_KINDS + ("auto",):
+            raise GameError("Like: /weather sunny, cloudy, windy, rain, storm or auto")
+        c.room.weather_override = None if mode == "auto" else mode
+        self.weather_tick()
+        self.sys(c, f"Weather: {'following the forecast' if mode == 'auto' else mode}.", "ok")
+
     def weather_tick(self):
         for room in list(self.rooms.values()):
-            r = raining(room)
-            if r != room.rain_sent:
-                room.rain_sent = r
-                room.broadcast({"t": "weather", "rain": r})
+            w = weather(room)
+            if w != room.rain_sent:
+                room.rain_sent = w
+                room.broadcast({"t": "weather", "rain": raining(room), "weather": w})
 
     async def weather_loop(self):
         while True:
@@ -1578,7 +1696,9 @@ class Game:
         power = num(m.get("p", 0), 0, 1)
         q = min(1.25, 0.35 + power * 0.25 + RODS.get(c.player["rod"], {}).get("luck", 0))
         rain = raining(c.room)
-        pool = [f for f in FISH if f["rarity"] != "mythic" or rain]
+        # the pond has freshwater fish; the sea at Coral Cove has its own
+        water = "ocean" if c.scene == "beach" else "pond"
+        pool = [f for f in FISH if f.get("water", "pond") == water and (f["rarity"] != "mythic" or rain)]
         weights = [f["weight"] * math.exp(f["bias"] * (q - 0.5)) * FISH_DAMP.get(f["rarity"], 1) for f in pool]
         fish = random.choices(pool, weights=weights)[0]
         c.hooked = {"fish": fish, "at": time.monotonic()}
@@ -2971,7 +3091,8 @@ class Game:
 
     def beach_join(self, c):
         room = c.room
-        c.ws.send({"t": "beach", "treasure": room.treasure})
+        c.ws.send({"t": "beach", "treasure": room.treasure, "balls": list(room.balls.values()),
+                   "courts": {k: v["s"] for k, v in room.courts.items()}, "boats": room.boats})
         if room.crabs["state"] == "idle":
             self.crab_round(room, room.crabs["id"])
         else:

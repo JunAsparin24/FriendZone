@@ -1,5 +1,6 @@
 // Everything static (or ambiently animated) in the 3D world.
 import * as THREE from 'three';
+import { wind as sharedWind, withWind as windMat } from './wind.js';
 import { TAU, toon, basic, shiny, canvasTexture, additive, glowTexture, puffTexture, outlineMaterial } from './materials.js';
 import { buildBuilding } from './buildings.js';
 import { buildLamps, buildFences, buildTown } from './town.js';
@@ -38,27 +39,7 @@ export function faceted(geo) {
 }
 const T = (x, y, z, sx = 1, sy = sx, sz = sx) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(sx, sy, sz));
 
-/** Wind sway for foliage: bends vertices above `from` height using a shared time uniform. */
-function withWind(shared, wind, strength = 0.06, from = 1.2) {
-  const material = shared.clone(); // never patch the cached, shared material
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uWind = wind;
-    shader.vertexShader = 'uniform float uWind;\n' + shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
-      #ifdef USE_INSTANCING
-        vec3 ip = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
-      #else
-        vec3 ip = vec3(0.0);
-      #endif
-      float h = max(0.0, position.y - ${from.toFixed(2)});
-      transformed.x += sin(uWind * 1.7 + ip.x * 0.35 + ip.z * 0.2) * ${strength.toFixed(3)} * h;
-      transformed.z += cos(uWind * 1.3 + ip.z * 0.3) * ${(strength * 0.6).toFixed(3)} * h;`,
-    );
-  };
-  material.customProgramCacheKey = () => `wind${strength}${from}`;
-  return material;
-}
+const withWind = (shared, _wind, strength, from) => windMat(shared, strength, from);
 
 function instanced(geo, material, list, { cast = true, colorOf = null } = {}) {
   const mesh = new THREE.InstancedMesh(geo, material, list.length);
@@ -76,24 +57,9 @@ function instanced(geo, material, list, { cast = true, colorOf = null } = {}) {
 
 // ---------------------------------------------------------------------------
 
-export function buildEnvironment(scene) {
-  const anim = [];
-  const wind = { value: 0 };
-  const rnd = M.seeded(99);
-  const layout = M.buildLayout();
-  const textTextures = [];
-  const ctx = {
-    puff: puffTexture,
-    // text textures are redrawn once web fonts finish loading
-    text(w, h, draw) {
-      const tex = canvasTexture(w, h, draw);
-      textTextures.push({ tex, draw });
-      return tex;
-    },
-  };
-
-  // ---- sky, fog, light -------------------------------------------------------
-  const sky = new THREE.Mesh(
+/** The sky dome: a gradient with a sun halo, horizon haze and drifting high clouds (the day/night cycle drives its uniforms). */
+export function buildSky() {
+  return new THREE.Mesh(
     new THREE.SphereGeometry(760, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
@@ -130,6 +96,26 @@ export function buildEnvironment(scene) {
         }`,
     }),
   );
+}
+
+export function buildEnvironment(scene) {
+  const anim = [];
+  const wind = sharedWind.time;
+  const rnd = M.seeded(99);
+  const layout = M.buildLayout();
+  const textTextures = [];
+  const ctx = {
+    puff: puffTexture,
+    // text textures are redrawn once web fonts finish loading
+    text(w, h, draw) {
+      const tex = canvasTexture(w, h, draw);
+      textTextures.push({ tex, draw });
+      return tex;
+    },
+  };
+
+  // ---- sky, fog, light -------------------------------------------------------
+  const sky = buildSky();
   scene.add(sky);
   scene.fog = new THREE.Fog('#cfe4fb', 120, 380);
   const sunGlow = new THREE.Sprite(additive(glowTexture, 0xfff2c0, 0.9));
@@ -626,7 +612,7 @@ export function buildEnvironment(scene) {
     wind.value = t;
     for (const fn of anim) fn(t, dt);
     for (const c of clouds) {
-      c.position.x += c.userData.speed * dt;
+      c.position.x += c.userData.speed * dt * sharedWind.strength.value;
       if (c.position.x > 240) c.position.x = -240;
     }
     for (const b of butterflies) {

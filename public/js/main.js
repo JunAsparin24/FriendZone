@@ -1,4 +1,5 @@
 import './keybinds.js'; // first, so custom keybinds are translated before any game sees a key
+import { weatherState } from './three/wind.js';
 // App shell: zone selection, sign-in, lobby, world HUD, chat and activity modal.
 import { actionHint, touch } from './touch.js';
 import './glyphs.js'; // swaps emoji in the interface for drawn icons
@@ -531,7 +532,7 @@ $('#backLobby').onclick = () => {
 
 net.on('weather', (m) => {
   S.rain = !!m.rain;
-  world.dayNight?.setRain(S.rain);
+  S.weather = weatherState.kind = m.weather ?? (m.rain ? 'rain' : 'sunny');
 });
 
 net.on('welcome', (m) => {
@@ -544,7 +545,7 @@ net.on('welcome', (m) => {
   S.race = m.race;
   S.arcade = m.arcade ?? {};
   S.rain = !!m.rain;
-  world.dayNight?.setRain(S.rain);
+  S.weather = weatherState.kind = m.weather ?? (m.rain ? 'rain' : 'sunny');
   session = { code: m.zone.code, name: me().name, token: m.token };
   rememberZone({ ...session, zoneName: m.zone.name });
   for (const form of [$('#createForm'), $('#joinForm')]) {

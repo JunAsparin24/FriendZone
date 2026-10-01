@@ -32,6 +32,7 @@ export const ACTIVITIES = {
     touch: { hint: 'Left thumb: walk · Right thumb: look around · tap things to use them' } },
   fishing: { icon: 'fishing', emoji: '🎣', name: 'Fishing', world: 'fishing' },
   journal: { icon: 'fishing', emoji: '📖', name: 'Fish Journal', wide: true, mount: fishJournal },
+  journalOcean: { icon: 'fishing', emoji: '📖', name: 'Fish Journal', wide: true, mount: (body) => fishJournal(body, { water: 'ocean' }) },
   fishstand: { icon: 'fishing', emoji: '🐟', name: 'Fish Market', wide: true, mount: fishMarket },
   doodle: { icon: 'doodle', emoji: '🎨', name: 'Doodle', scene: 'doodle', wide: true, mount: doodle },
   trading: { icon: 'tavern', emoji: '🍺', name: 'Trading Tavern', place: 'Trading Tavern', scene: 'tavern', area: tavernArea,

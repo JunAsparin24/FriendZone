@@ -869,7 +869,357 @@ const HAIR = {
     });
   },
 };
-const TALL_HAIR = new Set(['hair_liberty', 'hair_freeform', 'hair_twists', 'hair_dreads', 'hair_spiky', 'hair_mohawk', 'hair_bun', 'hair_afro', 'hair_quiff', 'hair_spacebuns', 'hair_topknot', 'hair_messy', 'hair_flame']);
+
+// ---------------------------------------------------------------------------
+// Animal Crossing–style hair: a puffy cap that sits off the head (not a helmet), chunky pointed locks
+// for fringes and sides, a soft shine across the top, and drawn-on swirls for curly hair. These
+// replace the plainer versions of the everyday styles above.
+// ---------------------------------------------------------------------------
+let AC_LIFT = 0.085; // (less under hats that hug the head)
+
+/** A chunky lock: a flattened, tapering ribbon along `pts`, lying flat against the head (its width runs
+ *  across the head's surface, its thickness away from it), ending in a rounded point. */
+function lockGeo(pts, w, thick, tipW = 0.12) {
+  const key = `lock${pts.map((v) => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`).join('|')}${w},${thick},${tipW}`;
+  return geo(key, () => {
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+    const segs = 16, radial = 10, pos = [], idx = [];
+    const P = new THREE.Vector3(), T = new THREE.Vector3(), N = new THREE.Vector3(), B = new THREE.Vector3();
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      curve.getPointAt(t, P); curve.getTangentAt(t, T);
+      N.copy(P).normalize(); // away from the middle of the head
+      B.crossVectors(T, N).normalize();
+      N.crossVectors(B, T).normalize();
+      const ww = w * (1 - Math.pow(t, 1.7) * (1 - tipW)) * (0.75 + 0.25 * Math.sin(Math.min(1, t * 3) * Math.PI / 2));
+      const th = thick * (1 - t * 0.55);
+      for (let j = 0; j < radial; j++) {
+        const a = (j / radial) * TAU;
+        const x = Math.cos(a) * ww, y = Math.sin(a) * th;
+        pos.push(P.x + B.x * x + N.x * y, P.y + B.y * x + N.y * y, P.z + B.z * x + N.z * y);
+      }
+    }
+    const end = curve.getPointAt(1), dir = curve.getTangentAt(1);
+    const capI = pos.length / 3;
+    pos.push(end.x + dir.x * w * tipW, end.y + dir.y * w * tipW, end.z + dir.z * w * tipW);
+    const startI = capI + 1, s0 = curve.getPointAt(0);
+    pos.push(s0.x, s0.y, s0.z);
+    for (let i = 0; i < segs; i++) for (let j = 0; j < radial; j++) {
+      const a = i * radial + j, b = i * radial + ((j + 1) % radial), c = a + radial, d = b + radial;
+      idx.push(a, c, b, b, c, d);
+    }
+    const last = segs * radial;
+    for (let j = 0; j < radial; j++) { idx.push(last + j, capI, last + ((j + 1) % radial)); idx.push(startI, j, (j + 1) % radial); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  });
+}
+function acLock(head, mat, pts, w = 0.1, thick = 0.035, tipW = 0.12) {
+  return part(head, lockGeo(pts, w, thick, tipW), mat, { outline: OUT_THIN });
+}
+
+/** The puffy cap of hair, sitting a little off the scalp. */
+function acCap(head, mat, { front = 0.98, side = 1.5, back = 2.25, lift = AC_LIFT, sy = 1.03 } = {}) {
+  return part(head, shellGeo(front, side, back + 0.18, R + lift), mat, { p: [0, 0.02, -0.015], s: [1.05, sy + 0.03, 1.03], outline: OUT });
+}
+
+/** A lighter streak of shine curving over the top of the hair. */
+function acShine(head, L, { r = R + AC_LIFT + 0.012, th = 0.5, width = 0.9 } = {}) {
+  const pts = [];
+  for (let k = 0; k <= 6; k++) pts.push(onHead(-width / 2 + (k / 6) * width, th + Math.sin((k / 6) * Math.PI) * 0.06, r * 1.03));
+  const m = toon(mix(L.hairColor, '#ffffff', 0.32));
+  part(head, lockGeo(pts, 0.03, 0.006, 0.4), m, { outline: null, shadow: false });
+}
+
+/** A fringe of chunky locks over the forehead. sweep > 0 pushes them to one side; part: where the
+ *  parting is (-1..1), locks either side curve away from it. */
+function acBangs(head, mat, { n = 4, spread = 1.0, sweep = 0, len = 0.2, part: parting = null, w = 0.15, top = 0.42, lift = AC_LIFT + 0.01, end = 1.1 } = {}) {
+  n = Math.min(n, 5);
+  for (let i = 0; i < n; i++) {
+    const u = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
+    const phi = u * spread * 0.62;
+    const away = parting == null ? 0 : (u >= parting ? 1 : -1) * 0.32;
+    const sw = sweep + away;
+    const thEnd = end + (1 - Math.abs(u)) * 0.06 - Math.abs(u) * 0.02 + len * 0.3;
+    const pts = [
+      onHead(phi - sw * 0.25, top, R + lift - 0.02),
+      onHead(phi, 0.85, R + lift + 0.008),
+      onHead(phi + sw * 0.25, (0.85 + thEnd) / 2 + 0.05, R + lift - 0.005),
+      onHead(phi + sw * 0.42, thEnd, R + 0.035),
+    ];
+    acLock(head, mat, pts, w * (1 - Math.abs(u) * 0.12) * (n > 4 ? 0.85 : 1), 0.05, 0.38).userData.fringe = true;
+  }
+}
+
+/** Locks hanging down in front of the ears (and on round the sides, `n` a side). */
+function acSides(head, mat, { len = 0.22, n = 1, w = 0.11, from = 1.22, outward = 0.04 } = {}) {
+  for (const s of [-1, 1]) for (let k = 0; k < n; k++) {
+    const phi = s * (from + k * 0.32);
+    const a = onHead(phi, 0.75, R + AC_LIFT - 0.01), b = onHead(phi, 1.35, R + AC_LIFT + 0.01);
+    const o = new THREE.Vector3(b.x, 0, b.z).normalize();
+    const c = b.clone().addScaledVector(o, outward).add(new THREE.Vector3(0, -len * 0.55, 0));
+    const d = b.clone().addScaledVector(o, outward * 0.6).add(new THREE.Vector3(0, -len, 0)).addScaledVector(new THREE.Vector3(0, 0, 1), 0.03);
+    acLock(head, mat, [a, b, c, d], w * 1.2, 0.05, 0.35);
+  }
+}
+
+/** Chunky pointed ends all round the back and sides of the cap. */
+function acNape(head, mat, { n = 9, len = 0.14, w = 0.12, from = 0.45, to = 1.55, th = 1.55, out = 0.03 } = {}) {
+  for (let i = 0; i < n; i++) {
+    const phi = Math.PI * (from + (i / Math.max(1, n - 1)) * (to - from)) * (1);
+    for (const s of i === 0 && from === 0 ? [1] : [1]) {
+      const p0 = onHead(phi, th - 0.4, R + AC_LIFT - 0.005), p1 = onHead(phi, th, R + AC_LIFT + 0.01);
+      const o = new THREE.Vector3(p1.x, 0, p1.z).normalize();
+      acLock(head, mat, [p0, p1, p1.clone().addScaledVector(o, out).add(new THREE.Vector3(0, -len * 0.6, 0)), p1.clone().addScaledVector(o, out * 0.4).add(new THREE.Vector3(0, -len, 0))], w * 1.25, 0.05, 0.35);
+    }
+  }
+}
+
+const curlCache = new Map();
+/** Curly hair's drawn-on swirls (dark spirals with a light edge), on the hair colour. */
+function curlMaterial(color, { scale = 1 } = {}) {
+  const key = `${color}${scale}`;
+  if (!curlCache.has(key)) {
+    const tex = canvasTexture(256, 256, (c) => {
+      c.fillStyle = color; c.fillRect(0, 0, 256, 256);
+      const dark = mix(color, '#000000', 0.55), light = mix(color, '#ffffff', 0.25);
+      const rnd = mulberry(7);
+      for (let k = 0; k < 26; k++) {
+        const x = rnd() * 256, y = rnd() * 256, r = 17 + rnd() * 9, a0 = rnd() * TAU;
+        for (const [col, off, lw] of [[light, 2.5, 3.5], [dark, 0, 4.5]]) {
+          c.strokeStyle = col; c.lineWidth = lw;
+          for (const [dx, dy] of [[0, 0], [256, 0], [-256, 0], [0, 256], [0, -256]]) {
+            c.beginPath();
+            for (let t = 0; t < 1.9 * TAU; t += 0.25) { const rr = r * (1 - t / (2.4 * TAU)); c.lineTo(x + dx + off + Math.cos(a0 + t) * rr, y + dy + off + Math.sin(a0 + t) * rr); }
+            c.stroke();
+          }
+        }
+      }
+    });
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3 * scale, 1.5 * scale);
+    curlCache.set(key, new THREE.MeshToonMaterial({ color: '#ffffff', map: tex, gradientMap: toon('#ffffff').gradientMap, side: THREE.DoubleSide }));
+  }
+  return curlCache.get(key);
+}
+function mulberry(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+/** A lumpy cap: like the hair cap but standing well off the head with a bumpy, cloud-like outline. */
+function lumpyCap(head, mat, { front = 0.95, side = 1.6, back = 2.25, r = R + 0.16, amp = 0.07, lumps = 7, y = 0.02, s = [1, 1, 1] } = {}) {
+  const g = geo(`lumpy${front},${side},${back},${r},${amp},${lumps}`, () => {
+    const base = shellGeo(front, side, back + 0.18, r).clone();
+    const p = base.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      const n = v.clone().normalize();
+      const bump = Math.sin(n.x * lumps + 1.3) * Math.sin(n.y * lumps + 0.7) * Math.sin(n.z * lumps + 2.1);
+      v.setLength(r * (1 + amp * (0.5 + 0.5 * bump)));
+      p.setXYZ(i, v.x, v.y, v.z);
+    }
+    base.computeVertexNormals();
+    return base;
+  });
+  return part(head, g, mat, { p: [0, y, -0.02], s, outline: OUT });
+}
+
+/** A row of round curls along the front edge of a curly cap (so you never see under it). */
+function curlRim(head, mat, { r = R + 0.12, n = 9, size = 0.085, th = 0.95, spread = 1.15 } = {}) {
+  for (let i = 0; i < n; i++) {
+    const phi = (i / (n - 1) - 0.5) * 2 * spread;
+    const hth = th + Math.abs(phi) * 0.28;
+    part(head, sphere(size, 14, 10), mat, { p: onHead(phi, hth, r * 0.92).toArray(), outline: OUT_THIN });
+  }
+}
+
+Object.assign(HAIR, {
+  hair_short(head, mat, L) {
+    acCap(head, mat, { front: 0.95, side: 1.4, back: 2.15 });
+    acNape(head, mat, { n: 7, len: 0.09, w: 0.11, from: 0.55, to: 1.45, th: 1.55 });
+    acSides(head, mat, { len: 0.12, w: 0.1 });
+    acBangs(head, mat, { n: 4, sweep: 0.35, len: 0.1, w: 0.12 });
+    acShine(head, L);
+  },
+  hair_spiky(head, mat, L) {
+    acCap(head, mat, { front: 0.92, side: 1.4, back: 2.1 });
+    const shade = toon(mix(L.hairColor, '#000000', 0.15));
+    const dirs = [[0, 1, 0.2], [0.5, 0.85, 0.15], [-0.5, 0.85, 0.15], [0.35, 0.8, -0.45], [-0.35, 0.8, -0.45], [0, 0.65, -0.75],
+      [0.78, 0.55, -0.2], [-0.78, 0.55, -0.2], [0.24, 0.9, 0.5], [-0.28, 0.9, 0.45]];
+    dirs.forEach((d, i) => {
+      const v = new THREE.Vector3(...d).normalize();
+      const a = v.clone().multiplyScalar(R + 0.03), tip = v.clone().multiplyScalar(R + 0.33).add(new THREE.Vector3(0, 0.05, -0.04));
+      acLock(head, i % 3 ? mat : shade, [a, a.clone().lerp(tip, 0.5).addScaledVector(v, 0.03), tip], 0.13, 0.07, 0.1);
+    });
+    acBangs(head, mat, { n: 4, sweep: -0.2, len: 0.06, w: 0.11 });
+    acShine(head, L);
+  },
+  hair_long(head, mat, L) {
+    acCap(head, mat, { front: 0.98, side: 1.5, back: 2.4 });
+    curtain(head, mat, { len: 0.66, flare: 0.13, wrap: 0.32, top: 0.0 });
+    // chunky ends round the bottom of the curtain
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI / 2 - 0.25 + (i / 8) * (Math.PI + 0.5);
+      const r = R + 0.05 + 0.13;
+      const top = new THREE.Vector3(Math.sin(a) * r, -0.5, Math.cos(a) * r * 0.94);
+      acLock(head, mat, [top, top.clone().add(new THREE.Vector3(0, -0.12, 0)), top.clone().add(new THREE.Vector3(Math.sin(a) * 0.01, -0.24, Math.cos(a) * 0.01))], 0.14, 0.05);
+    }
+    acSides(head, mat, { len: 0.5, w: 0.12 });
+    acBangs(head, mat, { n: 5, part: 0.25, len: 0.14 });
+    acShine(head, L);
+  },
+  hair_bob(head, mat, L) {
+    acCap(head, mat, { front: 1.0, side: 1.62, back: 2.35 });
+    curtain(head, mat, { len: 0.34, flare: 0.14, wrap: 0.62 });
+    acBangs(head, mat, { n: 6, len: 0.16, spread: 1.1, w: 0.11 });
+    acShine(head, L);
+  },
+  hair_ponytail(head, mat, L) {
+    acCap(head, mat, { front: 0.95, side: 1.5, back: 2.3, lift: 0.05 });
+    part(head, sphere(0.16, 16, 12), mat, { p: [0, 0.16, -0.43], s: [1, 0.9, 0.8], outline: OUT_THIN });
+    tail(head, mat, [[0, 0.16, -0.47], [0, 0.06, -0.56], [0, -0.1, -0.58], [0, -0.3, -0.51], [0, -0.5, -0.4]], 0.16, 0.07, tieColor(L, '#ff5d73'));
+    acSides(head, mat, { len: 0.16, w: 0.09 });
+    acBangs(head, mat, { n: 4, sweep: 0.3, len: 0.12 });
+    acShine(head, L);
+  },
+  hair_pigtails(head, mat, L) {
+    acCap(head, mat, { front: 0.95, side: 1.5, back: 2.3, lift: 0.05 });
+    for (const s of [-1, 1]) tail(head, mat, [[s * 0.42, 0.04, -0.2], [s * 0.58, -0.1, -0.2], [s * 0.63, -0.32, -0.16], [s * 0.57, -0.52, -0.1]], 0.12, 0.05, tieColor(L, '#ffd84d'));
+    acBangs(head, mat, { n: 5, part: 0, len: 0.14 });
+    acShine(head, L);
+  },
+  hair_twintails(head, mat, L) {
+    acCap(head, mat, { front: 0.95, side: 1.5, back: 2.3, lift: 0.05 });
+    for (const s of [-1, 1]) {
+      part(head, sphere(0.14, 14, 10), mat, { p: [s * 0.32, 0.3, -0.2], outline: OUT_THIN });
+      tail(head, mat, [[s * 0.38, 0.3, -0.22], [s * 0.53, 0.26, -0.26], [s * 0.61, 0.04, -0.26], [s * 0.63, -0.3, -0.22], [s * 0.59, -0.66, -0.16], [s * 0.53, -0.95, -0.1]], 0.15, 0.06, tieColor(L, '#e84393'));
+    }
+    acBangs(head, mat, { n: 5, len: 0.16 });
+    acShine(head, L);
+  },
+  hair_braid(head, mat, L) {
+    acCap(head, mat, { front: 0.95, side: 1.5, back: 2.35, lift: 0.05 });
+    for (let i = 0; i < 8; i++) {
+      const r = 0.11 - i * 0.006;
+      part(head, sphere(r, 12, 10), mat, { p: [(i % 2 ? 0.04 : -0.04), -0.12 - i * 0.12, -0.5 + i * 0.012], s: [1, 1.2, 0.9], r: [0, 0, i % 2 ? 0.4 : -0.4], outline: OUT_THIN });
+    }
+    part(head, torus(0.055, 0.024, TAU, 8, 16), toon(tieColor(L, '#6ee7a0')), { p: [0, -1.0, -0.42], r: [Math.PI / 2, 0, 0], outline: null });
+    acLock(head, mat, [new THREE.Vector3(0, -1.03, -0.42), new THREE.Vector3(0, -1.12, -0.42), new THREE.Vector3(0, -1.2, -0.4)], 0.09, 0.05);
+    acBangs(head, mat, { n: 4, sweep: -0.3, len: 0.12 });
+    acShine(head, L);
+  },
+  hair_bun(head, mat, L) {
+    acCap(head, mat, { front: 0.95, side: 1.45, back: 2.2, lift: 0.05 });
+    part(head, sphere(0.2), mat, { p: [0, 0.44, -0.2], s: [1, 0.92, 1] });
+    part(head, torus(0.14, 0.032, TAU, 8, 20), toon(tieColor(L, '#ff5d73')), { p: [0, 0.32, -0.16], r: [Math.PI / 2 + 0.35, 0, 0], outline: null });
+    acSides(head, mat, { len: 0.18, w: 0.08 });
+    acBangs(head, mat, { n: 3, part: 0, len: 0.1, spread: 0.7 });
+    acShine(head, L);
+  },
+  hair_spacebuns(head, mat, L) {
+    acCap(head, mat, { front: 0.95, side: 1.45, back: 2.25, lift: 0.05 });
+    for (const s of [-1, 1]) {
+      part(head, sphere(0.16), mat, { p: [s * 0.29, 0.38, -0.06] });
+      part(head, torus(0.11, 0.025, TAU, 8, 18), toon(tieColor(L, '#ff9fe0')), { p: [s * 0.25, 0.27, -0.05], r: [Math.PI / 2, s * 0.6, 0], outline: null });
+    }
+    acBangs(head, mat, { n: 5, len: 0.14 });
+    acShine(head, L);
+  },
+  hair_topknot(head, mat, L) {
+    acCap(head, mat, { front: 0.85, side: 1.35, back: 2.1, lift: 0.045 });
+    part(head, sphere(0.13), mat, { p: [0, R + 0.13, -0.06], s: [1, 0.85, 1] });
+    part(head, cyl(0.065, 0.085, 0.06, 12), toon(tieColor(L, '#e0463c')), { p: [0, R + 0.04, -0.05], outline: null });
+    acShine(head, L, { th: 0.7 });
+  },
+  hair_swoop(head, mat, L) {
+    acCap(head, mat, { front: 0.92, side: 1.4, back: 2.15 });
+    // one big swoop across the forehead, flicking up at the end
+    [[-0.95, 0.32, 0.3, 0.16], [-0.7, 0.42, 0.55, 0.13]].forEach(([p0, t0, p1, w]) => {
+      acLock(head, mat, [onHead(p0, 0.4, R + 0.08), onHead((p0 + p1) / 2, t0 + 0.55, R + 0.1), onHead(p1, 1.0, R + 0.09), onHead(p1 + 0.2, 0.88, R + 0.08)], w, 0.06);
+    });
+    acNape(head, mat, { n: 7, len: 0.08 });
+    acShine(head, L);
+  },
+  hair_quiff(head, mat, L) {
+    acCap(head, mat, { front: 1.0, side: 1.35, back: 2.1, lift: 0.05 });
+    // swept up and back off the forehead in big chunky waves
+    for (let i = 0; i < 4; i++) {
+      const phi = (i - 1.5) * 0.28;
+      const a = onHead(phi, 0.95, R + 0.06), b = onHead(phi * 0.8, 0.5, R + 0.24), c = onHead(phi * 0.5, 0.2, R + 0.2);
+      acLock(head, mat, [a, b, c, onHead(phi * 0.4, 0.15, R + 0.12)], 0.14, 0.09, 0.3);
+    }
+    acSides(head, mat, { len: 0.08, w: 0.09 });
+    acShine(head, L, { th: 0.75, r: R + 0.24 });
+  },
+  hair_messy(head, mat, L) {
+    acCap(head, mat, { front: 0.92, side: 1.45, back: 2.2 });
+    const tufts = [[0, 1, 0], [0.4, 0.9, 0.2], [-0.45, 0.85, 0.1], [0.3, 0.8, -0.5], [-0.3, 0.75, -0.55], [0.1, 0.55, -0.85], [0.8, 0.4, -0.3], [-0.8, 0.35, -0.3]];
+    tufts.forEach((d, i) => {
+      const v = new THREE.Vector3(...d).normalize();
+      const bend = new THREE.Vector3(Math.sin(i * 2.3), 0.1, Math.cos(i * 1.7)).multiplyScalar(0.12);
+      const a = v.clone().multiplyScalar(R + AC_LIFT - 0.01);
+      acLock(head, mat, [a, a.clone().addScaledVector(v, 0.1).add(bend), a.clone().addScaledVector(v, 0.17).add(bend.clone().multiplyScalar(2.2))], 0.12, 0.05);
+    });
+    acBangs(head, mat, { n: 5, sweep: 0.15, len: 0.16 });
+    acSides(head, mat, { len: 0.14, w: 0.1 });
+  },
+  // ---- curly hair: big soft volumes with drawn-on swirls and a bumpy outline
+  hair_curly(head, mat, L) {
+    const cm = curlMaterial(hex(L.hairColor));
+    lumpyCap(head, cm, { front: 0.95, side: 1.62, back: 2.25, r: R + 0.11, amp: 0.08 });
+    curlRim(head, cm, { r: R + 0.11, n: 7, size: 0.09, spread: 1.0 });
+    for (const s of [-1, 1]) part(head, sphere(0.12, 14, 10), cm, { p: [s * 0.45, -0.12, -0.04], s: [0.8, 1.1, 1], outline: OUT_THIN });
+  },
+  hair_curlybob(head, mat, L) {
+    const cm = curlMaterial(hex(L.hairColor));
+    lumpyCap(head, cm, { front: 0.97, side: 1.75, back: 2.4, r: R + 0.12, amp: 0.09 });
+    curlRim(head, cm, { r: R + 0.12, n: 7, size: 0.09, spread: 1.0 });
+    for (let i = 0; i < 11; i++) {
+      const a = Math.PI / 2 - 0.15 + (i / 10) * (Math.PI + 0.3);
+      part(head, sphere(0.13, 14, 10), cm, { p: [Math.sin(a) * (R + 0.08), -0.16, Math.cos(a) * (R + 0.05)], outline: OUT_THIN });
+    }
+  },
+  hair_ringlets(head, mat, L) {
+    // long curly hair: a big curly cap that tumbles down past the shoulders in round curls
+    const cm = curlMaterial(hex(L.hairColor));
+    lumpyCap(head, cm, { front: 0.97, side: 1.65, back: 2.3, r: R + 0.11, amp: 0.08 });
+    curlRim(head, cm, { r: R + 0.11, n: 7, size: 0.09, spread: 1.0 });
+    for (let i = 0; i < 11; i++) {
+      const a = Math.PI / 2 + 0.1 + (i / 10) * (Math.PI - 0.2);
+      for (let k = 0; k < 4; k++) {
+        const r = R + 0.08 + k * 0.015;
+        part(head, sphere(0.12 - k * 0.01, 14, 10), cm, { p: [Math.sin(a) * r, -0.12 - k * 0.15, Math.cos(a) * r * 0.95], outline: OUT_THIN });
+        if (i === 0 || i === 10) break;
+      }
+    }
+  },
+  hair_afro(head, mat, L) {
+    const cm = curlMaterial(hex(L.hairColor), { scale: 1.3 });
+    lumpyCap(head, cm, { front: 0.9, side: 1.62, back: 2.25, r: R + 0.26, amp: 0.1, lumps: 6, y: 0.06 });
+    curlRim(head, cm, { r: R + 0.2, n: 9, size: 0.11, th: 0.92, spread: 1.15 });
+  },
+  hair_puffs(head, mat, L) {
+    // two big, round, curly puffs high on the head, tied off; the rest slicked back to a centre part
+    acCap(head, mat, { front: 0.95, side: 1.5, back: 2.25, lift: 0.025 });
+    part(head, box(0.012, 0.004, 0.36), toon(mix(L.hairColor, L.skin, 0.5)), { p: [0, R + 0.03, 0.04], r: [0.1, 0, 0], outline: null });
+    const cm = curlMaterial(hex(L.hairColor), { scale: 0.6 });
+    for (const sx of [-1, 1]) {
+      const c = new THREE.Vector3(sx * 0.3, 0.44, -0.06);
+      part(head, geo('puffBall', () => {
+        const g = new THREE.IcosahedronGeometry(0.22, 3);
+        const p = g.attributes.position, v = new THREE.Vector3();
+        for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const n = v.clone().normalize(); v.setLength(0.22 * (1 + 0.08 * Math.sin(n.x * 9) * Math.sin(n.y * 9) * Math.sin(n.z * 9))); p.setXYZ(i, v.x, v.y, v.z); }
+        g.computeVertexNormals();
+        return g;
+      }), cm, { p: c.toArray(), outline: OUT });
+      part(head, torus(0.1, 0.032, TAU, 8, 20), toon(tieColor(L, '#ff5d73')), { p: c.clone().add(new THREE.Vector3(-sx * 0.05, -0.18, 0.01)).toArray(), r: [Math.PI / 2, sx * 0.45, 0], outline: null });
+    }
+    acShine(head, L, { r: R + 0.04, th: 0.65, width: 0.5 });
+  },
+});
+const TALL_HAIR = new Set(['hair_ringlets', 'hair_curlybob', 'hair_curly', 'hair_liberty', 'hair_freeform', 'hair_twists', 'hair_dreads', 'hair_spiky', 'hair_mohawk', 'hair_bun', 'hair_afro', 'hair_quiff', 'hair_spacebuns', 'hair_topknot', 'hair_messy', 'hair_flame']);
 
 // ---------------------------------------------------------------------------
 // hats (in head space; top of the head is y = R)
@@ -1032,7 +1382,7 @@ const HATS = {
 // face items
 // ---------------------------------------------------------------------------
 
-const EYE_X = 0.15, EYE_Y = 0.02;
+const EYE_X = 0.16, EYE_Y = 0.0;
 const FACES = {
   face_glasses(head) {
     const m = toon('#1d1b2e');
@@ -1923,6 +2273,13 @@ export class Character {
     part(head, sphere(R, 36, 28), skin);
     for (const s of [-1, 1]) part(head, sphere(0.085, 14, 10), toon(tint(L.skin, 0.93)), { p: [s * 0.41, -0.02, -0.02], s: [0.6, 1, 0.9], outline: OUT_THIN });
 
+    // a big round head (Animal Crossing proportions) with a little button nose
+    head.scale.setScalar(1.1);
+    head.position.y += 0.03;
+    if (L.face !== 'face_ninja' && L.face !== 'face_clownnose') {
+      const np = onFace(0, -0.075, 0.008);
+      part(head, sphere(0.032, 12, 10), toon(tint(L.skin, 0.88)), { p: np.toArray(), q: faceTo(np), s: [1.2, 0.9, 0.8], outline: null });
+    }
     const hideEyes = L.face === 'face_sunglasses' || L.hat === 'hat_helmet';
     const eyes = hideEyes ? [] : this.buildEyes(head, L);
     for (const s of [-1, 1]) {
@@ -1941,10 +2298,16 @@ export class Character {
     }
 
     const hairMat = toon(L.hairColor);
+    AC_LIFT = COVERING_HATS.has(L.hat) || L.hat === 'hat_durag' || L.hat === 'hat_cap' ? 0.03 : 0.085;
     const hair = COVERING_HATS.has(L.hat) && TALL_HAIR.has(L.hair) ? 'hair_short' : L.hair;
     (HAIR[hair] ?? HAIR.hair_short)(head, hairMat, L, anim);
     FACES[L.face]?.(head, L, anim);
-    HATS[L.hat]?.(head, L, anim);
+    // hats sit over the puffier hair, so they're a size up (held from the head's centre)
+    const hatGroup = new THREE.Group();
+    hatGroup.scale.setScalar(L.hat === 'hat_none' || L.hat === 'hat_headphones' ? 1 : COVERING_HATS.has(L.hat) ? 1.04 : 1.12);
+    hatGroup.position.y = L.hat === 'hat_halo' || L.hat === 'hat_horns' ? 0 : 0.012;
+    head.add(hatGroup);
+    HATS[L.hat]?.(hatGroup, L, anim);
     // hats that sit low on the forehead would have the fringe poking through them
     if (FRINGE_HIDING_HATS.has(L.hat)) head.traverse((o) => { if (o.userData.fringe) o.visible = false; });
     head.traverse((o) => { if (o.userData.spin) anim.push((t) => { o.rotation.y = t * 2; }); });
@@ -2045,7 +2408,7 @@ export class Character {
         const sy = style === 'eyes_sleepy' ? 0.8 : style === 'eyes_angry' ? 0.95 : style === 'eyes_surprised' ? 1.25 : 1.3;
         // surprised and cat eyes are pale with a small / slit pupil; the rest are big dark (or coloured) eyes
         const pale = style === 'eyes_surprised' || style === 'eyes_cat';
-        const eye = part(head, sphere(big ? 0.074 : 0.064, 18, 14), basic(pale ? (style === 'eyes_cat' ? '#ffe066' : '#ffffff') : iris), { p: p.toArray(), q, s: [0.85, sy, 0.5], outline: pale ? OUT_THIN : null, shadow: false });
+        const eye = part(head, sphere(big ? 0.08 : 0.071, 18, 14), basic(pale ? (style === 'eyes_cat' ? '#ffe066' : '#ffffff') : iris), { p: p.toArray(), q, s: [0.85, sy, 0.5], outline: pale ? OUT_THIN : null, shadow: false });
         eye.userData.sy = sy;
         if (style === 'eyes_surprised') part(eye, sphere(0.026, 10, 8), basic(iris), { p: [0, 0, 0.05], outline: null, shadow: false });
         else if (style === 'eyes_cat') part(eye, sphere(0.03, 10, 8), dark, { p: [0, 0, 0.05], s: [0.3, 1.5, 0.6], outline: null, shadow: false });

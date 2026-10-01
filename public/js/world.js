@@ -5,7 +5,7 @@ import { wind } from './three/wind.js';
 import { watchContext } from './gfxguard.js';
 import { net } from './net.js';
 import { S, isTyping, esc, toast } from './state.js';
-import { mountSpeed } from './three/mounts.js';
+import { mountSpeed, MOUNT_SOUND } from './three/mounts.js';
 import * as M from './map.js';
 import { Character } from './three/character.js';
 import { buildEnvironment } from './three/environment.js';
@@ -13,7 +13,7 @@ import { buildLeaderboards } from './three/leaderboards.js';
 import { music } from './music.js';
 import { DayNight, timeOfDay, dayPhase } from './three/daynight.js';
 import { puffTexture, basic } from './three/materials.js';
-import { sfx, ambient } from './sfx.js';
+import { sfx, ambient, engine } from './sfx.js';
 import { settings, onSettings, pixelRatio } from './settings.js';
 import { iconSvg, iconImage } from './icons.js';
 import { Fishing, Line } from './games/fishing.js';
@@ -229,6 +229,7 @@ export class World {
   }
 
   stop() {
+    if (this.riding) this.toggleRide(false);
     this.running = false;
     this.off.forEach((fn) => fn());
     this.off = [];
@@ -271,9 +272,11 @@ export class World {
       k, x, y, tx: x, ty: y, heading: 0, moving: false, char, lookRef: S.players[k]?.look, dustT: 0, speed: 1,
       el: { wrap, emote: wrap.children[0], bubble: wrap.children[1], tag: wrap.children[2] },
     };
-    char.onStep = () => {
-      const surface = Math.hypot(a.x - M.CENTER.x, a.y - M.CENTER.y) < M.PLAZA_R + 10 ? 'stone' : 'grass';
+    char.onStep = (kind) => {
       const o = this.spatial(a);
+      if (kind === 'hoof') { sfx('hoof', { ...o, vol: o.vol * (k === S.me ? 0.8 : 0.45) }); return; }
+      if (kind === 'trick') { sfx('skate', { ...o, vol: o.vol * 0.6 }); return; }
+      const surface = Math.hypot(a.x - M.CENTER.x, a.y - M.CENTER.y) < M.PLAZA_R + 10 ? 'stone' : 'grass';
       sfx('step', { ...o, vol: o.vol * (k === S.me ? 0.9 : 0.5), surface });
     };
     char.onLand = () => sfx('land', this.spatial(a));
@@ -382,9 +385,13 @@ export class World {
       this.riding = true;
       me.char.setPose('ride');
       net.send('pose', { pose: 'ride' });
-      sfx('whoosh');
+      const snd = MOUNT_SOUND[S.players[S.me]?.look?.mount] ?? {};
+      sfx(snd.on ?? 'whoosh');
+      if (snd.loop) this.rideLoop = engine(snd.loop);
     } else {
       this.riding = false;
+      this.rideLoop?.stop();
+      this.rideLoop = null;
       me.char.setRiding(false);
       me.char.setPose('idle');
       net.send('pose', { pose: null });
@@ -852,6 +859,7 @@ export class World {
       sprint = mountSpeed(S.players[S.me]?.look?.mount) * (fast ? 1.2 : 1);
       me.speed = fast ? 1.3 : 1;
     }
+    this.rideLoop?.set(len && !this.paused ? (me.speed > 1.1 ? 1 : 0.65) : 0, this.paused ? 0 : 1);
     me.moving = false;
     if (len) {
       const bx = me.x, by = me.y;

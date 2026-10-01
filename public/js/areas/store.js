@@ -157,15 +157,6 @@ export function openWalker(stage, { w, d, solids }) {
 // The Style Shop
 // ---------------------------------------------------------------------------
 
-const DISPLAYS = [
-  { tab: 'hat', label: 'browse hats', sign: 'HATS', color: '#ff9f43', look: { hat: 'hat_cowboy', top: 'top_hawaiian' } },
-  { tab: 'top', label: 'browse tops', sign: 'TOPS', color: '#ff5d73', look: { top: 'top_jersey', topColor: '#ff5d73' } },
-  { tab: 'bottom', label: 'browse bottoms', sign: 'BOTTOMS', color: '#3b82f6', look: { bottom: 'bottom_cargo', bottomColor: '#8b5a2b' } },
-  { tab: 'face', label: 'browse glasses & masks', sign: 'GLASSES & MASKS', color: '#8b5cf6', look: { face: 'face_sunglasses' } },
-  { tab: 'back', label: 'browse backpacks & wings', sign: 'BACKPACKS & WINGS', color: '#14b8a6', look: { back: 'back_wings' } },
-  { tab: 'aura', label: 'browse auras', sign: 'AURAS', color: '#e879f9', look: { aura: 'aura_sparkle' } },
-  { tab: 'hair', label: 'browse hairstyles', sign: 'HAIRSTYLES', color: '#f472b6', look: { hair: 'hair_quiff', hairColor: '#ff8fc7' } },
-];
 
 /** Shelves of folded clothes against a wall. */
 function clothesShelf(g, x, z, ry, colors) {
@@ -206,116 +197,252 @@ function clothesRack(g, x, z, ry, colors) {
 }
 
 export function styleShopArea(stage) {
-  stage.lights({ background: '#1a0f24', sky: 0xfff0f6, ground: 0x6a4a7a, hemi: 1.3, sun: 1.0, sunPos: [6, 30, 12], box: 16 });
-  const W = 24, D = 18;
-  const g = room(stage, { w: W, d: D, floor: ['#fff0f6', '#ffd6e8'], wall: '#ffe4f0', trim: '#2ed8c3',
-    motif: (c) => { c.fillStyle = 'rgba(46,216,195,.35)'; for (const [x, y] of [[46, 40], [110, 168], [174, 40], [238, 168]]) { c.beginPath(); c.arc(x, y, 7, 0, TAU); c.fill(); } } });
+  // a proper clothing store: racks and shelves all round, tables of folded tees, a shoe wall, a hat
+  // stand, window mannequins by the door, and a till with a cashier. Staff wander the aisles tidying.
+  // Click (or walk up to) any rack, shelf or table to open the shop.
+  stage.lights({ background: '#1a0f24', sky: 0xfff6ee, ground: 0x7a6a8a, hemi: 1.35, sun: 0.9, sunPos: [6, 30, 12], box: 18 });
+  const W = 28, D = 20;
+  const g = room(stage, { w: W, d: D, floor: ['#efe6da', '#e6dccd'], wall: '#f6f1ea', trim: '#2b2f4a',
+    motif: (c) => { c.fillStyle = 'rgba(43,47,74,.06)'; c.fillRect(0, 120, 256, 16); } });
   stage.scene.add(g);
   const anim = [];
   const solids = [];
-  const shop = (tab) => () => stage.openPanel({ wide: true, mount: (body) => wardrobe(body, { mode: 'shop', tab }) });
+  const shop = (tab = 'top') => () => stage.openPanel({ wide: true, mount: (body) => wardrobe(body, { mode: 'shop', tab }) });
+  const browse = (x, z, r, obj, tab, label = 'browse the clothes') => stage.interactable({ x, z, r, label, icon: 'shop', obj, use: shop(tab) });
+  const TEES = ['#ff5d73', '#ffd84d', '#39c6ff', '#6ee7a0', '#b77bff', '#ff9f43', '#f4f4f4', '#2b2f4a'];
 
-  // mannequins on round plinths, around the walls
-  const spots = [[-9.5, -6], [-5, -7], [0, -7], [5, -7], [9.5, -6], [-10, 1], [10, 1]];
-  DISPLAYS.forEach((dsp, i) => {
-    const [x, z] = spots[i];
+  // ---- the walls: rails of hanging clothes, shelves of folded ones, the shoe wall ----
+  for (const [x, cols] of [[-9, TEES], [-3, TEES.slice(2)], [3, TEES.slice().reverse()], [9, TEES.slice(1)]]) {
+    const rail = wallRail(g, x, -D / 2 + 0.45, 0, cols);
+    solids.push({ x, z: -D / 2 + 0.5, w: 4.6, d: 1.0 });
+    browse(x, -D / 2 + 1.6, 2.6, rail, 'top');
+  }
+  clothesShelf(g, -W / 2 + 0.5, -4, Math.PI / 2, TEES);
+  clothesShelf(g, -W / 2 + 0.5, 0.5, Math.PI / 2, TEES.slice().reverse());
+  solids.push({ x: -W / 2 + 0.5, z: -4, w: 0.8, d: 2.7 }, { x: -W / 2 + 0.5, z: 0.5, w: 0.8, d: 2.7 });
+  browse(-W / 2 + 1.8, -4, 2.6, null, 'top');
+  browse(-W / 2 + 1.8, 0.5, 2.6, null, 'bottom');
+  const shoes = shoeWall(g, W / 2 - 0.45, -2.5, -Math.PI / 2);
+  solids.push({ x: W / 2 - 0.5, z: -2.5, w: 0.9, d: 5.2 });
+  browse(W / 2 - 1.8, -2.5, 2.8, shoes, 'body', 'browse shoes');
+
+  // ---- the floor: round racks, rolling racks, display tables, a hat stand ----
+  for (const [x, z, k] of [[-6.5, -4.5, 0], [0, -4.8, 3], [6.5, -4.5, 5]]) {
+    const r = roundRack(g, x, z, TEES.slice(k).concat(TEES.slice(0, k)));
+    solids.push({ x, z, r: 1.35 });
+    browse(x, z, 2.6, r, k === 3 ? 'top' : 'bottom');
+  }
+  for (const [x, z, ry] of [[-8, 1.5, 0.2], [8.5, 1.8, -0.25]]) {
+    clothesRack(g, x, z, ry, ['#ff5d73', '#ffd84d', '#39c6ff', '#b77bff', '#f4f4f4']);
+    solids.push({ x, z, w: 2.6, d: 1.2 });
+    browse(x, z, 2.6, null, 'top');
+  }
+  for (const [x, z] of [[-3.2, 0.8], [3.2, 0.8]]) {
+    const t = displayTable(g, x, z, TEES);
+    solids.push({ x, z, w: 2.6, d: 1.5 });
+    browse(x, z, 2.6, t, 'top');
+  }
+  const hats = hatStand(g, 0, 1.2);
+  solids.push({ x: 0, z: 1.2, r: 0.7 });
+  browse(0, 1.2, 2.2, hats, 'hat', 'browse hats');
+  // accessories: a glass case of glasses and bling, and a basket of backpacks
+  const glasses = glassCase(g, -11, 6.2);
+  solids.push({ x: -11, z: 6.2, w: 2.6, d: 1.0 });
+  browse(-11, 6.2, 2.6, glasses, 'face', 'browse glasses & masks');
+
+  // ---- by the door: two mannequins in the window, dressed up ----
+  for (const [x, look] of [[-5.5, { top: 'top_hawaiian', hat: 'hat_sunhat', bottom: 'bottom_shorts' }], [5.5, { top: 'top_suit', topColor: '#2b2f4a', hat: 'hat_beret', back: 'back_wings' }]]) {
     const stand = new THREE.Group();
-    stand.position.set(x, 0, z);
+    stand.position.set(x, 0, D / 2 - 1.6);
     g.add(stand);
-    add(stand, new THREE.CylinderGeometry(1.0, 1.1, 0.35, 28), toon('#ffffff'), { p: [0, 0.18, 0], outline: true });
-    add(stand, new THREE.CylinderGeometry(1.02, 1.02, 0.08, 28), toon('#2ed8c3'), { p: [0, 0.36, 0] });
-    const c = new Character({ ...DEFAULT_LOOK, skin: '#e8e2f4', hair: 'hair_none', hairColor: '#e8e2f4', eyes: 'eyes_happy', ...dsp.look });
-    c.root.position.y = 0.4;
-    c.root.rotation.y = Math.atan2(-x, D / 2 - 2 - z) * 0.6;
+    add(stand, new THREE.CylinderGeometry(0.9, 1.0, 0.3, 28), toon('#ffffff'), { p: [0, 0.15, 0], outline: true });
+    const c = new Character({ ...DEFAULT_LOOK, skin: '#e8e2f4', hair: 'hair_none', hairColor: '#e8e2f4', eyes: 'eyes_happy', ...look });
+    c.root.position.y = 0.3;
+    c.root.rotation.y = Math.PI;
     stand.add(c.root);
-    anim.push((t, dt) => { c.update(dt, t + i, false); c.root.rotation.y += Math.sin(t * 0.6 + i) * 0.002; });
-    solids.push({ x, z, r: 1.1 });
-    stage.interactable({ x, z: z + 1.2, r: 2.2, label: dsp.label, icon: 'shop', obj: stand, use: shop(dsp.tab) });
-    // the area's sign hangs over it, turned to face the middle of the room
-    sign(g, dsp.sign, { x, z, y: 3.7, ry: Math.atan2(-x, 3 - z), w: dsp.sign.length > 10 ? 3.4 : 2.4, h: 0.75, bg: dsp.color });
-    add(stand, new THREE.CylinderGeometry(1.03, 1.03, 0.1, 28), toon(dsp.color), { p: [0, 0.3, 0], cast: false });
-  });
+    anim.push((t, dt) => c.update(dt, t + x, false));
+    solids.push({ x, z: D / 2 - 1.6, r: 1.0 });
+    browse(x, D / 2 - 1.6, 2.4, stand, 'top', 'check out the outfit');
+  }
 
-  // wall shelves of folded clothes and a rack of shirts
-  const tees = ['#ff5d73', '#ffd84d', '#39c6ff', '#6ee7a0', '#b77bff', '#ff9f43'];
-  clothesShelf(g, -2.5, -8.6, 0, tees);
-  clothesShelf(g, 2.5, -8.6, 0, tees.slice().reverse());
-  clothesShelf(g, -11.6, -2.5, Math.PI / 2, tees);
-  clothesShelf(g, 11.6, -2.5, -Math.PI / 2, tees);
-  solids.push({ x: -2.5, z: -8.6, w: 2.7, d: 0.7 }, { x: 2.5, z: -8.6, w: 2.7, d: 0.7 }, { x: -11.6, z: -2.5, w: 0.7, d: 2.7 }, { x: 11.6, z: -2.5, w: 0.7, d: 2.7 });
-  clothesRack(g, -9, 4.5, 0.3, ['#ff5d73', '#ff8fa3', '#ffd84d', '#39c6ff', '#7c6bff']);
-  solids.push({ x: -9, z: 4.5, w: 2.5, d: 1.2 });
+  // ---- the till ----
+  counter(g, 9.5, 6, 4.4, '#2b2f4a');
+  solids.push({ x: 9.5, z: 6, w: 4.6, d: 1.1 });
+  const cashier = shopkeeper(g, { skin: '#f6c9a0', hair: 'hair_bob', hairColor: '#ff8fc7', top: 'top_tee', topColor: '#2ed8c3', eyes: 'eyes_lashes', face: 'face_glasses' }, 9.5, 7.0, anim);
+  cashier.root.rotation.y = Math.PI;
+  solids.push({ x: 9.5, z: 7.0, r: 0.6 });
+  stage.interactable({ x: 9.5, z: 4.8, r: 2.4, label: 'talk to the cashier', icon: 'shop', obj: cashier.root, use: shop('crates') });
+  // shopping bags behind the till, and a little plant
+  for (let i = 0; i < 4; i++) add(g, new THREE.BoxGeometry(0.4, 0.5, 0.18), toon(['#ff5d73', '#ffd84d', '#39c6ff', '#b77bff'][i]), { p: [11.2 + (i % 2) * 0.5, 0.25, 7.6 + Math.floor(i / 2) * 0.3], outline: true });
 
-  // the crate machine: a big gift box that bounces and glows
-  const machine = new THREE.Group();
-  machine.position.set(-4, 0, 1.5);
-  g.add(machine);
-  add(machine, new THREE.CylinderGeometry(1.4, 1.5, 0.5, 24), toon('#7c6bff'), { p: [0, 0.25, 0], outline: true });
-  const gift = new THREE.Group();
-  gift.position.y = 1.5;
-  machine.add(gift);
-  add(gift, new THREE.BoxGeometry(1.4, 1.2, 1.4), toon('#ff5d73'), { outline: true });
-  add(gift, new THREE.BoxGeometry(1.5, 0.3, 1.5), toon('#ff8fa3'), { p: [0, 0.7, 0], outline: true });
-  add(gift, new THREE.BoxGeometry(0.25, 1.52, 1.52), toon('#ffd84d'), {});
-  add(gift, new THREE.BoxGeometry(1.52, 1.52, 0.25), toon('#ffd84d'), {});
-  for (const s of [-1, 1]) add(gift, new THREE.TorusGeometry(0.25, 0.08, 8, 16), toon('#ffd84d'), { p: [s * 0.22, 1.0, 0], r: [0, 0, s * 0.6] });
-  const glow = new THREE.Sprite(additive(glowTexture, 0xffd84d, 0.5));
-  glow.scale.setScalar(4);
-  glow.position.y = 1.5;
-  machine.add(glow);
-  anim.push((t) => { gift.position.y = 1.5 + Math.abs(Math.sin(t * 2.2)) * 0.25; gift.rotation.y = t * 0.6; glow.material.opacity = 0.35 + Math.sin(t * 3) * 0.15; });
-  solids.push({ x: -4, z: 1.5, r: 1.5 });
-  stage.interactable({ x: -4, z: 3.2, r: 2.4, label: 'open a mystery crate', icon: 'shop', obj: machine, use: shop('crates') });
-  sign(g, 'MYSTERY CRATES', { x: -4, z: 1.5, y: 3.9, w: 3.4, h: 0.75, bg: '#7c6bff' });
-
-  // the big mirror: your own wardrobe
-  const mirror = new THREE.Group();
-  mirror.position.set(4, 0, 1.5);
-  g.add(mirror);
-  add(mirror, new THREE.BoxGeometry(2.4, 3.6, 0.3), toon('#ffc53d'), { p: [0, 1.9, 0], outline: true });
-  add(mirror, new THREE.BoxGeometry(2.0, 3.2, 0.32), toon('#cfe9ff', { emissive: '#9fd0ff', emissiveIntensity: 0.35 }), { p: [0, 1.9, 0.01] });
-  add(mirror, new THREE.BoxGeometry(0.3, 2.6, 0.34), toon('#ffffff', { transparent: true, opacity: 0.5 }), { p: [-0.4, 2.0, 0.02], r: [0, 0, 0.4], cast: false });
-  add(mirror, new THREE.BoxGeometry(2.6, 0.3, 0.8), toon('#ffc53d'), { p: [0, 0.15, 0] });
-  solids.push({ x: 4, z: 1.5, w: 2.6, d: 0.8 });
-  stage.interactable({ x: 4, z: 2.8, r: 2.2, label: 'change your outfit', icon: 'wardrobe', obj: mirror, use: () => stage.openPanel({ wide: true, mount: (body) => wardrobe(body) }) });
-  sign(g, 'FITTING MIRROR', { x: 4, z: 1.5, y: 4.2, w: 3.2, h: 0.7, bg: '#ffb13b' });
-
-  // mounts: a mannequin riding a horse on a slowly turning stage
-  const mountStand = new THREE.Group();
-  mountStand.position.set(-4.2, 0, 6.2);
-  g.add(mountStand);
-  add(mountStand, new THREE.CylinderGeometry(1.5, 1.6, 0.3, 32), toon('#ffffff'), { p: [0, 0.15, 0], outline: true });
-  add(mountStand, new THREE.CylinderGeometry(1.52, 1.52, 0.08, 32), toon('#ff9f43'), { p: [0, 0.32, 0] });
-  const rider = new Character({ ...DEFAULT_LOOK, skin: '#e8e2f4', hair: 'hair_none', hairColor: '#e8e2f4', eyes: 'eyes_happy', hat: 'hat_cowboy', mount: 'mount_horse' });
-  rider.setRiding(true);
-  rider.setPose('ride');
-  rider.root.position.y = 0.36;
-  mountStand.add(rider.root);
-  anim.push((t, dt) => { rider.update(dt, t, false); rider.root.rotation.y = t * 0.3; });
-  solids.push({ x: -4.2, z: 6.2, r: 1.6 });
-  stage.interactable({ x: -4.2, z: 4.4, r: 2.4, label: 'browse mounts', icon: 'shop', obj: mountStand, use: shop('mount') });
-  sign(g, 'MOUNTS', { x: -4.2, z: 6.2, y: 4.0, ry: Math.PI, w: 2.4, h: 0.75, bg: '#ff9f43' });
-
-  // counter + shopkeeper, plants, a rug
-  counter(g, 8, 5.5, 4, '#2ed8c3');
-  solids.push({ x: 8, z: 5.5, w: 4.2, d: 1.1 });
-  shopkeeper(g, { skin: '#f6c9a0', hair: 'hair_bob', hairColor: '#ff8fc7', top: 'top_suit', topColor: '#e57bff', eyes: 'eyes_lashes', face: 'face_glasses' }, 8, 4.4, anim);
-  solids.push({ x: 8, z: 4.4, r: 0.6 });
-  sign(g, 'CHECKOUT', { x: 8, z: 5.5, y: 3.6, w: 2.6, h: 0.7, bg: '#2ed8c3' });
-  // a round rug with a white trim
-  add(g, new THREE.CircleGeometry(3.4, 40), toon('#ffffff'), { p: [0, 0.015, -1], r: [-Math.PI / 2, 0, 0], cast: false });
-  add(g, new THREE.CircleGeometry(3.1, 40), toon('#ff8fc7'), { p: [0, 0.02, -1], r: [-Math.PI / 2, 0, 0], cast: false });
-  add(g, new THREE.RingGeometry(2.2, 2.4, 40), toon('#ffffff'), { p: [0, 0.025, -1], r: [-Math.PI / 2, 0, 0], cast: false });
-  for (const [x, z] of [[-11, 7.5], [11, 7.5]]) {
+  // ---- signs and finishing touches ----
+  sign(g, 'STYLE SHOP', { x: 0, z: -D / 2 + 0.2, y: 4.2, w: 6, h: 1.2, bg: '#ff5d73', hang: false });
+  // (signs sit on the walls and the counter, out of the camera's way)
+  sign(g, 'NEW ARRIVALS', { x: -W / 2 + 0.15, z: -1.8, y: 3.4, ry: Math.PI / 2, w: 3.4, h: 0.7, bg: '#2ed8c3', hang: false });
+  sign(g, 'SALE', { x: -8, z: 1.5, y: 2.55, w: 1.4, h: 0.5, bg: '#ffd84d', fg: '#2b2f4a', hang: false });
+  sign(g, 'SHOES', { x: W / 2 - 0.15, z: -2.5, y: 3.4, ry: -Math.PI / 2, w: 2.2, h: 0.7, bg: '#7c6bff', hang: false });
+  sign(g, 'CHECKOUT', { x: 9.5, z: 6, y: 1.75, w: 1.8, h: 0.5, bg: '#2b2f4a', hang: false });
+  // a runner rug down the middle aisle
+  add(g, new THREE.PlaneGeometry(2.4, 11), toon('#2b2f4a'), { p: [0, 0.012, 3.4], r: [-Math.PI / 2, 0, 0], cast: false });
+  add(g, new THREE.PlaneGeometry(2.0, 10.6), toon('#ff5d73'), { p: [0, 0.016, 3.4], r: [-Math.PI / 2, 0, 0], cast: false });
+  for (const [x, z] of [[-12.5, 8.4], [12.5, 8.4], [-12.5, -8.6], [12.5, -8.6]]) {
     add(g, new THREE.CylinderGeometry(0.45, 0.35, 0.8, 14), toon('#ffffff'), { p: [x, 0.4, z], outline: true });
     add(g, new THREE.IcosahedronGeometry(0.8, 1), toon('#2f9e44'), { p: [x, 1.4, z], outline: true });
     solids.push({ x, z, r: 0.6 });
   }
 
+  // ---- staff: they wander the aisles, stopping now and then to tidy a rack ----
+  const routes = [
+    [[-11, -6.5], [-1.5, -6.8], [-1.5, -2.2], [-11, -2.2]],
+    [[11, -7], [3.5, -7], [3.5, 3.4], [11.5, 3.4]],
+    [[-12, 3.6], [-1.6, 3.6], [-1.6, 7.6], [-12, 7.6]],
+  ];
+  const staffLooks = [
+    { skin: '#c68a5e', hair: 'hair_bun', hairColor: '#2b1d14', top: 'top_tee', topColor: '#2ed8c3', eyes: 'eyes_round' },
+    { skin: '#f1c7a4', hair: 'hair_quiff', hairColor: '#ffd84d', top: 'top_tee', topColor: '#2ed8c3', eyes: 'eyes_happy' },
+    { skin: '#8d5a3b', hair: 'hair_curly', hairColor: '#1d1b2e', top: 'top_tee', topColor: '#2ed8c3', eyes: 'eyes_round', face: 'face_glasses' },
+  ];
+  routes.forEach((route, i) => {
+    const c = new Character({ ...DEFAULT_LOOK, ...staffLooks[i] });
+    g.add(c.root);
+    const s = { leg: 0, x: route[0][0], z: route[0][1], wait: 1 + i, heading: 0 };
+    c.root.position.set(s.x, 0, s.z);
+    anim.push((t, dt) => {
+      let moving = false;
+      if (s.wait > 0) s.wait -= dt;
+      else {
+        const [tx, tz] = route[(s.leg + 1) % route.length];
+        const dx = tx - s.x, dz = tz - s.z, d = Math.hypot(dx, dz), step = dt * 1.6;
+        if (d <= step) {
+          s.x = tx; s.z = tz; s.leg = (s.leg + 1) % route.length;
+          s.wait = Math.random() < 0.5 ? 1.5 + Math.random() * 2.5 : 0; // stop to tidy sometimes
+        } else {
+          s.x += (dx / d) * step; s.z += (dz / d) * step;
+          s.heading = Math.atan2(dx, dz);
+          moving = true;
+        }
+      }
+      c.root.position.set(s.x, 0, s.z);
+      const cur = c.root.rotation.y, diff = Math.atan2(Math.sin(s.heading - cur), Math.cos(s.heading - cur));
+      c.root.rotation.y = cur + diff * Math.min(1, dt * 8);
+      c.update(dt, t, moving, 1);
+    });
+  });
+
   const walker = openWalker(stage, { w: W, d: D, solids });
   stage.onFrame((dt, now) => { for (const fn of anim) fn(now / 1000, dt); });
-  stage.banner('<div class="big">👕 Style Shop</div>Walk up to a mannequin and press <kbd>E</kbd> to shop.', 3000);
+  stage.banner('<div class="big">👕 Style Shop</div>Click any rack, shelf or table to shop.', 3000);
   return () => { walker.stop(); stage.scene?.remove(g); };
+}
+
+/** A rail of hanging clothes fixed to the back wall, with a shelf above. */
+function wallRail(g, x, z, ry, colors) {
+  const r = new THREE.Group();
+  r.position.set(x, 0, z);
+  r.rotation.y = ry;
+  g.add(r);
+  const metal = toon('#c0c6d4');
+  add(r, new THREE.BoxGeometry(4.6, 0.08, 0.5), toon('#ffffff'), { p: [0, 2.75, 0.05], outline: true });
+  add(r, new THREE.CylinderGeometry(0.03, 0.03, 4.4, 8), metal, { p: [0, 2.3, 0.25], r: [0, 0, Math.PI / 2] });
+  for (const sx of [-2.2, 2.2]) add(r, new THREE.BoxGeometry(0.06, 0.06, 0.3), metal, { p: [sx, 2.3, 0.1] });
+  colors.concat(colors).slice(0, 11).forEach((c, k) => {
+    const xx = -2 + k * 0.4;
+    add(r, new THREE.BoxGeometry(0.1, 0.95, 0.5), toon(c), { p: [xx, 1.8, 0.28], outline: true });
+    add(r, new THREE.BoxGeometry(0.08, 0.32, 0.85), toon(c), { p: [xx, 2.05, 0.28] });
+  });
+  // folded stacks on the shelf above
+  for (let k = 0; k < 6; k++) for (let j = 0; j < 3; j++) add(r, new THREE.BoxGeometry(0.5, 0.1, 0.38), toon(colors[(k + j) % colors.length]), { p: [-1.9 + k * 0.76, 2.84 + j * 0.11, 0.05], cast: false });
+  return r;
+}
+
+/** A round rack: a ring of hanging clothes round a pole, on a chrome base. */
+function roundRack(g, x, z, colors) {
+  const r = new THREE.Group();
+  r.position.set(x, 0, z);
+  g.add(r);
+  const metal = toon('#c0c6d4');
+  add(r, new THREE.CylinderGeometry(0.5, 0.6, 0.06, 20), metal, { p: [0, 0.03, 0] });
+  add(r, new THREE.CylinderGeometry(0.04, 0.04, 1.6, 8), metal, { p: [0, 0.8, 0] });
+  add(r, new THREE.TorusGeometry(1.0, 0.03, 8, 36), metal, { p: [0, 1.55, 0], r: [Math.PI / 2, 0, 0] });
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * TAU, c = colors[k % colors.length];
+    const hanger = new THREE.Group();
+    hanger.position.set(Math.cos(a), 1.5, Math.sin(a));
+    hanger.rotation.y = -a;
+    r.add(hanger);
+    add(hanger, new THREE.BoxGeometry(0.1, 0.9, 0.5), toon(c), { p: [0, -0.4, 0], outline: true });
+    add(hanger, new THREE.BoxGeometry(0.08, 0.3, 0.78), toon(c), { p: [0, -0.15, 0] });
+  }
+  return r;
+}
+
+/** A low wooden table with stacks of folded tees and a little price sign. */
+function displayTable(g, x, z, colors) {
+  const t = new THREE.Group();
+  t.position.set(x, 0, z);
+  g.add(t);
+  add(t, new THREE.BoxGeometry(2.4, 0.1, 1.3), toon('#c9955a'), { p: [0, 0.8, 0], outline: true });
+  for (const sx of [-1.1, 1.1]) for (const sz of [-0.55, 0.55]) add(t, new THREE.BoxGeometry(0.1, 0.8, 0.1), toon('#8b5a2b'), { p: [sx, 0.4, sz] });
+  for (let k = 0; k < 4; k++) for (let j = 0; j < 4 - (k % 2); j++) add(t, new THREE.BoxGeometry(0.46, 0.1, 0.4), toon(colors[(k * 2 + j) % colors.length]), { p: [-0.85 + k * 0.56, 0.9 + j * 0.11, 0.2 - (k % 2) * 0.4], cast: false });
+  add(t, new THREE.BoxGeometry(0.4, 0.28, 0.04), toon('#ffffff'), { p: [0.9, 1.0, 0.45], r: [-0.3, 0, 0], outline: true });
+  return t;
+}
+
+/** A wall of shelves lined with pairs of sneakers and boots. */
+function shoeWall(g, x, z, ry) {
+  const s = new THREE.Group();
+  s.position.set(x, 0, z);
+  s.rotation.y = ry;
+  g.add(s);
+  add(s, new THREE.BoxGeometry(5, 3, 0.1), toon('#ffffff'), { p: [0, 1.5, -0.3], outline: true });
+  const cols = ['#ff5d73', '#f4f4f4', '#2b2f4a', '#39c6ff', '#ffd84d', '#8b5a2b', '#6ee7a0'];
+  for (let row = 0; row < 5; row++) {
+    const y = 0.45 + row * 0.55;
+    add(s, new THREE.BoxGeometry(4.8, 0.05, 0.5), toon('#e8dff0'), { p: [0, y, -0.05] });
+    for (let k = 0; k < 6; k++) {
+      const c = cols[(row * 3 + k) % cols.length];
+      for (const dz of [-0.07, 0.07]) {
+        add(s, new THREE.BoxGeometry(0.16, 0.12, 0.34), toon(c), { p: [-2 + k * 0.8 + dz * 1.4, y + 0.08, 0], outline: true });
+        add(s, new THREE.BoxGeometry(0.17, 0.04, 0.35), toon('#ffffff'), { p: [-2 + k * 0.8 + dz * 1.4, y + 0.04, 0], cast: false });
+      }
+    }
+  }
+  return s;
+}
+
+/** A tall stand of hats on pegs. */
+function hatStand(g, x, z) {
+  const h = new THREE.Group();
+  h.position.set(x, 0, z);
+  g.add(h);
+  add(h, new THREE.CylinderGeometry(0.5, 0.55, 0.08, 18), toon('#2b2f4a'), { p: [0, 0.04, 0] });
+  add(h, new THREE.CylinderGeometry(0.05, 0.05, 2.2, 8), toon('#8b5a2b'), { p: [0, 1.1, 0] });
+  const hats = [['#e0463c', 'cap'], ['#ffd84d', 'bucket'], ['#2b2f4a', 'beanie'], ['#8b5a2b', 'cowboy'], ['#ff8fc7', 'beret'], ['#39c6ff', 'cap']];
+  hats.forEach(([c, kind], i) => {
+    const a = (i / hats.length) * TAU, y = 1.0 + (i % 3) * 0.45;
+    const peg = new THREE.Group();
+    peg.position.set(Math.cos(a) * 0.32, y, Math.sin(a) * 0.32);
+    h.add(peg);
+    if (kind === 'cowboy') { add(peg, new THREE.CylinderGeometry(0.32, 0.32, 0.03, 18), toon(c), {}); add(peg, new THREE.CylinderGeometry(0.15, 0.17, 0.2, 14), toon(c), { p: [0, 0.1, 0], outline: true }); }
+    else if (kind === 'bucket') add(peg, new THREE.CylinderGeometry(0.16, 0.24, 0.2, 14), toon(c), { outline: true });
+    else if (kind === 'beret') add(peg, new THREE.SphereGeometry(0.22, 14, 8), toon(c), { s: [1, 0.3, 1], outline: true });
+    else add(peg, new THREE.SphereGeometry(0.18, 14, 10, 0, TAU, 0, Math.PI / 2), toon(c), { outline: true });
+  });
+  return h;
+}
+
+/** A glass counter case of sunglasses and jewellery. */
+function glassCase(g, x, z) {
+  const c = new THREE.Group();
+  c.position.set(x, 0, z);
+  g.add(c);
+  add(c, new THREE.BoxGeometry(2.4, 0.7, 0.9), toon('#ffffff'), { p: [0, 0.35, 0], outline: true });
+  add(c, new THREE.BoxGeometry(2.4, 0.5, 0.9), new THREE.MeshStandardMaterial({ color: '#cfefff', transparent: true, opacity: 0.3, roughness: 0.05 }), { p: [0, 0.95, 0], cast: false });
+  for (let k = 0; k < 5; k++) {
+    const gx = -0.9 + k * 0.45;
+    for (const s of [-1, 1]) add(c, new THREE.TorusGeometry(0.06, 0.012, 6, 14), toon(['#1d1b2e', '#e0463c', '#ffd84d', '#39c6ff', '#b77bff'][k]), { p: [gx + s * 0.07, 0.78, 0], r: [Math.PI / 2, 0, 0] });
+  }
+  return c;
 }
 
 // ---------------------------------------------------------------------------

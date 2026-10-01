@@ -986,6 +986,13 @@ function lighten(c, k) {
   const hsl = new THREE.Color(c).getHSL({});
   return `#${new THREE.Color().setHSL(hsl.h, hsl.s, Math.min(1, Math.max(0, hsl.l + k))).getHexString()}`;
 }
+const doubleCache = new Map();
+/** The same material, drawn on both sides (one shared copy per material). */
+function doubleSided(m) {
+  let d = doubleCache.get(m.uuid);
+  if (!d) { d = m.clone(); d.side = THREE.DoubleSide; doubleCache.set(m.uuid, d); }
+  return d;
+}
 function mulberry(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 /** Lots of little balls merged into one mesh (one draw call): items are [x, y, z, r]. */
@@ -1030,6 +1037,22 @@ function curlCover(n, dist, { front = 0.95, side = 1.6, back = 2.25, r0 = 0.07, 
     out.push([p.x, p.y + y, p.z, r0 + (r1 - r0) * rnd()]);
   }
   return out;
+}
+
+/** Wavy hair: locks hanging round the sides and back in soft S-curves (n a side). */
+function waveLocks(head, mat, shade, { len = 0.7, amp = 0.06, w = 0.16, n = 8, out = 0.03 } = {}) {
+  for (const s of [-1, 1]) for (let i = 0; i < n; i++) {
+    const phi = s * (1.05 + (i / (n - 1)) * (Math.PI - 1.05 - 0.12));
+    const p0 = onHead(phi, 0.85, R + AC_LIFT - 0.005), p1 = onHead(phi, 1.45, R + AC_LIFT + 0.02);
+    const o = new THREE.Vector3(p1.x, 0, p1.z).normalize(), side = new THREE.Vector3(-o.z, 0, o.x);
+    const l = len * (0.92 + ((i * 5) % 3) * 0.06);
+    const pts = [p0, p1];
+    for (let k = 1; k <= 5; k++) {
+      const t = k / 5;
+      pts.push(p1.clone().addScaledVector(o, out * Math.sqrt(t) + Math.sin(t * Math.PI * 2 + i) * amp).addScaledVector(side, Math.sin(t * Math.PI * 2.5 + i) * amp * 0.6).add(new THREE.Vector3(0, -l * t, 0)));
+    }
+    acLock(head, i % 3 === 1 ? shade : mat, pts, w, 0.055, 0.3);
+  }
 }
 
 /** A braid along `pts`: overlapping lobes leaning left and right in turn, in two shades. */
@@ -1151,13 +1174,22 @@ Object.assign(HAIR, {
     acShine(head, L);
   },
   hair_spacebuns(head, mat, L) {
-    acCap(head, mat, { front: 0.95, side: 1.45, back: 2.25, lift: 0.05 });
+    // braided space buns: braids run from the hairline back over the head into two big wrapped buns
+    acCap(head, mat, { front: 0.95, side: 1.45, back: 2.25, lift: 0.04 });
+    const tie = toon(tieColor(L, '#ff5d8f'));
     for (const s of [-1, 1]) {
-      part(head, sphere(0.16), mat, { p: [s * 0.29, 0.38, -0.06] });
-      part(head, torus(0.11, 0.025, TAU, 8, 18), toon(tieColor(L, '#ff9fe0')), { p: [s * 0.25, 0.27, -0.05], r: [Math.PI / 2, s * 0.6, 0], outline: null });
+      const bun = new THREE.Vector3(s * 0.3, 0.42, -0.08);
+      part(head, sphere(0.19, 20, 16), mat, { p: bun.toArray(), s: [1, 0.92, 1] });
+      // the wrapped twist round the bun
+      for (let k = 0; k < 3; k++) part(head, torus(0.17 - k * 0.04, 0.035, TAU, 8, 24), toon(mix(L.hairColor, '#000000', 0.12)), { p: [bun.x, bun.y - 0.02 + k * 0.07, bun.z], r: [Math.PI / 2 + 0.25, s * 0.3, 0], outline: null });
+      part(head, torus(0.12, 0.03, TAU, 8, 20), tie, { p: [bun.x - s * 0.04, bun.y - 0.16, bun.z + 0.02], r: [Math.PI / 2, s * 0.45, 0], outline: null });
+      for (const off of [0.25, 0.55]) {
+        const pts = [0, 1, 2, 3].map((k) => onHead(s * (off + k * 0.05), 0.95 - k * 0.2, (R + AC_LIFT) * 1.06 + 0.035 + k * 0.02));
+        pts.push(bun.clone().add(new THREE.Vector3(-s * 0.08, -0.08, 0.1)));
+        braidAlong(head, mat, L, pts, { n: 10, size: 0.05 });
+      }
     }
-    acBangs(head, mat, { n: 5, len: 0.14 });
-    acShine(head, L);
+    acShine(head, L, { th: 0.6, width: 0.4 });
   },
   hair_topknot(head, mat, L) {
     acCap(head, mat, { front: 0.85, side: 1.35, back: 2.1, lift: 0.045 });
@@ -1306,24 +1338,23 @@ Object.assign(HAIR, {
     acShine(head, L, { r: R + 0.06, th: 0.55, width: 0.7 });
   },
   hair_wolfcut(head, mat, L) {
-    // a shaggy wolf cut: choppy volume on top, curtain bangs, and long feathery layers round the neck
-    acCap(head, mat, { front: 0.95, side: 1.55, back: 2.3 });
-    const shade = toon(mix(L.hairColor, '#000000', 0.18));
-    // choppy tufts over the crown
-    [[0, 1, 0.3], [0.5, 0.85, 0.2], [-0.5, 0.85, 0.15], [0.35, 0.8, -0.4], [-0.4, 0.78, -0.4], [0, 0.75, -0.6]].forEach((d, i) => {
-      const v = new THREE.Vector3(...d).normalize(), a = v.clone().multiplyScalar(R + AC_LIFT - 0.02);
-      // tufts that flick back and out over the cap rather than standing up
-      const o = new THREE.Vector3(v.x, 0, v.z).normalize().multiplyScalar(0.06).add(new THREE.Vector3(Math.sin(i * 2.1) * 0.03, 0, -0.07));
-      acLock(head, i % 2 ? shade : mat, [a, a.clone().addScaledVector(v, 0.05).add(o), a.clone().addScaledVector(v, 0.06).add(o.clone().multiplyScalar(2)).add(new THREE.Vector3(0, -0.04, 0))], 0.14, 0.05, 0.15);
+    // a wolf cut: a soft rounded crown with lots of volume, chunky curtain bangs parted near the middle,
+    // and choppy layers down to the jaw that flick out at the ends
+    acCap(head, mat, { front: 0.98, side: 1.62, back: 2.35, sy: 1.07 });
+    const shade = toon(mix(L.hairColor, '#000000', 0.15));
+    acBangs(head, mat, { n: 5, part: 0.15, len: 0.2, w: 0.16, spread: 1.05 });
+    // the layers round the face and back, each ending in an outward flick
+    const layers = [[1.05, 0.34], [1.3, 0.42], [1.6, 0.4], [1.9, 0.36], [2.25, 0.34], [2.6, 0.34], [2.95, 0.36]];
+    for (const s of [-1, 1]) layers.forEach(([phi, len], i) => {
+      if (s > 0 && i === layers.length - 1) return;
+      const f = s * phi;
+      const p0 = onHead(f, 0.8, R + AC_LIFT - 0.005), p1 = onHead(f, 1.4, R + AC_LIFT + 0.02);
+      const o = new THREE.Vector3(p1.x, 0, p1.z).normalize();
+      const p2 = p1.clone().addScaledVector(o, 0.02).add(new THREE.Vector3(0, -len * 0.7, 0));
+      const p3 = p2.clone().addScaledVector(o, 0.045).add(new THREE.Vector3(0, -len * 0.25, 0));
+      const p4 = p3.clone().addScaledVector(o, 0.035).add(new THREE.Vector3(0, 0.025, 0)); // the flick
+      acLock(head, i % 3 === 1 ? shade : mat, [p0, p1, p2, p3, p4], 0.2, 0.06, 0.25);
     });
-    acBangs(head, mat, { n: 4, part: 0, len: 0.2, w: 0.14 });
-    acSides(head, mat, { len: 0.3, n: 2, w: 0.11, outward: 0.07 });
-    // the long shaggy layers flicking out at the nape
-    for (let i = 0; i < 11; i++) {
-      const phi = Math.PI * (0.55 + (i / 10) * 0.9), p0 = onHead(phi, 1.2, R + AC_LIFT - 0.005), p1 = onHead(phi, 1.65, R + AC_LIFT + 0.02);
-      const o = new THREE.Vector3(p1.x, 0, p1.z).normalize(), len = 0.2 + (i % 3) * 0.06;
-      acLock(head, i % 3 ? mat : shade, [p0, p1, p1.clone().addScaledVector(o, 0.05).add(new THREE.Vector3(0, -len * 0.6, 0)), p1.clone().addScaledVector(o, 0.1).add(new THREE.Vector3(0, -len, 0))], 0.15, 0.05, 0.2);
-    }
     acShine(head, L);
   },
   hair_bowlcut(head, mat, L) {
@@ -1357,20 +1388,25 @@ Object.assign(HAIR, {
     acShine(head, L);
   },
   hair_mullet(head, mat, L) {
-    // business in the front, party in the back: short spiky top and sides, long flowing hair behind
-    acCap(head, mat, { front: 0.95, side: 1.38, back: 2.3, lift: 0.06 });
+    // business in the front, party in the back: short and neat on top and at the sides (swept back),
+    // long and flowing at the back down onto the shoulders
+    acCap(head, mat, { front: 0.95, side: 1.35, back: 2.3, lift: 0.06 });
     const shade = toon(mix(L.hairColor, '#000000', 0.15));
-    // the party: long chunky locks falling from the back of the head down the neck, flicking out
-    for (let i = 0; i < 9; i++) {
-      const phi = Math.PI + (i / 8 - 0.5) * 1.9, p0 = onHead(phi, 1.25, R + AC_LIFT), p1 = onHead(phi, 1.95, R + AC_LIFT + 0.02);
-      const o = new THREE.Vector3(p1.x, 0, p1.z).normalize(), len = 0.22 + (i % 3) * 0.04 - Math.abs(i - 4) * 0.02;
-      acLock(head, i % 2 ? shade : mat, [p0, p1, p1.clone().addScaledVector(o, 0.03).add(new THREE.Vector3(0, -len * 0.6, 0)), p1.clone().addScaledVector(o, 0.1).add(new THREE.Vector3(0, -len, 0))], 0.2, 0.06, 0.25);
-    }
+    // the top: a few short locks swept back flat over the crown
     for (let i = 0; i < 5; i++) {
-      const phi = (i - 2) * 0.3, a = onHead(phi, 0.6, R + 0.07), tip = onHead(phi * 1.1, 0.35, R + 0.15);
-      acLock(head, mat, [a, a.clone().lerp(tip, 0.5), tip], 0.13, 0.05, 0.15);
+      const phi = (i - 2) * 0.32, a = onHead(phi, 0.85, R + AC_LIFT), b = onHead(phi * 0.9, 0.45, R + AC_LIFT + 0.02);
+      acLock(head, i % 2 ? shade : mat, [a, b, onHead(phi * 0.8, 0.15, R + AC_LIFT + 0.01)], 0.15, 0.05, 0.2);
     }
-    acBangs(head, mat, { n: 3, len: 0.05, w: 0.1, spread: 0.7 });
+    acBangs(head, mat, { n: 4, len: 0.06, w: 0.12, spread: 0.8, sweep: -0.3 });
+    // the party: a mane of long locks from the back of the head, falling in a soft wave
+    for (let i = 0; i < 9; i++) {
+      const phi = Math.PI + (i / 8 - 0.5) * 2.0, p0 = onHead(phi, 1.3, R + AC_LIFT), p1 = onHead(phi, 1.95, R + AC_LIFT + 0.03);
+      const o = new THREE.Vector3(p1.x, 0, p1.z).normalize(), len = 0.42 + (i % 3) * 0.05 - Math.abs(i - 4) * 0.03;
+      acLock(head, i % 2 ? shade : mat, [p0, p1,
+        p1.clone().addScaledVector(o, 0.06).add(new THREE.Vector3(0, -len * 0.45, 0)),
+        p1.clone().addScaledVector(o, 0.03).add(new THREE.Vector3(0, -len * 0.8, 0)),
+        p1.clone().addScaledVector(o, 0.1).add(new THREE.Vector3(0, -len, 0))], 0.22, 0.06, 0.25);
+    }
     acShine(head, L, { th: 0.62 });
   },
   hair_karen(head, mat, L) {
@@ -1397,6 +1433,94 @@ Object.assign(HAIR, {
     }
     acBangs(head, mat, { n: 4, sweep: 0.75, len: 0.1, w: 0.13 });
     acNape(head, mat, { n: 7, len: 0.05, w: 0.1, from: 0.7, to: 1.3, th: 1.6 });
+    acShine(head, L);
+  },
+  // ---- waves ----
+  hair_wavy_long(head, mat, L) {
+    // long, soft waves past the shoulders, parted to one side
+    acCap(head, mat, { front: 0.98, side: 1.52, back: 2.4 });
+    const shade = toon(mix(L.hairColor, '#000000', 0.14));
+    waveLocks(head, mat, shade, { len: 0.78, amp: 0.06, w: 0.17, n: 8 });
+    acBangs(head, mat, { n: 4, part: 0.35, len: 0.16, w: 0.15 });
+    acShine(head, L);
+  },
+  hair_wavy_bob(head, mat, L) {
+    // a full wavy bob that swings out at the jaw
+    acCap(head, mat, { front: 1.0, side: 1.6, back: 2.35, sy: 1.05 });
+    const shade = toon(mix(L.hairColor, '#000000', 0.14));
+    waveLocks(head, mat, shade, { len: 0.42, amp: 0.05, w: 0.18, n: 7, out: 0.06 });
+    acBangs(head, mat, { n: 5, part: -0.3, len: 0.14, w: 0.14 });
+    acShine(head, L);
+  },
+  hair_wavy_short(head, mat, L) {
+    // short beachy waves: loose S-shaped locks tumbling over the top and round the ears
+    acCap(head, mat, { front: 0.95, side: 1.42, back: 2.15 });
+    const shade = toon(mix(L.hairColor, '#000000', 0.14));
+    for (let i = 0; i < 7; i++) {
+      const phi = (i - 3) * 0.32, th0 = 0.2 + (i % 2) * 0.1;
+      const pts = [0, 1, 2, 3, 4].map((k) => onHead(phi + Math.sin(k * 1.6 + i) * 0.12, th0 + k * 0.2, R + AC_LIFT + 0.015 + (k === 4 ? -0.02 : 0)));
+      acLock(head, i % 3 === 1 ? shade : mat, pts, 0.15, 0.05, 0.3).userData.fringe = true;
+    }
+    acNape(head, mat, { n: 7, len: 0.12, w: 0.12 });
+    acSides(head, mat, { len: 0.16, w: 0.1, outward: 0.04 });
+    acShine(head, L);
+  },
+  hair_flipbob(head, mat, L) {
+    // a sleek bob with the ends flipped out and up all the way round, and a soft full fringe
+    acCap(head, mat, { front: 1.0, side: 1.6, back: 2.35 });
+    curtain(head, mat, { len: 0.26, flare: 0.1, wrap: 0.55 });
+    for (let i = 0; i < 11; i++) {
+      const a = Math.PI / 2 - 0.4 + (i / 10) * (Math.PI + 0.8), r = R + 0.16;
+      const p0 = new THREE.Vector3(Math.sin(a) * r, -0.22, Math.cos(a) * r * 0.94), o = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
+      acLock(head, mat, [p0, p0.clone().add(new THREE.Vector3(0, -0.08, 0)), p0.clone().addScaledVector(o, 0.05).add(new THREE.Vector3(0, -0.11, 0)), p0.clone().addScaledVector(o, 0.08).add(new THREE.Vector3(0, -0.05, 0))], 0.17, 0.05, 0.35);
+    }
+    acBangs(head, mat, { n: 6, len: 0.14, spread: 1.1, w: 0.12 });
+    acShine(head, L);
+  },
+  hair_halfup(head, mat, L) {
+    // half up, half down: long straight hair with the top gathered into a little ponytail at the back
+    acCap(head, mat, { front: 0.98, side: 1.5, back: 2.4 });
+    curtain(head, mat, { len: 0.62, flare: 0.08, wrap: 0.3 });
+    tail(head, mat, [[0, 0.3, -0.42], [0, 0.26, -0.52], [0, 0.12, -0.56], [0, -0.06, -0.54]], 0.1, 0.05, tieColor(L, '#ff5d73'));
+    part(head, sphere(0.1, 14, 10), mat, { p: [0, 0.3, -0.42], outline: OUT_THIN });
+    acSides(head, mat, { len: 0.52, w: 0.12, outward: 0.03 });
+    acBangs(head, mat, { n: 5, part: 0.2, len: 0.14 });
+    acShine(head, L);
+  },
+  hair_boxbraids(head, mat, L) {
+    // long box braids down past the shoulders, a few framing the face, gold cuffs here and there
+    shell(head, partsMaterial(hex(L.hairColor), hex(L.skin)), { front: 0.95, side: 1.5, back: 2.25, lift: 0.014, outline: null });
+    const shade = toon(mix(L.hairColor, '#000000', 0.2)), gold = shiny('#ffd84d', { metalness: 0.6, roughness: 0.3 });
+    let n = 0;
+    for (let i = 0; i < 26; i++) {
+      const phi = (i / 26) * TAU + 0.12;
+      const front = Math.cos(phi);
+      if (front > 0.8) continue; // (not over the face)
+      const th = hairline(phi, 0.95, 1.5, 2.25) - 0.08;
+      const root = onHead(phi, 0.35 + (i % 3) * 0.12, R + 0.03), edge = onHead(phi, th, R + 0.06);
+      const o = new THREE.Vector3(edge.x, 0, edge.z).normalize();
+      const len = (front > 0.3 ? 0.55 : 0.8) + ((i * 7) % 4) * 0.05;
+      const tip = edge.clone().addScaledVector(o, 0.06).add(new THREE.Vector3(0, -len, 0));
+      const pts = [root, root.clone().lerp(edge, 0.5).setLength(R + 0.06), edge, edge.clone().lerp(tip, 0.5).addScaledVector(o, 0.04), tip];
+      strand(head, n++ % 3 === 0 ? shade : mat, pts, 0.034, 0.03, { bumps: 16, bumpAmt: 0.18, radial: 7, segs: 40 });
+      if (i % 3 === 0) part(head, cyl(0.04, 0.04, 0.05, 10), gold, { p: edge.clone().lerp(tip, 0.75).addScaledVector(o, 0.03).toArray(), outline: null });
+    }
+  },
+  hair_sidepony(head, mat, L) {
+    // everything swept round to one side into a low, curly ponytail resting on the shoulder
+    acCap(head, mat, { front: 0.95, side: 1.5, back: 2.3, lift: 0.05 });
+    const tie = toon(tieColor(L, '#ff5d8f'));
+    const root = new THREE.Vector3(-0.36, -0.12, -0.28);
+    part(head, torus(0.08, 0.03, TAU, 8, 16), tie, { p: root.toArray(), r: [0.3, 0.9, 0], outline: null });
+    // a bouncy cluster of curls
+    const items = [];
+    for (let k = 0; k < 22; k++) {
+      const t = k / 21, a = k * 2.4, r = 0.09 + Math.sin(t * Math.PI) * 0.06;
+      items.push([root.x - 0.08 - t * 0.05 + Math.cos(a) * r, root.y - 0.08 - t * 0.38, root.z + 0.05 + t * 0.06 + Math.sin(a) * r, 0.075]);
+    }
+    curls(head, mat, L, 'sidepony', items);
+    acBangs(head, mat, { n: 4, sweep: -0.5, len: 0.12 });
+    acSides(head, mat, { len: 0.16, w: 0.09 });
     acShine(head, L);
   },
   hair_bangs(head, mat, L) {
@@ -2031,23 +2155,66 @@ function sprites(parent, material, n, scale) {
   return list;
 }
 
+/** A tall licking flame with a hot white centre (for ki and the like). */
+const kiTexture = canvasTexture(64, 128, (c) => {
+  const grad = c.createRadialGradient(32, 92, 2, 32, 80, 60);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,.8)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = grad;
+  c.beginPath(); c.moveTo(32, 4); c.bezierCurveTo(52, 50, 62, 80, 50, 108); c.quadraticCurveTo(32, 128, 14, 108); c.bezierCurveTo(2, 80, 12, 50, 32, 4); c.fill();
+});
+/** A soft pool of light (white in the middle, fading out). */
+const groundGlowTexture = canvasTexture(128, 128, (c) => {
+  const grad = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,.9)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,.35)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = grad; c.fillRect(0, 0, 128, 128);
+});
+/** Every aura sits on a glowing base: a pool of light at your feet, a ring rippling out, a soft column
+ *  of light and motes drifting up, in the aura's colour. */
+function auraBase(g, anim, color, { motes = 10, column = 0.3, ring = true } = {}) {
+  const hex = new THREE.Color(color).getHex();
+  const pool = part(g, geo('auraPool', () => new THREE.CircleGeometry(1, 32)), new THREE.MeshBasicMaterial({ map: groundGlowTexture, color: hex, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.02, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
+  const ringMat = new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+  const rip = ring ? part(g, geo('auraRing', () => new THREE.RingGeometry(0.9, 1, 48)), ringMat, { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false }) : null;
+  const col = column ? new THREE.Sprite(additive(glowTexture, hex, column)) : null;
+  if (col) { col.scale.set(1.3, 2.6, 1); col.position.y = 1.1; g.add(col); }
+  const dots = sprites(g, additive(glowTexture, hex, 0.9), motes, 0.06);
+  anim.push((t) => {
+    pool.material.opacity = 0.6 + Math.sin(t * 2.2) * 0.15;
+    pool.scale.setScalar(1 + Math.sin(t * 2.2) * 0.05);
+    if (rip) { const w = (t * 0.45) % 1; rip.scale.setScalar(0.3 + w * 0.9); ringMat.opacity = (1 - w) * 0.55; }
+    if (col) col.material.opacity = column * (0.8 + Math.sin(t * 1.7) * 0.2);
+    dots.forEach((d, k) => { const p = (t * 0.3 + k / motes) % 1, a = k * 2.4 + t * 0.4; d.position.set(Math.cos(a) * (0.35 + (k % 3) * 0.15), p * 2.3, Math.sin(a) * (0.35 + (k % 3) * 0.15)); d.material.opacity = Math.sin(p * Math.PI) * 0.9; });
+  });
+}
+const AURA_BASE = {
+  aura_sparkle: '#fff3a0', aura_hearts: '#ff7ab6', aura_fire: '#ff7a30', aura_rainbow: '#b98bff', aura_shadow: '#8a3dff',
+  aura_koi: '#ffd84d', aura_abyss: '#1fd8c8', aura_warlord: '#ff2a2a', aura_laurel: '#ffd84d', aura_tide: '#5fc8ff',
+  aura_speed: '#ffffff', aura_storm: '#9fc8ff',
+};
+
 const AURAS = {
   aura_sparkle(g, anim) {
-    const list = sprites(g, additive(starTexture, 0xfff3a0), 8, 0.2);
+    const list = sprites(g, additive(starTexture, 0xfff3a0), 16, 0.2);
     anim.push((t) => list.forEach((s, i) => {
-      const a = t * 0.7 + i * 0.8;
-      s.position.set(Math.cos(a) * 0.7, 0.3 + ((i * 0.23 + t * 0.15) % 1) * 1.6, Math.sin(a) * 0.7);
-      s.scale.setScalar(0.08 + Math.max(0, Math.sin(t * 4 + i * 1.7)) * 0.2);
+      const a = t * (i % 2 ? 0.7 : -0.5) + i * 0.8, r = i % 2 ? 0.7 : 0.5;
+      s.position.set(Math.cos(a) * r, 0.2 + ((i * 0.23 + t * 0.15) % 1) * 2.0, Math.sin(a) * r);
+      s.scale.setScalar(0.06 + Math.max(0, Math.sin(t * 4 + i * 1.7)) * 0.24);
+      s.material.rotation = t * 2;
     }));
   },
   aura_hearts(g, anim) {
-    const mat = new THREE.SpriteMaterial({ map: heartTexture, transparent: true, depthWrite: false });
-    const list = sprites(g, mat, 5, 0.2);
+    const list = [];
+    for (let i = 0; i < 9; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: heartTexture, transparent: true, depthWrite: false })); g.add(sp); list.push(sp); }
     anim.push((t) => list.forEach((s, i) => {
-      const p = (t * 0.45 + i / 5) % 1;
-      s.position.set(Math.sin(p * 6 + i * 2) * 0.35 + (i - 2) * 0.12, 0.6 + p * 1.8, Math.cos(i * 2.1) * 0.3);
-      s.material.opacity = 1;
-      s.scale.setScalar(0.22 * (1 - p * 0.5));
+      // hearts float up in a lazy spiral, popping (with a little bounce) as they go
+      const p = (t * 0.4 + i / 9) % 1, a = i * 2.1 + p * 3;
+      s.position.set(Math.cos(a) * (0.4 + p * 0.2), 0.4 + p * 2.0, Math.sin(a) * (0.4 + p * 0.2));
+      s.material.opacity = Math.min(1, (1 - p) * 2.5);
+      s.scale.setScalar(0.24 * (1 - p * 0.4) * (1 + Math.sin(t * 8 + i) * 0.08));
     }));
   },
   aura_fire(g, anim) {
@@ -2055,19 +2222,27 @@ const AURAS = {
     glow.scale.set(2, 2.4, 1);
     glow.position.y = 0.9;
     g.add(glow);
-    const list = sprites(g, additive(flameTexture, 0xffffff, 0.9), 14, 0.35);
-    anim.push((t) => list.forEach((s, i) => {
-      const p = (t * 0.9 + i / 14) % 1;
-      const a = i * 2.4;
-      s.position.set(Math.cos(a) * 0.45 * (1 - p * 0.6), p * 1.5, Math.sin(a) * 0.45 * (1 - p * 0.6));
-      s.scale.set(0.35 * (1 - p), 0.5 * (1 - p), 1);
-    }));
+    const list = sprites(g, additive(flameTexture, 0xffffff, 0.9), 24, 0.35);
+    const embers = sprites(g, additive(glowTexture, 0xffb03a, 1), 12, 0.06);
+    anim.push((t) => {
+      list.forEach((s, i) => {
+        const p = (t * 1.1 + i / 24) % 1;
+        const a = i * 2.4 + Math.sin(t + i) * 0.2;
+        s.position.set(Math.cos(a) * 0.5 * (1 - p * 0.6), p * 1.8, Math.sin(a) * 0.5 * (1 - p * 0.6));
+        s.scale.set(0.4 * (1 - p), 0.62 * (1 - p), 1);
+      });
+      embers.forEach((e, i) => { const p = (t * 0.7 + i / 12) % 1, a = i * 1.9 + t; e.position.set(Math.cos(a) * 0.6, p * 2.6, Math.sin(a) * 0.6 + Math.sin(t * 3 + i) * 0.1); e.material.opacity = 1 - p; });
+    });
   },
   aura_rainbow(g, anim) {
-    const rings = [0, 1].map((i) => part(g, rainbowRing(0.8 - i * 0.12), rainbowMaterial, { p: [0, 0.95, 0], outline: null, shadow: false }));
+    const rings = [0, 1, 2].map((i) => part(g, rainbowRing(0.85 - i * 0.12), rainbowMaterial, { p: [0, 0.95, 0], outline: null, shadow: false }));
+    const prisms = [];
+    for (let i = 0; i < 12; i++) { const sp = new THREE.Sprite(additive(starTexture, new THREE.Color().setHSL(i / 12, 0.9, 0.65).getHex(), 1)); g.add(sp); prisms.push(sp); }
     anim.push((t) => {
       rings[0].rotation.set(Math.PI / 2 + Math.sin(t) * 0.3, t * 1.2, 0);
       rings[1].rotation.set(Math.PI / 2 - 0.5, -t * 1.6, 0.4);
+      rings[2].rotation.set(Math.PI / 2 + 0.6, t * 0.9, -0.5);
+      prisms.forEach((s, i) => { const a = -t * 1.3 + (i / 12) * TAU; s.position.set(Math.cos(a) * 1.0, 0.95 + Math.sin(t * 2 + i) * 0.5, Math.sin(a) * 1.0); s.scale.setScalar(0.08 + Math.max(0, Math.sin(t * 6 + i)) * 0.12); });
     });
   },
   aura_shadow(g, anim) {
@@ -2075,11 +2250,13 @@ const AURAS = {
     glow.scale.set(2, 2.6, 1);
     glow.position.y = 1;
     g.add(glow);
-    const list = sprites(g, additive(flameTexture, 0xa45bff, 0.85), 16, 0.35);
+    const list = sprites(g, additive(flameTexture, 0xa45bff, 0.85), 24, 0.35);
+    const smoke = sprites(g, new THREE.SpriteMaterial({ map: puffTexture, color: 0x2a1240, transparent: true, opacity: 0.45, depthWrite: false }), 6, 0.5);
+    anim.push((t) => smoke.forEach((s, i) => { const p = (t * 0.25 + i / 6) % 1, a = i * 1.1; s.position.set(Math.cos(a) * 0.6, 0.1 + p * 0.6, Math.sin(a) * 0.6); s.scale.setScalar(0.5 + p * 0.6); s.material.opacity = (1 - p) * 0.45; }));
     anim.push((t) => {
       glow.material.opacity = 0.45 + Math.sin(t * 2) * 0.12;
       list.forEach((s, i) => {
-        const p = (t * 0.7 + i / 16) % 1;
+        const p = (t * 0.7 + i / 24) % 1;
         const a = i * 2.4 + t * 0.8;
         s.position.set(Math.cos(a) * 0.55 * (1 - p * 0.5), p * 1.9, Math.sin(a) * 0.55 * (1 - p * 0.5));
         s.scale.set(0.3 * (1 - p), 0.55 * (1 - p), 1);
@@ -2242,50 +2419,74 @@ const AURAS = {
       flash.material.opacity = k * 0.7;
     });
   },
-  aura_og(g, anim) {
-    // OG Tester (admin-given only): a holographic crown of light, three counter-spinning rune rings in
-    // gold, cyan and magenta, a spinning "OG" sigil at your feet, orbiting stars and rising glitch cubes
-    const colors = [0xffd84d, 0x39e6ff, 0xff4fd8];
-    const column = new THREE.Sprite(additive(glowTexture, 0xffffff, 0.35));
-    column.scale.set(1.6, 3.4, 1);
-    column.position.y = 1.2;
-    g.add(column);
-    const rings = colors.map((c, i) => part(g, geo(`ogRing${i}`, () => new THREE.TorusGeometry(0.72 + i * 0.12, 0.018, 6, 64)),
-      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.9, 0], outline: null, shadow: false }));
-    const sigilTex = geo('ogSigil', () => canvasTexture(256, 256, (c) => {
-      c.translate(128, 128);
-      c.strokeStyle = '#ffd84d'; c.lineWidth = 6;
-      c.beginPath(); c.arc(0, 0, 118, 0, TAU); c.stroke();
-      c.lineWidth = 3; c.beginPath(); c.arc(0, 0, 96, 0, TAU); c.stroke();
-      for (let i = 0; i < 12; i++) { c.save(); c.rotate((i / 12) * TAU); c.fillStyle = i % 2 ? '#39e6ff' : '#ff4fd8'; c.fillRect(-4, -114, 8, 16); c.restore(); }
-      c.beginPath(); for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU - Math.PI / 2; c.lineTo(Math.cos(a) * 92, Math.sin(a) * 92); } c.closePath(); c.strokeStyle = '#39e6ff'; c.stroke();
-      c.font = '900 74px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillStyle = '#ffd84d'; c.shadowColor = '#ff4fd8'; c.shadowBlur = 16; c.fillText('OG', 0, 6);
-    }));
-    const sigil = part(g, geo('ogSigilPlane', () => new THREE.PlaneGeometry(2, 2)), new THREE.MeshBasicMaterial({ map: sigilTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), { p: [0, 0.04, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
-    const crown = new THREE.Group();
-    crown.position.y = 2.3;
-    g.add(crown);
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * TAU;
-      part(crown, cone(0.045, 0.22, 4), new THREE.MeshBasicMaterial({ color: colors[i % 3], transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }), { p: [Math.cos(a) * 0.26, 0.08, Math.sin(a) * 0.26], outline: null, shadow: false });
+  aura_og(g, anim, L) {
+    // OG Tester (admin-given only): a full power-up. Tall flickering flames of ki roaring up round you,
+    // a hot white core, lightning crackling through it, shockwaves rippling out along the ground and
+    // pebbles lifting off it. The one aura you can recolour.
+    const c = new THREE.Color(L?.auraColor || '#ffd84d');
+    const hex = c.getHex(), pale = c.clone().lerp(new THREE.Color('#ffffff'), 0.55).getHex();
+    const core = new THREE.Sprite(additive(glowTexture, hex, 0.8));
+    core.scale.set(1.5, 2.8, 1);
+    core.position.y = 1.1;
+    g.add(core);
+    // the flames: two rings of tall licks of ki, the outer ones in the aura colour, the inner ones paler
+    const flames = [];
+    for (let k = 0; k < 30; k++) {
+      const outer = k < 20;
+      const sp = new THREE.Sprite(additive(kiTexture, outer ? hex : pale, 1));
+      g.add(sp);
+      flames.push({ sp, a: ((outer ? k : k - 20) / (outer ? 20 : 10)) * TAU + (outer ? 0 : 0.3), r: outer ? 0.5 : 0.3, seed: k * 1.37, outer });
     }
-    part(crown, geo('ogCrownRing', () => new THREE.TorusGeometry(0.26, 0.02, 6, 32)), new THREE.MeshBasicMaterial({ color: '#ffd84d' }), { r: [Math.PI / 2, 0, 0], outline: null, shadow: false });
-    const stars = sprites(g, additive(starTexture, 0xffffff), 10, 0.16);
-    const cubes = [];
-    for (let i = 0; i < 12; i++) cubes.push(part(g, box(0.06, 0.06, 0.06), new THREE.MeshBasicMaterial({ color: colors[i % 3], transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), { outline: null, shadow: false }));
-    anim.push((t) => {
-      rings[0].rotation.set(Math.PI / 2 + Math.sin(t * 0.8) * 0.35, t * 1.4, 0);
-      rings[1].rotation.set(Math.PI / 2 - 0.6, -t * 1.9, Math.sin(t) * 0.3);
-      rings[2].rotation.set(Math.PI / 2 + 0.7, t * 1.1, -0.4);
-      rings.forEach((r, i) => { r.material.opacity = 0.6 + Math.sin(t * 3 + i * 2) * 0.25; });
-      sigil.rotation.z = t * 0.5;
-      sigil.material.opacity = 0.75 + Math.sin(t * 2) * 0.2;
-      crown.rotation.y = -t;
-      crown.position.y = 2.3 + Math.sin(t * 2) * 0.05;
-      column.material.opacity = 0.25 + Math.sin(t * 1.3) * 0.08;
-      stars.forEach((s, i) => { const a = t * 0.9 + (i / 10) * TAU; s.position.set(Math.cos(a) * 1.05, 0.9 + Math.sin(t * 2 + i) * 0.6, Math.sin(a) * 1.05); s.scale.setScalar(0.08 + Math.max(0, Math.sin(t * 5 + i)) * 0.14); });
-      cubes.forEach((cb, i) => { const p = (t * 0.45 + i / 12) % 1, a = i * 2.2; cb.position.set(Math.cos(a) * 0.5, p * 2.4, Math.sin(a) * 0.5); cb.rotation.set(t * 2 + i, t * 3, 0); cb.scale.setScalar(1 - p); cb.material.opacity = (1 - p) * (Math.sin(t * 20 + i) > -0.6 ? 1 : 0.2); });
+    // lightning: little zig-zags that flash on and off round the body
+    const boltMat = new THREE.MeshBasicMaterial({ color: pale, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const bolts = [0, 1, 2].map(() => {
+      const b = new THREE.Group();
+      let y = 0, x = 0;
+      for (let k = 0; k < 4; k++) {
+        const nx = (k % 2 ? 1 : -1) * 0.09, ny = y - 0.16;
+        const seg = new THREE.Mesh(box(0.018, Math.hypot(nx - x, ny - y), 0.018), boltMat);
+        seg.position.set((x + nx) / 2, (y + ny) / 2, 0);
+        seg.rotation.z = Math.atan2(nx - x, y - ny);
+        b.add(seg);
+        x = nx; y = ny;
+      }
+      g.add(b);
+      return b;
+    });
+    // shockwaves along the ground, and pebbles floating up
+    const waveMat = new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+    const wave = part(g, geo('kiWave', () => new THREE.RingGeometry(0.85, 1, 48)), waveMat, { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const ground = part(g, geo('kiGround', () => new THREE.CircleGeometry(1.1, 32)), new THREE.MeshBasicMaterial({ map: groundGlowTexture, color: hex, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.02, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const pebbles = [];
+    for (let k = 0; k < 8; k++) pebbles.push(part(g, geo('kiPebble', () => new THREE.IcosahedronGeometry(0.035, 0)), toon('#8d8aa6'), { outline: null, shadow: false }));
+    const motes = sprites(g, additive(glowTexture, pale, 0.9), 14, 0.07);
+    let boltAt = 0;
+    anim.push((t, dt) => {
+      const surge = 0.85 + Math.sin(t * 9) * 0.08 + Math.sin(t * 23) * 0.05;
+      core.scale.set(1.4 * surge, 2.7 * surge, 1);
+      core.material.opacity = 0.32 + Math.sin(t * 13) * 0.08;
+      for (const f of flames) {
+        // each lick roars up from the feet, stretching and flickering
+        const p = (t * (f.outer ? 1.6 : 2.1) + f.seed) % 1;
+        const a = f.a + Math.sin(t * 2 + f.seed) * 0.2;
+        const r = f.r * (1 - p * 0.35);
+        f.sp.position.set(Math.cos(a) * r, 0.2 + p * (f.outer ? 2.3 : 1.7), Math.sin(a) * r);
+        const k = Math.sin(p * Math.PI);
+        f.sp.scale.set((f.outer ? 0.6 : 0.42) * (0.7 + k * 0.5), (f.outer ? 1.6 : 1.2) * (0.6 + k * 0.7) * surge, 1);
+        f.sp.material.opacity = (f.outer ? 0.85 : 0.35) * Math.min(1, k * 1.6);
+      }
+      if (t > boltAt) {
+        boltAt = t + 0.12 + Math.random() * 0.5;
+        for (const b of bolts) { const a = Math.random() * TAU, y = 0.5 + Math.random() * 1.3; b.position.set(Math.cos(a) * 0.4, y, Math.sin(a) * 0.4); b.rotation.set(0, -a, Math.random() - 0.5); }
+        boltMat.userData.at = t;
+      }
+      boltMat.opacity = Math.max(0, 1 - (t - (boltMat.userData.at ?? -9)) * 9);
+      const w = (t * 0.7) % 1;
+      wave.scale.setScalar(0.4 + w * 1.8);
+      waveMat.opacity = (1 - w) * 0.7;
+      ground.material.opacity = 0.45 + Math.sin(t * 6) * 0.15;
+      pebbles.forEach((pb, k) => { const p = (t * 0.35 + k / 8) % 1, a = k * 2.3; pb.position.set(Math.cos(a) * (0.6 + (k % 3) * 0.15), p * 1.4, Math.sin(a) * (0.6 + (k % 3) * 0.15)); pb.rotation.set(t * 3 + k, t * 2, 0); pb.visible = p < 0.9; });
+      motes.forEach((m, k) => { const p = (t * 1.3 + k / 14) % 1, a = k * 2.4; m.position.set(Math.cos(a) * 0.55, p * 2.4, Math.sin(a) * 0.55); m.material.opacity = 1 - p; });
     });
   },
 };
@@ -2386,6 +2587,8 @@ export class Character {
     this.mount = m;
     this.riding = true;
     this.root.add(m.group);
+    m.onStep = () => this.onStep?.('hoof');
+    m.onTrick = () => this.onStep?.('trick');
     return true;
   }
 
@@ -2627,7 +2830,12 @@ export class Character {
     const hairMat = toon(L.hairColor);
     AC_LIFT = COVERING_HATS.has(L.hat) || L.hat === 'hat_durag' || L.hat === 'hat_cap' ? 0.03 : 0.085;
     const hair = COVERING_HATS.has(L.hat) && TALL_HAIR.has(L.hair) ? 'hair_short' : L.hair;
-    (HAIR[hair] ?? HAIR.hair_short)(head, hairMat, L, anim);
+    const hairGroup = new THREE.Group();
+    head.add(hairGroup);
+    (HAIR[hair] ?? HAIR.hair_short)(hairGroup, hairMat, L, anim);
+    // hair is solid all the way through: seen from underneath (or inside a lock) it shows its own
+    // colour, never the dark outline shell behind it
+    hairGroup.traverse((o) => { if (o.isMesh && !o.userData.outline && o.material.side === THREE.FrontSide) o.material = doubleSided(o.material); });
     FACES[L.face]?.(head, L, anim);
     // hats sit over the puffier hair, so they're a size up (held from the head's centre)
     const hatGroup = new THREE.Group();
@@ -2649,7 +2857,8 @@ export class Character {
 
     const aura = new THREE.Group();
     this.root.add(aura);
-    AURAS[L.aura]?.(aura, anim);
+    AURAS[L.aura]?.(aura, anim, L);
+    if (AURA_BASE[L.aura]) auraBase(aura, anim, AURA_BASE[L.aura]);
 
     // a pet follows along behind you, and pootles about nearby while you stand still. It keeps its own
     // position in the world (so it trails and catches up rather than being glued to you), and is
@@ -3018,6 +3227,11 @@ export class Character {
     } else look.yaw = 0;
 
     // ---- gait ----
+    // (start from straight limbs: riding, driving and the like twist legs and arms sideways, and the
+    // walk only sets their forward swing)
+    legs.forEach((l) => { l.rotation.y = 0; l.rotation.z = 0; });
+    knees.forEach((k) => { k.rotation.y = 0; k.rotation.z = 0; });
+    arms.forEach((a) => { a.rotation.y = 0; });
     const kneeBend = [Math.max(0, -c), Math.max(0, c)]; // the leg swinging forward bends its knee
     legs[0].rotation.x = s * legA - kneeBend[0] * 0.3 * w;
     legs[1].rotation.x = -s * legA - kneeBend[1] * 0.3 * w;
@@ -3103,13 +3317,26 @@ export class Character {
       knees.forEach((k) => { k.rotation.x = 0.2 + push * 0.45; });
       head.rotation.x = 0.35;
     } else if (this.pose === 'drive') {
-      // riding a jet ski / at the wheel: seated, hands forward on the bars
-      legs.forEach((l, i) => { l.rotation.x = -1.3; l.rotation.z = (i ? -1 : 1) * 0.25; });
-      knees.forEach((k) => { k.rotation.x = 1.35; });
-      arms.forEach((a, i) => { a.rotation.x = -1.2; a.rotation.z = (i ? -1 : 1) * 0.2; });
-      elbows.forEach((e) => { e.rotation.x = -0.3; });
+      // riding a jet ski / at the wheel: seated, legs out in front, both hands on the wheel, turning it
+      // (and looking) into the corner
+      const lean = this.lean ?? 0;
+      legs.forEach((l, i) => { l.rotation.x = -1.35; l.rotation.z = (i ? -1 : 1) * 0.2; });
+      knees.forEach((k) => { k.rotation.x = 1.2; });
+      arms.forEach((a, i) => { a.rotation.x = -1.15 + (i ? 1 : -1) * lean * 0.6; a.rotation.z = (i ? -1 : 1) * 0.28; });
+      elbows.forEach((e) => { e.rotation.x = -0.55; });
       body.position.set(0, 0, 0);
-      body.rotation.set(0.15, 0, this.lean ?? 0);
+      body.rotation.set(0.12, 0, lean * 0.5);
+      head.rotation.set(-0.05, -lean * 0.8, -lean * 0.3);
+    } else if (this.pose === 'moto') {
+      // on a motorbike: tucked down over the tank, knees in, hands on the bars, leaning into the turn
+      const lean = this.lean ?? 0;
+      legs.forEach((l, i) => { l.rotation.x = -1.05; l.rotation.z = (i ? -1 : 1) * 0.2; });
+      knees.forEach((k) => { k.rotation.x = 1.75; });
+      arms.forEach((a, i) => { a.rotation.x = -1.05; a.rotation.z = (i ? -1 : 1) * 0.32; });
+      elbows.forEach((e) => { e.rotation.x = -0.45; });
+      body.position.set(0, -0.02, 0);
+      body.rotation.set(0.55, 0, lean);
+      head.rotation.set(-0.5, -lean * 0.5, 0);
     } else if (this.pose === 'fish') {
       arms.forEach((a, i) => { a.rotation.x = -1.2; a.rotation.z = i ? -0.25 : 0.25; });
       elbows.forEach((e) => { e.rotation.x = -0.45; });
@@ -3229,38 +3456,47 @@ export class Character {
     const S = m.seatY;
     legs.forEach((l) => l.rotation.set(0, 0, 0));
     body.rotation.set(0, 0, 0);
+    const go = this.rideW = (this.rideW ?? 0) + ((moving ? 1 : 0) - (this.rideW ?? 0)) * Math.min(1, dt * 5);
     if (m.stance === 'straddle') {
-      // thighs out over the horse's sides, shins hanging down by the stirrups
-      legs.forEach((l, i) => { l.rotation.x = -0.55; l.rotation.z = (i ? -1 : 1) * 0.95; });
-      knees.forEach((k) => { k.rotation.x = 1.0; });
-      arms.forEach((a, i) => { a.rotation.x = -0.8; a.rotation.z = (i ? -1 : 1) * 0.12; });
-      elbows.forEach((e) => { e.rotation.set(-0.8, 0, 0); });
-      body.position.set(0, S - hipY + m.bob, 0);
-      body.rotation.x = 0.1 + (moving ? 0.12 : 0);
+      // in the saddle: thighs out over the horse's sides, feet down in the stirrups, hands low on the
+      // reins. Moving, you lean into it and rise and fall with the stride (and the reins go with the head).
+      const bounce = m.bob;
+      legs.forEach((l, i) => { l.rotation.x = -0.45 - go * 0.1; l.rotation.z = (i ? -1 : 1) * 0.9; });
+      knees.forEach((k) => { k.rotation.x = 0.8 + go * 0.15; });
+      arms.forEach((a, i) => { a.rotation.x = -0.65 - go * 0.2 + Math.sin(time * 10) * 0.05 * go; a.rotation.z = (i ? -1 : 1) * 0.1; });
+      elbows.forEach((e) => { e.rotation.set(-1.0 + go * 0.2, 0, 0); });
+      body.position.set(0, S - hipY + bounce * 1.3, -0.04);
+      body.rotation.x = 0.06 + go * 0.22;
+      head.rotation.x = -body.rotation.x * 0.7;
     } else if (m.stance === 'pedal') {
-      const p = m.pedal;
-      legs.forEach((l, i) => { l.rotation.x = -1.1 + Math.sin(p + i * Math.PI) * 0.35; l.rotation.z = (i ? -1 : 1) * 0.06; });
-      knees.forEach((k, i) => { k.rotation.x = 1.25 + Math.cos(p + i * Math.PI) * 0.35; });
-      arms.forEach((a, i) => { a.rotation.x = -1.2; a.rotation.z = (i ? -1 : 1) * 0.22; });
-      elbows.forEach((e) => { e.rotation.set(-0.25, 0, 0); });
-      body.position.set(0, S - hipY, -0.08);
-      body.rotation.x = 0.32;
+      // pedalling: the feet go round with the pedals, standing up out of the saddle a bit when you go fast
+      const p = m.pedal, stand = Math.max(0, speed - 1.2) * go;
+      legs.forEach((l, i) => { const a = p + i * Math.PI; l.rotation.x = -1.0 + Math.sin(a) * 0.4 + stand * 0.3; l.rotation.z = (i ? -1 : 1) * 0.08; });
+      knees.forEach((k, i) => { const a = p + i * Math.PI; k.rotation.x = 1.15 + Math.cos(a) * 0.45 - stand * 0.3; });
+      arms.forEach((a, i) => { a.rotation.x = -1.15 - stand * 0.2; a.rotation.z = (i ? -1 : 1) * 0.25; });
+      elbows.forEach((e) => { e.rotation.set(-0.35, 0, 0); });
+      body.position.set(0, S - hipY + stand * 0.12, -0.06);
+      body.rotation.set(0.3 + go * 0.12 + stand * 0.1, 0, Math.sin(p) * 0.05 * stand);
+      head.rotation.x = -body.rotation.x * 0.8;
     } else if (m.stance === 'scoot') {
-      const kick = moving ? Math.sin(time * 7) : 0;
-      legs[0].rotation.x = 0.05; knees[0].rotation.x = 0.15;
-      legs[1].rotation.x = kick * 0.6 + (moving ? 0.25 : 0); knees[1].rotation.x = 0.2 + Math.max(0, kick) * 0.5;
+      // one foot on the deck, the other pushing off the ground in long kicks
+      const kick = go * Math.sin(time * 6);
+      legs[0].rotation.x = 0.05; knees[0].rotation.x = 0.2 + go * 0.15;
+      legs[1].rotation.x = kick * 0.7 + go * 0.3; knees[1].rotation.x = 0.15 + Math.max(0, kick) * 0.6;
       arms.forEach((a, i) => { a.rotation.x = -1.05; a.rotation.z = (i ? -1 : 1) * 0.22; });
       elbows.forEach((e) => { e.rotation.set(-0.3, 0, 0); });
-      body.position.set(0, S + Math.max(0, -kick) * 0.03, -0.05);
-      body.rotation.x = 0.12;
+      body.position.set(0, S - go * 0.04 + Math.max(0, -kick) * 0.03, -0.05);
+      body.rotation.x = 0.1 + go * 0.12;
+      head.rotation.x = -body.rotation.x * 0.7;
     } else {
-      // a board: stand side-on with knees bent and arms out for balance, eyes forward
-      legs.forEach((l, i) => { l.rotation.z = (i ? -1 : 1) * 0.3; l.rotation.x = -0.1; });
-      knees.forEach((k) => { k.rotation.x = 0.4; });
-      arms.forEach((a, i) => { a.rotation.x = -0.2; a.rotation.z = (i ? 1 : -1) * (0.8 + Math.sin(time * 2 + i) * 0.1); });
+      // a board: side-on, knees bent, arms out for balance, eyes forward; crouch and spring for an ollie
+      const hop = m.hop, crouch = hop > 0 ? 0.4 - hop : 0;
+      legs.forEach((l, i) => { l.rotation.z = (i ? -1 : 1) * 0.32; l.rotation.x = -0.15 - crouch * 0.4 - hop * 0.6; });
+      knees.forEach((k) => { k.rotation.x = 0.45 + crouch * 0.8 + hop * 1.2; });
+      arms.forEach((a, i) => { a.rotation.x = -0.2 - hop * 0.5; a.rotation.z = (i ? 1 : -1) * (0.85 + hop * 0.6 + Math.sin(time * 2 + i) * 0.1); });
       elbows.forEach((e) => { e.rotation.set(-0.3, 0, 0); });
-      body.position.set(0, S - 0.05, 0);
-      body.rotation.set(moving ? 0.12 : 0, 1.15, moving ? Math.sin(time * 2.4) * 0.06 : 0);
+      body.position.set(0, S - 0.06 + hop - crouch * 0.06, 0);
+      body.rotation.set(go * 0.1, 1.15, go * Math.sin(time * 2.4) * 0.07);
       head.rotation.y = -1.05;
     }
   }

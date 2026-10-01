@@ -300,7 +300,12 @@ def near_miss(a, b):
     return any(long_[:i] + long_[i + 1:] == short for i in range(len(long_)))
 
 
-HOUSE_SIZE = 10  # a new house is HOUSE_SIZE x HOUSE_SIZE tiles (bigger with house upgrades)
+HOUSE_SIZE = 14  # a new house is HOUSE_SIZE x HOUSE_SIZE tiles (bigger with house upgrades)
+OLD_HOUSE_SIZE = 10  # (houses saved before rooms could be resized were this big)
+HOUSE_WALL_H = 3.2  # wall height, tiles
+HOUSE_WALL_Y = 1.75  # default height of a wall decoration's middle
+HOUSE_DOOR_H = 2.2  # the front door's height (things can hang on the wall above it)
+HOUSE_MAX_DROP = 2.4  # how far below the ceiling a hanging thing can go
 HOUSE_MAX_ITEMS = 80
 
 # Cosmetics and fish are shared with the client through one catalog file.
@@ -644,6 +649,22 @@ def give_closet(p):
                 return
 
 
+def grow_house(h):
+    """Houses from before sizes existed move into the bigger default room (everything keeps its spot;
+    anything on the front wall where the door now is goes back in the inventory)."""
+    if "size" in h:
+        return
+    h["size"] = [HOUSE_SIZE, HOUSE_SIZE]
+    door = (HOUSE_SIZE / 2 - 1, HOUSE_SIZE / 2 + 1)
+    keep = []
+    for it in h["items"]:
+        f = FURN.get(it["id"])
+        if f and f.get("kind") == "wall" and it["r"] % 4 == 2 and it["x"] < door[1] and it["x"] + f["w"] > door[0]:
+            continue
+        keep.append(it)
+    h["items"] = keep
+
+
 def migrate(p):
     """Fill in fields added after a profile was first saved."""
     p.setdefault("look", default_look(p.get("color")))
@@ -671,6 +692,7 @@ def migrate(p):
     p.setdefault("furni", {f["id"]: 1 for f in CATALOG["furniture"] if f.get("starter")})
     p.setdefault("house", default_house())
     give_closet(p)
+    grow_house(p["house"])
     for stat in STAT_KEYS:
         p["stats"].setdefault(stat, 0)
     return p
@@ -702,7 +724,7 @@ def max_house(p):
 
 
 def house_dims(h):
-    w, d = (h.get("size") or [HOUSE_SIZE, HOUSE_SIZE])[:2]
+    w, d = (h.get("size") or [OLD_HOUSE_SIZE, OLD_HOUSE_SIZE])[:2]
     return int(w), int(d)
 
 
@@ -755,16 +777,27 @@ def clean_house(p, data):
         if used[f["id"]] > p["furni"].get(f["id"], 0):
             raise GameError(f"You don't have another {f['name']}.")
         kind = f.get("kind", "floor")
+        h = None
         if kind == "wall":
-            # which wall: r 0 back (column x), 1 left (row y), 2 front (column x), 3 right (row y)
+            # which wall: r 0 back (column x), 1 left (row y), 2 front (column x), 3 right (row y); h: how
+            # high its middle is. The wall is a grid too, so things can stack up it.
             start = x if r % 2 == 0 else y
             x, y = (x, 0) if r % 2 == 0 else (0, y)
-            cells = {("wall", r, round(start * HOUSE_SNAP) + i) for i in range(round(f["w"] * HOUSE_SNAP))}
+            wh = f.get("wh", 1)
+            h = snap_q(it.get("h", HOUSE_WALL_Y))
+            if not (wh / 2 - 0.01 <= h <= HOUSE_WALL_H - wh / 2 + 0.01):
+                raise GameError("That doesn't fit on the wall.")
+            rows = range(round((h - wh / 2) * HOUSE_SNAP), round((h + wh / 2) * HOUSE_SNAP))
+            cells = {("wall", r, round(start * HOUSE_SNAP) + i, j) for i in range(round(f["w"] * HOUSE_SNAP)) for j in rows}
             if start < 0 or start + f["w"] > (W if r % 2 == 0 else D):
                 raise GameError("That doesn't fit on the wall.")
-            if r == 2 and start < door_x[1] and start + f["w"] > door_x[0]:
+            if r == 2 and start < door_x[1] and start + f["w"] > door_x[0] and h - wh / 2 < HOUSE_DOOR_H - 0.01:
                 raise GameError("That's where the door is.")
         else:
+            if kind == "ceiling":  # h: how far below the ceiling it hangs
+                h = snap_q(it.get("h", 0))
+                if not (0 <= h <= HOUSE_MAX_DROP):
+                    raise GameError("That can't hang that low.")
             w, d = (f["w"], f["d"]) if r % 2 == 0 else (f["d"], f["w"])
             if x < 0 or y < 0 or x + w > W or y + d > D:
                 raise GameError("That doesn't fit in the room.")
@@ -773,7 +806,7 @@ def clean_house(p, data):
         if cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r})
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {})})
     return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items}
 
 
@@ -1170,7 +1203,7 @@ class Game:
             if look.get(field) not in {o["id"] for o in CATALOG[options]}:
                 raise GameError("Unknown body option.")
             new[field] = look[field]
-        for field in ("hatColor", "backColor", "topTint", "topAccent", "hairTie"):  # optional recolours (hat, back item, top + its trim)
+        for field in ("hatColor", "backColor", "topTint", "topAccent", "hairTie", "auraColor"):  # optional recolours (hat, back item, top + its trim, the OG aura)
             col = look.get(field) or ""
             if col and col not in CATALOG["clothColors"]:
                 raise GameError("Unknown color.")

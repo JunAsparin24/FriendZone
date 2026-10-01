@@ -215,6 +215,18 @@ const tick = (at = 0, vol = 1, f = 2200) => {
 // ---------------------------------------------------------------------------
 
 const SOUNDS = {
+  // mounts
+  hoof: () => { thud(0, 0.35, 260); tone({ type: 'triangle', f: rnd(900, 1100), to: 500, dur: 0.05, vol: 0.05 }); thud(0.09, 0.28, 230); tone({ type: 'triangle', f: rnd(800, 1000), to: 450, dur: 0.05, vol: 0.04, at: 0.09 }); },
+  neigh: () => {
+    // a whinny: a high wobbling call that falls away, with a snort at the end
+    tone({ type: 'sawtooth', f: 520, to: 880, dur: 0.18, vol: 0.06, vib: [22, 40], lp: 2400 });
+    tone({ type: 'sawtooth', f: 880, to: 340, dur: 0.75, vol: 0.06, at: 0.17, vib: [18, 55], lp: 2200 });
+    noise({ type: 'bandpass', f: 900, q: 1.4, dur: 0.25, vol: 0.12, at: 0.95 });
+  },
+  magic: () => { sparkle(0, 1.2, 9); bell(96, 0.05, 0.05, 1.2); },
+  bikebell: () => { bell(88, 0, 0.09, 0.6); bell(88, 0.16, 0.09, 0.8); },
+  hoverup: () => { tone({ type: 'sine', f: 120, to: 420, dur: 0.5, vol: 0.12, vib: [9, 12] }); noise({ type: 'bandpass', f: 600, to: 2400, dur: 0.5, vol: 0.06 }); },
+  skate: () => { noise({ type: 'lowpass', f: 900, dur: 0.12, vol: 0.2 }); thud(0.02, 0.4, 180); },
   // ---- interface ----
   click: () => { tone({ type: 'triangle', f: 1300, to: 900, dur: 0.045, vol: 0.07 }); },
   hover: () => { tone({ f: 1800, dur: 0.02, vol: 0.02 }); },
@@ -533,6 +545,74 @@ function swellAmbient(kind) {
       stopped = true; clearInterval(iv);
       try { src?.stop(); osc?.stop(); } catch { /* already stopped */ }
       src = osc = null;
+    },
+  };
+}
+
+// Engines (and other things that roll or hum while they move): each kind has its own voice. set(rpm, vol)
+// with rpm 0 (idling) .. 1 (flat out), vol 0..1 (fade it with distance); stop() when you're done.
+const ENGINES = {
+  kart:  { wave: 'square',   lo: 70,  hi: 230, lp: 900,  lpHi: 2200, sub: 0.0, rasp: 0.15, lope: 0,   level: 0.09 },
+  moto:  { wave: 'sawtooth', lo: 85,  hi: 360, lp: 1400, lpHi: 3600, sub: 0.0, rasp: 0.3,  lope: 0,   level: 0.08 },
+  buggy: { wave: 'square',   lo: 48,  hi: 165, lp: 650,  lpHi: 1500, sub: 0.3, rasp: 0.25, lope: 0,   level: 0.1 },
+  f1:    { wave: 'sawtooth', lo: 160, hi: 760, lp: 2400, lpHi: 6000, sub: 0.0, rasp: 0.1,  lope: 0,   level: 0.06 },
+  truck: { wave: 'sawtooth', lo: 34,  hi: 105, lp: 420,  lpHi: 1100, sub: 0.6, rasp: 0.2,  lope: 9,   level: 0.12 },
+  // (not engines, but they work the same way)
+  roll:  { wave: null, noiseF: 260, noiseQ: 0.8, level: 0.07 },        // skateboard / scooter wheels on the ground
+  pedal: { wave: null, noiseF: 900, noiseQ: 2.5, tick: true, level: 0.05 }, // a bike's freewheel ticking
+  hover: { wave: 'sine',     lo: 110, hi: 190, lp: 800,  lpHi: 1400, sub: 0.0, rasp: 0,    lope: 5,   level: 0.06 },
+};
+export function engine(kind) {
+  const E = ENGINES[kind] ?? ENGINES.kart;
+  let osc = null, osc2 = null, sub = null, src = null, filter = null, gain = null, lfo = null, stopped = false;
+  const start = () => {
+    if (gain || stopped || !gestured || !ensure()) return;
+    gain = ac.createGain(); gain.gain.value = 0;
+    filter = ac.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = E.lp ?? 1000; filter.Q.value = 1.2;
+    filter.connect(gain); gain.connect(sfxBus);
+    if (E.wave) {
+      osc = ac.createOscillator(); osc.type = E.wave; osc.frequency.value = E.lo; osc.connect(filter); osc.start();
+      osc2 = ac.createOscillator(); osc2.type = E.wave; osc2.frequency.value = E.lo * 1.01; // a slightly detuned twin: thicker
+      const g2 = ac.createGain(); g2.gain.value = 0.5; osc2.connect(g2); g2.connect(filter); osc2.start();
+      if (E.sub) { sub = ac.createOscillator(); sub.type = 'sine'; sub.frequency.value = E.lo / 2; const gs = ac.createGain(); gs.gain.value = E.sub; sub.connect(gs); gs.connect(gain); sub.start(); }
+      if (E.lope) {
+        // the lumpy idle of a big engine (or a hoverboard's wobble): the volume throbs
+        lfo = ac.createOscillator(); lfo.frequency.value = E.lope; const depth = ac.createGain(); depth.gain.value = 0.35;
+        const am = ac.createGain(); am.gain.value = 0.65; lfo.connect(depth); depth.connect(am.gain);
+        filter.disconnect(); filter.connect(am); am.connect(gain); lfo.start();
+      }
+    }
+    if (E.rasp || !E.wave) {
+      src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = E.noiseF ?? 1800; nf.Q.value = E.noiseQ ?? 0.9;
+      const ng = ac.createGain(); ng.gain.value = E.wave ? E.rasp : 1;
+      src.connect(nf); nf.connect(ng); ng.connect(E.wave ? filter : gain); src.start();
+      if (E.tick) {
+        // freewheel clicks: chop the noise up quickly
+        lfo = ac.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 14; const d = ac.createGain(); d.gain.value = 0.5;
+        lfo.connect(d); d.connect(ng.gain); lfo.start();
+      }
+    }
+  };
+  return {
+    set(rpm = 0, vol = 1) {
+      start();
+      if (!gain) return;
+      const t = ac.currentTime, r = Math.max(0, Math.min(1.2, rpm));
+      if (osc) {
+        const f = E.lo + (E.hi - E.lo) * r;
+        osc.frequency.setTargetAtTime(f, t, 0.08);
+        osc2.frequency.setTargetAtTime(f * 1.01, t, 0.08);
+        sub?.frequency.setTargetAtTime(f / 2, t, 0.08);
+        filter.frequency.setTargetAtTime(E.lp + (E.lpHi - E.lp) * r, t, 0.1);
+      } else if (E.tick && lfo) lfo.frequency.setTargetAtTime(6 + r * 20, t, 0.1);
+      const loud = E.wave ? 0.55 + r * 0.45 : r; // rolling things are silent when stopped
+      gain.gain.setTargetAtTime(Math.max(0, vol) * loud * E.level * 1.6, t, 0.08);
+    },
+    stop() {
+      stopped = true;
+      if (gain) gain.gain.setTargetAtTime(0, ac.currentTime, 0.05);
+      setTimeout(() => { for (const n of [osc, osc2, sub, src, lfo]) { try { n?.stop(); } catch { /* already stopped */ } } }, 200);
     },
   };
 }

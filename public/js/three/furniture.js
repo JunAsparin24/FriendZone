@@ -703,7 +703,7 @@ export const FURNITURE = {
     let on = true;
     return { use: () => { on = !on; light.visible = bulb.visible = on; shade.emissiveIntensity = on ? 0.4 : 0; } };
   },
-  hanging_plant(g) { hangingPlant(g, 0.6); },
+  hanging_plant(g, A, { drop = 0 } = {}) { hangingPlant(g, 0.6 + drop); },
   disco_ball(g, A) {
     add(g, cyl(0.01, 0.01, 0.4, 5), toon('#c0c6d4'), { p: [0, -0.2, 0], outline: false });
     const ball = add(g, geo('disco', () => new THREE.IcosahedronGeometry(0.3, 2)), new THREE.MeshStandardMaterial({ color: '#dfe6f5', metalness: 0.95, roughness: 0.15, flatShading: true }), { p: [0, -0.7, 0] });
@@ -1072,8 +1072,8 @@ export const FURNITURE = {
     add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.03, 6), toon('#6e4424'), { outline: false });
     for (const [x, y, z, r] of [[0.06, 0.52, 0, 0.12], [-0.12, 0.42, 0.02, 0.09], [0.15, 0.4, -0.02, 0.08]]) add(g, sph(r, 12, 10), toon('#3f9a4a'), { p: [x, y, z], s: [1.3, 0.6, 1] });
   },
-  hanging_plant_short(g) { hangingPlant(g, 0.3); },
-  hanging_plant_long(g) { hangingPlant(g, 1.1); },
+  hanging_plant_short(g, A, { drop = 0 } = {}) { hangingPlant(g, 0.3 + drop); },
+  hanging_plant_long(g, A, { drop = 0 } = {}) { hangingPlant(g, 1.1 + drop); },
 
   // ---- gaming ----
   gaming_desk(g, A) {
@@ -1212,22 +1212,265 @@ export const FURNITURE = {
   },
   cutout_gojo(g, A) {
     // a life-size cardboard cutout of everyone's favourite blindfolded sorcerer, on a cardboard stand
-    const front = new THREE.MeshToonMaterial({ map: gojoTex(false), transparent: true, alphaTest: 0.5 });
+    // (the print is unlit, like a glossy poster; the cardboard back takes the room's light)
+    const front = new THREE.MeshBasicMaterial({ map: gojoTex(false), transparent: true, alphaTest: 0.5, color: '#f2f2f2' });
     const back = new THREE.MeshToonMaterial({ map: gojoTex(true), transparent: true, alphaTest: 0.5 });
-    add(g, plane(0.8, 1.85), front, { p: [0, 0.93, 0.01], outline: false });
-    add(g, plane(0.8, 1.85), back, { p: [0, 0.93, -0.01], r: [0, Math.PI, 0], outline: false });
+    add(g, plane(0.95, 2.2), front, { p: [0, 1.1, 0.01], outline: false });
+    add(g, plane(0.95, 2.2), back, { p: [0, 1.1, -0.01], r: [0, Math.PI, 0], outline: false });
     add(g, box(0.5, 0.03, 0.3), toon('#b8895a'), { p: [0, 0.015, -0.1], outline: false });
     add(g, box(0.04, 0.8, 0.02), toon('#b8895a'), { p: [0, 0.4, -0.18], r: [-0.4, 0, 0], outline: false });
     return { use: () => floatEmoji(g, A, '🤞', 2.0, 1) };
   },
 };
 
+// ---- the Nature set: logs, moss, mushrooms, flowers and a little pond ----
+const BARK = '#7a4f2e', MOSS = '#5f9e3a', MOSS_LIGHT = '#7fbf4a';
+function mossTufts(g, pts, size = 0.08) {
+  pts.forEach(([x, y, z], i) => add(g, sph(size * (0.8 + (i % 3) * 0.2), 10, 8), toon(i % 2 ? MOSS : MOSS_LIGHT), { p: [x, y, z], s: [1.3, 0.6, 1.1], outline: false }));
+}
+function logPiece(g, len, r, p, rot) {
+  const m = add(g, cyl(r, r, len, 14), toon(BARK), { p, r: rot });
+  for (const s of [-1, 1]) add(m, cyl(r * 0.94, r * 0.94, 0.012, 14), new THREE.MeshToonMaterial({ map: treeRingTex }), { p: [0, s * (len / 2 + 0.003), 0], outline: false });
+  return m;
+}
+const treeRingTex = canvasTexture(64, 64, (ctx) => {
+  ctx.fillStyle = '#e8c48a'; ctx.fillRect(0, 0, 64, 64);
+  ctx.strokeStyle = '#b98a52'; ctx.lineWidth = 2;
+  for (let r = 4; r < 32; r += 5) { ctx.beginPath(); ctx.arc(32 + (r % 3) - 1, 32, r, 0, TAU); ctx.stroke(); }
+});
+function flowerHead(g, x, y, z, color, s = 1) {
+  for (let k = 0; k < 5; k++) { const a = (k / 5) * TAU; add(g, sph(0.035 * s, 8, 6), toon(color), { p: [x + Math.cos(a) * 0.04 * s, y, z + Math.sin(a) * 0.04 * s], s: [1, 0.5, 1], outline: false }); }
+  add(g, sph(0.025 * s, 8, 6), toon('#ffd84d'), { p: [x, y + 0.01, z], outline: false });
+}
+
+Object.assign(FURNITURE, {
+  log_bench(g) {
+    logPiece(g, 1.8, 0.2, [0, 0.42, 0], [0, 0, Math.PI / 2]).scale.set(1, 1, 0.75);
+    for (const x of [-0.65, 0.65]) logPiece(g, 0.4, 0.12, [x, 0.2, 0], [0, 0, 0]);
+    logPiece(g, 1.7, 0.13, [0, 0.82, -0.24], [0.15, 0, Math.PI / 2]);
+    for (const x of [-0.6, 0.6]) add(g, cyl(0.04, 0.05, 0.5, 6), toon(BARK), { p: [x, 0.62, -0.22], r: [0.15, 0, 0], outline: false });
+    mossTufts(g, [[-0.7, 0.6, 0.05], [0.5, 0.6, -0.08], [0.82, 0.92, -0.24], [-0.3, 0.92, -0.25]]);
+  },
+  stump_table(g) {
+    logPiece(g, 0.7, 0.36, [0, 0.35, 0], [0, 0, 0]);
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * TAU + 0.4; add(g, cyl(0.06, 0.12, 0.25, 6), toon(BARK), { p: [Math.cos(a) * 0.36, 0.08, Math.sin(a) * 0.36], r: [Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9], outline: false }); }
+    for (const [x, z, s] of [[0.32, 0.18, 1], [0.36, 0.05, 0.7]]) { add(g, cyl(0.015 * s, 0.02 * s, 0.1 * s, 6), toon('#f4ecd8'), { p: [x, 0.2, z], outline: false }); add(g, sph(0.05 * s, 10, 6), toon('#e0463c'), { p: [x, 0.25 * s + 0.02, z], s: [1, 0.6, 1] }); }
+    mug(g, -0.08, 0.705, 0.05, '#6fae55');
+    mossTufts(g, [[-0.25, 0.71, -0.15], [0.2, 0.71, -0.2]], 0.06);
+  },
+  stump_stool(g) {
+    logPiece(g, 0.45, 0.22, [0, 0.225, 0], [0, 0, 0]);
+    mossTufts(g, [[0.1, 0.46, 0.05], [-0.08, 0.46, -0.06]], 0.05);
+  },
+  mossy_rock(g) {
+    add(g, geo('rock', () => { const r = new THREE.IcosahedronGeometry(0.4, 1); r.scale(1.2, 0.7, 1); return r; }), toon('#8d8aa6'), { p: [0, 0.26, 0] });
+    add(g, geo('rockMoss', () => { const r = new THREE.SphereGeometry(0.42, 16, 8, 0, TAU, 0, 1.1); r.scale(1.2, 0.55, 1); return r; }), toon(MOSS), { p: [0, 0.27, 0], outline: false });
+    flowerHead(g, 0.15, 0.56, 0.1, '#ffffff', 0.8); flowerHead(g, -0.2, 0.52, -0.05, '#b98bff', 0.8);
+  },
+  mushroom_lamp(g, A) {
+    const cap = toon('#e0463c', { emissive: '#ff6a4a', emissiveIntensity: 0.35 }).clone();
+    add(g, cyl(0.09, 0.13, 0.9, 12), toon('#f4ecd8'), { p: [0, 0.45, 0] });
+    add(g, geo('mushCap', () => new THREE.SphereGeometry(0.42, 22, 12, 0, TAU, 0, Math.PI / 2)), cap, { p: [0, 0.86, 0], s: [1, 0.65, 1] });
+    for (let i = 0; i < 7; i++) { const a = i * 2.3, r = 0.12 + (i % 3) * 0.09; add(g, sph(0.04, 8, 6), toon('#fff6e0'), { p: [Math.cos(a) * r, 0.86 + Math.sqrt(Math.max(0, 0.42 * 0.42 - r * r)) * 0.65, Math.sin(a) * r], s: [1, 0.4, 1], outline: false }); }
+    add(g, sph(0.11, 10, 8), toon('#c9955a'), { p: [0.25, 0.07, 0.1], s: [1, 0.6, 1] }); // a baby mushroom
+    add(g, cyl(0.03, 0.04, 0.1, 8), toon('#f4ecd8'), { p: [0.25, 0.04, 0.1], outline: false });
+    const light = new THREE.PointLight(0xffa07a, 1.8, 4.5, 1.6);
+    light.position.y = 0.7;
+    g.add(light);
+    let on = true;
+    return { use: () => { on = !on; light.visible = on; cap.emissiveIntensity = on ? 0.35 : 0; } };
+  },
+  terrarium(g) {
+    add(g, cyl(0.3, 0.32, 0.12, 20), toon(WOOD), { p: [0, 0.06, 0] });
+    add(g, cyl(0.28, 0.28, 0.08, 20), toon('#6b4a2b'), { p: [0, 0.16, 0], outline: false });
+    mossTufts(g, [[0, 0.21, 0], [0.12, 0.21, 0.08], [-0.1, 0.21, -0.1], [0.05, 0.21, -0.14]], 0.09);
+    add(g, cyl(0.02, 0.02, 0.2, 6), toon('#3f9a4a'), { p: [-0.08, 0.3, 0.06], outline: false });
+    flowerHead(g, -0.08, 0.41, 0.06, '#ff8fc7', 0.9);
+    add(g, sph(0.06, 8, 6), toon('#9aa3b5'), { p: [0.1, 0.22, -0.05], outline: false });
+    add(g, geo('dome', () => new THREE.SphereGeometry(0.3, 22, 14, 0, TAU, 0, Math.PI / 2)), new THREE.MeshStandardMaterial({ color: '#d8f6ff', transparent: true, opacity: 0.25, roughness: 0.05, depthWrite: false }), { p: [0, 0.18, 0], s: [1, 1.5, 1], outline: false });
+  },
+  bamboo(g) {
+    pot(g, 0.2, 0.3, '#2b2f4a');
+    for (const [x, z, h] of [[0, 0, 1.6], [0.08, 0.07, 1.3], [-0.08, 0.05, 1.45], [0.03, -0.09, 1.15]]) {
+      for (let k = 0; k < h / 0.3; k++) {
+        add(g, cyl(0.03, 0.03, 0.28, 8), toon(k % 2 ? '#8fbf4a' : '#9fcf5a'), { p: [x, 0.44 + k * 0.3, z], outline: false });
+        add(g, cyl(0.036, 0.036, 0.03, 8), toon('#6f9f3a'), { p: [x, 0.3 + k * 0.3 + 0.28, z], outline: false });
+      }
+      for (let k = 0; k < 3; k++) add(g, sph(0.05, 8, 6), toon('#5fae55'), { p: [x + Math.cos(k * 2) * 0.12, 0.3 + h - k * 0.25, z + Math.sin(k * 2) * 0.12], s: [0.4, 0.18, 2.4], r: [0, k * 2, 0.3], outline: false });
+    }
+  },
+  sunflowers(g) {
+    pot(g, 0.2, 0.32, '#d9964a');
+    [[0, 1.25, 0], [0.12, 1.0, 0.06], [-0.12, 0.88, -0.04]].forEach(([x, h, z]) => {
+      add(g, cyl(0.02, 0.025, h - 0.3, 6), toon('#4c8a3a'), { p: [x, 0.3 + (h - 0.3) / 2, z], outline: false });
+      add(g, sph(0.07, 8, 6), toon('#4c8a3a'), { p: [x + 0.06, 0.3 + h * 0.4, z], s: [1.4, 0.3, 0.8], outline: false });
+      const head = new THREE.Group(); head.position.set(x, h + 0.02, z + 0.02); head.rotation.x = -0.3; g.add(head);
+      for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU; add(head, sph(0.05, 8, 6), toon('#ffc93d'), { p: [Math.cos(a) * 0.12, Math.sin(a) * 0.12, 0], s: [0.6, 1.4, 0.3], r: [0, 0, a - Math.PI / 2], outline: false }); }
+      add(head, cyl(0.08, 0.08, 0.04, 14), toon('#5a3a1c'), { r: [Math.PI / 2, 0, 0] });
+    });
+  },
+  flower_bed(g) {
+    add(g, box(1.8, 0.4, 0.6), toon(WOOD), { p: [0, 0.2, 0] });
+    add(g, box(1.7, 0.04, 0.5), toon('#4a2e1c'), { p: [0, 0.4, 0], outline: false });
+    const cols = ['#ff8fc7', '#ffd84d', '#ffffff', '#b98bff', '#ff7a59'];
+    for (let i = 0; i < 14; i++) {
+      const x = -0.75 + (i % 7) * 0.25, z = i < 7 ? -0.1 : 0.12, h = 0.15 + (i % 3) * 0.06;
+      add(g, cyl(0.012, 0.012, h, 5), toon('#4c8a3a'), { p: [x, 0.42 + h / 2, z], outline: false });
+      flowerHead(g, x, 0.43 + h, z, cols[i % cols.length]);
+    }
+  },
+  indoor_pond(g, A) {
+    // a little koi pond: a ring of stones, water, lily pads and two fish going round
+    for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU; add(g, geo('pondStone', () => { const r = new THREE.IcosahedronGeometry(0.16, 0); r.scale(1.3, 0.7, 1); return r; }), toon(i % 2 ? '#9aa3b5' : '#b8b2c8'), { p: [Math.cos(a) * 0.82, 0.08, Math.sin(a) * 0.82], r: [0, -a, 0] }); }
+    add(g, geo('pondWater', () => new THREE.CircleGeometry(0.78, 28)), new THREE.MeshStandardMaterial({ color: '#3fa8d8', roughness: 0.1, transparent: true, opacity: 0.85 }), { p: [0, 0.06, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
+    for (const [x, z] of [[0.3, 0.2], [-0.35, -0.15], [0.05, -0.4]]) {
+      add(g, geo('lily', () => new THREE.CircleGeometry(0.12, 12, 0.3, TAU - 0.6)), toon('#4caf50', { side: THREE.DoubleSide }), { p: [x, 0.07, z], r: [-Math.PI / 2, 0, x * 5], outline: false });
+    }
+    flowerHead(g, 0.3, 0.09, 0.2, '#ff9fe0', 0.8);
+    const fish = ['#ff7a1e', '#ffffff'].map((c) => { const f = new THREE.Group(); add(f, sph(0.06, 10, 8), toon(c), { s: [1, 0.6, 2], outline: false }); add(f, cone(0.04, 0.07, 6), toon(c), { p: [0, 0, -0.12], r: [-Math.PI / 2, 0, 0], outline: false }); g.add(f); return f; });
+    A.anim.push((t) => { fish.forEach((f, i) => { const a = t * (0.6 + i * 0.25) + i * 2; f.position.set(Math.cos(a) * 0.45, 0.04, Math.sin(a) * 0.45); f.rotation.y = -a; }); return false; });
+    return { use: () => floatEmoji(g, A, '🐟', 0.4, 2) };
+  },
+  leaf_rug(g) {
+    add(g, plane(1.9, 1.9), new THREE.MeshToonMaterial({ map: leafRugTex, transparent: true, alphaTest: 0.5 }), { p: [0, 0.012, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
+  },
+  moss_rug(g) {
+    add(g, geo('mossRug', () => new THREE.CircleGeometry(0.92, 40)), new THREE.MeshToonMaterial({ map: mossRugTex }), { p: [0, 0.014, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
+  },
+  hammock(g, A) {
+    for (const x of [-0.85, 0.85]) { logPiece(g, 1.3, 0.06, [x, 0.65, 0], [0, 0, 0]); add(g, box(0.3, 0.05, 0.3), toon(BARK), { p: [x, 0.03, 0], outline: false }); }
+    const net = geo('hammockNet', () => {
+      const pts = [];
+      for (let i = 0; i <= 12; i++) { const t = i / 12; pts.push(new THREE.Vector2(0.001 + Math.sin(t * Math.PI) * 0.35, -0.8 + t * 1.6)); }
+      const lg = new THREE.LatheGeometry(pts, 16, Math.PI / 2, Math.PI);
+      lg.rotateZ(Math.PI / 2);
+      return lg;
+    });
+    const hm = add(g, net, toon('#e8d6b8', { side: THREE.DoubleSide }), { p: [0, 0.75, 0] });
+    for (const x of [-0.8, 0.8]) add(g, cyl(0.01, 0.01, 0.4, 4), toon('#c9b27a'), { p: [x * 0.97, 1.05, 0], r: [0, 0, x > 0 ? -0.6 : 0.6], outline: false });
+    add(g, sph(0.12, 10, 8), toon('#9fcf5a'), { p: [-0.5, 0.62, 0], s: [1.2, 0.5, 1], outline: false }); // a cushion
+    A.anim.push((t) => { hm.rotation.x = Math.sin(t * 1.2) * 0.06; return false; });
+  },
+  sofa_green(g, A) { return FURNITURE.sofa(g, A, { color: '#3f8a5a' }); },
+  armchair_green(g, A) { return FURNITURE.sofa(g, A, { color: '#3f8a5a', w: 0.94 }); },
+  // on the walls
+  ivy_garland(g, A) {
+    const leaves = [];
+    for (let i = 0; i < 6; i++) {
+      const x = -0.8 + i * 0.32, len = 0.5 + ((i * 7) % 4) * 0.15;
+      add(g, cyl(0.012, 0.012, len, 4), toon('#4c8a3a'), { p: [x, 0.5 - len / 2, 0.05], outline: false });
+      for (let k = 0; k < len / 0.12; k++) leaves.push(add(g, sph(0.05, 8, 6), toon(k % 2 ? '#5fae55' : '#7fbf4a'), { p: [x + (k % 2 ? 0.04 : -0.04), 0.5 - k * 0.12, 0.07], s: [1, 0.7, 0.3], outline: false }));
+    }
+    add(g, cyl(0.02, 0.02, 1.9, 6), toon('#5a3a1c'), { p: [0, 0.5, 0.05], r: [0, 0, Math.PI / 2], outline: false });
+    A.anim.push((t) => { leaves.forEach((l, i) => { l.rotation.z = Math.sin(t * 1.5 + i) * 0.15; }); return false; });
+  },
+  flower_box(g) {
+    add(g, box(0.9, 0.22, 0.25), toon('#8b5a2b'), { p: [0, -0.1, 0.13] });
+    add(g, box(0.84, 0.03, 0.2), toon('#4a2e1c'), { p: [0, 0.01, 0.13], outline: false });
+    ['#ff7a9a', '#ffd84d', '#ffffff', '#b98bff', '#ff7a59'].forEach((c, i) => { add(g, cyl(0.01, 0.01, 0.14, 4), toon('#4c8a3a'), { p: [-0.32 + i * 0.16, 0.08, 0.13], outline: false }); flowerHead(g, -0.32 + i * 0.16, 0.16, 0.13, c); });
+  },
+  birdhouse(g, A) {
+    add(g, box(0.12, 0.6, 0.06), toon('#8b5a2b'), { p: [0, -0.1, 0.03], outline: false });
+    add(g, box(0.36, 0.36, 0.3), toon('#ff9f43'), { p: [0, 0.05, 0.2] });
+    add(g, geo('birdRoof', () => { const r = new THREE.ConeGeometry(0.32, 0.22, 4); r.rotateY(Math.PI / 4); return r; }), toon('#3f8a5a'), { p: [0, 0.34, 0.2] });
+    add(g, cyl(0.06, 0.06, 0.02, 12), basic('#2a1d16'), { p: [0, 0.07, 0.355], r: [Math.PI / 2, 0, 0], outline: false });
+    add(g, cyl(0.012, 0.012, 0.1, 4), toon('#5a3a1c'), { p: [0, -0.04, 0.39], r: [Math.PI / 2, 0, 0], outline: false });
+    const bird = new THREE.Group(); bird.position.set(0, 0.07, 0.36); g.add(bird);
+    add(bird, sph(0.05, 10, 8), toon('#39c6ff'), { outline: false });
+    add(bird, cone(0.015, 0.04, 6), toon('#ffb13b'), { p: [0, -0.01, 0.06], r: [Math.PI / 2, 0, 0], outline: false });
+    let peek = 0;
+    A.anim.push((t, dt) => { peek = Math.max(0, peek - dt); bird.position.z = 0.33 + Math.min(1, peek) * 0.06; bird.visible = peek > 0 || Math.sin(t * 0.4) > 0.7; return false; });
+    return { use: () => { peek = 2.5; floatEmoji(g, A, '🐦', 0.4, 1); } };
+  },
+  moss_frame(g) {
+    add(g, box(0.8, 0.8, 0.06), toon(WOOD), { p: [0, 0, 0.03] });
+    add(g, box(0.66, 0.66, 0.04), toon(MOSS), { p: [0, 0, 0.05], outline: false });
+    mossTufts(g, [[-0.15, 0.1, 0.08], [0.12, -0.1, 0.08], [0.15, 0.18, 0.08], [-0.18, -0.15, 0.08], [0, 0, 0.09]], 0.09);
+    flowerHead(g, 0.18, -0.2, 0.1, '#ffffff', 0.8);
+  },
+  // hanging from the ceiling
+  hanging_vines(g, A, { drop = 0 } = {}) {
+    const leaves = [];
+    add(g, cyl(0.25, 0.25, 0.06, 16), toon('#8b5a2b'), { p: [0, -0.03, 0], outline: false });
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * TAU, len = 0.6 + drop + ((i * 5) % 3) * 0.25;
+      const x = Math.cos(a) * 0.2, z = Math.sin(a) * 0.2;
+      add(g, cyl(0.01, 0.01, len, 4), toon('#4c8a3a'), { p: [x, -len / 2, z], outline: false });
+      for (let k = 1; k < len / 0.14; k++) leaves.push(add(g, sph(0.05, 8, 6), toon(k % 2 ? '#5fae55' : '#7fbf4a'), { p: [x + (k % 2 ? 0.035 : -0.035), -k * 0.14, z], s: [1, 0.6, 0.4], r: [0, a, 0], outline: false }));
+    }
+    A.anim.push((t) => { leaves.forEach((l, i) => { l.rotation.z = Math.sin(t * 1.3 + i * 0.5) * 0.2; }); return false; });
+  },
+});
+const leafRugTex = canvasTexture(256, 256, (ctx) => {
+  ctx.translate(128, 128); ctx.rotate(-0.6);
+  ctx.fillStyle = '#5fae55';
+  ctx.beginPath(); ctx.moveTo(0, -120); ctx.bezierCurveTo(90, -60, 80, 70, 0, 120); ctx.bezierCurveTo(-80, 70, -90, -60, 0, -120); ctx.fill();
+  ctx.strokeStyle = '#3f8a3a'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(0, -110); ctx.lineTo(0, 115); ctx.stroke();
+  ctx.lineWidth = 4;
+  for (let y = -80; y < 90; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(55, y - 30); ctx.moveTo(0, y); ctx.lineTo(-55, y - 30); ctx.stroke(); }
+});
+const mossRugTex = canvasTexture(256, 256, (ctx) => {
+  ctx.fillStyle = '#5f9e3a'; ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2600; i++) { ctx.fillStyle = i % 3 ? 'rgba(140,200,90,.35)' : 'rgba(40,90,30,.3)'; ctx.beginPath(); ctx.arc((i * 37) % 256, (i * 91) % 256, 2 + (i % 3), 0, TAU); ctx.fill(); }
+  for (let i = 0; i < 18; i++) { ctx.fillStyle = ['#ffffff', '#ffd84d', '#ff9fe0'][i % 3]; ctx.beginPath(); ctx.arc((i * 71) % 256, (i * 113) % 256, 4, 0, TAU); ctx.fill(); }
+});
+
 // ---- walls for building rooms inside your house (the house papers them with its wallpaper) ----
 Object.assign(FURNITURE, {
   room_wall(g) { roomWall(g, 2); },
   room_wall_short(g) { roomWall(g, 1); },
   room_doorway(g) { roomWall(g, 2, true); },
+  // doorways with a door in them: they swing (or slide) open when someone walks up, and shut behind them
+  room_door(g, A) { return roomDoor(g, A, 'wood'); },
+  room_door_glass(g, A) { return roomDoor(g, A, 'glass'); },
+  room_door_barn(g, A) { return roomDoor(g, A, 'barn'); },
 });
+function roomDoor(g, A, style) {
+  roomWall(g, 2, true);
+  const W = 1.0, H = 2.2, T = 0.06;
+  const pivot = new THREE.Group();
+  g.add(pivot);
+  const panel = new THREE.Group();
+  pivot.add(panel);
+  if (style === 'barn') {
+    // a sliding barn door on a rail across the front of the wall
+    pivot.position.set(0, 0, ROOM_T / 2 + 0.06);
+    add(g, box(2.1, 0.06, 0.06), toon('#2b2f4a'), { p: [0, H + 0.12, ROOM_T / 2 + 0.06] });
+    add(panel, box(W + 0.1, H, T), toon('#9a5a2e'), { p: [0, H / 2, 0] });
+    for (const y of [0.3, H - 0.3]) add(panel, box(W + 0.1, 0.12, T + 0.02), toon('#6b3a1c'), { p: [0, y, 0], outline: false });
+    add(panel, box(0.1, H * 1.05, T + 0.02), toon('#6b3a1c'), { p: [0, H / 2, 0], r: [0, 0, Math.atan2(W, H - 0.6)], outline: false });
+    for (const x of [-0.35, 0.35]) add(panel, cyl(0.05, 0.05, 0.04, 10), toon('#2b2f4a'), { p: [x, H + 0.12, 0.03], r: [Math.PI / 2, 0, 0], outline: false });
+    add(panel, box(0.04, 0.3, 0.04), toon('#2b2f4a'), { p: [0.4, 1.0, 0.05], outline: false });
+  } else {
+    // a hinged door on the left of the opening, swinging away from you
+    pivot.position.set(-W / 2, 0, 0);
+    const wood = style === 'glass' ? toon('#f4f2ee') : toon('#a8723f');
+    if (style === 'glass') {
+      // a french door: a white frame round glass panes
+      const glass = new THREE.MeshStandardMaterial({ color: '#cfefff', transparent: true, opacity: 0.35, roughness: 0.05, depthWrite: false });
+      for (const [w, h, x, y] of [[W, 0.1, W / 2, 0.05], [W, 0.1, W / 2, H - 0.05], [0.1, H, 0.05, H / 2], [0.1, H, W - 0.05, H / 2], [W, 0.06, W / 2, 0.75], [W, 0.06, W / 2, 1.45], [0.06, H, W / 2, H / 2]]) add(panel, box(w, h, T), wood, { p: [x, y, 0], outline: false });
+      add(panel, box(W - 0.1, H - 0.1, 0.02), glass, { p: [W / 2, H / 2, 0], outline: false });
+    } else {
+      add(panel, box(W, H, T), wood, { p: [W / 2, H / 2, 0] });
+      for (const y of [0.55, 1.5]) add(panel, box(W * 0.7, 0.6, T + 0.02), toon('#96632f'), { p: [W / 2, y, 0], outline: false });
+    }
+    for (const z of [-1, 1]) add(panel, sph(0.045, 10, 8), shiny('#ffd84d'), { p: [W - 0.12, 1.0, z * (T / 2 + 0.03)], outline: false });
+  }
+  // A.open (0..1) is how far it should be open; the house sets it when someone's near
+  let cur = 0, side = 1;
+  A.open = 0;
+  A.side = 1;
+  A.anim.push((t, dt) => {
+    const want = A.open;
+    if (want > 0 && cur < 0.05) side = A.side; // swing away from whoever's coming through
+    cur += (want - cur) * Math.min(1, dt * 7);
+    if (style === 'barn') pivot.position.x = -cur * (W + 0.05);
+    else pivot.rotation.y = side * cur * 1.55;
+    return false;
+  });
+  return {};
+}
 const ROOM_H = 3.2, ROOM_T = 0.22; // (the house's wall height, in tiles; how thick these walls are)
 function papered(w, h) {
   return geo(`paper${w},${h}`, () => {
@@ -1332,59 +1575,150 @@ const bathMatTex = canvasTexture(128, 96, (ctx) => {
   ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; ctx.strokeRect(4, 4, 120, 88);
 });
 const gojoCache = {};
-/** The cutout's print (or its plain cardboard back): tall white spiky hair, the blindfold, the dark
- *  high-collared uniform, one hand up doing the sign. */
+/** The cutout's print (or its plain cardboard back), drawn like a proper anime standee: Satoru Gojo,
+ *  tall and lanky, with his spiky white hair, the black blindfold, a smug little smirk, the tall-collared
+ *  dark uniform, one hand up making the Domain Expansion sign and the other hanging loose. */
 function gojoTex(back) {
   if (gojoCache[back]) return gojoCache[back];
-  const tex = canvasTexture(256, 592, (c) => {
-    const card = '#b8895a';
-    const fill = (col) => (c.fillStyle = back ? card : col);
-    // the whole silhouette in cardboard, drawn fat (filled and stroked) so there's a cardboard edge
-    // all round the print; the back is just this
-    c.lineJoin = 'round';
-    c.fillStyle = card; c.strokeStyle = card; c.lineWidth = 16;
-    const blob = (path) => { c.beginPath(); path(); c.closePath(); c.fill(); c.stroke(); };
-    blob(() => { c.moveTo(60, 150); for (const [x, y] of [[52, 70], [80, 110], [88, 30], [115, 95], [128, 14], [145, 92], [170, 34], [178, 108], [206, 72], [196, 150]]) c.lineTo(x, y); });
-    blob(() => c.ellipse(128, 168, 58, 66, 0, 0, Math.PI * 2));
-    blob(() => c.rect(110, 220, 36, 30));
-    blob(() => { c.moveTo(62, 270); c.quadraticCurveTo(128, 230, 194, 270); c.lineTo(214, 560); c.lineTo(42, 560); });
-    blob(() => c.ellipse(206, 300, 20, 26, -0.3, 0, Math.PI * 2));
-    blob(() => { c.rect(200, 250, 12, 30); c.rect(214, 256, 11, 26); });
-    if (back) return;
-    // the art
-    fill('#f4f6fb');
-    c.beginPath(); c.moveTo(66, 150);
-    for (const [x, y] of [[60, 80], [86, 116], [92, 40], [117, 102], [128, 24], [143, 100], [166, 44], [172, 114], [198, 82], [190, 150]]) c.lineTo(x, y);
-    c.closePath(); c.fill();
-    c.strokeStyle = '#c8d4e8'; c.lineWidth = 3;
-    for (const [x0, x1, y1] of [[96, 92, 50], [128, 128, 34], [160, 166, 54]]) { c.beginPath(); c.moveTo(x0, 140); c.lineTo(x1, y1 + 30); c.stroke(); }
-    fill('#ffe0c8'); c.beginPath(); c.ellipse(128, 170, 52, 60, 0, 0, Math.PI * 2); c.fill();
-    // white fringe falling over the forehead and blindfold
-    fill('#f4f6fb'); c.beginPath(); c.moveTo(74, 140); c.lineTo(90, 175); c.lineTo(104, 140); c.lineTo(120, 182); c.lineTo(134, 140); c.lineTo(150, 178); c.lineTo(166, 140); c.lineTo(182, 168); c.lineTo(184, 128); c.lineTo(72, 128); c.closePath(); c.fill();
-    fill('#14131c'); c.fillRect(74, 172, 108, 30); // the blindfold
-    c.strokeStyle = '#2c2a3a'; c.lineWidth = 2; c.beginPath(); c.moveTo(76, 186); c.lineTo(180, 186); c.stroke();
-    fill('#d9715f'); c.beginPath(); c.arc(128, 218, 9, 0.1 * Math.PI, 0.9 * Math.PI); c.fill(); // a smug little smile
-    fill('#ffe0c8'); c.fillRect(114, 226, 28, 22);
-    // the uniform: dark navy, a tall collar, a zip down the front
-    fill('#1c2233'); c.beginPath(); c.moveTo(66, 272); c.quadraticCurveTo(128, 236, 190, 272); c.lineTo(208, 556); c.lineTo(48, 556); c.closePath(); c.fill();
-    fill('#262e44'); c.beginPath(); c.moveTo(94, 228); c.lineTo(162, 228); c.lineTo(170, 268); c.lineTo(86, 268); c.closePath(); c.fill();
-    c.strokeStyle = '#59627a'; c.lineWidth = 3; c.beginPath(); c.moveTo(128, 236); c.lineTo(128, 552); c.stroke();
-    fill('#3a4258'); c.fillRect(124, 236, 8, 12);
-    c.strokeStyle = '#0d1018'; c.lineWidth = 3; c.beginPath(); c.moveTo(70, 380); c.lineTo(96, 330); c.stroke(); c.beginPath(); c.moveTo(186, 380); c.lineTo(160, 330); c.stroke();
-    // the hand, two fingers crossed up
-    fill('#ffe0c8'); c.beginPath(); c.ellipse(204, 304, 17, 22, -0.3, 0, Math.PI * 2); c.fill();
-    c.fillRect(201, 254, 10, 34); c.save(); c.translate(215, 262); c.rotate(-0.25); c.fillRect(0, 0, 9, 30); c.restore();
-    fill('#1c2233'); c.beginPath(); c.moveTo(186, 330); c.lineTo(206, 318); c.lineTo(214, 340); c.lineTo(194, 360); c.closePath(); c.fill();
+  const tex = canvasTexture(512, 1184, (c) => {
+    const CARD = '#b8895a', INK = '#232a40';
+    c.lineJoin = c.lineCap = 'round';
+    const poly = (pts) => { c.beginPath(); pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.closePath(); };
+    const ell = (x, y, rx, ry, a = 0) => { c.beginPath(); c.ellipse(x, y, rx, ry, a, 0, TAU); };
+    // the shapes that make up his outline
+    const FACE = [[176, 188], [336, 188], [332, 282], [302, 334], [256, 364], [210, 334], [180, 282]];
+    const COLLAR = [[204, 316], [308, 316], [320, 450], [192, 450]];
+    const COAT = [[118, 478], [160, 440], [352, 440], [394, 478], [376, 1008], [136, 1008]];
+    const ARM_DOWN = [[356, 456], [400, 476], [414, 806], [376, 812]];
+    const ARM_UP = [[128, 456], [168, 478], [122, 616], [82, 596]];
+    const FOREARM = [[82, 596], [122, 616], [176, 414], [140, 398]];
+    const LEGS = [[[182, 1000], [250, 1000], [246, 1150], [188, 1150]], [[262, 1000], [330, 1000], [324, 1150], [266, 1150]]];
+    const TIPS = [[100, 240], [80, 168], [100, 94], [150, 36], [222, 8], [294, 4], [360, 34], [414, 96], [432, 170], [412, 242]];
+    const hairPath = () => {
+      // sharp spike tips joined by curves that dip in towards the head, so each spike sweeps up and out
+      const cx = 256, cy = 220;
+      c.beginPath();
+      c.moveTo(150, 288);
+      c.quadraticCurveTo(118, 270, ...TIPS[0]);
+      for (let k = 1; k < TIPS.length; k++) {
+        const a = TIPS[k - 1], b = TIPS[k];
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        c.quadraticCurveTo(cx + (mx - cx) * 0.42, cy + (my - cy) * 0.42, b[0], b[1]);
+      }
+      c.quadraticCurveTo(392, 270, 362, 288);
+      // back up over the forehead (so the blindfold shows)
+      c.quadraticCurveTo(352, 222, 318, 200);
+      c.lineTo(196, 200);
+      c.quadraticCurveTo(160, 222, 150, 288);
+      c.closePath();
+    };
+    const silhouette = () => {
+      hairPath(); c.fill(); c.stroke();
+      poly(FACE); c.fill(); c.stroke();
+      poly(COLLAR); c.fill(); c.stroke();
+      poly(COAT); c.fill(); c.stroke();
+      for (const s of [ARM_DOWN, ARM_UP, FOREARM, ...LEGS]) { poly(s); c.fill(); c.stroke(); }
+      ell(394, 826, 22, 28); c.fill(); c.stroke();
+      ell(160, 366, 26, 30); c.fill(); c.stroke();
+      c.beginPath(); c.roundRect(138, 266, 40, 90, 14); c.fill(); c.stroke();
+      for (const x of [178, 266]) { c.beginPath(); c.roundRect(x, 1140, 70, 40, 14); c.fill(); c.stroke(); }
+    };
+    // cardboard all round, a fat border so the print has a die-cut edge
+    c.fillStyle = CARD; c.strokeStyle = CARD; c.lineWidth = 26;
+    silhouette();
+    if (back) {
+      // the plain back: corrugated cardboard
+      c.globalCompositeOperation = 'source-atop';
+      c.strokeStyle = 'rgba(90,60,30,.18)'; c.lineWidth = 3;
+      for (let x = 0; x < 512; x += 14) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 1184); c.stroke(); }
+      c.globalCompositeOperation = 'source-over';
+      return;
+    }
+    const shape = (pts, fill, line = INK, w = 4) => { poly(pts); c.fillStyle = fill; c.fill(); c.strokeStyle = line; c.lineWidth = w; c.stroke(); };
+    const strokes = (lines, col, w) => { c.strokeStyle = col; c.lineWidth = w; for (const l of lines) { c.beginPath(); l.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke(); } };
+    const NAVY = '#1c2236', NAVY_HI = '#2b3550', NAVY_DK = '#11141f', SKIN = '#ffe6d4', SKIN_SH = '#f2c2a8';
+    // legs and shoes
+    for (const L of LEGS) shape(L, '#151a29');
+    for (const x of [178, 266]) { c.beginPath(); c.roundRect(x, 1140, 70, 40, 14); c.fillStyle = '#0c0e15'; c.fill(); c.strokeStyle = INK; c.lineWidth = 4; c.stroke(); }
+    // the long dark coat, with folds and a seam down the front
+    shape(COAT, NAVY);
+    strokes([[[256, 450], [256, 1004]]], NAVY_DK, 4);
+    strokes([[[170, 520], [196, 760]], [[340, 520], [318, 760]], [[214, 800], [204, 1000]], [[300, 800], [310, 1000]]], NAVY_HI, 5);
+    strokes([[[160, 700], [220, 700]], [[292, 700], [352, 700]]], NAVY_DK, 3); // pockets
+    // the arm hanging at his side, and the hand
+    shape(ARM_DOWN, NAVY);
+    strokes([[[388, 560], [392, 700]]], NAVY_HI, 4);
+    ell(394, 826, 22, 28); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 4; c.stroke();
+    strokes([[[384, 838], [386, 852]], [[396, 840], [397, 855]], [[406, 836], [408, 850]]], SKIN_SH, 3);
+    // the tall collar right up to the chin, with the gold spiral button
+    shape(COLLAR, NAVY_HI);
+    strokes([[[256, 322], [256, 448]]], NAVY_DK, 4);
+    c.beginPath(); c.arc(256, 436, 13, 0, TAU); c.fillStyle = '#d9b042'; c.fill(); c.strokeStyle = '#7a5a12'; c.lineWidth = 3; c.stroke();
+    c.beginPath(); for (let t = 0; t < 3 * TAU; t += 0.2) { const r = 10 * (1 - t / (3 * TAU)); c.lineTo(256 + Math.cos(t) * r, 436 + Math.sin(t) * r); } c.stroke();
+    // the face: pale, a sharp chin, a little shadow under the hair
+    shape(FACE, SKIN);
+    c.save(); poly(FACE); c.clip();
+    c.fillStyle = SKIN_SH; c.fillRect(170, 182, 180, 30);
+    c.beginPath(); c.moveTo(302, 334); c.lineTo(336, 280); c.lineTo(336, 360); c.fill();
+    c.restore();
+    for (const x of [172, 340]) { ell(x, 268, 10, 20); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 3; c.stroke(); } // ears
+    // the blindfold, wrapped round under the hair
+    shape([[166, 214], [346, 208], [348, 262], [168, 270]], '#141219', INK, 4);
+    strokes([[[178, 232], [334, 226]], [[182, 252], [338, 246]]], '#2c2a38', 3);
+    // nose and that smug smirk
+    strokes([[[258, 290], [263, 306], [255, 309]]], '#c98f78', 3);
+    strokes([[[238, 330], [256, 334], [278, 324]]], '#8a3c38', 4);
+    strokes([[[278, 324], [283, 319]]], '#8a3c38', 3);
+    // the hair: a big shock of white spikes, blue-grey shading, and locks falling over the blindfold
+    hairPath(); c.fillStyle = '#f6f8fc'; c.fill();
+    // blue-grey shading in the hollows of the spikes, then the outline over it
+    c.save(); hairPath(); c.clip();
+    c.fillStyle = '#d3dcec';
+    for (const [x, y, rx, ry, a] of [[150, 200, 40, 70, -0.3], [222, 150, 26, 80, 0.1], [282, 140, 22, 90, -0.05], [348, 190, 36, 70, 0.3], [256, 214, 110, 22, 0]]) { ell(x, y, rx, ry, a); c.fill(); }
+    strokes([[[132, 230], [150, 150]], [[196, 190], [210, 90]], [[246, 192], [258, 70]], [[300, 190], [300, 90]], [[356, 220], [348, 140]]], '#b8c4da', 5);
+    c.restore();
+    hairPath(); c.strokeStyle = INK; c.lineWidth = 4.5; c.stroke();
+    // a few soft locks falling over the top of the blindfold
+    for (const [x0, x1, tx, ty, bend] of [[196, 252, 214, 252, -14], [240, 300, 282, 262, 18], [292, 334, 330, 236, 12]]) {
+      c.beginPath(); c.moveTo(x0, 196);
+      c.quadraticCurveTo(x0 + bend * 0.5, 230, tx, ty);
+      c.quadraticCurveTo((x0 + x1) / 2 + bend, 222, x1, 196);
+      c.closePath();
+      c.fillStyle = '#f6f8fc'; c.fill(); c.strokeStyle = INK; c.lineWidth = 3.5; c.stroke();
+    }
+    // the raised arm and the hand sign: index and middle finger crossed, pointing up
+    shape(ARM_UP, NAVY);
+    shape(FOREARM, NAVY);
+    strokes([[[118, 600], [150, 470]]], NAVY_HI, 4);
+    ell(160, 366, 26, 30); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 4; c.stroke();
+    c.save(); c.translate(150, 340); c.rotate(-0.12);
+    c.beginPath(); c.roundRect(-8, -78, 18, 80, 9); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 3.5; c.stroke();
+    c.restore();
+    c.save(); c.translate(168, 340); c.rotate(-0.32);
+    c.beginPath(); c.roundRect(-9, -84, 18, 86, 9); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 3.5; c.stroke();
+    c.restore();
+    strokes([[[148, 378], [174, 374]], [[150, 390], [172, 388]]], SKIN_SH, 3); // curled fingers
   });
   gojoCache[back] = tex;
   return tex;
 }
 
-/** Build a piece of furniture. Returns { group, use, anim }. */
-export function buildFurniture(id) {
+// hanging things that make their own strings longer when let down (the rest get a cord to the ceiling)
+const OWN_DROP = new Set(['hanging_plant', 'hanging_plant_short', 'hanging_plant_long', 'hanging_vines']);
+
+/** Build a piece of furniture. Returns { group, use, anim }. `drop`: how far below the ceiling a
+ *  hanging thing has been let down (it stays tied to the ceiling). */
+export function buildFurniture(id, { drop = 0 } = {}) {
   const group = new THREE.Group();
   const A = { anim: [] };
-  const res = FURNITURE[id]?.(group, A) ?? {};
+  let target = group;
+  if (drop > 0 && !OWN_DROP.has(id)) {
+    target = new THREE.Group();
+    target.position.y = -drop;
+    group.add(target);
+    add(group, cyl(0.012, 0.012, drop, 5), toon('#3a3f5a'), { p: [0, -drop / 2, 0], outline: false });
+  }
+  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : undefined) ?? {};
   return { group, use: res.use ?? null, anim: A.anim, A };
 }
 
@@ -1520,6 +1854,46 @@ const FLOOR_DRAW = {
     ctx.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 2500; i++) { ctx.fillStyle = i % 3 ? 'rgba(160,120,60,.14)' : 'rgba(255,255,255,.3)'; ctx.fillRect((i * 37) % 256, (i * 91) % 256, 2, 2); }
     ctx.fillStyle = '#ffb3c7'; ctx.beginPath(); ctx.arc(180, 70, 6, 0, TAU); ctx.fill();
+  },
+  // ---- nature ----
+  floor_moss(ctx) {
+    const rnd = prng(73);
+    ctx.fillStyle = '#5f9e3a'; ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 3000; i++) { ctx.fillStyle = i % 3 ? 'rgba(150,210,90,.3)' : 'rgba(40,90,30,.28)'; ctx.beginPath(); ctx.arc(rnd() * 256, rnd() * 256, 1.5 + (i % 3), 0, TAU); ctx.fill(); }
+  },
+  floor_forest(ctx) {
+    const rnd = prng(87);
+    ctx.fillStyle = '#7a5a34'; ctx.fillRect(0, 0, 256, 256);
+    const cols = ['#c9752e', '#e0a23a', '#9a5a2a', '#6f8a3a', '#b8452e'];
+    for (let i = 0; i < 140; i++) {
+      ctx.save(); ctx.translate(rnd() * 256, rnd() * 256); ctx.rotate(i * 1.7);
+      ctx.fillStyle = cols[i % cols.length];
+      ctx.beginPath(); ctx.ellipse(0, 0, 10, 5, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(9, 0); ctx.stroke();
+      ctx.restore();
+    }
+  },
+  floor_pebbles(ctx) {
+    const rnd = prng(94);
+    ctx.fillStyle = '#8a8478'; ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 220; i++) { ctx.fillStyle = ['#c9c2b4', '#a8a090', '#d8d2c6', '#9aa3b5'][i % 4]; ctx.beginPath(); ctx.ellipse(rnd() * 256, rnd() * 256, 7 + (i % 4) * 2, 5 + (i % 3) * 2, i, 0, TAU); ctx.fill(); }
+  },
+  floor_bamboo(ctx) {
+    for (let x = 0; x < 256; x += 32) {
+      ctx.fillStyle = (x / 32) % 2 ? '#d8c27a' : '#cdb46a'; ctx.fillRect(x, 0, 30, 256);
+      ctx.fillStyle = 'rgba(90,70,20,.35)'; ctx.fillRect(x + 30, 0, 2, 256);
+      for (let y = ((x / 32) * 37) % 64; y < 256; y += 64) ctx.fillRect(x + 2, y, 26, 3);
+    }
+  },
+  floor_clover(ctx) {
+    const rnd = prng(87);
+    ctx.fillStyle = '#6fbf5e'; ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 90; i++) {
+      const x = rnd() * 256, y = rnd() * 256;
+      ctx.fillStyle = i % 2 ? '#4f9e3e' : '#5fae4a';
+      for (let k = 0; k < 3; k++) { const a = (k / 3) * TAU + i; ctx.beginPath(); ctx.arc(x + Math.cos(a) * 4, y + Math.sin(a) * 4, 4, 0, TAU); ctx.fill(); }
+    }
+    for (let i = 0; i < 10; i++) { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rnd() * 256, rnd() * 256, 3.5, 0, TAU); ctx.fill(); }
   },
   // ---- bathroom tiles ----
   floor_tile_white(ctx) { squareTiles(ctx, 4, ['#f7f8fa', '#eef1f5'], '#c9cfd8', 3); },
@@ -1658,6 +2032,50 @@ const WALL_DRAW = {
       ctx.restore();
     }
   },
+  wall_forest(ctx) {
+    const g = ctx.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#d8f0d0'); g.addColorStop(1, '#a8d898');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+    for (const [x, h, c] of [[20, 170, '#5f9e5a'], [70, 210, '#3f8a4a'], [125, 150, '#6fae5a'], [175, 200, '#4f9a4a'], [225, 180, '#3f7a42']]) {
+      ctx.fillStyle = '#7a5a34'; ctx.fillRect(x - 4, 256 - 40, 8, 40);
+      ctx.fillStyle = c;
+      for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(x, 256 - h + k * 40); ctx.lineTo(x + 30 - k * 3, 256 - 40 - (2 - k) * 30); ctx.lineTo(x - 30 + k * 3, 256 - 40 - (2 - k) * 30); ctx.fill(); }
+    }
+  },
+  wall_bamboo(ctx) {
+    ctx.fillStyle = '#e8f0c8'; ctx.fillRect(0, 0, 256, 256);
+    for (let x = 10; x < 256; x += 42) {
+      ctx.fillStyle = '#8fbf4a'; ctx.fillRect(x, 0, 12, 256);
+      ctx.fillStyle = '#6f9f3a'; for (let y = (x * 3) % 50; y < 256; y += 50) ctx.fillRect(x - 1, y, 14, 3);
+      ctx.fillStyle = '#5fae55';
+      for (let y = (x * 7) % 80; y < 256; y += 80) { ctx.beginPath(); ctx.ellipse(x + 22, y, 14, 4, -0.5, 0, TAU); ctx.fill(); }
+    }
+  },
+  wall_ivy(ctx) {
+    ctx.fillStyle = '#f1ece0'; ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = '#5a7a3a'; ctx.lineWidth = 2;
+    for (let x = 20; x < 256; x += 64) { ctx.beginPath(); for (let y = 0; y <= 256; y += 8) ctx.lineTo(x + Math.sin(y / 20) * 12, y); ctx.stroke(); }
+    for (let i = 0; i < 70; i++) {
+      const y = (i * 37) % 256, x = 20 + (i % 4) * 64 + Math.sin(y / 20) * 12;
+      ctx.fillStyle = i % 2 ? '#4f9a4a' : '#6fae5a';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (i % 2 ? 10 : -10), y - 6); ctx.lineTo(x + (i % 2 ? 6 : -6), y + 6); ctx.fill();
+    }
+  },
+  wall_birch(ctx) {
+    ctx.fillStyle = '#e8eedf'; ctx.fillRect(0, 0, 256, 256);
+    for (let x = 8; x < 256; x += 50) {
+      ctx.fillStyle = '#f8f8f2'; ctx.fillRect(x, 0, 22, 256);
+      ctx.fillStyle = '#2b2b30'; for (let y = (x * 5) % 40; y < 256; y += 28) ctx.fillRect(x + (y % 3) * 3, y, 8 + (y % 5), 3);
+      ctx.fillStyle = 'rgba(120,160,90,.4)'; ctx.fillRect(x + 22, 0, 3, 256);
+    }
+  },
+  wall_greenhouse(ctx) {
+    ctx.fillStyle = '#cfefe0'; ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = 'rgba(255,255,255,.4)'; for (let i = 0; i < 4; i++) ctx.fillRect(i * 64 + 6, 6, 18, 116);
+    ctx.fillStyle = '#5fae55'; for (let i = 0; i < 26; i++) { ctx.beginPath(); ctx.ellipse((i * 53) % 256, 200 + (i % 5) * 10, 18, 7, i, 0, TAU); ctx.fill(); }
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6;
+    for (let x = 0; x <= 256; x += 64) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke(); }
+    for (let y = 0; y <= 256; y += 128) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke(); }
+  },
   wall_tile_subway(ctx) { subwayTiles(ctx, '#fbfbfd', '#c9cfd8'); },
   wall_tile_mint(ctx) { subwayTiles(ctx, '#c9f0e2', '#ffffff'); },
   wall_tile_blue(ctx) { squareTiles(ctx, 8, ['#8fc4ee', '#a6d1f2'], '#ffffff', 2); },
@@ -1708,6 +2126,18 @@ const CEIL_DRAW = {
     ctx.fillRect(0, 0, 256, 256);
     for (let y = 0; y < 256; y += 64) for (let x = 0; x < 256; x += 64) { ctx.fillStyle = '#d4ccb8'; ctx.fillRect(x + 8, y + 8, 48, 48); ctx.fillStyle = '#c8bfa8'; ctx.fillRect(x + 14, y + 14, 36, 36); }
   },
+  ceil_canopy(ctx) {
+    const rnd = prng(80);
+    ctx.fillStyle = '#9fd8ff'; ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 120; i++) { ctx.fillStyle = ['#3f8a4a', '#5fae55', '#7fbf4a', '#4f9a4a'][i % 4]; ctx.beginPath(); ctx.ellipse(rnd() * 256, rnd() * 256, 16, 8, i, 0, TAU); ctx.fill(); }
+  },
+  ceil_greenhouse(ctx) {
+    const g = ctx.createLinearGradient(0, 0, 256, 256); g.addColorStop(0, '#bfe8ff'); g.addColorStop(1, '#e4f6ff');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.arc(80, 70, 22, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 7;
+    for (let x = 0; x <= 256; x += 64) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, x); ctx.lineTo(256, x); ctx.stroke(); }
+  },
   ceil_tile(ctx) { squareTiles(ctx, 4, ['#fbfbfd', '#f1f3f6'], '#d4d9e0', 2.5); },
   ceil_glow(ctx) {
     ctx.fillStyle = '#23285a';
@@ -1724,6 +2154,9 @@ export const floorTexture = (id) => surface(id, FLOOR_DRAW[id] ?? FLOOR_DRAW.flo
 export const wallTexture = (id) => surface(id, WALL_DRAW[id] ?? WALL_DRAW.wall_cream);
 
 /** n x n tiles with grout lines; `mosaic`: colours scattered, `checker`: alternating. */
+/** A little seeded random number generator (0..1), so patterns look scattered but never change. */
+function prng(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
 function squareTiles(ctx, n, cols, grout, gw, mosaic = false, checker = false) {
   const s = 256 / n;
   ctx.fillStyle = grout; ctx.fillRect(0, 0, 256, 256);

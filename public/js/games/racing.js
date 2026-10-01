@@ -9,7 +9,7 @@ import { S, esc, nameOf, colorOf } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { toon, basic, shiny, canvasTexture, outlineMaterial, additive, glowTexture, TAU } from '../three/materials.js';
 import { Sparks, FloatText, crowd } from '../three/fx.js';
-import { sfx } from '../sfx.js';
+import { sfx, engine } from '../sfx.js';
 import { listen, confetti } from './util.js';
 
 const TW = 16;           // track width
@@ -629,7 +629,7 @@ function buildKart(color, { type = 'kart', accent = '#23263f' } = {}) {
     m.position.copy(A).add(B).multiplyScalar(0.5);
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
   };
-  let seatY = 0.45, seatZ = -0.2, pose = 'sit', exhaust = [[-0.45, 0.6, -1.6], [0.45, 0.6, -1.6]], bubbleY = 0.9;
+  let seatY = 0.45, seatZ = -0.2, pose = 'drive', exhaust = [[-0.45, 0.6, -1.6], [0.45, 0.6, -1.6]], bubbleY = 0.9;
   if (type === 'moto') {
     // a sport bike: two big wheels, a fat tank, a fairing and clip-on bars; you lean right over it
     wheel(0, 0.42, 1.0, 0.42, 0.2);
@@ -647,7 +647,8 @@ function buildKart(color, { type = 'kart', accent = '#23263f' } = {}) {
     tube([0.18, 0.45, 0.1], [0.24, 0.62, -0.95], 0.06, chrome); // exhaust
     add(new THREE.BoxGeometry(0.06, 0.04, 0.9), trim, [0.27, 0.78, 0.25], null, false); // a stripe
     add(new THREE.BoxGeometry(0.06, 0.04, 0.9), trim, [-0.27, 0.78, 0.25], null, false);
-    seatY = 0.98; seatZ = -0.3; pose = 'drive'; exhaust = [[0.24, 0.62, -1.05]]; bubbleY = 1.1;
+    seatY = 0.98; seatZ = -0.3; pose = 'moto'; exhaust = [[0.24, 0.62, -1.05]]; bubbleY = 1.1;
+    add(new THREE.SphereGeometry(0.06, 10, 8), basic('#ff3b3b'), [0, 1.0, -1.12], null, false); // tail light
   } else if (type === 'buggy') {
     // a dune buggy: chunky off-road tyres, an open tub and a roll cage
     for (const [x, z] of [[-0.95, 1.0], [0.95, 1.0], [-1.0, -0.95], [1.0, -0.95]]) wheel(x, 0.52, z, 0.52, 0.48, accent);
@@ -663,6 +664,7 @@ function buildKart(color, { type = 'kart', accent = '#23263f' } = {}) {
     tube([-0.5, 1.75, -0.55], [0.5, 1.75, -0.55], 0.05, trim);
     for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.1, 10, 8), basic('#fff6c9'), [s * 0.3, 1.78, 0.05], null, false); // roof lights
     add(new THREE.BoxGeometry(0.5, 0.5, 0.4), dark, [0, 0.95, -1.15]); // the engine out back
+    add(new THREE.CylinderGeometry(0.17, 0.17, 0.05, 16), dark, [0, 1.25, 0.35], [1.0, 0, 0], false); // wheel
     seatY = 0.82; seatZ = -0.25; exhaust = [[-0.2, 0.9, -1.4], [0.2, 0.9, -1.4]]; bubbleY = 1.1;
   } else if (type === 'f1') {
     // a single-seater: long and low, a needle nose, front and rear wings, big open wheels
@@ -677,6 +679,8 @@ function buildKart(color, { type = 'kart', accent = '#23263f' } = {}) {
     }
     add(new THREE.BoxGeometry(0.3, 0.4, 0.7), dark, [0, 0.72, -0.85]); // air box
     add(new THREE.TorusGeometry(0.22, 0.03, 6, 16, Math.PI), trim, [0, 0.72, 0.15], [0, 0, 0], false); // halo
+    add(new THREE.CylinderGeometry(0.13, 0.13, 0.04, 16), dark, [0, 0.82, 0.45], [1.2, 0, 0], false); // wheel
+    add(new THREE.SphereGeometry(0.05, 8, 6), basic('#ff3b3b'), [0, 1.0, -1.85], null, false); // rain light
     seatY = 0.36; seatZ = -0.05; exhaust = [[0, 0.5, -1.55]]; bubbleY = 0.8;
   } else if (type === 'truck') {
     // a monster truck: huge tyres and a pickup body up on big springs
@@ -688,6 +692,7 @@ function buildKart(color, { type = 'kart', accent = '#23263f' } = {}) {
     add(new THREE.BoxGeometry(1.7, 0.16, 0.3), trim, [0, 1.3, 1.45]); // bumper
     add(new THREE.BoxGeometry(1.4, 0.1, 0.5), trim, [0, 2.25, -0.1]); // roof lights bar
     for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.1, 10, 8), basic('#fff6c9'), [s * 0.45, 2.33, -0.05], null, false);
+    add(new THREE.CylinderGeometry(0.18, 0.18, 0.05, 16), dark, [0, 2.15, 0.25], [1.0, 0, 0], false); // wheel
     seatY = 1.75; seatZ = -0.35; exhaust = [[-0.45, 1.5, -1.45], [0.45, 1.5, -1.45]]; bubbleY = 1.6;
   } else {
     // the classic go-kart
@@ -699,6 +704,16 @@ function buildKart(color, { type = 'kart', accent = '#23263f' } = {}) {
     for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.08, 0.4, 0.3), dark, [s * 0.7, 1.05, -1.35], null, false);
     add(new THREE.CylinderGeometry(0.18, 0.18, 0.06, 16), dark, [0, 1.0, 0.75], [1.1, 0, 0], false);
     for (const [x, z] of [[-0.85, 0.9], [0.85, 0.9], [-0.85, -0.9], [0.85, -0.9]]) wheel(x, 0.36, z, 0.36, 0.34);
+  }
+  // lights front and back, and go-faster stripes down the sides in the trim colour
+  if (type !== 'moto') {
+    const front = { kart: [1.0, 0.55, 1.85], buggy: [0.6, 0.85, 1.6], f1: [0.25, 0.4, 2.2], truck: [0.6, 1.5, 1.38] }[type], back = { kart: [0.6, 0.6, -1.32], buggy: [0.5, 0.8, -1.3], f1: [0.3, 0.45, -1.4], truck: [0.6, 1.5, -1.36] }[type];
+    for (const s of [-1, 1]) {
+      add(new THREE.SphereGeometry(0.08, 10, 8), basic('#fff6c9'), [s * front[0] * 0.55, front[1], front[2]], null, false);
+      add(new THREE.BoxGeometry(0.16, 0.07, 0.04), basic('#ff3b3b'), [s * back[0] * 0.7, back[1], back[2]], null, false);
+    }
+    const side = { kart: [0.76, 0.48, 2.2], buggy: [0.66, 0.78, 2.2], f1: [0.78, 0.4, 1.0], truck: [0.81, 1.45, 2.4] }[type];
+    for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.02, 0.07, side[2]), trim, [s * side[0], side[1], type === 'f1' ? -0.3 : 0], null, false);
   }
   const flames = exhaust.map(([x, y, z]) => {
     const f = new THREE.Sprite(additive(glowTexture, 0xff8a2a, 0));
@@ -794,7 +809,9 @@ export function racing(stage) {
     if (v) {
       // they've been to the garage: swap the vehicle, keep the driver
       stage.scene.remove(v.kart.g);
+      v.kart.engine?.stop();
       v.kart = buildKart(car.color, car);
+      v.kart.engine = engine(car.type);
       v.vkey = vkey;
       stage.scene.add(v.kart.g);
       v.p.char.pose = v.kart.pose;
@@ -802,6 +819,7 @@ export function racing(stage) {
     }
     const kart = buildKart(car.color, car);
     stage.scene.add(kart.g);
+    kart.engine = engine(car.type);
     const p = stage.person(k);
     p.char.pose = kart.pose;
     p.char.petOnLap = true; // your pet rides in your lap
@@ -818,6 +836,7 @@ export function racing(stage) {
     for (const [k, v] of karts) {
       if (list.includes(k)) continue;
       stage.scene.remove(v.kart.g);
+      v.kart.engine?.stop();
       stage.removePerson(k);
       karts.delete(k);
     }
@@ -1224,6 +1243,15 @@ export function racing(stage) {
       v.p.y = v.kart.seatY * kg.scale.x + kg.position.y;
       v.p.z = v.z + Math.cos(v.h) * v.kart.seatZ * kg.scale.x;
       v.p.heading = kg.rotation.y;
+      // lean into the corners (motorbikes tip right over), turning the wheel / bars
+      const turn = Math.atan2(Math.sin(v.h - (v.lastH ?? v.h)), Math.cos(v.h - (v.lastH ?? v.h))) / Math.max(dt, 0.001);
+      v.lastH = v.h;
+      v.lean = (v.lean ?? 0) + (Math.max(-1, Math.min(1, -turn * 0.35)) - (v.lean ?? 0)) * Math.min(1, dt * 6);
+      v.p.char.lean = v.lean * (v.kart.pose === 'moto' ? 0.5 : 0.35);
+      if (v.kart.pose === 'moto') kg.rotation.z = v.lean * 0.45;
+      // the engine: revs with speed (and a boost), loudest for whoever the camera's on
+      const near = Math.hypot(v.x - cam.pos.x, v.z - cam.pos.z);
+      v.kart.engine?.set(Math.abs(v.v) / MAX + (boosting ? 0.2 : 0), (k === S.me ? 1 : 0.7) * Math.max(0, 1 - near / 45));
       v.p.char.root.scale.setScalar(zapped ? 0.6 : 1);
       v.p.sub.textContent = r.order.includes(k) ? ['🥇', '🥈', '🥉'][r.order.indexOf(k)] ?? '🏁' : '';
       if (v.flags.includes('D') && Math.random() < 0.6) sparks.puff(v.x - Math.sin(v.h) * 1.4, 0.2, v.z - Math.cos(v.h) * 1.4, k === S.me && me.driftT > 1.4 ? '#ff9f43' : k === S.me && me.driftT > 0.7 ? '#39c6ff' : '#ffffff', 0.5, 0.3);
@@ -1315,7 +1343,7 @@ export function racing(stage) {
   renderControls();
   return () => {
     off();
-    for (const [k, v] of karts) { stage.scene?.remove(v.kart.g); stage.removePerson(k); }
+    for (const [k, v] of karts) { stage.scene?.remove(v.kart.g); v.kart.engine?.stop(); stage.removePerson(k); }
     for (const h of hazards.values()) stage.scene?.remove(h.mesh);
     stage.scene?.remove(env.group);
   };

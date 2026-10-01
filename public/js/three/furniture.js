@@ -1213,10 +1213,12 @@ export const FURNITURE = {
   cutout_gojo(g, A) {
     // a life-size cardboard cutout of everyone's favourite blindfolded sorcerer, on a cardboard stand
     // (the print is unlit, like a glossy poster; the cardboard back takes the room's light)
-    const front = new THREE.MeshBasicMaterial({ map: gojoTex(false), transparent: true, alphaTest: 0.5, color: '#f2f2f2' });
+    const front = new THREE.MeshBasicMaterial({ map: gojoTex(false), transparent: true, alphaTest: 0.5, color: '#f4f4f4' });
     const back = new THREE.MeshToonMaterial({ map: gojoTex(true), transparent: true, alphaTest: 0.5 });
-    add(g, plane(0.95, 2.2), front, { p: [0, 1.1, 0.01], outline: false });
-    add(g, plane(0.95, 2.2), back, { p: [0, 1.1, -0.01], r: [0, Math.PI, 0], outline: false });
+    const H = 2.35, W = H * (GOJO_W / GOJO_H);
+    add(g, plane(W, H), front, { p: [0, H / 2 + 0.02, 0.012], outline: false });
+    add(g, plane(W, H), back, { p: [0, H / 2 + 0.02, -0.012], r: [0, Math.PI, 0], outline: false });
+
     add(g, box(0.5, 0.03, 0.3), toon('#b8895a'), { p: [0, 0.015, -0.1], outline: false });
     add(g, box(0.04, 0.8, 0.02), toon('#b8895a'), { p: [0, 0.4, -0.18], r: [-0.4, 0, 0], outline: false });
     return { use: () => floatEmoji(g, A, '🤞', 2.0, 1) };
@@ -1561,11 +1563,50 @@ function drawers(g, A, { w, h, cols, rows, wood, front, knob }) {
   return { use: () => { d0.position.z = 0.105; d0 = which(); open = 1.6; floatEmoji(g, A, ['👕', '🧦', '👖'][Math.floor(Math.random() * 3)], h + 0.2, 1); } };
 }
 function hangingPlant(g, len) {
-  for (const a of [0, 2.1, 4.2]) add(g, cyl(0.006, 0.006, len, 4), toon('#e8dcc8'), { p: [Math.cos(a) * 0.08, -len / 2, Math.sin(a) * 0.08], r: [Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25], outline: false });
-  add(g, sph(0.2, 16, 10), toon('#c96b2c'), { p: [0, -len - 0.08, 0], s: [1, 0.7, 1] });
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * TAU;
-    add(g, sph(0.1, 10, 8), toon(i % 2 ? '#3fa34d' : '#56c262'), { p: [Math.cos(a) * 0.2, -len - 0.02 - (i % 3) * 0.15, Math.sin(a) * 0.2], s: [0.7, 1.6, 0.5], outline: false });
+  const cord = toon('#efe3cc'), knot = toon('#e2d2b4');
+  // macramé: three cords from a ring at the ceiling, knotted part way down, gathering under the pot
+  add(g, new THREE.TorusGeometry(0.05, 0.012, 6, 16), toon('#c9a227'), { p: [0, -0.03, 0], r: [Math.PI / 2, 0, 0], outline: false });
+  const potY = -len - 0.12;
+  for (const a of [0, 2.1, 4.2]) {
+    const top = new THREE.Vector3(Math.cos(a) * 0.03, -0.06, Math.sin(a) * 0.03), rim = new THREE.Vector3(Math.cos(a) * 0.19, potY + 0.12, Math.sin(a) * 0.19);
+    const mid = top.clone().lerp(rim, 0.55);
+    for (const [p0, p1] of [[top, mid], [mid, rim]]) {
+      const d = p1.clone().sub(p0), l = d.length();
+      const m = add(g, cyl(0.007, 0.007, l, 4), cord, { p: p0.clone().lerp(p1, 0.5).toArray(), outline: false });
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    }
+    add(g, sph(0.018, 8, 6), knot, { p: mid.toArray(), s: [1, 1.4, 1], outline: false });
+    // the cord carries on down under the pot to a tassel
+    const under = new THREE.Vector3(0, potY - 0.2, 0), d2 = under.clone().sub(rim);
+    const m2 = add(g, cyl(0.007, 0.007, d2.length(), 4), cord, { p: rim.clone().lerp(under, 0.5).toArray(), outline: false });
+    m2.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d2.normalize());
+  }
+  add(g, sph(0.03, 8, 6), knot, { p: [0, potY - 0.2, 0], outline: false });
+  for (let k = 0; k < 6; k++) add(g, cyl(0.005, 0.005, 0.14, 3), cord, { p: [Math.cos(k) * 0.012, potY - 0.29, Math.sin(k) * 0.012], outline: false });
+  // the pot: a rounded glazed bowl with a rim, and dark soil
+  const pot = new THREE.LatheGeometry([[0, -0.13], [0.11, -0.12], [0.17, -0.06], [0.19, 0.04], [0.2, 0.1], [0.215, 0.11], [0.215, 0.13], [0.19, 0.13]].map(([x, y]) => new THREE.Vector2(x, y)), 24);
+  add(g, pot, toon('#e9dcc6'), { p: [0, potY, 0] });
+  add(g, new THREE.TorusGeometry(0.2, 0.012, 6, 24), toon('#c96b2c'), { p: [0, potY + 0.06, 0], r: [Math.PI / 2, 0, 0], outline: false });
+  add(g, cyl(0.19, 0.19, 0.02, 20), toon('#4a3020'), { p: [0, potY + 0.115, 0], outline: false });
+  // a bushy crown of heart-shaped leaves, then vines trailing down over the rim
+  const greens = ['#2f7d3a', '#3f9a47', '#56b25a', '#6cc46a'];
+  const leaf = sph(0.07, 10, 8);
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * TAU + (i % 2) * 0.2, r = 0.06 + (i % 3) * 0.06;
+    const lf = add(g, leaf, toon(greens[i % 4]), { p: [Math.cos(a) * r, potY + 0.17 + (i % 4) * 0.035, Math.sin(a) * r], s: [1, 0.35, 1.4], outline: false });
+    lf.rotation.set(-0.5, -a + Math.PI / 2, 0, 'YXZ');
+  }
+  for (let v = 0; v < 7; v++) {
+    const a = (v / 7) * TAU + 0.3, L = 0.35 + ((v * 3) % 5) * 0.12;
+    const start = new THREE.Vector3(Math.cos(a) * 0.2, potY + 0.11, Math.sin(a) * 0.2);
+    const steps = 6;
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps;
+      const p = start.clone().add(new THREE.Vector3(Math.cos(a) * 0.05 * Math.sin(t * 3), -L * t, Math.sin(a) * 0.05 * Math.sin(t * 3)));
+      if (k < steps) add(g, cyl(0.006, 0.006, L / steps + 0.01, 4), toon('#3a7a32'), { p: [p.x, p.y - L / steps / 2, p.z], outline: false });
+      const lf = add(g, leaf, toon(greens[(v + k) % 4]), { p: [p.x + Math.cos(a + k) * 0.03, p.y, p.z + Math.sin(a + k) * 0.03], s: [0.75 - t * 0.25, 0.3, 1.05 - t * 0.35], outline: false });
+      lf.rotation.set(-1.1, -a + Math.PI / 2 + (k % 2 ? 0.5 : -0.5), 0, 'YXZ');
+    }
   }
 }
 const bathMatTex = canvasTexture(128, 96, (ctx) => {
@@ -1575,130 +1616,41 @@ const bathMatTex = canvasTexture(128, 96, (ctx) => {
   ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; ctx.strokeRect(4, 4, 120, 88);
 });
 const gojoCache = {};
-/** The cutout's print (or its plain cardboard back), drawn like a proper anime standee: Satoru Gojo,
- *  tall and lanky, with his spiky white hair, the black blindfold, a smug little smirk, the tall-collared
- *  dark uniform, one hand up making the Domain Expansion sign and the other hanging loose. */
+const GOJO_W = 512, GOJO_H = 1600;
+setTimeout(() => { gojoTex(false); gojoTex(true); }, 0);
+/** The cutout's print (the official art, with a die-cut cardboard border round it), or its plain
+ *  corrugated cardboard back. Drawn as soon as the picture loads. */
 function gojoTex(back) {
   if (gojoCache[back]) return gojoCache[back];
-  const tex = canvasTexture(512, 1184, (c) => {
-    const CARD = '#b8895a', INK = '#232a40';
-    c.lineJoin = c.lineCap = 'round';
-    const poly = (pts) => { c.beginPath(); pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.closePath(); };
-    const ell = (x, y, rx, ry, a = 0) => { c.beginPath(); c.ellipse(x, y, rx, ry, a, 0, TAU); };
-    // the shapes that make up his outline
-    const FACE = [[176, 188], [336, 188], [332, 282], [302, 334], [256, 364], [210, 334], [180, 282]];
-    const COLLAR = [[204, 316], [308, 316], [320, 450], [192, 450]];
-    const COAT = [[118, 478], [160, 440], [352, 440], [394, 478], [376, 1008], [136, 1008]];
-    const ARM_DOWN = [[356, 456], [400, 476], [414, 806], [376, 812]];
-    const ARM_UP = [[128, 456], [168, 478], [122, 616], [82, 596]];
-    const FOREARM = [[82, 596], [122, 616], [176, 414], [140, 398]];
-    const LEGS = [[[182, 1000], [250, 1000], [246, 1150], [188, 1150]], [[262, 1000], [330, 1000], [324, 1150], [266, 1150]]];
-    const TIPS = [[100, 240], [80, 168], [100, 94], [150, 36], [222, 8], [294, 4], [360, 34], [414, 96], [432, 170], [412, 242]];
-    const hairPath = () => {
-      // sharp spike tips joined by curves that dip in towards the head, so each spike sweeps up and out
-      const cx = 256, cy = 220;
-      c.beginPath();
-      c.moveTo(150, 288);
-      c.quadraticCurveTo(118, 270, ...TIPS[0]);
-      for (let k = 1; k < TIPS.length; k++) {
-        const a = TIPS[k - 1], b = TIPS[k];
-        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
-        c.quadraticCurveTo(cx + (mx - cx) * 0.42, cy + (my - cy) * 0.42, b[0], b[1]);
-      }
-      c.quadraticCurveTo(392, 270, 362, 288);
-      // back up over the forehead (so the blindfold shows)
-      c.quadraticCurveTo(352, 222, 318, 200);
-      c.lineTo(196, 200);
-      c.quadraticCurveTo(160, 222, 150, 288);
-      c.closePath();
-    };
-    const silhouette = () => {
-      hairPath(); c.fill(); c.stroke();
-      poly(FACE); c.fill(); c.stroke();
-      poly(COLLAR); c.fill(); c.stroke();
-      poly(COAT); c.fill(); c.stroke();
-      for (const s of [ARM_DOWN, ARM_UP, FOREARM, ...LEGS]) { poly(s); c.fill(); c.stroke(); }
-      ell(394, 826, 22, 28); c.fill(); c.stroke();
-      ell(160, 366, 26, 30); c.fill(); c.stroke();
-      c.beginPath(); c.roundRect(138, 266, 40, 90, 14); c.fill(); c.stroke();
-      for (const x of [178, 266]) { c.beginPath(); c.roundRect(x, 1140, 70, 40, 14); c.fill(); c.stroke(); }
-    };
-    // cardboard all round, a fat border so the print has a die-cut edge
-    c.fillStyle = CARD; c.strokeStyle = CARD; c.lineWidth = 26;
-    silhouette();
+  const tex = canvasTexture(GOJO_W, GOJO_H, () => {});
+  const img = new Image();
+  img.onload = () => {
+    const c = tex.image.getContext('2d');
+    const h = GOJO_H - 60, w = h * (img.width / img.height), x = (GOJO_W - w) / 2, y = 30;
+    // the cardboard edge: the figure's silhouette, grown by ~12px all round, in cardboard brown
+    const sil = document.createElement('canvas');
+    sil.width = GOJO_W; sil.height = GOJO_H;
+    const sc = sil.getContext('2d');
+    sc.drawImage(img, x, y, w, h);
+    sc.globalCompositeOperation = 'source-in';
+    sc.fillStyle = '#b8895a'; sc.fillRect(0, 0, GOJO_W, GOJO_H);
+    for (let a = 0; a < TAU; a += TAU / 24) for (const r of [6, 12]) c.drawImage(sil, Math.cos(a) * r, Math.sin(a) * r);
     if (back) {
-      // the plain back: corrugated cardboard
       c.globalCompositeOperation = 'source-atop';
-      c.strokeStyle = 'rgba(90,60,30,.18)'; c.lineWidth = 3;
-      for (let x = 0; x < 512; x += 14) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 1184); c.stroke(); }
+      c.strokeStyle = 'rgba(90,60,30,.2)'; c.lineWidth = 3;
+      for (let k = 0; k < GOJO_W; k += 14) { c.beginPath(); c.moveTo(k, 0); c.lineTo(k, GOJO_H); c.stroke(); }
+      c.fillStyle = 'rgba(60,40,20,.55)'; c.font = 'bold 34px sans-serif'; c.textAlign = 'center';
+      c.save(); c.translate(GOJO_W / 2, GOJO_H * 0.55); c.rotate(-Math.PI / 2); c.fillText('THIS SIDE BACK', 0, 0); c.restore();
       c.globalCompositeOperation = 'source-over';
-      return;
+    } else {
+      // a thin white print border just inside the cardboard, then the art
+      sc.globalCompositeOperation = 'source-over';
+      c.drawImage(img, x, y, w, h);
     }
-    const shape = (pts, fill, line = INK, w = 4) => { poly(pts); c.fillStyle = fill; c.fill(); c.strokeStyle = line; c.lineWidth = w; c.stroke(); };
-    const strokes = (lines, col, w) => { c.strokeStyle = col; c.lineWidth = w; for (const l of lines) { c.beginPath(); l.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke(); } };
-    const NAVY = '#1c2236', NAVY_HI = '#2b3550', NAVY_DK = '#11141f', SKIN = '#ffe6d4', SKIN_SH = '#f2c2a8';
-    // legs and shoes
-    for (const L of LEGS) shape(L, '#151a29');
-    for (const x of [178, 266]) { c.beginPath(); c.roundRect(x, 1140, 70, 40, 14); c.fillStyle = '#0c0e15'; c.fill(); c.strokeStyle = INK; c.lineWidth = 4; c.stroke(); }
-    // the long dark coat, with folds and a seam down the front
-    shape(COAT, NAVY);
-    strokes([[[256, 450], [256, 1004]]], NAVY_DK, 4);
-    strokes([[[170, 520], [196, 760]], [[340, 520], [318, 760]], [[214, 800], [204, 1000]], [[300, 800], [310, 1000]]], NAVY_HI, 5);
-    strokes([[[160, 700], [220, 700]], [[292, 700], [352, 700]]], NAVY_DK, 3); // pockets
-    // the arm hanging at his side, and the hand
-    shape(ARM_DOWN, NAVY);
-    strokes([[[388, 560], [392, 700]]], NAVY_HI, 4);
-    ell(394, 826, 22, 28); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 4; c.stroke();
-    strokes([[[384, 838], [386, 852]], [[396, 840], [397, 855]], [[406, 836], [408, 850]]], SKIN_SH, 3);
-    // the tall collar right up to the chin, with the gold spiral button
-    shape(COLLAR, NAVY_HI);
-    strokes([[[256, 322], [256, 448]]], NAVY_DK, 4);
-    c.beginPath(); c.arc(256, 436, 13, 0, TAU); c.fillStyle = '#d9b042'; c.fill(); c.strokeStyle = '#7a5a12'; c.lineWidth = 3; c.stroke();
-    c.beginPath(); for (let t = 0; t < 3 * TAU; t += 0.2) { const r = 10 * (1 - t / (3 * TAU)); c.lineTo(256 + Math.cos(t) * r, 436 + Math.sin(t) * r); } c.stroke();
-    // the face: pale, a sharp chin, a little shadow under the hair
-    shape(FACE, SKIN);
-    c.save(); poly(FACE); c.clip();
-    c.fillStyle = SKIN_SH; c.fillRect(170, 182, 180, 30);
-    c.beginPath(); c.moveTo(302, 334); c.lineTo(336, 280); c.lineTo(336, 360); c.fill();
-    c.restore();
-    for (const x of [172, 340]) { ell(x, 268, 10, 20); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 3; c.stroke(); } // ears
-    // the blindfold, wrapped round under the hair
-    shape([[166, 214], [346, 208], [348, 262], [168, 270]], '#141219', INK, 4);
-    strokes([[[178, 232], [334, 226]], [[182, 252], [338, 246]]], '#2c2a38', 3);
-    // nose and that smug smirk
-    strokes([[[258, 290], [263, 306], [255, 309]]], '#c98f78', 3);
-    strokes([[[238, 330], [256, 334], [278, 324]]], '#8a3c38', 4);
-    strokes([[[278, 324], [283, 319]]], '#8a3c38', 3);
-    // the hair: a big shock of white spikes, blue-grey shading, and locks falling over the blindfold
-    hairPath(); c.fillStyle = '#f6f8fc'; c.fill();
-    // blue-grey shading in the hollows of the spikes, then the outline over it
-    c.save(); hairPath(); c.clip();
-    c.fillStyle = '#d3dcec';
-    for (const [x, y, rx, ry, a] of [[150, 200, 40, 70, -0.3], [222, 150, 26, 80, 0.1], [282, 140, 22, 90, -0.05], [348, 190, 36, 70, 0.3], [256, 214, 110, 22, 0]]) { ell(x, y, rx, ry, a); c.fill(); }
-    strokes([[[132, 230], [150, 150]], [[196, 190], [210, 90]], [[246, 192], [258, 70]], [[300, 190], [300, 90]], [[356, 220], [348, 140]]], '#b8c4da', 5);
-    c.restore();
-    hairPath(); c.strokeStyle = INK; c.lineWidth = 4.5; c.stroke();
-    // a few soft locks falling over the top of the blindfold
-    for (const [x0, x1, tx, ty, bend] of [[196, 252, 214, 252, -14], [240, 300, 282, 262, 18], [292, 334, 330, 236, 12]]) {
-      c.beginPath(); c.moveTo(x0, 196);
-      c.quadraticCurveTo(x0 + bend * 0.5, 230, tx, ty);
-      c.quadraticCurveTo((x0 + x1) / 2 + bend, 222, x1, 196);
-      c.closePath();
-      c.fillStyle = '#f6f8fc'; c.fill(); c.strokeStyle = INK; c.lineWidth = 3.5; c.stroke();
-    }
-    // the raised arm and the hand sign: index and middle finger crossed, pointing up
-    shape(ARM_UP, NAVY);
-    shape(FOREARM, NAVY);
-    strokes([[[118, 600], [150, 470]]], NAVY_HI, 4);
-    ell(160, 366, 26, 30); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 4; c.stroke();
-    c.save(); c.translate(150, 340); c.rotate(-0.12);
-    c.beginPath(); c.roundRect(-8, -78, 18, 80, 9); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 3.5; c.stroke();
-    c.restore();
-    c.save(); c.translate(168, 340); c.rotate(-0.32);
-    c.beginPath(); c.roundRect(-9, -84, 18, 86, 9); c.fillStyle = SKIN; c.fill(); c.strokeStyle = INK; c.lineWidth = 3.5; c.stroke();
-    c.restore();
-    strokes([[[148, 378], [174, 374]], [[150, 390], [172, 388]]], SKIN_SH, 3); // curled fingers
-  });
+    tex.needsUpdate = true;
+    thumbs.delete('cutout_gojo'); // (re-snap the shop picture now the print's there)
+  };
+  img.src = new URL('../../img/gojo.png', import.meta.url).href;
   gojoCache[back] = tex;
   return tex;
 }
@@ -1738,6 +1690,42 @@ function surface(id, draw) {
 }
 
 const FLOOR_DRAW = {
+  floor_emerald(ctx) {
+    for (let y = 0; y < 256; y += 64) for (let x = 0; x < 256; x += 64) {
+      ctx.fillStyle = (x + y) % 128 ? '#1f5a3a' : '#24684a'; ctx.fillRect(x, y, 64, 64);
+      ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fillRect(x + 4, y + 4, 56, 8);
+    }
+    ctx.strokeStyle = '#123524'; ctx.lineWidth = 3;
+    for (let k = 0; k <= 256; k += 64) { ctx.beginPath(); ctx.moveTo(k, 0); ctx.lineTo(k, 256); ctx.moveTo(0, k); ctx.lineTo(256, k); ctx.stroke(); }
+  },
+  floor_olive(ctx) {
+    const rnd = prng(41);
+    ctx.fillStyle = '#4d5a2a'; ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 2600; i++) { ctx.fillStyle = i % 2 ? 'rgba(110,125,60,.35)' : 'rgba(30,40,15,.3)'; ctx.fillRect(rnd() * 256, rnd() * 256, 2, 2); }
+  },
+  floor_espresso(ctx) {
+    for (let row = 0; row < 8; row++) {
+      const y = row * 32;
+      ctx.fillStyle = row % 2 ? '#3a2416' : '#432a1a'; ctx.fillRect(0, y, 256, 30);
+      ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, y + 30, 256, 2);
+      ctx.fillRect(((row * 97) % 200) + 20, y, 2, 30);
+      ctx.fillStyle = 'rgba(255,220,180,.05)'; for (let k = 0; k < 4; k++) ctx.fillRect((row * 53 + k * 61) % 256, y + 8 + k * 5, 50, 1);
+    }
+  },
+  floor_chestnut(ctx) {
+    // a herringbone parquet in warm chestnut
+    ctx.fillStyle = '#6e4224'; ctx.fillRect(0, 0, 256, 256);
+    for (let y = -64; y < 320; y += 32) for (let x = -64; x < 320; x += 64) {
+      for (const [dx, rot, col] of [[0, Math.PI / 4, '#7a4a28'], [32, -Math.PI / 4, '#8b5a32']]) {
+        ctx.save(); ctx.translate(x + dx, y); ctx.rotate(rot); ctx.fillStyle = col; ctx.fillRect(0, 0, 46, 23); ctx.strokeStyle = 'rgba(40,20,8,.45)'; ctx.lineWidth = 1.5; ctx.strokeRect(0, 0, 46, 23); ctx.restore();
+      }
+    }
+  },
+  floor_cocoa(ctx) {
+    const rnd = prng(9);
+    ctx.fillStyle = '#5a3d2b'; ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 2600; i++) { ctx.fillStyle = i % 2 ? 'rgba(140,100,70,.3)' : 'rgba(30,18,10,.3)'; ctx.fillRect(rnd() * 256, rnd() * 256, 2, 2); }
+  },
   floor_wood(ctx) {
     ctx.fillStyle = '#c28a52';
     ctx.fillRect(0, 0, 256, 256);
@@ -1931,6 +1919,33 @@ const FLOOR_DRAW = {
 };
 
 const WALL_DRAW = {
+  wall_forest_green(ctx) { plainWall(ctx, '#2f5a3c'); },
+  wall_olive(ctx) { plainWall(ctx, '#6b7a3a'); },
+  wall_hunter(ctx) {
+    ctx.fillStyle = '#2a4d34'; ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 32) { ctx.fillStyle = '#335c40'; ctx.fillRect(x, 0, 14, 256); ctx.fillStyle = 'rgba(255,220,140,.25)'; ctx.fillRect(x + 15, 0, 2, 256); }
+  },
+  wall_wainscot(ctx) {
+    // dark green above, wood panelling below with a chair rail
+    ctx.fillStyle = '#244a33'; ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#5a3a24'; ctx.fillRect(0, 150, 256, 106);
+    for (let x = 6; x < 256; x += 64) { ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 3; ctx.strokeRect(x, 166, 52, 76); ctx.strokeStyle = 'rgba(255,220,180,.12)'; ctx.strokeRect(x + 3, 169, 46, 70); }
+    ctx.fillStyle = '#6e4a2e'; ctx.fillRect(0, 142, 256, 12); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, 154, 256, 3);
+  },
+  wall_mocha(ctx) { plainWall(ctx, '#7a5a44'); },
+  wall_walnut(ctx) {
+    ctx.fillStyle = '#4a2f1d'; ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 32) { ctx.fillStyle = (x / 32) % 2 ? '#523422' : '#45291a'; ctx.fillRect(x, 0, 30, 256); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(x + 30, 0, 2, 256); }
+    const rnd = prng(5); ctx.fillStyle = 'rgba(255,210,170,.06)'; for (let i = 0; i < 60; i++) ctx.fillRect(rnd() * 256, rnd() * 256, 1, 30);
+  },
+  wall_damask(ctx) {
+    ctx.fillStyle = '#4b3222'; ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#5c3f2c';
+    for (let y = 0; y < 256; y += 64) for (let x = (y / 64) % 2 ? 32 : 0; x < 288; x += 64) {
+      ctx.beginPath(); ctx.moveTo(x, y + 8); ctx.quadraticCurveTo(x + 22, y + 32, x, y + 56); ctx.quadraticCurveTo(x - 22, y + 32, x, y + 8); ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y + 32, 5, 0, TAU); ctx.fillStyle = '#6e4d36'; ctx.fill(); ctx.fillStyle = '#5c3f2c';
+    }
+  },
   wall_cream(ctx) { plainWall(ctx, '#fff1d6'); },
   wall_mint(ctx) { plainWall(ctx, '#c9f5e3'); },
   wall_stripes(ctx) {
@@ -2103,6 +2118,14 @@ function plainWall(ctx, color) {
 }
 
 const CEIL_DRAW = {
+  ceil_forest(ctx) { plainWall(ctx, '#2c5238'); },
+  ceil_walnut(ctx) {
+    for (let x = 0; x < 256; x += 32) { ctx.fillStyle = (x / 32) % 2 ? '#523422' : '#46291a'; ctx.fillRect(x, 0, 30, 256); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(x + 30, 0, 2, 256); }
+  },
+  ceil_mocha_beams(ctx) {
+    ctx.fillStyle = '#8a6a52'; ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 64) { ctx.fillStyle = '#3e2718'; ctx.fillRect(x, 0, 20, 256); ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x + 16, 0, 4, 256); }
+  },
   ceil_plain(ctx) { plainWall(ctx, '#fbf8f2'); },
   ceil_beams(ctx) {
     ctx.fillStyle = '#f4ecd8';

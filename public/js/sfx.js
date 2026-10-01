@@ -282,8 +282,8 @@ const SOUNDS = {
   emote_wow: () => { tone({ f: 280, to: 880, dur: 0.45, vol: 0.1, vib: [6, 16] }); },
 
   // ---- racing ----
-  beep: () => { tone({ type: 'square', f: 440, dur: 0.2, vol: 0.07, lp: 3000 }); },
-  go: () => { tone({ type: 'square', f: 880, dur: 0.55, vol: 0.08, lp: 3500 }); },
+  beep: () => { tone({ type: 'triangle', f: 440, dur: 0.18, vol: 0.06 }); },
+  go: () => { tone({ type: 'triangle', f: 880, dur: 0.45, vol: 0.07 }); tone({ type: 'triangle', f: 1320, dur: 0.35, vol: 0.03 }); },
   engine: (o) => { const f = 70 + (o.speed ?? 0) * 11; tone({ type: 'sawtooth', f, to: f * 1.35, dur: 0.09, vol: 0.05, lp: 900, q: 2 }); },
   finish: () => { fanfare(0, 0.9); cheer(0.1, 0.8); },
   cheer: () => cheer(),
@@ -394,12 +394,11 @@ const SOUNDS = {
   // ---- bumps and boosts (racing, arena) ----
   bonk: (o) => {
     const k = Math.min(1, (o.power ?? 1));
-    tone({ type: 'triangle', f: 160 + k * 60, to: 420 + k * 200, dur: 0.12, vol: 0.12 + k * 0.1 });
-    tone({ f: 90, to: 50, dur: 0.12, vol: 0.2 * k + 0.08 });
-    noise({ f: 900, dur: 0.05, vol: 0.1 });
+    tone({ f: 110, to: 55, dur: 0.14, vol: 0.12 * k + 0.05 });
+    noise({ f: 600, dur: 0.08, vol: 0.07 + k * 0.05 });
   },
   fall: () => { tone({ f: 900, to: 180, dur: 0.7, vol: 0.08, vib: [10, 20] }); SOUNDS.splash(); noise({ f: 700, to: 150, dur: 0.6, vol: 0.18, at: 0.6 }); },
-  boost: () => { whoosh(0, 1, 300, 2600, 0.25); tone({ type: 'sawtooth', f: 120, to: 420, dur: 0.25, vol: 0.05, lp: 1500 }); },
+  boost: () => { whoosh(0, 0.6, 300, 1800, 0.18); tone({ type: 'sawtooth', f: 90, to: 200, dur: 0.3, vol: 0.04, lp: 600 }); },
   powerup: () => { seq([72, 79, 84, 88], { step: 0.05, dur: 0.14, type: 'square', vol: 0.05 }); sparkle(0.12, 0.8, 5); },
   shield: () => { tone({ f: 500, to: 1400, dur: 0.3, vol: 0.07, vib: [18, 30] }); bell(96, 0.1, 0.05, 0.6); },
 
@@ -551,44 +550,47 @@ function swellAmbient(kind) {
 
 // Engines (and other things that roll or hum while they move): each kind has its own voice. set(rpm, vol)
 // with rpm 0 (idling) .. 1 (flat out), vol 0..1 (fade it with distance); stop() when you're done.
+// Engines: an oscillator at the firing rate through a low filter (warm, not buzzy), a sub-octave rumble,
+// a "chug" (the volume pulsing at half the firing rate, like cylinders firing unevenly) and a little
+// exhaust noise. `gears` makes the revs climb then drop at each shift as you speed up, like a real car.
 const ENGINES = {
-  kart:  { wave: 'square',   lo: 70,  hi: 230, lp: 900,  lpHi: 2200, sub: 0.0, rasp: 0.15, lope: 0,   level: 0.09 },
-  moto:  { wave: 'sawtooth', lo: 85,  hi: 360, lp: 1400, lpHi: 3600, sub: 0.0, rasp: 0.3,  lope: 0,   level: 0.08 },
-  buggy: { wave: 'square',   lo: 48,  hi: 165, lp: 650,  lpHi: 1500, sub: 0.3, rasp: 0.25, lope: 0,   level: 0.1 },
-  f1:    { wave: 'sawtooth', lo: 160, hi: 760, lp: 2400, lpHi: 6000, sub: 0.0, rasp: 0.1,  lope: 0,   level: 0.06 },
-  truck: { wave: 'sawtooth', lo: 34,  hi: 105, lp: 420,  lpHi: 1100, sub: 0.6, rasp: 0.2,  lope: 9,   level: 0.12 },
+  kart:  { wave: 'sawtooth', lo: 38, hi: 120, lp: 380,  lpHi: 900,  sub: 0.45, rasp: 0.08, chug: 0.3,  gears: 3, level: 0.075 },
+  moto:  { wave: 'sawtooth', lo: 55, hi: 190, lp: 600,  lpHi: 1500, sub: 0.25, rasp: 0.12, chug: 0.25, gears: 5, level: 0.065 },
+  buggy: { wave: 'sawtooth', lo: 30, hi: 95,  lp: 320,  lpHi: 750,  sub: 0.6,  rasp: 0.12, chug: 0.4,  gears: 3, level: 0.085 },
+  f1:    { wave: 'sawtooth', lo: 90, hi: 340, lp: 900,  lpHi: 2400, sub: 0.15, rasp: 0.05, chug: 0.12, gears: 6, level: 0.05 },
+  truck: { wave: 'sawtooth', lo: 24, hi: 70,  lp: 260,  lpHi: 560,  sub: 0.8,  rasp: 0.15, chug: 0.5,  gears: 4, level: 0.1 },
   // (not engines, but they work the same way)
-  roll:  { wave: null, noiseF: 260, noiseQ: 0.8, level: 0.07 },        // skateboard / scooter wheels on the ground
-  pedal: { wave: null, noiseF: 900, noiseQ: 2.5, tick: true, level: 0.05 }, // a bike's freewheel ticking
-  hover: { wave: 'sine',     lo: 110, hi: 190, lp: 800,  lpHi: 1400, sub: 0.0, rasp: 0,    lope: 5,   level: 0.06 },
+  roll:  { wave: null, noiseF: 260, noiseQ: 0.8, level: 0.06 },        // skateboard / scooter wheels on the ground
+  pedal: { wave: null, noiseF: 900, noiseQ: 2.5, tick: true, level: 0.04 }, // a bike's freewheel ticking
+  hover: { wave: 'sine', lo: 110, hi: 190, lp: 800, lpHi: 1400, sub: 0.0, rasp: 0, chug: 0.3, level: 0.05 },
 };
 export function engine(kind) {
   const E = ENGINES[kind] ?? ENGINES.kart;
-  let osc = null, osc2 = null, sub = null, src = null, filter = null, gain = null, lfo = null, stopped = false;
+  let osc = null, osc2 = null, sub = null, src = null, filter = null, gain = null, lfo = null, chugOsc = null, stopped = false;
   const start = () => {
     if (gain || stopped || !gestured || !ensure()) return;
     gain = ac.createGain(); gain.gain.value = 0;
-    filter = ac.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = E.lp ?? 1000; filter.Q.value = 1.2;
-    filter.connect(gain); gain.connect(sfxBus);
+    filter = ac.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = E.lp ?? 1000; filter.Q.value = 0.7;
+    // the chug: the engine's level pulses with the firing
+    const am = ac.createGain(); am.gain.value = 1 - (E.chug ?? 0);
+    filter.connect(am); am.connect(gain); gain.connect(sfxBus);
+    if (E.chug) {
+      chugOsc = ac.createOscillator(); chugOsc.type = 'sine'; chugOsc.frequency.value = (E.lo ?? 40) / 2;
+      const depth = ac.createGain(); depth.gain.value = E.chug;
+      chugOsc.connect(depth); depth.connect(am.gain); chugOsc.start();
+    }
     if (E.wave) {
       osc = ac.createOscillator(); osc.type = E.wave; osc.frequency.value = E.lo; osc.connect(filter); osc.start();
-      osc2 = ac.createOscillator(); osc2.type = E.wave; osc2.frequency.value = E.lo * 1.01; // a slightly detuned twin: thicker
-      const g2 = ac.createGain(); g2.gain.value = 0.5; osc2.connect(g2); g2.connect(filter); osc2.start();
-      if (E.sub) { sub = ac.createOscillator(); sub.type = 'sine'; sub.frequency.value = E.lo / 2; const gs = ac.createGain(); gs.gain.value = E.sub; sub.connect(gs); gs.connect(gain); sub.start(); }
-      if (E.lope) {
-        // the lumpy idle of a big engine (or a hoverboard's wobble): the volume throbs
-        lfo = ac.createOscillator(); lfo.frequency.value = E.lope; const depth = ac.createGain(); depth.gain.value = 0.35;
-        const am = ac.createGain(); am.gain.value = 0.65; lfo.connect(depth); depth.connect(am.gain);
-        filter.disconnect(); filter.connect(am); am.connect(gain); lfo.start();
-      }
+      osc2 = ac.createOscillator(); osc2.type = 'triangle'; osc2.frequency.value = E.lo * 2.003; // a soft overtone
+      const g2 = ac.createGain(); g2.gain.value = 0.25; osc2.connect(g2); g2.connect(filter); osc2.start();
+      if (E.sub) { sub = ac.createOscillator(); sub.type = 'sine'; sub.frequency.value = E.lo / 2; const gs = ac.createGain(); gs.gain.value = E.sub; sub.connect(gs); gs.connect(am); sub.start(); }
     }
     if (E.rasp || !E.wave) {
       src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
-      const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = E.noiseF ?? 1800; nf.Q.value = E.noiseQ ?? 0.9;
+      const nf = ac.createBiquadFilter(); nf.type = E.wave ? 'lowpass' : 'bandpass'; nf.frequency.value = E.wave ? 500 : (E.noiseF ?? 1800); nf.Q.value = E.noiseQ ?? 0.9;
       const ng = ac.createGain(); ng.gain.value = E.wave ? E.rasp : 1;
-      src.connect(nf); nf.connect(ng); ng.connect(E.wave ? filter : gain); src.start();
+      src.connect(nf); nf.connect(ng); ng.connect(E.wave ? am : gain); src.start();
       if (E.tick) {
-        // freewheel clicks: chop the noise up quickly
         lfo = ac.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 14; const d = ac.createGain(); d.gain.value = 0.5;
         lfo.connect(d); d.connect(ng.gain); lfo.start();
       }
@@ -600,19 +602,23 @@ export function engine(kind) {
       if (!gain) return;
       const t = ac.currentTime, r = Math.max(0, Math.min(1.2, rpm));
       if (osc) {
-        const f = E.lo + (E.hi - E.lo) * r;
-        osc.frequency.setTargetAtTime(f, t, 0.08);
-        osc2.frequency.setTargetAtTime(f * 1.01, t, 0.08);
-        sub?.frequency.setTargetAtTime(f / 2, t, 0.08);
-        filter.frequency.setTargetAtTime(E.lp + (E.lpHi - E.lp) * r, t, 0.1);
+        // through the gears: revs climb within each gear, drop a bit at the shift, and top gear sits higher
+        let k = r;
+        if (E.gears) { const g = Math.min(E.gears - 1, Math.floor(r * E.gears)), local = r * E.gears - g; k = 0.18 + 0.55 * local + 0.27 * (g / Math.max(1, E.gears - 1)); if (r < 0.02) k = 0; }
+        const f = E.lo + (E.hi - E.lo) * k;
+        osc.frequency.setTargetAtTime(f, t, 0.06);
+        osc2.frequency.setTargetAtTime(f * 2.003, t, 0.06);
+        sub?.frequency.setTargetAtTime(f / 2, t, 0.06);
+        chugOsc?.frequency.setTargetAtTime(f / 2, t, 0.06);
+        filter.frequency.setTargetAtTime(E.lp + (E.lpHi - E.lp) * k, t, 0.1);
       } else if (E.tick && lfo) lfo.frequency.setTargetAtTime(6 + r * 20, t, 0.1);
-      const loud = E.wave ? 0.55 + r * 0.45 : r; // rolling things are silent when stopped
-      gain.gain.setTargetAtTime(Math.max(0, vol) * loud * E.level * 1.6, t, 0.08);
+      const loud = E.wave ? 0.5 + Math.min(1, r) * 0.5 : r; // rolling things are silent when stopped
+      gain.gain.setTargetAtTime(Math.max(0, vol) * loud * E.level * 1.6, t, 0.12);
     },
     stop() {
       stopped = true;
       if (gain) gain.gain.setTargetAtTime(0, ac.currentTime, 0.05);
-      setTimeout(() => { for (const n of [osc, osc2, sub, src, lfo]) { try { n?.stop(); } catch { /* already stopped */ } } }, 200);
+      setTimeout(() => { for (const n of [osc, osc2, sub, src, lfo, chugOsc]) { try { n?.stop(); } catch { /* already stopped */ } } }, 200);
     },
   };
 }

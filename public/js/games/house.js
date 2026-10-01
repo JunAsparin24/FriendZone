@@ -1133,22 +1133,12 @@ export function house(stage) {
     room.walls.back.grp.visible = c.z > 0.2;
     room.walls.left.grp.visible = c.x > 0.2;
     room.walls.right.grp.visible = c.x < WX() - 0.2;
-    // walls you've built inside fade when they're between the camera and you
-    for (const e of entries) {
-      if (!e.roomWall) continue;
-      const [w, d] = footprint(e.it);
-      const fade = !edit && segHitsRect(c.x, c.z, p.x, p.z, e.it.x * T, e.it.y * T, (e.it.x + w) * T, (e.it.y + d) * T);
-      if (e.faded !== fade) {
-        e.faded = fade;
-        e.group.traverse((o) => {
-          if (!o.isMesh) return;
-          if (o.userData.outline) { o.visible = !fade; return; }
-          if (o.userData.wallpaper) { o.material = fade ? room.wallFade : room.wallMat; return; }
-          o.userData.solidMat ??= o.material;
-          o.material = fade ? coreFade : o.userData.solidMat;
-          o.castShadow = !fade;
-        });
-      }
+    // walls you've built inside are solid: the camera stops in front of them instead (see stage.applyOrbit)
+    if (stage.camRoom) {
+      stage.camRoom.blockers = entries.filter((e) => e.roomWall).map((e) => {
+        const [w, d] = footprint(e.it);
+        return { x0: e.it.x * T, z0: e.it.y * T, x1: (e.it.x + w) * T, z1: (e.it.y + d) * T };
+      });
     }
   });
 

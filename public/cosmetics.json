@@ -100,7 +100,7 @@
     { "id": "hair_swoop", "slot": "hair", "name": "Side Swoop", "rarity": "common", "free": true },
     { "id": "hair_messy", "slot": "hair", "name": "Bedhead", "rarity": "common", "free": true },
     { "id": "hair_braid", "slot": "hair", "name": "Braid", "rarity": "common", "price": 300, "crate": true, "tie": true },
-    { "id": "hair_spacebuns", "slot": "hair", "name": "Braided Space Buns", "rarity": "common", "price": 400, "crate": true, "tie": true },
+    { "id": "hair_spacebuns", "slot": "hair", "name": "Space Buns", "rarity": "common", "price": 400, "crate": true, "tie": true },
     { "id": "hair_mohawk", "slot": "hair", "name": "Mohawk", "rarity": "rare", "price": 700, "crate": true },
     { "id": "hair_quiff", "slot": "hair", "name": "Quiff", "rarity": "rare", "price": 700, "crate": true },
     { "id": "hair_locs", "slot": "hair", "name": "Locs", "rarity": "rare", "price": 700, "crate": true, "tie": true },
@@ -403,7 +403,12 @@
     { "id": "floor_forest", "name": "Forest Floor", "price": 300 },
     { "id": "floor_pebbles", "name": "River Pebbles", "price": 300 },
     { "id": "floor_bamboo", "name": "Bamboo Planks", "price": 250 },
-    { "id": "floor_clover", "name": "Clover Patch", "price": 250 }
+    { "id": "floor_clover", "name": "Clover Patch", "price": 250 },
+    { "id": "floor_emerald", "name": "Emerald Tiles", "price": 280 },
+    { "id": "floor_olive", "name": "Olive Carpet", "price": 180 },
+    { "id": "floor_espresso", "name": "Espresso Planks", "price": 260 },
+    { "id": "floor_chestnut", "name": "Chestnut Parquet", "price": 320 },
+    { "id": "floor_cocoa", "name": "Cocoa Carpet", "price": 180 }
   ],
   "walls": [
     { "id": "wall_cream", "name": "Cream", "free": true },
@@ -433,7 +438,14 @@
     { "id": "wall_bamboo", "name": "Bamboo Grove", "price": 300 },
     { "id": "wall_ivy", "name": "Climbing Ivy", "price": 300 },
     { "id": "wall_birch", "name": "Birch Trees", "price": 300 },
-    { "id": "wall_greenhouse", "name": "Greenhouse Glass", "price": 450 }
+    { "id": "wall_greenhouse", "name": "Greenhouse Glass", "price": 450 },
+    { "id": "wall_forest_green", "name": "Forest Green", "price": 150 },
+    { "id": "wall_olive", "name": "Olive", "price": 150 },
+    { "id": "wall_hunter", "name": "Hunter Stripes", "price": 220 },
+    { "id": "wall_wainscot", "name": "Green Wainscot", "price": 320 },
+    { "id": "wall_mocha", "name": "Mocha", "price": 150 },
+    { "id": "wall_walnut", "name": "Walnut Panels", "price": 280 },
+    { "id": "wall_damask", "name": "Chocolate Damask", "price": 260 }
   ],
   "ceilings": [
     { "id": "ceil_plain", "name": "White", "free": true },
@@ -445,7 +457,10 @@
     { "id": "ceil_glow", "name": "Glow Stars", "price": 350 },
     { "id": "ceil_tile", "name": "Tiled Ceiling", "price": 200 },
     { "id": "ceil_canopy", "name": "Leafy Canopy", "price": 350 },
-    { "id": "ceil_greenhouse", "name": "Greenhouse Roof", "price": 400 }
+    { "id": "ceil_greenhouse", "name": "Greenhouse Roof", "price": 400 },
+    { "id": "ceil_forest", "name": "Forest Green", "price": 200 },
+    { "id": "ceil_walnut", "name": "Walnut Planks", "price": 300 },
+    { "id": "ceil_mocha_beams", "name": "Mocha Beams", "price": 300 }
   ],
   "houseSizes": [
     { "id": "size_cozy", "name": "Cozy", "w": 14, "d": 14, "free": true },

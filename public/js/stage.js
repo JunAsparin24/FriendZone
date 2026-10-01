@@ -430,6 +430,17 @@ class Stage {
       let t = 1;
       if (dx > 0) t = Math.min(t, (room.maxX - m - o.cur.x) / dx); else if (dx < 0) t = Math.min(t, (room.minX + m - o.cur.x) / dx);
       if (dz > 0) t = Math.min(t, (room.maxZ - m - o.cur.z) / dz); else if (dz < 0) t = Math.min(t, (room.minZ + m - o.cur.z) / dz);
+      // walls inside the room (a house's partitions): the camera stops just in front of them too
+      for (const b of room.blockers ?? []) {
+        let t0 = 0, t1 = 1;
+        for (const [o0, d, lo, hi] of [[o.cur.x, dx, b.x0 - m * 0.6, b.x1 + m * 0.6], [o.cur.z, dz, b.z0 - m * 0.6, b.z1 + m * 0.6]]) {
+          if (Math.abs(d) < 1e-6) { if (o0 < lo || o0 > hi) { t0 = 2; break; } continue; }
+          let a1 = (lo - o0) / d, a2 = (hi - o0) / d;
+          if (a1 > a2) [a1, a2] = [a2, a1];
+          t0 = Math.max(t0, a1); t1 = Math.min(t1, a2);
+        }
+        if (t0 <= t1 && t0 > 0 && t0 < t) t = t0;
+      }
       t = Math.max(0.12, t);
       dx *= t; dz *= t;
       dy = Math.min(dy, room.maxY - o.cur.y); // stay under the ceiling (just flatter, not closer)

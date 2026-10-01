@@ -1174,22 +1174,14 @@ Object.assign(HAIR, {
     acShine(head, L);
   },
   hair_spacebuns(head, mat, L) {
-    // braided space buns: braids run from the hairline back over the head into two big wrapped buns
-    acCap(head, mat, { front: 0.95, side: 1.45, back: 2.25, lift: 0.04 });
-    const tie = toon(tieColor(L, '#ff5d8f'));
+    // two round buns high on the head, each tied off with a scrunchie
+    acCap(head, mat, { front: 0.95, side: 1.45, back: 2.25, lift: 0.05 });
     for (const s of [-1, 1]) {
-      const bun = new THREE.Vector3(s * 0.3, 0.42, -0.08);
-      part(head, sphere(0.19, 20, 16), mat, { p: bun.toArray(), s: [1, 0.92, 1] });
-      // the wrapped twist round the bun
-      for (let k = 0; k < 3; k++) part(head, torus(0.17 - k * 0.04, 0.035, TAU, 8, 24), toon(mix(L.hairColor, '#000000', 0.12)), { p: [bun.x, bun.y - 0.02 + k * 0.07, bun.z], r: [Math.PI / 2 + 0.25, s * 0.3, 0], outline: null });
-      part(head, torus(0.12, 0.03, TAU, 8, 20), tie, { p: [bun.x - s * 0.04, bun.y - 0.16, bun.z + 0.02], r: [Math.PI / 2, s * 0.45, 0], outline: null });
-      for (const off of [0.25, 0.55]) {
-        const pts = [0, 1, 2, 3].map((k) => onHead(s * (off + k * 0.05), 0.95 - k * 0.2, (R + AC_LIFT) * 1.06 + 0.035 + k * 0.02));
-        pts.push(bun.clone().add(new THREE.Vector3(-s * 0.08, -0.08, 0.1)));
-        braidAlong(head, mat, L, pts, { n: 10, size: 0.05 });
-      }
+      part(head, sphere(0.17, 20, 16), mat, { p: [s * 0.3, 0.4, -0.06] });
+      part(head, torus(0.11, 0.028, TAU, 8, 18), toon(tieColor(L, '#ff9fe0')), { p: [s * 0.26, 0.27, -0.05], r: [Math.PI / 2, s * 0.6, 0], outline: null });
     }
-    acShine(head, L, { th: 0.6, width: 0.4 });
+    acBangs(head, mat, { n: 4, len: 0.14 });
+    acShine(head, L);
   },
   hair_topknot(head, mat, L) {
     acCap(head, mat, { front: 0.85, side: 1.35, back: 2.1, lift: 0.045 });

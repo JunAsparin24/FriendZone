@@ -1630,7 +1630,7 @@ class Game:
 
     def on_scene(self, c, m):
         scene = m.get("scene")
-        if scene == "beach" and not COVE_OPEN and not c.admin:
+        if scene == "beach" and not COVE_OPEN and not c.admin and not getattr(c, "cove_pass", False):
             return self.sys(c, "🚧 Coral Cove is coming soon!")
         if scene in SCENES:
             self.set_scene(c, scene)
@@ -1650,6 +1650,7 @@ class Game:
             c.aseat = None
             c.apose = None
             if prev == "beach":
+                c.cove_pass = False  # (a pass to Coral Cove from an admin lasts until you leave)
                 self.boat_release(room, c.key)
                 for court in list(room.matches):
                     self.court_drop(room, court, c.key)
@@ -2190,6 +2191,8 @@ class Game:
             if mover.scene == "world":
                 mover.room.broadcast({"t": "pos", "k": mover.key, "x": round(mover.x, 1), "y": round(mover.y, 1)}, scene="world", exclude=mover)
         elif dest.scene in AREA_SCENES:
+            if dest.scene == "beach":
+                mover.cove_pass = True  # (brought in by an admin: allowed in while Coral Cove isn't open yet)
             mover.ws.send({"t": "tp", "scene": dest.scene, "ax": round((dest.ax or 0) + 0.9, 2), "az": round(dest.az or 0, 2)})
         else:
             raise GameError(f"{dest.player['name']} is busy ({dest.scene or 'in the lobby'}). Teleporting works in town and in the shops and areas.")

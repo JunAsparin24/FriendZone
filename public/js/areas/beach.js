@@ -844,7 +844,7 @@ export function beachArea(stage) {
   // the basketball shot meter: a bar that fills while you hold F, with a green window to let go in
   const meterEl = document.createElement('div');
   meterEl.className = 'shot-meter hidden';
-  meterEl.innerHTML = '<i class="sm-zone"></i><i class="sm-fill"></i><b></b>';
+  meterEl.innerHTML = '<i class="sm-zone"></i><i class="sm-fill"></i><b></b><em></em>';
   stage.hud.append(meterEl);
   let gradeUntil = 0;
   balls.onMeter = (v, zone) => {
@@ -854,6 +854,9 @@ export function beachArea(stage) {
     const z = meterEl.querySelector('.sm-zone');
     z.style.bottom = `${(zone.at - zone.half) * 100}%`;
     z.style.height = `${zone.half * 200}%`;
+    const em = meterEl.querySelector('em');
+    em.textContent = zone.contest > 0.05 ? `Contested ${Math.round(zone.contest * 100)}%` : 'Open';
+    em.className = zone.contest > 0.5 ? 'hot' : '';
   };
   balls.onShot = (grade) => {
     const t = meterEl.querySelector('b');

@@ -14,8 +14,8 @@ import { add, box, cyl, sph, group, plank, lamp, seeded } from './common.js';
 const G = 16; // gravity
 export const COURTS = [
   // margin: the out-of-bounds strip round the lines that players in a match can still use
-  { id: 'bb1', kind: 'basket', x: -46, z: -106, w: 28, d: 15, ball: 'basketball', margin: 2.2, match: true },
-  { id: 'bb2', kind: 'basket', x: -46, z: -76, w: 28, d: 15, ball: 'basketball', margin: 2.2, match: true },
+  { id: 'bb1', kind: 'basket', x: -46, z: -108, w: 36, d: 20, ball: 'basketball', margin: 2.2, match: true },
+  { id: 'bb2', kind: 'basket', x: -46, z: -78, w: 36, d: 20, ball: 'basketball', margin: 2.2, match: true },
   { id: 'soccer', kind: 'soccer', x: -108, z: -92, w: 56, d: 34, ball: 'soccer', margin: 4, match: true },
   { id: 'volley', kind: 'volley', x: -96, z: 30, w: 18, d: 9, ball: 'volleyball', margin: 3 },
 ];
@@ -166,17 +166,7 @@ export function buildPark(root, { anim, lights, solids, spots }) {
   const ps = letterSign('CORAL PARK', { font: 'military', w: 14, h: 1.3, face: '#ffd84d', side: '#ff5d73', depth: 0.25, bulbs: true, glow: 0.7 });
   ps.position.set(0, 6.7, 0.35);
   arch.add(ps);
-  // a graffiti wall between the courts, and a DJ booth with thumping speakers
-  const wall = canvasTexture(512, 128, (c) => {
-    c.fillStyle = '#6a6f80'; c.fillRect(0, 0, 512, 128);
-    const cols = ['#ff4fd8', '#39e6ff', '#ffd84d', '#6ee7a0', '#ff9f43'];
-    for (let i = 0; i < 40; i++) { c.fillStyle = cols[i % 5] + '88'; c.beginPath(); c.arc(Math.random() * 512, Math.random() * 128, 6 + Math.random() * 22, 0, TAU); c.fill(); }
-    c.font = 'bold 64px sans-serif'; c.lineWidth = 8; c.strokeStyle = '#1d1b2e'; c.fillStyle = '#ffd84d'; c.textAlign = 'center';
-    c.strokeText('COVE BALL', 256, 88); c.fillText('COVE BALL', 256, 88);
-  });
-  add(g, box(24, 4, 0.8), toon('#6a6f80'), { p: [-46, 2, -90.5], outline: true });
-  for (const sz of [1, -1]) add(g, new THREE.PlaneGeometry(24, 4), new THREE.MeshToonMaterial({ map: wall, gradientMap: toon('#fff').gradientMap }), { p: [-46, 2, -90.5 + sz * 0.41], r: [0, sz > 0 ? 0 : Math.PI, 0], cast: false });
-  solids.push({ x: -46, z: -90.5, w: 24, d: 0.8 });
+  // a DJ booth with thumping speakers
   const dj = group(g, -24, 0, -56);
   add(dj, box(3, 1.2, 1.5), toon('#23263f'), { p: [0, 0.6, 0], outline: true });
   add(dj, box(3.2, 0.1, 1.7), toon('#ff4fd8'), { p: [0, 1.25, 0] });
@@ -413,9 +403,11 @@ export class Balls {
 
   /** The shot meter: where the green window is (narrower when someone's guarding you or you're far out). */
   meterZone(me, people) {
+    // how contested: from the closest rival (right on you is 100%, a couple of metres off is 0)
     const b = this.meter?.b;
-    const guarded = b && [...people.values()].some((p) => p !== me && Math.hypot(p.x - me.x, p.z - me.z) < 1.8 && this.rivals(b.ct, p.k));
-    return { at: 0.8, half: guarded ? 0.045 : 0.075, guarded };
+    let contest = 0;
+    if (b) for (const p of people.values()) if (p !== me && this.rivals(b.ct, p.k)) contest = Math.max(contest, Math.min(1, Math.max(0, 1 - (Math.hypot(p.x - me.x, p.z - me.z) - 0.6) / 2.2)));
+    return { at: 0.8, half: 0.08 - contest * 0.04, contest };
   }
   /** Let go of F: shoot, better the closer to the middle of the green you let go. */
   release(me, people) {
@@ -433,9 +425,10 @@ export class Balls {
     const hs = this.park.hoops[b.ct.id];
     const hp = hs.reduce((a, h) => (Math.hypot(h.x - me.x, h.z - me.z) < Math.hypot(a.x - me.x, a.z - me.z) ? h : a));
     const dist = Math.hypot(hp.x - me.x, hp.z - me.z);
-    const base = (dist < 2.5 ? 0.82 : dist < 6.7 ? 0.55 : 0.38) * (zone.guarded ? 0.75 : 1);
-    // timing matters most: a perfect release almost always drops, a bad one rarely does
-    const chance = perfect ? 0.95 : green ? Math.min(0.92, base + 0.25) : base * (0.25 + 0.6 * q);
+    // the further out the harder (a half-court heave hardly ever drops), contested shots harder still,
+    // and timing matters most: perfect always goes in (even contested), a bad release almost never does
+    const base = Math.max(0.02, 0.9 - 0.035 * dist - 0.0016 * dist * dist) * (1 - 0.75 * zone.contest);
+    const chance = perfect ? 1 : green ? Math.min(0.95, base * 1.15) : base * 0.18 * q;
     const make = Math.random() < chance;
     const miss = make ? 0 : (0.3 + Math.random() * 0.35) * (Math.random() < 0.5 ? -1 : 1);
     const target = new THREE.Vector3(hp.x + miss * 0.8, RIM_Y + 0.1, hp.z + miss * 0.6);

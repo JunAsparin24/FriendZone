@@ -1538,6 +1538,8 @@ html.touch .lt-board { display: none; }
 .shot-meter .sm-zone { background: #6ee7a0aa; border-top: 2px solid #6ee7a0; border-bottom: 2px solid #6ee7a0; border-radius: 0; }
 .shot-meter .sm-fill { background: linear-gradient(0deg, #ff9f43, #ffd84d); opacity: 0.85; }
 .shot-meter b { position: absolute; left: 50%; top: -30px; transform: translateX(-50%); font: 18px var(--pixel); white-space: nowrap; text-shadow: 0 2px 0 #0008; }
+.shot-meter em { position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%); font: 700 12px var(--body); font-style: normal; color: #6ee7a0; white-space: nowrap; text-shadow: 0 1px 0 #000; }
+.shot-meter em.hot { color: #ff5d73; }
 .shot-meter b.perfect { color: #6ee7a0; } .shot-meter b.good { color: #ffd84d; } .shot-meter b.early, .shot-meter b.late { color: #ff5d73; }
 
 /* the Arcade's walk-up machines: a strip of info at the top, big buttons at the bottom */

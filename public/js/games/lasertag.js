@@ -1,6 +1,6 @@
 // Laser Tag (3D): through the doorway in the Arcade. A dark two-floor maze lit by neon, two teams (red
 // and blue) and hitscan blasters: the beam hits whatever is under your crosshair instantly. Tagging
-// someone is +100 points, getting tagged is -50 and stuns you for a moment. C (or Ctrl) drops you onto
+// someone is +100 points, getting tagged is -50 and stuns you for a moment. C drops you onto
 // your stomach to army-crawl behind low cover; Space jumps. Before every round there's a short break
 // to pick your team. Rounds are timed; tickets for everyone at the end.
 // Positions are in arena px like the Arena (20 px = 1 world unit); heights are in world units.
@@ -159,7 +159,7 @@ export function lasertag(stage) {
     <div class="hud-panel lt-pose hidden">🪖 Crawling · <kbd>C</kbd> to get up</div>
     <div class="hud-panel ar-lock hidden">🖱️ Click to look around · <kbd>Esc</kbd> frees the mouse</div>
     <div class="hud-panel ar-break hidden"></div>
-    <p class="hud-panel arena-help">WASD move · mouse look · click to fire · <kbd>C</kbd>/<kbd>Ctrl</kbd> crawl · <kbd>Space</kbd> jump · stairs lead upstairs · tag the other team!</p>`;
+    <p class="hud-panel arena-help">WASD move · mouse look · click to fire · <kbd>C</kbd> crawl · <kbd>Space</kbd> jump · stairs lead upstairs · tag the other team!</p>`;
   const $h = (s) => stage.hud.querySelector(s);
   const ptsEl = $h('.lt-points b'), popEl = $h('.lt-pop'), crossEl = $h('.ar-cross'), stunEl = $h('.lt-stun'), lockEl = $h('.ar-lock');
   const boardEl = $h('.lt-board'), breakEl = $h('.ar-break'), timeEl = $h('.lt-time'), poseEl = $h('.lt-pose'), pickEl = $h('.lt-pick');
@@ -273,7 +273,6 @@ export function lasertag(stage) {
   stage.onKey = (e, down) => {
     const k = e.key.toLowerCase();
     if (k === 'f' && !e.repeat) { firing = down; if (down) tapped = true; }
-    if (k === 'control' && !e.repeat) { if (down !== prone) toggleProne(); return; } // hold Ctrl to stay down
     if (!down || e.repeat) return;
     if (k === 'c') toggleProne();
     if (k === '1') pickTeam('red');

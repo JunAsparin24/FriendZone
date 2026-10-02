@@ -132,7 +132,7 @@ function syncKeys() {
       if (y > KEY_AT) want.add('s');
     }
     for (const k of c.injected) if (!want.has(k)) { c.keys?.delete(k); c.injected.delete(k); }
-    for (const k of want) { c.keys.add(k); c.injected.add(k); } // (every frame: the stuck-key guard may have dropped it)
+    for (const k of want) if (!c.injected.has(k)) { c.keys.add(k); c.injected.add(k); }
   }
 }
 function everyFrame() {

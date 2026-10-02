@@ -82,7 +82,7 @@ function translate(e) {
     fn(e.key === 'Escape' ? null : e.key);
     return;
   }
-  if (!remap.size || typing()) return;
+  if (!remap.size || (typing() && e.type === 'keydown')) return; // (let-gos always count: else a key could stick)
   const k = e.key.toLowerCase();
   const to = remap.get(k);
   if (!to && !muted.has(k)) return;

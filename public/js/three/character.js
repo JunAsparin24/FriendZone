@@ -9,7 +9,7 @@ import {
 } from './materials.js';
 
 export const DEFAULT_LOOK = {
-  skin: '#f6c9a0', hairColor: '#2b1d14', topColor: '#39c6ff', bottomColor: '#23263f', shoeColor: '#23263f', eyeColor: '#1d1b2e',
+  skin: '#f6c9a0', hairColor: '#2b1d14', topColor: '#39c6ff', bottomColor: '#23263f', shoeColor: '#23263f', eyeColor: '#1d1b2e', pupilColor: '#15131f',
   eyes: 'eyes_round', height: 'height_medium', build: 'build_regular',
   hair: 'hair_short', top: 'top_tee', bottom: 'bottom_pants', hat: 'hat_none', face: 'face_none', back: 'back_none', aura: 'aura_none',
   pet: 'pet_none', mount: 'mount_none', shoes: 'shoes_sneakers', socks: 'socks_none', sockColor: '#f5f5f5',
@@ -617,8 +617,9 @@ const bigEyes = (style) => style === 'eyes_sparkle';
 /** An anime-style iris: darker at the top, brighter towards the bottom, a dark rim, soft streaks and a
  *  pupil (one texture per eye colour). */
 const irisCache = new Map();
-function irisMaterial(color) {
-  if (!irisCache.has(color)) {
+function irisMaterial(color, pupil = '#15131f') {
+  const key = `${color}|${pupil}`;
+  if (!irisCache.has(key)) {
     const c = new THREE.Color(color), shade = (k) => `#${c.clone().multiplyScalar(k).getHexString()}`;
     // (pale colours are deepened, so no eye ends up a washed-out stare)
     const hsl = c.getHSL({}), deep = new THREE.Color().setHSL(hsl.h, hsl.s, Math.min(hsl.l, 0.55));
@@ -630,12 +631,12 @@ function irisMaterial(color) {
       x.strokeStyle = 'rgba(255,255,255,.1)'; x.lineWidth = 2;
       for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU; x.beginPath(); x.moveTo(64 + Math.cos(a) * 30, 64 + Math.sin(a) * 30); x.lineTo(64 + Math.cos(a) * 52, 64 + Math.sin(a) * 52); x.stroke(); }
       x.fillStyle = 'rgba(255,255,255,.14)'; x.beginPath(); x.ellipse(64, 100, 30, 12, 0, 0, TAU); x.fill();
-      x.fillStyle = '#15131f'; x.beginPath(); x.ellipse(64, 60, 27, 31, 0, 0, TAU); x.fill();
+      x.fillStyle = pupil; x.beginPath(); x.ellipse(64, 60, 27, 31, 0, 0, TAU); x.fill();
       x.strokeStyle = '#15131f'; x.lineWidth = 10; x.beginPath(); x.arc(64, 64, 58, 0, TAU); x.stroke();
     });
-    irisCache.set(color, new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    irisCache.set(key, new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
   }
-  return irisCache.get(color);
+  return irisCache.get(key);
 }
 function heartShape(r) {
   const s = new THREE.Shape();
@@ -3888,7 +3889,7 @@ export class Character {
         if (style === 'eyes_surprised') part(eye, sphere(0.026, 10, 8), basic(iris), { p: [0, 0, 0.05], outline: null, shadow: false });
         else if (style === 'eyes_cat') part(eye, sphere(0.03, 10, 8), dark, { p: [0, 0, 0.05], s: [0.3, 1.5, 0.6], outline: null, shadow: false });
         else {
-          part(eye, circle(big ? 0.078 : 0.069), irisMaterial(hex(iris)), { p: [0, 0, big ? 0.081 : 0.072], outline: null, shadow: false }); // (the shaded iris on the front)
+          part(eye, circle(big ? 0.078 : 0.069), irisMaterial(hex(iris), L.pupilColor ?? '#15131f'), { p: [0, 0, big ? 0.081 : 0.072], outline: null, shadow: false }); // (the shaded iris on the front)
           // an upper eyelid: a thick dark line curving over the top of the eye, so it looks soft, not staring
           part(eye, torus(big ? 0.077 : 0.068, 0.016, Math.PI * 0.82, 6, 20), dark, { p: [0, 0, big ? 0.083 : 0.074], r: [0, 0, Math.PI * 0.09], outline: null, shadow: false });
         }

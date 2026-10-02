@@ -39,7 +39,7 @@ const HEAD_SLOTS = new Set(['hair', 'hat', 'face']);
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic', 'exclusive'];
 const HAIR_ORDER = ['m', 'u', 'f']; // boys' cuts, then ones for anyone, then girls' styles (all one list)
 const DRAFT_DEFAULTS = {
-  bottom: 'bottom_pants', shoeColor: '#23263f', eyeColor: '#1d1b2e', eyes: 'eyes_round', height: 'height_medium', build: 'build_regular', pet: 'pet_none', mount: 'mount_none',
+  bottom: 'bottom_pants', shoeColor: '#23263f', eyeColor: '#1d1b2e', pupilColor: '#15131f', eyes: 'eyes_round', height: 'height_medium', build: 'build_regular', pet: 'pet_none', mount: 'mount_none',
   outfit: 'outfit_none', hand: 'hand_none', hand2: 'hand_none', hat2: 'hat_none', hat3: 'hat_none', face2: 'face_none', face3: 'face_none',
 };
 const TILE = 98;
@@ -222,7 +222,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       content.innerHTML = swatches('Skin tone', 'skin', CATALOG.skins)
         + choices('Height', 'height', CATALOG.heights) + choices('Build', 'build', CATALOG.builds);
     } else if (tab === 'eyes') {
-      content.innerHTML = choices('Eye style', 'eyes', CATALOG.eyeStyles, 'head') + swatches('Eye color', 'eyeColor', CATALOG.eyeColors);
+      content.innerHTML = choices('Eye style', 'eyes', CATALOG.eyeStyles, 'head') + swatches('Eye color', 'eyeColor', CATALOG.eyeColors) + swatches('Pupil color', 'pupilColor', CATALOG.pupilColors);
     } else if (tab === 'shoes') {
       content.innerHTML = choices('Shoes', 'shoes', CATALOG.shoeStyles, 'feet') + swatches('Shoe color', 'shoeColor', CATALOG.clothColors);
     } else if (tab === 'socks') {

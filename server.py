@@ -381,7 +381,7 @@ EXTRA_SLOTS = {"hat2": "hat", "hat3": "hat", "face2": "face", "face3": "face", "
 LOOK_TINTS = ("hatColor", "hat2Color", "hat3Color", "faceColor", "face2Color", "face3Color", "backColor", "handColor", "hand2Color",
               "topTint", "topAccent", "outfitColor", "outfitAccent", "hairTie", "auraColor")
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
-               "shoeColor": "clothColors", "eyeColor": "eyeColors", "sockColor": "clothColors"}
+               "shoeColor": "clothColors", "eyeColor": "eyeColors", "sockColor": "clothColors", "pupilColor": "pupilColors"}
 LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds", "shoes": "shoeStyles", "socks": "sockStyles"}
 # racing vehicles you can pick in the garage (all race the same; it's how you look doing it)
 VEHICLE_TYPES = ("kart", "moto", "buggy", "f1", "truck")
@@ -393,7 +393,7 @@ def vehicle_of(p):
 
 
 LOOK_EXTRAS = {"pet": "pet_none", "mount": "mount_none", "bottom": "bottom_pants", "outfit": "outfit_none", "hand": "hand_none", "hand2": "hand_none",
-               "hat2": "hat_none", "hat3": "hat_none", "face2": "face_none", "face3": "face_none", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
+               "hat2": "hat_none", "hat3": "hat_none", "face2": "face_none", "face3": "face_none", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "pupilColor": "#15131f", "eyes": "eyes_round",
                "shoes": "shoes_sneakers", "socks": "socks_none", "sockColor": "#f5f5f5",
                "height": "height_medium", "build": "build_regular"}
 STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBest", "jackpots", "bossKills", "houseLikes",

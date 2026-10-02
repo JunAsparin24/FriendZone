@@ -634,7 +634,8 @@ export function buildEnvironment(scene) {
   }
 
   function update(dt, t) {
-    wind.value = t;
+    // the sway clock ticks faster as the wind picks up (scaling the time itself would make trees jump)
+    wind.value += Math.min(dt, 0.1) * (0.74 + 0.26 * sharedWind.strength.value);
     for (const fn of anim) fn(t, dt);
     for (const c of clouds) {
       c.position.x += c.userData.speed * dt * sharedWind.strength.value;

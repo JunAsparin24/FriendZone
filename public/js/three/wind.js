@@ -17,10 +17,11 @@ export function withWind(shared, strength = 0.06, from = 1.2) {
         vec3 ip = vec3(0.0);
       #endif
       float h = max(0.0, position.y - ${from.toFixed(2)});
+      // (uWind is a clock that runs faster in strong wind, so changing weather speeds the sway up smoothly)
       float gust = uGust * (1.0 + 0.35 * sin(uWind * 0.6 + ip.x * 0.05));
       float lean = (uGust - 1.0) * 0.5; // strong wind pushes everything one way, not just back and forth
-      transformed.x += (sin(uWind * (1.7 + uGust * 0.6) + ip.x * 0.35 + ip.z * 0.2) * gust + lean) * ${strength.toFixed(3)} * h;
-      transformed.z += cos(uWind * (1.3 + uGust * 0.5) + ip.z * 0.3) * gust * ${(strength * 0.6).toFixed(3)} * h;`,
+      transformed.x += (sin(uWind * 2.3 + ip.x * 0.35 + ip.z * 0.2) * gust + lean) * ${strength.toFixed(3)} * h;
+      transformed.z += cos(uWind * 1.8 + ip.z * 0.3) * gust * ${(strength * 0.6).toFixed(3)} * h;`,
     );
   };
   material.customProgramCacheKey = () => `wind${strength}${from}`;

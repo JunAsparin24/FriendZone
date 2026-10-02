@@ -315,9 +315,11 @@ function renderLobby() {
   $('#lobbyCode').textContent = S.zone.code;
   for (const id of ['#inviteBtn', '#quitZone']) $(id).classList.toggle('hidden', !!S.zone.public);
   $('#switchZone').textContent = S.zone.public ? 'Back to menu' : 'Switch zone';
-  const list = Object.values(S.players).sort((a, b) =>
+  $('#newServer').classList.toggle('hidden', !S.zone.public);
+  // the online world only lists who's in your server right now (everyone else is in another one)
+  const list = Object.values(S.players).filter((p) => !S.zone.public || p.online).sort((a, b) =>
     b.online - a.online || b.level - a.level || a.name.localeCompare(b.name));
-  $('#onlineCount').textContent = list.filter((p) => p.online).length;
+  $('#onlineCount').textContent = S.zone.public ? `${list.length}/${S.zone.max ?? 20}` : list.filter((p) => p.online).length;
   $('#memberList').innerHTML = list.map((p) => `
     <li class="${p.online ? 'on' : 'off'} ${p.key === (viewing ?? S.me) ? 'sel' : ''}" data-k="${esc(p.key)}">
       <span class="mav" style="--c:${p.color}"></span>
@@ -430,6 +432,7 @@ $('#playBtn').onclick = () => {
 window.addEventListener('fz:lobby', () => $('#backLobby').click());
 
 $('#switchZone').onclick = () => leaveZone();
+$('#newServer').onclick = () => { net.send('play_public', { hop: true }); sfx('click'); };
 $('#quitZone').onclick = () => { $('#quitConfirm').classList.remove('hidden'); $('#quitConfirm').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 $('#quitNo').onclick = () => $('#quitConfirm').classList.add('hidden');
 $('#quitYes').onclick = () => net.send('quit_zone', { confirm: true });
@@ -561,7 +564,14 @@ function closeArea() {
   world.leftBuilding();
   music.setContext('main');
   if (activity.scene && screen === 'world') net.send('scene', { scene: 'world' });
+  if (activity.back && screen === 'world') setTimeout(() => openActivity(activity.back), 60); // (e.g. Laser Tag back into the Arcade)
 }
+// one area opens another (the Arcade's Laser Tag doorway)
+window.addEventListener('fz:area', (e) => {
+  if (!ACTIVITIES[e.detail]) return;
+  if (area) { const was = area; closeArea(); if (was.back) return; }
+  setTimeout(() => openActivity(e.detail), 60);
+});
 stage.openPanel = (activity) => openModal(activity);
 stage.closePanel = () => closeModal();
 

@@ -60,7 +60,7 @@ PUBLIC_MAX = 20
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-]{3,16}$")
 PASSWORD_MIN, PASSWORD_MAX = 4, 64
 
-SCENES = {"lobby", "world", "race", "arena", "boss", "house", "casino", "doodle", "archery", "shop", "petshop", "arcade", "tavern", "beach"}
+SCENES = {"lobby", "world", "race", "arena", "lasertag", "boss", "house", "casino", "doodle", "archery", "shop", "petshop", "arcade", "tavern", "beach"}
 AREA_SCENES = {"casino", "shop", "petshop", "arcade", "tavern", "beach"}  # 3D rooms you walk around in; positions are relayed to everyone inside
 COVE_OPEN = False  # Coral Cove is still being built: only admins can go through the portal for now
 
@@ -77,7 +77,7 @@ DAILY_SECS = 20 * 3600
 RACE_LAPS = 3
 RACE_TIMEOUT = 300          # seconds before a race is called
 RACE_MIN_LAP = 20           # nobody can really lap the Grand Prix faster than this
-RACE_ITEMS = {"turbo", "banana", "oil", "shell", "rocket", "zap", "shield", "star"}
+RACE_ITEMS = {"turbo", "turbo3", "banana", "bananas", "oil", "shell", "rocket", "zap", "shield", "star", "bomb"}
 RACE_PRIZES = [(150, 40), (80, 25), (50, 15)]  # (coins, xp) by place
 RACE_PRIZE_REST = (25, 10)
 RACE_PRIZE_SOLO = (40, 15)
@@ -569,7 +569,50 @@ ARCADE_GAMES = {
     "surf": {"name": "Surf Rush", "max": 60000, "pay": 0.02, "cap": 70},  # (played at the surf shack in Coral Cove)
     "second": {"name": "One Second", "max": 1000, "pay": 0.06, "cap": 60},
     "memory": {"name": "Memory Match", "max": 5000, "pay": 0.03, "cap": 50},
+    "blaster": {"name": "Star Blaster", "max": 100000, "pay": 0.01, "cap": 70},
+    "whack": {"name": "Whack-a-Mole", "max": 5000, "pay": 0.03, "cap": 60},
 }
+# Laser Tag (through the doorway in the Arcade): a dark 3D maze, two teams, hitscan blasters. Tagging
+# someone is +100 points, getting tagged is -50 (and stuns you for a moment). Rounds are timed; at the
+# end everyone gets tickets for their points, and the winning team gets a bonus.
+LT_W, LT_H = 1200, 900
+LT_ROUND = 180
+LT_BREAK = 10
+LT_TAG_PTS, LT_HIT_PTS = 100, 50
+LT_STUN = 2.0
+LT_TEAMS = ("red", "blue")
+LT_MAP = {
+    "id": "neon", "name": "Neon Maze", "w": LT_W, "h": LT_H,
+    # [x, y, w, h] in arena px (20 px = 1 world unit)
+    "walls": [
+        [260, 120, 40, 220], [260, 560, 40, 220], [900, 120, 40, 220], [900, 560, 40, 220],
+        [520, 200, 160, 40], [520, 660, 160, 40], [560, 400, 80, 100],
+        [400, 400, 40, 100], [760, 400, 40, 100],
+        [130, 420, 90, 40], [980, 420, 90, 40],
+        [380, 60, 40, 120], [780, 720, 40, 120], [380, 720, 40, 120], [780, 60, 40, 120],
+        [640, 300, 120, 30], [440, 570, 120, 30],
+    ],
+    "spawns": {"red": [[60, 120], [60, 450], [60, 780], [140, 260], [140, 640]],
+               "blue": [[1140, 120], [1140, 450], [1140, 780], [1060, 260], [1060, 640]]},
+}
+
+# inside the Arcade a go on a cabinet costs coins and pays out tickets (spent at the prize counter);
+# Surf Rush at the beach is still free and pays coins
+ARCADE_PLAY_COST = 10
+CLAW_COST = 25
+CLAW_TICKETS = [(20, 30), (40, 25), (60, 20), (100, 14), (150, 8), (300, 3)]  # (tickets, weight)
+CLAW_PLUSH_CHANCE = 0.08  # of a win: the claw-only plushie, if you haven't got one
+# the prize counter: a new line-up every hour, a couple of ticket-only exclusives plus regular cosmetics
+TICKET_PRICES = {"common": 150, "rare": 400, "epic": 900, "legendary": 2200, "mythic": 4500}
+TICKET_SHOP_SIZE, TICKET_SHOP_EXCLUSIVES = 6, 2
+
+
+def ticket_shop(hour):
+    rng = random.Random(f"tickets-{hour}")
+    regular = sorted(i["id"] for i in CATALOG["items"] if i.get("crate") and not i.get("exclusive"))
+    special = sorted(i["id"] for i in CATALOG["items"] if i.get("tickets"))
+    picks = rng.sample(special, min(TICKET_SHOP_EXCLUSIVES, len(special))) + rng.sample(regular, min(TICKET_SHOP_SIZE, len(regular)))
+    return [{"id": i, "price": ITEMS[i].get("tix") or TICKET_PRICES.get(ITEMS[i]["rarity"], 500), "ex": bool(ITEMS[i].get("tickets"))} for i in picks]
 # what a slot goes back to if you trade away the thing you're wearing
 TRADE_FALLBACK = {"hair": "hair_short", "top": "top_tee", "bottom": "bottom_pants", "pet": "pet_none"}
 
@@ -924,7 +967,7 @@ def house_view(p):
 def public(p, client):
     return {
         "key": p.get("key", p["name"].lower()), "name": p["name"], "color": p["color"],
-        "coins": p["coins"], "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
+        "coins": p["coins"], "tickets": p.get("tickets", 0), "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
         "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "fishbag": p.get("fishbag", []), "rods": p["rods"], "rod": p["rod"],
         "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"])},
         "dailyAt": p.get("lastDaily", 0) + DAILY_SECS,
@@ -982,6 +1025,11 @@ class Room:
         self.arena_items = {}
         self.arena_item_seq = 0
         self.arena_spawning = False
+        self.lt = {}            # laser tag: player key -> {team, x, y, a, score, tags, hits, stun, spawn}
+        self.lt_round = 0       # bumps every round (stale timers check it)
+        self.lt_end = 0.0       # when this round ends (0: no round running)
+        self.lt_break = 0.0     # while now < this, it's the scoreboard break
+        self.lt_tags = {"red": 0, "blue": 0}
         self.doodle = {"id": 0, "state": "idle", "queue": [], "turn": -1, "drawer": None, "word": None, "choices": [],
                        "ends": 0.0, "dur": 0, "guessed": {}, "scores": {}, "strokes": [], "shown": set(), "ranking": []}
         self.trades = {}      # id -> a live trade between two people in the tavern
@@ -1041,7 +1089,7 @@ IN_ZONE = {
     "race_join", "race_leave", "race_start", "race_ready", "race_vehicle", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "crab_bet", "ball", "ball_steal", "ball_event", "court_join", "court_ready", "court_leave", "court_score", "golf_done", "boat", "boat_take", "boat_leave", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
-    "arcade_score", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
+    "play_public", "lt_move", "lt_shoot", "arcade_score", "arcade_play", "claw_play", "ticket_shop", "ticket_buy", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
     "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
 }
 
@@ -1185,12 +1233,23 @@ class Game:
 
     def on_play_public(self, c, m):
         """Join the online world (your progress there is saved to your account)."""
+        if c.room and not m.get("hop"):  # (already in a zone: only "New server" makes sense)
+            return
         acct = self.signed_in(c)
         zone = self.public_zone()
         key = c.account
         if key not in zone["players"]:
             zone["players"][key] = new_player(acct["name"], self.zone_color(m), c.account)
             self.store.mark()
+        if m.get("hop"):
+            # "New server": move to a different copy of the world with space, to play with other people
+            here = c.room if c.room and c.room.zone is zone else None
+            others = [r for r in self.public_rooms() if r is not here and len(r.clients) < PUBLIC_MAX]
+            if not others:
+                raise GameError("There aren't any other servers with space right now. Try again in a bit!")
+            self.leave(c)
+            self.enter(c, PUBLIC_CODE, key, room=max(others, key=lambda r: len(r.clients)))
+            return
         self.enter(c, PUBLIC_CODE, key)
 
     def link_account(self, c, code, key):
@@ -1294,13 +1353,13 @@ class Game:
             raise GameError("That zone needs you to sign in again.")
         self.enter(c, zone["code"], key, token)
 
-    def enter(self, c, code, key, token=None):
+    def enter(self, c, code, key, token=None, room=None):
         online = code == PUBLIC_CODE
         until = self.booted.get(key, 0)
         if until > time.time():
             mins = max(1, round((until - time.time()) / 60))
             raise GameError(f"An admin removed you from the server. You can come back in {mins} minute{'s' if mins != 1 else ''}.")
-        room = self.public_room(key) if online else self.room(code)
+        room = room or (self.public_room(key) if online else self.room(code))
         player = room.zone["players"][key]
         player.setdefault("key", key)  # older saves: pin the key before the name can change
         if token is None:
@@ -1569,6 +1628,8 @@ class Game:
                     self.court_drop(room, court, c.key)
         if prev == "arena" and scene != "arena":
             self.arena_leave(c)
+        if prev == "lasertag" and scene != "lasertag":
+            self.lt_leave(c)
         if prev == "race" and scene != "race":
             self.race_remove(c)
         if prev == "boss" and scene != "boss":
@@ -1591,6 +1652,8 @@ class Game:
             room.broadcast({"t": "pos", "k": c.key, "x": c.x, "y": c.y}, scene="world", exclude=c)
         elif scene == "arena":
             self.arena_join(c)
+        elif scene == "lasertag":
+            self.lt_join(c)
         elif scene == "boss":
             self.boss_join(c)
         elif scene == "doodle":
@@ -3692,13 +3755,29 @@ class Game:
     # Each cabinet is a little 2D game played in your browser; the server keeps a top-10 board per game
     # for the zone and pays a few coins for a good run.
 
+    def on_arcade_play(self, c, m):
+        """Put your coins in a cabinet (in the Arcade): one go, which pays out tickets at the end."""
+        game = str(m.get("g", ""))
+        if game not in ARCADE_GAMES or c.scene != "arcade" or not c.ready("arcade_play", 0.5):
+            return
+        if c.player["coins"] < ARCADE_PLAY_COST:
+            raise GameError(f"A go costs {ARCADE_PLAY_COST} coins.")
+        self.reward(c, coins=-ARCADE_PLAY_COST)
+        c.arcade_paid = game
+        c.ws.send({"t": "arcade_go", "g": game})
+
     def on_arcade_score(self, c, m):
         game = str(m.get("g", ""))
         cfg = ARCADE_GAMES.get(game)
         if not cfg or c.scene not in ("arcade", "beach"):
             return
         score = int(num(m.get("s", 0), 0, cfg["max"]))
-        if not c.ready("arcade", 3):
+        paid = c.scene == "arcade"
+        if paid:  # (only a go you paid for counts)
+            if getattr(c, "arcade_paid", None) != game:
+                return
+            c.arcade_paid = None
+        elif not c.ready("arcade", 3):
             return
         boards = c.room.zone.setdefault("arcade", {})
         board = boards.setdefault(game, [])
@@ -3711,14 +3790,190 @@ class Game:
             board.sort(key=lambda e: (-e["s"], e["ts"]))
             del board[10:]
         top = bool(board) and board[0]["k"] == c.key and best and score > 0
-        coins = min(cfg["cap"], int(score * cfg["pay"]))
-        self.reward(c, coins=coins, xp=min(40, coins // 2))
-        c.ws.send({"t": "arcade_result", "g": game, "s": score, "coins": coins, "best": best})
+        earned = min(cfg["cap"], int(score * cfg["pay"]))
+        if paid:
+            tickets = max(2, earned)
+            c.player["tickets"] = c.player.get("tickets", 0) + tickets
+            self.reward(c, xp=min(40, tickets // 2))
+            c.ws.send({"t": "arcade_result", "g": game, "s": score, "coins": 0, "tickets": tickets, "best": best})
+        else:
+            self.reward(c, coins=earned, xp=min(40, earned // 2))
+            c.ws.send({"t": "arcade_result", "g": game, "s": score, "coins": earned, "best": best})
         if best:
             self.store.mark()
             c.room.broadcast({"t": "arcade_board", "g": game, "board": board})
         if top and len(board) > 1:
             self.post_feed(c.room, f"🕹️ {c.player['name']} set a new {cfg['name']} high score: {score:,}!")
+
+    def on_claw_play(self, c, m):
+        """A go on the claw machine: `aim` (0..1) is how well the claw lined up with a prize."""
+        if c.scene != "arcade" or not c.ready("claw", 1.5):
+            return
+        if c.player["coins"] < CLAW_COST:
+            raise GameError(f"The claw costs {CLAW_COST} coins.")
+        aim = num(m.get("aim", 0), 0, 1)
+        self.reward(c, coins=-CLAW_COST)
+        win = random.random() < 0.1 + 0.55 * aim
+        tickets, item = 0, None
+        if win:
+            plush = ITEMS.get("hand_plushie")
+            if plush and plush["id"] not in c.player["owned"] and random.random() < CLAW_PLUSH_CHANCE:
+                item = plush["id"]
+                self.grant(c, plush, "claw")
+                self.post_feed(c.room, f"🧸 {c.player['name']} won the Claw Plushie!")
+            else:
+                tickets = random.choices([t for t, _ in CLAW_TICKETS], [w for _, w in CLAW_TICKETS])[0]
+                c.player["tickets"] = c.player.get("tickets", 0) + tickets
+            self.store.mark()
+            self.push_player(c.room, c.key)
+        c.ws.send({"t": "claw_result", "win": win, "tickets": tickets, "item": item})
+
+    def on_ticket_shop(self, c, m):
+        hour = int(time.time() // 3600)
+        c.ws.send({"t": "ticket_shop", "items": ticket_shop(hour), "ends": (hour + 1) * 3600})
+
+    def on_ticket_buy(self, c, m):
+        """Swap tickets for something from this hour's prize counter."""
+        if c.scene != "arcade" or not c.ready("ticket_buy", 0.5):
+            return
+        entry = next((e for e in ticket_shop(int(time.time() // 3600)) if e["id"] == m.get("id")), None)
+        if not entry:
+            raise GameError("That prize isn't on the counter any more. The prizes change every hour!")
+        item = ITEMS[entry["id"]]
+        if item["id"] in c.player["owned"]:
+            raise GameError("You already have that.")
+        if c.player.get("tickets", 0) < entry["price"]:
+            raise GameError(f"You need {entry['price']:,} tickets for that.")
+        c.player["tickets"] -= entry["price"]
+        self.grant(c, item, "tickets")
+        self.push_player(c.room, c.key)
+
+    # ---- laser tag ------------------------------------------------------------------
+
+    @staticmethod
+    def lt_view(f):
+        return {"team": f["team"], "x": f["x"], "y": f["y"], "a": f["a"], "score": f["score"], "tags": f["tags"], "hits": f["hits"]}
+
+    def lt_state(self, room):
+        now = time.monotonic()
+        return {"t": "lt", "players": {k: self.lt_view(f) for k, f in room.lt.items()}, "map": LT_MAP,
+                "left": round(max(0.0, room.lt_end - now), 1), "brk": round(max(0.0, room.lt_break - now), 1),
+                "tags": room.lt_tags, "pts": [LT_TAG_PTS, LT_HIT_PTS], "stun": LT_STUN}
+
+    @staticmethod
+    def lt_spawn(room, team):
+        spots = LT_MAP["spawns"][team]
+        others = [(f["x"], f["y"]) for f in room.lt.values()]
+        if not others:
+            return list(random.choice(spots))
+        return list(max(spots, key=lambda s: min(math.dist(s, o) for o in others) + random.random() * 40))
+
+    def lt_join(self, c):
+        """Through the Laser Tag door: pay for a go, join the smaller team, and start a round if none is on."""
+        room = c.room
+        if c.player["coins"] < ARCADE_PLAY_COST:
+            c.ws.send({"t": "lt_denied", "msg": f"Laser Tag costs {ARCADE_PLAY_COST} coins."})
+            return
+        self.reward(c, coins=-ARCADE_PLAY_COST)
+        counts = {t: sum(1 for f in room.lt.values() if f["team"] == t) for t in LT_TEAMS}
+        team = min(LT_TEAMS, key=lambda t: (counts[t], random.random()))
+        x, y = self.lt_spawn(room, team)
+        room.lt[c.key] = {"team": team, "x": x, "y": y, "a": 0 if team == "red" else math.pi, "score": 0, "tags": 0, "hits": 0,
+                          "stun": 0.0, "spawn": time.monotonic()}
+        if not room.lt_end and time.monotonic() >= room.lt_break:
+            self.lt_start(room)
+        c.ws.send(self.lt_state(room))
+        room.broadcast({"t": "lt_add", "k": c.key, **self.lt_view(room.lt[c.key])}, scene="lasertag", exclude=c)
+
+    def lt_leave(self, c):
+        room = c.room
+        if room.lt.pop(c.key, None) is None:
+            return
+        room.broadcast({"t": "lt_del", "k": c.key}, scene="lasertag")
+        if not room.lt:  # everyone's gone: stop the round
+            room.lt_round += 1
+            room.lt_end = 0.0
+            room.lt_break = 0.0
+            room.lt_tags = {"red": 0, "blue": 0}
+
+    def lt_start(self, room):
+        room.lt_round += 1
+        room.lt_end = time.monotonic() + LT_ROUND
+        room.lt_tags = {"red": 0, "blue": 0}
+        asyncio.get_running_loop().call_later(LT_ROUND, self.lt_round_over, room, room.lt_round)
+
+    def on_lt_move(self, c, m):
+        f = c.room.lt.get(c.key)
+        if not f:
+            return
+        f["x"], f["y"], f["a"] = num(m.get("x", 0), 0, LT_W), num(m.get("y", 0), 0, LT_H), num(m.get("a", 0), -7, 7)
+        c.room.broadcast({"t": "lt_pos", "k": c.key, "x": round(f["x"], 1), "y": round(f["y"], 1), "a": round(f["a"], 2),
+                          "h": round(num(m.get("h", 0), 0, 6), 2), "pr": bool(m.get("pr"))}, scene="lasertag", exclude=c)
+
+    def on_lt_shoot(self, c, m):
+        """A hitscan shot: the shooter's game works out what the beam hit (friends are trusted)."""
+        room = c.room
+        f = room.lt.get(c.key)
+        now = time.monotonic()
+        if not f or not room.lt_end or now < f["stun"] or not c.ready("lt_shoot", 0.22):
+            return
+        room.broadcast({"t": "lt_beam", "k": c.key, "x": num(m.get("x", 0), 0, LT_W), "y": num(m.get("y", 0), 0, LT_H),
+                        "h": round(num(m.get("h", 1.4), 0, 6), 2), "a": round(num(m.get("a", 0), -7, 7), 3),
+                        "p": round(num(m.get("p", 0), -1.6, 1.6), 3), "len": round(num(m.get("len", 0), 0, 2000), 1)},
+                       scene="lasertag", exclude=c)
+        victim_key = str(m.get("hit") or "")
+        v = room.lt.get(victim_key)
+        if not v or victim_key == c.key or v["team"] == f["team"] or now < v["stun"] or now - v["spawn"] < 1.5:
+            return
+        if math.dist((f["x"], f["y"]), (v["x"], v["y"])) > num(m.get("len", 0), 0, 2000) + 120:
+            return  # (the beam couldn't have reached them)
+        v["stun"] = now + LT_STUN
+        f["score"] += LT_TAG_PTS
+        f["tags"] += 1
+        v["score"] = max(0, v["score"] - LT_HIT_PTS)
+        v["hits"] += 1
+        room.lt_tags[f["team"]] += 1
+        room.broadcast({"t": "lt_tag", "by": c.key, "k": victim_key, "s1": f["score"], "s2": v["score"],
+                        "tags": room.lt_tags}, scene="lasertag")
+
+    def lt_round_over(self, room, round_id):
+        if round_id != room.lt_round or not room.lt:
+            return
+        red, blue = room.lt_tags["red"], room.lt_tags["blue"]
+        winner = "red" if red > blue else "blue" if blue > red else None
+        board = sorted(({"k": k, "team": f["team"], "score": f["score"], "tags": f["tags"], "hits": f["hits"]} for k, f in room.lt.items()),
+                       key=lambda e: -e["score"])
+        payouts = {}
+        for e in board:
+            cl = room.clients.get(e["k"])
+            if not cl:
+                continue
+            tickets = max(5, e["score"] // 10) + (25 if e["team"] == winner else 0)
+            cl.player["tickets"] = cl.player.get("tickets", 0) + tickets
+            payouts[e["k"]] = tickets
+            self.reward(cl, xp=min(60, 10 + e["tags"] * 3))
+        room.lt_end = 0.0
+        room.lt_break = time.monotonic() + LT_BREAK
+        room.broadcast({"t": "lt_round", "winner": winner, "tags": room.lt_tags, "board": board, "tickets": payouts, "secs": LT_BREAK},
+                       scene="lasertag")
+        asyncio.get_running_loop().call_later(LT_BREAK, self.lt_next_round, room, round_id)
+
+    def lt_next_round(self, room, round_id):
+        if round_id != room.lt_round or not room.lt:
+            return
+        # shuffle the teams so they stay even, then everyone back to their base
+        keys = list(room.lt)
+        random.shuffle(keys)
+        now = time.monotonic()
+        for f in room.lt.values():
+            f["x"] = f["y"] = -9999
+        for i, k in enumerate(keys):
+            f = room.lt[k]
+            team = LT_TEAMS[i % 2]
+            x, y = self.lt_spawn(room, team)
+            f.update(team=team, x=x, y=y, a=0 if team == "red" else math.pi, score=0, tags=0, hits=0, stun=0.0, spawn=now)
+        self.lt_start(room)
+        room.broadcast(self.lt_state(room), scene="lasertag")
 
     # ---- trading (only in the tavern) ----------------------------------------------
     # Walk up to someone in the tavern and ask to trade. Both put coins, cosmetics and furniture on

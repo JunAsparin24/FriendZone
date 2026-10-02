@@ -1,8 +1,8 @@
-// The arcade cabinets: eight little 2D games played on a canvas inside a panel. Each game is
+// The arcade cabinets: little 2D games played on a canvas inside a panel. Each game is
 // { id, name, color, blurb, controls, init(G), update(G, dt), draw(G, ctx) }; the shared runner
 // handles the loop, keys/pointer, the start and game-over screens, and reports the score.
 import { net } from '../net.js';
-import { S, esc, fmt, nameOf } from '../state.js';
+import { S, esc, fmt, nameOf, me } from '../state.js';
 import { sfx } from '../sfx.js';
 import { listen } from './util.js';
 import { touch } from '../touch.js';
@@ -620,14 +620,196 @@ const SURF = {
   },
 };
 
-export const ARCADE_GAMES = [SNAKE, BREAKOUT, FLAPPY, BLOCKS, MERGE, HOP, SECOND, MEMORY];
+// ---------------------------------------------------------------------------------------------
+// Star Blaster: waves of aliens sway and swoop down; your ship fires on its own.
+// ---------------------------------------------------------------------------------------------
+function sbWave(G) {
+  G.wave += 1;
+  G.aliens = [];
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 8; c++) G.aliens.push({ hx: 60 + c * 50, hy: 90 + r * 40, x: 60 + c * 50, y: -40 - r * 40, row: r, dive: null });
+  G.sway = 0;
+}
+const BLASTER = {
+  id: 'blaster', name: 'Star Blaster', color: '#ff5d73', blurb: 'Blast the alien waves before they swoop down on you. Grab the ⚡ for double shots!',
+  controls: 'Arrows/A-D or the mouse to move · your ship fires on its own', touchHelp: 'Hold the left or right side to move', touch: 'sides',
+  init(G) { G.x = W / 2; G.tx = null; G.cd = 0; G.shots = []; G.bombs = []; G.lives = 3; G.inv = 0; G.wave = 0; G.power = 0; G.drops = []; G.fx = []; G.stars = Array.from({ length: 50 }, () => ({ x: rnd(0, W), y: rnd(0, H), s: rnd(0.5, 2) })); sbWave(G); },
+  pointer(G, x) { G.tx = x; },
+  update(G, dt) {
+    const k = G.keys, mv = (k.has('arrowright') || k.has('d') ? 1 : 0) - (k.has('arrowleft') || k.has('a') ? 1 : 0);
+    if (mv) { G.x += mv * 300 * dt; G.tx = null; } else if (G.tx != null) G.x += Math.max(-300 * dt, Math.min(300 * dt, G.tx - G.x));
+    G.x = Math.max(24, Math.min(W - 24, G.x));
+    G.inv -= dt; G.power -= dt;
+    if ((G.cd -= dt) <= 0) {
+      G.cd = 0.22;
+      for (const o of G.power > 0 ? [-10, 10] : [0]) G.shots.push({ x: G.x + o, y: H - 70 });
+      sfx('shoot', { vol: 0.15 });
+    }
+    G.sway += dt;
+    const spd = 1 + G.wave * 0.15;
+    for (const a of G.aliens) {
+      if (a.dive) {
+        a.dive.t += dt;
+        a.x = a.dive.x0 + Math.sin(a.dive.t * 2.4) * 110; a.y += (150 + G.wave * 15) * dt;
+        if (a.y > H + 30) { a.dive = null; a.y = -30; }
+        if (G.inv <= 0 && Math.abs(a.x - G.x) < 22 && Math.abs(a.y - (H - 50)) < 20) { a.dead = true; this.hurt(G); }
+      } else {
+        const hx = a.hx + Math.sin(G.sway * spd) * 40;
+        a.x += (hx - a.x) * Math.min(1, dt * 4); a.y += (a.hy - a.y) * Math.min(1, dt * 3);
+        if (Math.random() < dt * 0.04 * spd) a.dive = { t: 0, x0: a.x };
+        if (Math.random() < dt * 0.05 * spd) G.bombs.push({ x: a.x, y: a.y + 10 });
+      }
+    }
+    for (const s of G.shots) {
+      s.y -= 520 * dt;
+      const a = G.aliens.find((q) => !q.dead && Math.abs(q.x - s.x) < 18 && Math.abs(q.y - s.y) < 14);
+      if (a) {
+        a.dead = s.dead = true;
+        const pts = (40 - a.row * 10) * (a.dive ? 2 : 1);
+        G.score += pts;
+        G.fx.push({ x: a.x, y: a.y, t: 0.4 });
+        if (Math.random() < 0.06) G.drops.push({ x: a.x, y: a.y });
+        sfx('pop', { vol: 0.4 });
+      }
+    }
+    for (const b of G.bombs) { b.y += 230 * dt; if (G.inv <= 0 && Math.abs(b.x - G.x) < 18 && Math.abs(b.y - (H - 50)) < 16) { b.dead = true; this.hurt(G); } }
+    for (const d of G.drops) { d.y += 120 * dt; if (Math.abs(d.x - G.x) < 22 && Math.abs(d.y - (H - 50)) < 20) { d.dead = true; G.power = 8; sfx('powerup'); } }
+    if (G.done) return;
+    G.shots = G.shots.filter((s) => !s.dead && s.y > -10);
+    G.bombs = G.bombs.filter((b) => !b.dead && b.y < H + 10);
+    G.drops = G.drops.filter((d) => !d.dead && d.y < H + 10);
+    G.aliens = G.aliens.filter((a) => !a.dead);
+    for (const f of G.fx) f.t -= dt;
+    G.fx = G.fx.filter((f) => f.t > 0);
+    for (const s of G.stars) { s.y += s.s * 40 * dt; if (s.y > H) { s.y = 0; s.x = rnd(0, W); } }
+    if (!G.aliens.length) { G.score += 200 * G.wave; sfx('reveal', { rarity: 'rare' }); sbWave(G); }
+  },
+  hurt(G) {
+    G.lives -= 1; G.inv = 1.5; sfx('hurt');
+    if (G.lives <= 0) G.over();
+  },
+  draw(G, ctx) {
+    ctx.fillStyle = '#05031a'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff';
+    for (const s of G.stars) ctx.fillRect(s.x, s.y, s.s, s.s * 2);
+    const cols = ['#ff4fd8', '#ffd84d', '#39c6ff', '#6ee7a0'];
+    for (const a of G.aliens) {
+      const c = cols[a.row], wob = Math.sin(performance.now() / 150 + a.hx) * 3;
+      ctx.fillStyle = c;
+      ctx.fillRect(a.x - 14, a.y - 8, 28, 14); ctx.fillRect(a.x - 18, a.y - 2 + wob, 6, 10); ctx.fillRect(a.x + 12, a.y - 2 - wob, 6, 10);
+      ctx.fillRect(a.x - 8, a.y - 14, 4, 6); ctx.fillRect(a.x + 4, a.y - 14, 4, 6);
+      ctx.fillStyle = INK; ctx.fillRect(a.x - 8, a.y - 4, 5, 5); ctx.fillRect(a.x + 3, a.y - 4, 5, 5);
+    }
+    ctx.fillStyle = '#ffffff'; for (const s of G.shots) ctx.fillRect(s.x - 2, s.y - 8, 4, 12);
+    ctx.fillStyle = '#ff5d73'; for (const b of G.bombs) { ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, TAU); ctx.fill(); }
+    for (const d of G.drops) text(ctx, '⚡', d.x, d.y, 22, '#ffd84d');
+    for (const f of G.fx) { ctx.fillStyle = `rgba(255,216,77,${f.t * 2})`; ctx.beginPath(); ctx.arc(f.x, f.y, (0.4 - f.t) * 60, 0, TAU); ctx.fill(); }
+    if (G.inv <= 0 || Math.floor(G.inv * 10) % 2) {
+      const y = H - 50;
+      ctx.fillStyle = G.power > 0 ? '#ffd84d' : '#39c6ff';
+      ctx.beginPath(); ctx.moveTo(G.x, y - 18); ctx.lineTo(G.x + 20, y + 14); ctx.lineTo(G.x, y + 6); ctx.lineTo(G.x - 20, y + 14); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = '#ff9f43'; ctx.fillRect(G.x - 4, y + 8, 8, 6 + Math.random() * 6);
+    }
+    hud(G, `${'❤️'.repeat(Math.max(0, G.lives))}  W${G.wave}`);
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+// Whack-a-Mole: 45 seconds, nine holes. Gold moles are worth loads; don't bonk the bombs!
+// ---------------------------------------------------------------------------------------------
+const WM_KEYS = ['q', 'w', 'e', 'a', 's', 'd', 'z', 'x', 'c'];
+const wmHole = (i) => ({ x: 90 + (i % 3) * 150, y: 170 + Math.floor(i / 3) * 140 });
+const WHACK = {
+  id: 'whack', name: 'Whack-a-Mole', color: '#ff9f43', blurb: 'Bonk the moles as they pop up! Gold ones are worth five, and keep a streak going for bonus points. Never bonk a bomb!',
+  controls: 'Click the moles (or Q W E / A S D / Z X C)', touchHelp: 'Tap the moles!',
+  init(G) { G.time = 45; G.holes = Array.from({ length: 9 }, () => ({ up: 0, kind: null, life: 0, bonk: 0 })); G.next = 0.6; G.streak = 0; G.fx = []; G.shake = 0; },
+  whack(G, i) {
+    const h = G.holes[i];
+    if (!h || !h.kind || h.bonk > 0) { G.streak = 0; return; }
+    h.bonk = 0.3;
+    const { x, y } = wmHole(i);
+    if (h.kind === 'bomb') { G.score = Math.max(0, G.score - 30); G.streak = 0; G.shake = 0.4; G.fx.push({ x, y: y - 50, t: 0.8, txt: '-30', c: '#ff5d73' }); sfx('hurt'); return; }
+    G.streak += 1;
+    const pts = (h.kind === 'gold' ? 50 : 10) + Math.min(20, G.streak) * 2;
+    G.score += pts;
+    G.fx.push({ x, y: y - 50, t: 0.8, txt: `+${pts}`, c: h.kind === 'gold' ? '#ffd84d' : '#ffffff' });
+    sfx(h.kind === 'gold' ? 'coins' : 'bonk', { power: 0.5, n: 3 });
+  },
+  key(G, k) { const i = WM_KEYS.indexOf(k); if (i >= 0) this.whack(G, i); },
+  clickAt(G, x, y) {
+    const i = G.holes.findIndex((_, j) => { const h = wmHole(j); return Math.abs(x - h.x) < 60 && y > h.y - 90 && y < h.y + 30; });
+    if (i >= 0) this.whack(G, i); else G.streak = 0;
+  },
+  update(G, dt) {
+    G.time -= dt;
+    if (G.time <= 0) return G.over();
+    const pace = 1 - G.time / 45; // 0 → 1 as time runs out: faster and busier
+    if ((G.next -= dt) <= 0) {
+      G.next = rnd(0.35, 0.8) * (1 - pace * 0.45);
+      const free = G.holes.map((h, i) => (h.kind ? -1 : i)).filter((i) => i >= 0);
+      if (free.length) {
+        const h = G.holes[pick(free)], r = Math.random();
+        Object.assign(h, { kind: r < 0.1 ? 'gold' : r < 0.22 ? 'bomb' : 'mole', life: rnd(0.7, 1.2) * (1 - pace * 0.4), up: 0, bonk: 0 });
+      }
+    }
+    for (const h of G.holes) {
+      if (!h.kind) continue;
+      if (h.bonk > 0) { if ((h.bonk -= dt) <= 0) h.kind = null; continue; }
+      h.life -= dt;
+      h.up = h.life > 0.15 ? Math.min(1, h.up + dt * 8) : Math.max(0, h.up - dt * 8);
+      if (h.life <= 0) { if (h.kind !== 'bomb') G.streak = 0; h.kind = null; }
+    }
+    G.shake -= dt;
+    for (const f of G.fx) f.t -= dt;
+    G.fx = G.fx.filter((f) => f.t > 0);
+  },
+  draw(G, ctx) {
+    ctx.save();
+    if (G.shake > 0) ctx.translate(rnd(-6, 6), rnd(-6, 6));
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#8fd66b'); g.addColorStop(1, '#5aa845');
+    ctx.fillStyle = g; ctx.fillRect(-10, -10, W + 20, H + 20);
+    G.holes.forEach((h, i) => {
+      const { x, y } = wmHole(i);
+      ctx.fillStyle = '#3d2a1a'; ctx.beginPath(); ctx.ellipse(x, y, 56, 20, 0, 0, TAU); ctx.fill();
+      if (h.kind) {
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x - 60, y - 140, 120, 140); ctx.clip();
+        const up = h.bonk > 0 ? 0.6 : h.up, my = y + 10 - up * 70;
+        if (h.kind === 'bomb') {
+          ctx.fillStyle = '#2a2d3e'; ctx.beginPath(); ctx.arc(x, my, 32, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#ffb13b'; ctx.beginPath(); ctx.arc(x + 14, my - 34, 6 + Math.random() * 3, 0, TAU); ctx.fill();
+          text(ctx, '💣', x, my, 26);
+        } else {
+          ctx.fillStyle = h.kind === 'gold' ? '#ffd84d' : '#a0703f';
+          ctx.beginPath(); ctx.ellipse(x, my + 10, 36, 44, 0, 0, TAU); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.stroke();
+          ctx.fillStyle = '#ffc7a8'; ctx.beginPath(); ctx.ellipse(x, my + 12, 14, 10, 0, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#ff8fc7'; ctx.beginPath(); ctx.arc(x, my + 7, 5, 0, TAU); ctx.fill();
+          ctx.fillStyle = INK;
+          if (h.bonk > 0) { text(ctx, 'x  x', x, my - 10, 18, INK); text(ctx, '★', x - 30, my - 40, 18, '#ffd84d'); text(ctx, '★', x + 28, my - 34, 14, '#ffd84d'); }
+          else for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(x + s * 12, my - 8, 4, 0, TAU); ctx.fill(); }
+        }
+        ctx.restore();
+      }
+      ctx.fillStyle = '#6b4a2e'; ctx.beginPath(); ctx.ellipse(x, y + 4, 58, 14, 0, 0, Math.PI); ctx.fill();
+      if (!touch.enabled) text(ctx, WM_KEYS[i].toUpperCase(), x + 48, y + 22, 14, 'rgba(255,255,255,.7)');
+    });
+    for (const f of G.fx) text(ctx, f.txt, f.x, f.y - (0.8 - f.t) * 40, 22, f.c);
+    ctx.restore();
+    hud(G, `⏱ ${Math.ceil(G.time)}${G.streak > 2 ? `  🔥${G.streak}` : ''}`);
+  },
+};
+
+export const ARCADE_GAMES = [SNAKE, BREAKOUT, FLAPPY, BLOCKS, MERGE, HOP, SECOND, MEMORY, BLASTER, WHACK];
+/** What a go costs inside the Arcade (it pays out tickets instead of coins). */
+export const ARCADE_COST = 10;
 export const ARCADE_BY_ID = Object.fromEntries([...ARCADE_GAMES, SURF].map((g) => [g.id, g]));
 
 // ---------------------------------------------------------------------------------------------
 // The cabinet panel: the game on the left, the zone's high scores on the right
 // ---------------------------------------------------------------------------------------------
 
-export function arcadeCabinet(body, id) {
+/** `paid`: in the Arcade, where each go costs coins and pays out tickets. */
+export function arcadeCabinet(body, id, { paid = false } = {}) {
   const def = ARCADE_BY_ID[id];
   body.innerHTML = `
     <div class="arc">
@@ -638,6 +820,7 @@ export function arcadeCabinet(body, id) {
       <div class="arc-side">
         <h2 style="color:${def.color}">${esc(def.name)}</h2>
         <p class="muted small">${esc(def.blurb)}</p>
+        ${paid ? '<p class="arc-wallet"></p>' : ''}
         <p class="arc-controls"><b>Controls:</b> ${esc(touch.enabled && def.touchHelp ? def.touchHelp : def.controls)}</p>
         <h3>🏆 High scores</h3>
         <ol class="arc-board"></ol>
@@ -648,7 +831,9 @@ export function arcadeCabinet(body, id) {
   box?.classList.add('arc-modal'); // (phones: the game gets the whole screen)
   box?.parentElement?.classList.add('arc-full');
   const overlay = body.querySelector('.arc-overlay'), boardEl = body.querySelector('.arc-board');
-  let G = null, raf = 0, last = 0, lastResult = null;
+  let G = null, raf = 0, last = 0, lastResult = null, waiting = false;
+  const wallet = body.querySelector('.arc-wallet');
+  const renderWallet = () => { if (wallet) wallet.innerHTML = `🪙 <b>${fmt(me()?.coins ?? 0)}</b> · 🎟️ <b>${fmt(me()?.tickets ?? 0)}</b> tickets`; };
 
   const renderBoard = () => {
     const board = S.arcade?.[id] ?? [];
@@ -659,12 +844,21 @@ export function arcadeCabinet(body, id) {
     overlay.classList.remove('hidden');
     const mine = (S.arcade?.[id] ?? []).find((e) => e.k === S.me);
     overlay.innerHTML = `<div class="arc-title" style="color:${def.color}">${esc(def.name)}</div>
-      ${lastResult ? `<div class="arc-final">Score <b>${fmt(lastResult.s)}</b>${lastResult.best ? ' · <span class="win">New best!</span>' : ''}${lastResult.coins ? ` · +${fmt(lastResult.coins)} 🪙` : ''}</div>` : ''}
+      ${lastResult ? `<div class="arc-final">Score <b>${fmt(lastResult.s)}</b>${lastResult.best ? ' · <span class="win">New best!</span>' : ''}${lastResult.coins ? ` · +${fmt(lastResult.coins)} 🪙` : ''}${lastResult.tickets ? ` · <span class="arc-tix">+${fmt(lastResult.tickets)} 🎟️</span>` : ''}</div>` : ''}
       ${mine ? `<div class="muted">Your best: ${fmt(mine.s)}</div>` : ''}
-      <button class="btn primary" data-play>${lastResult ? 'Play again' : 'Press start'}</button>
+      <button class="btn primary" data-play ${waiting ? 'disabled' : ''}>${paid ? `🪙 ${ARCADE_COST} · ${lastResult ? 'Play again' : 'Insert coin'}` : lastResult ? 'Play again' : 'Press start'}</button>
       <div class="muted small">${esc(touch.enabled && def.touchHelp ? def.touchHelp : def.controls)}</div>`;
   };
+  // in the Arcade: pay first, and the game starts when the server says the coins went in
   const start = () => {
+    if (!paid) return begin();
+    if (waiting) return;
+    waiting = true;
+    net.send('arcade_play', { g: id });
+    showStart();
+  };
+  const begin = () => {
+    waiting = false;
     overlay.classList.add('hidden');
     G = { ctx, score: 0, keys: new Set(), done: false };
     G.over = () => {
@@ -746,14 +940,19 @@ export function arcadeCabinet(body, id) {
 
   const off = listen({
     arcade_board: (m) => { if (m.g === id) renderBoard(); },
+    arcade_go: (m) => { if (m.g === id && waiting) { sfx('coin'); begin(); } },
+    error: (m) => { if (m.for === 'arcade_play' && waiting) { waiting = false; showStart(); } },
+    player: () => renderWallet(),
     arcade_result: (m) => {
       if (m.g !== id) return;
-      lastResult = { s: m.s, coins: m.coins, best: m.best };
+      lastResult = { s: m.s, coins: m.coins, tickets: m.tickets, best: m.best };
+      if (m.tickets) sfx('coins', { n: 4 });
       if (m.best) sfx('reveal', { rarity: 'rare' });
       if (!overlay.classList.contains('hidden')) showStart();
     },
   });
   renderBoard();
+  renderWallet();
   showStart();
   return () => {
     cancelAnimationFrame(raf);

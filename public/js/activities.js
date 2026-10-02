@@ -7,6 +7,7 @@ import { fishJournal, fishMarket } from './games/fishing.js';
 import { archery } from './games/archery.js';
 import { racing } from './games/racing.js';
 import { arena } from './games/arena.js';
+import { lasertag } from './games/lasertag.js';
 import { boss } from './games/boss.js';
 import { house } from './games/house.js';
 import { doodle } from './games/doodle.js';
@@ -19,9 +20,12 @@ import { wardrobe } from './wardrobe.js';
 
 export const ACTIVITIES = {
   racing: { icon: 'racing', emoji: '🏎️', name: 'Racing', place: 'Race Track', scene: 'race', area: racing,
-    touch: { buttons: [{ icon: '🌀', label: 'Drift', key: ' ', code: 'Space' }, { icon: '🎁', label: 'Item', key: 'Shift', code: 'ShiftLeft' }], hint: 'Left thumb: push up to drive, left/right to steer · hold <b>Drift</b> through corners' } },
+    touch: { buttons: [{ icon: '🌀', label: 'Drift', key: ' ', code: 'Space' }, { icon: '🎁', label: 'Item', key: 'Shift', code: 'ShiftLeft' }, { icon: '↩️', label: 'Back', key: 'q', code: 'KeyQ' }], hint: 'Left thumb: push up to drive, left/right to steer · hold <b>Drift</b> through corners' } },
   arena: { icon: 'arena', emoji: '⚔️', name: 'Arena', place: 'The Arena', scene: 'arena', battle: true, area: arena,
     touch: { buttons: [{ icon: '🔫', label: 'Fire', key: 'f', code: 'KeyF', big: true }, { icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }, { icon: '💨', label: 'Slide', key: 'Shift', code: 'ShiftLeft' }], hint: 'Left thumb: move · Right thumb: drag to look · hold <b>Fire</b> to shoot' } },
+  // (through the doorway in the Arcade; leaving takes you back there)
+  lasertag: { icon: 'arcade', emoji: '🔫', name: 'Laser Tag', place: 'Laser Tag', scene: 'lasertag', battle: true, area: lasertag, back: 'arcade',
+    touch: { buttons: [{ icon: '🔫', label: 'Fire', key: 'f', code: 'KeyF', big: true }, { icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }, { icon: '🫳', label: 'Lie down', key: 'c', code: 'KeyC' }], hint: 'Left thumb: move · Right thumb: drag to look · hold <b>Fire</b> · <b>Lie down</b> behind low cover' } },
   boss: { icon: 'boss', emoji: '👾', name: 'Boss', place: 'Boss Cave', scene: 'boss', battle: true, area: boss,
     touch: { aim: true, buttons: [{ icon: '💨', label: 'Dash', key: ' ', code: 'Space' }], hint: 'Left thumb: move · Right thumb: touch where to shoot · <b>Dash</b> to dodge' } },
   arcade: { icon: 'arcade', emoji: '🕹️', name: 'Arcade', place: 'The Arcade', scene: 'arcade', area: arcadeArea,

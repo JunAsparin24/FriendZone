@@ -24,6 +24,7 @@ export const SCENE_LABEL = {
   archery: '🏹 at the archery range',
   shop: '👕 shopping',
   petshop: '🐾 at the pet shop',
+  lasertag: '🔫 playing laser tag',
 };
 
 export const me = () => S.players[S.me];

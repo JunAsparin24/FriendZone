@@ -202,7 +202,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       const worn = where && !it.id.endsWith('_none');
       const footer = confirmBuy === it.id ? `Buy for ${fmt(it.price)}?`
         : owned ? (on ? '✓ Wearing' : worn && MULTI[slot] ? `✓ ${MULTI[slot].names[MULTI[slot].keys.indexOf(where)]}` : 'Owned')
-          : on ? '👀 Trying on' : it.exclusive ? '✨ Exclusive' : it.price ? `🪙 ${fmt(it.price)}` : it.unlock ? `🔒 ${esc(it.unlock.hint)}` : it.drop ? `👾 ${esc(it.drop)}` : '🎁 Crates';
+          : on ? '👀 Trying on' : it.exclusive ? '✨ Exclusive' : it.tickets ? `🎟️ ${fmt(it.tix)} tickets` : it.claw ? '🕹️ Claw machine' : it.price ? `🪙 ${fmt(it.price)}` : it.unlock ? `🔒 ${esc(it.unlock.hint)}` : it.drop ? `👾 ${esc(it.drop)}` : '🎁 Crates';
       return `<button class="tile ${owned ? '' : 'locked'} ${on ? 'on' : worn && MULTI[slot] ? 'worn' : ''} ${confirmBuy === it.id ? 'confirm' : ''}"
         data-id="${it.id}" style="--r:${RARITY[it.rarity].color}" title="${esc(it.name)} · ${RARITY[it.rarity].label} · ${esc(howToGet(it))}${owned ? '' : ' · tap to try it on'}">
         <span class="tile-rarity">${RARITY[it.rarity].label}</span>${owned ? '' : '<span class="tile-lock">🔒</span>'}
@@ -307,7 +307,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       else if (it.price) {
         if (confirmBuy === it.id) { net.send('buy', { id: it.id }); confirmBuy = null; } else confirmBuy = it.id;
       }
-      if (!it.price) toast(it.exclusive ? `✨ ${it.name} is exclusive: only an admin can give it out.` : it.unlock ? `🔒 ${it.name}: ${it.unlock.hint}` : it.drop ? `👾 ${it.name} drops from the ${it.drop} in the Boss Cave.` : `🎁 ${it.name} only comes from crates.`);
+      if (!it.price) toast(it.exclusive ? `✨ ${it.name} is exclusive: only an admin can give it out.` : it.tickets ? `🎟️ ${it.name} is a prize at the Arcade's ticket counter (when it's in that hour's line-up).` : it.claw ? `🕹️ ${it.name} can only be won from the Arcade's claw machine!` : it.unlock ? `🔒 ${it.name}: ${it.unlock.hint}` : it.drop ? `👾 ${it.name} drops from the ${it.drop} in the Boss Cave.` : `🎁 ${it.name} only comes from crates.`);
     }
     renderContent();
   });

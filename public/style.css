@@ -1147,6 +1147,7 @@ body.mouselooking .chat { bottom: 38px; }
 }
 .race-item span { font-size: 44px; line-height: 1; }
 .race-item small { font-size: 10px; color: var(--muted); }
+.race-uses { position: absolute; right: 6px; bottom: 4px; font: 16px var(--pixel); color: #ffd84d; text-shadow: 0 2px 0 #0008; }
 .race-item.has { border-color: var(--accent); box-shadow: 0 0 20px #ffb34788, 0 6px 0 #0003; }
 .race-item.rolling span { animation: blink .12s infinite; }
 .race-map { position: absolute; right: 12px; bottom: 100px; width: 170px; height: 140px; background: #0d1f4ab3; border: 2px solid var(--line); border-radius: 14px; }
@@ -1489,4 +1490,51 @@ html.touch .court-panel { top: 58px; zoom: .8; }
 .gar-sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff4; background: var(--c); cursor: pointer; padding: 0; }
 .gar-sw.on { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
 .race-ready span { margin-left: 6px; white-space: nowrap; }
-html.touch .race-garage { top: 110px; width: 260px; }
+/* on a phone the garage pops up in the middle, above the drive/item buttons, so nothing covers it */
+html.touch .race-garage { position: fixed; z-index: 30; left: 50%; top: 50%; right: auto; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+html.touch .gar-sw { width: 28px; height: 28px; }
+
+/* Laser Tag: your points top left (with +100 / -50 pops), team tags and the clock top middle */
+.lt-points { position: absolute; top: 60px; left: 16px; display: flex; flex-direction: column; color: #fff; text-shadow: 0 0 12px #7c4dff, 0 3px 0 #0008; pointer-events: none; }
+.lt-points b { font: 46px var(--pixel); line-height: 1; }
+.lt-points span { font: 13px var(--pixel); letter-spacing: 2px; color: #b9a0ff; }
+.lt-pop { position: relative; height: 0; }
+.lt-pop i { position: absolute; left: 0; top: 4px; font: 26px var(--pixel); font-style: normal; animation: ltPop 1.1s ease-out forwards; }
+.lt-pop i.up { color: #6ee7a0; text-shadow: 0 0 10px #6ee7a0; }
+.lt-pop i.down { color: #ff3b5c; text-shadow: 0 0 10px #ff3b5c; }
+@keyframes ltPop { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-44px); opacity: 0; } }
+.lt-top { top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 18px; align-items: center; font: 22px var(--pixel); background: #07051ae6; }
+.lt-red { color: #ff3b5c; } .lt-blue { color: #2fa8ff; }
+.lt-time { color: #fff; min-width: 70px; text-align: center; }
+.lt-time.low { color: #ffd84d; animation: blink .5s infinite; }
+.lt-board { top: 60px; right: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 170px; background: #07051ad9; font-size: 13px; }
+.lt-team > b { color: var(--c); font: 14px var(--pixel); }
+.lt-team div { display: flex; justify-content: space-between; gap: 10px; border-left: 3px solid var(--c); padding-left: 6px; }
+.lt-team div.me { font-weight: 800; color: #ffd84d; }
+.lt-stun { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(transparent 40%, #ff3b5c66); pointer-events: none; color: #fff; }
+.lt-stun b { font: 54px var(--pixel); text-shadow: 0 0 18px #ff3b5c; }
+.lt-stun span { font: 22px var(--pixel); }
+.lt-pose { bottom: 70px; left: 50%; transform: translateX(-50%); }
+html.touch .lt-points { top: 64px; }
+html.touch .lt-board { display: none; }
+
+/* the Arcade: wallet line, the claw machine and the ticket prize counter */
+.arc-wallet { font-weight: 700; color: var(--text); margin: 6px 0; }
+.arc-tix { color: #ffd84d; font-weight: 800; }
+.claw { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.claw h2 { margin: 0; }
+.claw canvas { width: min(360px, 100%); height: auto; border-radius: 14px; border: 3px solid #ff4fd8; box-shadow: 0 0 22px #ff4fd855; background: #0c0a2a; }
+.claw-ctl { display: flex; gap: 10px; }
+.claw-ctl .btn { min-width: 64px; font-size: 18px; touch-action: none; user-select: none; }
+.claw-ctl [data-c="go"] { min-width: 140px; }
+.claw-msg { min-height: 1.4em; margin: 0; font-weight: 700; }
+.tix-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tix-head h2 { margin: 0; }
+.tix-bal { font: 20px var(--pixel); color: #ffd84d; background: var(--bg-2); border: 2px solid var(--line); border-radius: 12px; padding: 4px 12px; }
+.tix-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tix-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 8px; border-radius: 14px; border: 2px solid var(--line); background: var(--bg-2); text-align: center; }
+.tix-card b { font-size: 14px; line-height: 1.15; }
+.tix-card small { font-weight: 700; font-size: 11px; }
+.tix-card.ex { border-color: #ffd84d; box-shadow: 0 0 16px #ffd84d55; background: linear-gradient(160deg, #3a2a6e, var(--bg-2)); }
+.tix-badge { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; font-weight: 800; background: #ffd84d; color: #1a1330; border-radius: 99px; padding: 2px 8px; }
+.tix-art { width: 96px; height: 100px; display: block; }

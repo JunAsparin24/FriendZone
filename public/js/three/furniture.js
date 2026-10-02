@@ -1439,6 +1439,7 @@ Object.assign(FURNITURE, {
   wdoor_round(g, A, { len = 1.25 } = {}) { archway(g, len, 'round'); },
   wdoor_stone(g, A, { len = 1.25 } = {}) { archway(g, len, 'stone'); },
   wdoor_wide(g, A, { len = 2.5 } = {}) { doorFrame(g, len); },
+  wdoor_wide_arch(g, A, { len = 2.5 } = {}) { archway(g, len, 'round'); },
   // half walls, drawn out like walls: one up from the floor (a divider), one hanging from the ceiling
   room_halfwall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps, top: HALF_H }); },
   room_hangwall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps, bottom: ROOM_H - HANG_H }); },
@@ -1451,9 +1452,31 @@ Object.assign(FURNITURE, {
 const ROOM_H = 3.2, ROOM_T = 0.25, DOOR_H = 2.2, HALF_H = 1.3, HANG_H = 1.0; // (the house's wall height, how thick these walls are: their whole footprint, so they meet flush; how tall a door is)
 /** The wooden frame round a door opening `w` wide. */
 function doorFrame(g, w, color = WOOD) {
-  const wood = toon(color);
-  for (const s of [-1, 1]) add(g, box(0.08, DOOR_H, ROOM_T + 0.06), wood, { p: [s * (w / 2 - 0.04), DOOR_H / 2, 0] });
-  add(g, box(w + 0.08, 0.08, ROOM_T + 0.06), wood, { p: [0, DOOR_H, 0] });
+  const wood = toon(color), edge = toon(shade(color, -0.15)), light = toon(shade(color, 0.12));
+  // liners right through the wall's thickness, so the opening is finished inside
+  for (const s of [-1, 1]) add(g, box(0.05, DOOR_H, ROOM_T + 0.01), wood, { p: [s * (w / 2 - 0.025), DOOR_H / 2, 0], outline: false });
+  add(g, box(w, 0.05, ROOM_T + 0.01), wood, { p: [0, DOOR_H - 0.025, 0], outline: false });
+  add(g, box(w - 0.1, 0.02, ROOM_T + 0.01), edge, { p: [0, 0.01, 0], outline: false }); // threshold
+  // casing on both faces of the wall: posts on plinth blocks, a head with a little crown on top
+  for (const z of [-1, 1]) {
+    const f = z * (ROOM_T / 2 + 0.022);
+    for (const s of [-1, 1]) {
+      add(g, box(0.12, DOOR_H + 0.06, 0.04), wood, { p: [s * (w / 2 + 0.035), (DOOR_H + 0.06) / 2, f] });
+      add(g, box(0.02, DOOR_H - 0.1, 0.012), light, { p: [s * (w / 2 + 0.035), DOOR_H / 2, f + z * 0.022], outline: false }); // a bead down the middle
+      add(g, box(0.15, 0.22, 0.055), edge, { p: [s * (w / 2 + 0.035), 0.11, f] }); // plinth block
+    }
+    add(g, box(w + 0.32, 0.14, 0.05), wood, { p: [0, DOOR_H + 0.1, f] });
+    add(g, box(w + 0.4, 0.04, 0.075), light, { p: [0, DOOR_H + 0.19, f], outline: false });
+  }
+}
+/** Door furniture: a round rosette with a lever handle, on both faces of the door. */
+function lever(parent, x, y, z, metal) {
+  for (const s of [-1, 1]) {
+    const f = s * z;
+    add(parent, cyl(0.04, 0.04, 0.015, 14), metal, { p: [x, y, f], r: [Math.PI / 2, 0, 0], outline: false });
+    add(parent, cyl(0.012, 0.012, 0.05, 8), metal, { p: [x, y, f + s * 0.025], r: [Math.PI / 2, 0, 0], outline: false });
+    add(parent, box(0.14, 0.025, 0.025), metal, { p: [x - 0.06, y, f + s * 0.05], outline: false });
+  }
 }
 /** A door in an opening `w` wide: it swings (or slides) open when someone walks up, and shuts behind them. */
 function doorPanel(g, A, style, w) {
@@ -1502,9 +1525,15 @@ function doorPanel(g, A, style, w) {
     } else {
       add(panel, box(W, H, T), wood, { p: [W / 2, H / 2, 0] });
       const inset = toon({ white: '#efebe2', red: '#b01e32' }[style] ?? '#96632f');
-      for (const y of [0.55, 1.5]) add(panel, box(W * 0.7, 0.6, T + 0.02), inset, { p: [W / 2, y, 0], outline: false });
+      // raised panels on both faces (two tall ones over a short one), each with a lighter bevel
+      const bevel = toon(shade({ white: '#fbfaf6', red: '#c8243a' }[style] ?? '#a8723f', 0.15));
+      for (const [y, h] of [[0.42, 0.5], [1.38, 1.0]]) for (const z of [-1, 1]) {
+        add(panel, box(W * 0.68, h, 0.012), bevel, { p: [W / 2, y, z * (T / 2 + 0.006)], outline: false });
+        add(panel, box(W * 0.6, h - 0.08, 0.016), inset, { p: [W / 2, y, z * (T / 2 + 0.01)], outline: false });
+      }
+      for (const y of [0.3, H - 0.3]) add(panel, cyl(0.022, 0.022, 0.14, 8), shiny('#8d96a8', { metalness: 0.6 }), { p: [0.005, y, 0], outline: false }); // hinges
     }
-    if (style !== 'saloon') for (const z of [-1, 1]) add(panel, sph(0.045, 10, 8), shiny(style === 'white' ? '#c8ced8' : '#ffd84d'), { p: [W - 0.12, 1.0, z * (T / 2 + 0.03)], outline: false });
+    if (style !== 'saloon') lever(panel, W - 0.12, 1.0, T / 2, shiny(style === 'white' || style === 'glass' ? '#c8ced8' : '#ffc53d', { metalness: 0.75, roughness: 0.3 }));
   }
   // A.open (0..1) is how far it should be open; the house sets it when someone's near
   let cur = 0, side = 1;
@@ -1542,28 +1571,54 @@ function beadCurtain(g, A, w) {
     return false;
   });
 }
-/** An open archway: a frame with the top corners filled in with wall (round), or a stone surround. */
-function archway(g, w, style) {
-  if (style === 'stone') {
-    const stone = toon('#b8b2a6'), dark = toon('#9a9488');
-    for (const s of [-1, 1]) for (let k = 0; k < 5; k++) add(g, box(k % 2 ? 0.2 : 0.26, DOOR_H / 5 - 0.02, ROOM_T + 0.08), k % 2 ? dark : stone, { p: [s * (w / 2 - 0.1), (k + 0.5) * (DOOR_H / 5), 0] });
-    for (let k = 0; k < 5; k++) add(g, box((w + 0.3) / 5 - 0.02, 0.22, ROOM_T + 0.08), k === 2 ? dark : stone, { p: [-w / 2 - 0.15 + (k + 0.5) * ((w + 0.3) / 5), DOOR_H + 0.08, 0] });
-    return;
-  }
-  // round: the wall comes down into a curve across the top of the opening, with a wooden trim round it
-  const r = w / 2, rise = Math.min(0.55, r);
-  const shape = new THREE.Shape();
+/** The wall that fills the top corners of an arched opening `w` wide (papered like the wall it's in). */
+function archFill(g, w, rise) {
+  const r = w / 2, shape = new THREE.Shape();
   shape.moveTo(-r, DOOR_H); shape.lineTo(-r, DOOR_H - rise);
-  for (let k = 0; k <= 16; k++) { const a = Math.PI - (k / 16) * Math.PI; shape.lineTo(Math.cos(a) * r, DOOR_H - rise + Math.sin(a) * rise); }
+  for (let k = 0; k <= 20; k++) { const a = Math.PI - (k / 20) * Math.PI; shape.lineTo(Math.cos(a) * r, DOOR_H - rise + Math.sin(a) * rise); }
   shape.lineTo(r, DOOR_H); shape.lineTo(-r, DOOR_H);
   const fill = new THREE.ExtrudeGeometry(shape, { depth: ROOM_T - 0.01, bevelEnabled: false });
   fill.translate(0, 0, -(ROOM_T - 0.01) / 2);
   const m = add(g, fill, toon('#fff1d6', { side: THREE.DoubleSide }), { outline: false });
-  m.userData.wallpaper = true; // (papered like the wall it's in)
-  const trim = toon(WOOD);
-  for (const s of [-1, 1]) add(g, box(0.07, DOOR_H - rise, ROOM_T + 0.05), trim, { p: [s * (r - 0.035), (DOOR_H - rise) / 2, 0] });
-  const curve = new THREE.CatmullRomCurve3(Array.from({ length: 17 }, (_, k) => { const a = Math.PI - (k / 16) * Math.PI; return new THREE.Vector3(Math.cos(a) * (r - 0.035), DOOR_H - rise + Math.sin(a) * (rise - 0.035), 0); }));
-  for (const z of [-1, 1]) add(g, new THREE.TubeGeometry(curve, 24, 0.035, 6), trim, { p: [0, 0, z * (ROOM_T / 2)], outline: false });
+  m.userData.wallpaper = true;
+}
+/** Points round the curve of an arch (radius r across, rising `rise`, inset by `inset`). */
+const archCurve = (r, rise, inset, z = 0) => new THREE.CatmullRomCurve3(Array.from({ length: 25 }, (_, k) => {
+  const a = Math.PI - (k / 24) * Math.PI;
+  return new THREE.Vector3(Math.cos(a) * (r - inset), DOOR_H - rise + Math.sin(a) * (rise - inset), z);
+}));
+/** An open archway `w` wide: round (wooden trim, plinths and a keystone) or stone (a ring of blocks). */
+function archway(g, w, style) {
+  const r = w / 2, rise = Math.min(style === 'stone' ? 0.6 : 0.55, r);
+  archFill(g, w, rise);
+  if (style === 'stone') {
+    const stone = toon('#c4beb2'), dark = toon('#a39d91');
+    // jambs of alternating blocks, then voussoirs fanned round the arch with a keystone at the top
+    for (const s of [-1, 1]) for (let k = 0; k < 4; k++) {
+      const h = (DOOR_H - rise) / 4;
+      add(g, box(k % 2 ? 0.22 : 0.3, h - 0.025, ROOM_T + 0.1), k % 2 ? dark : stone, { p: [s * (r - 0.02 + (k % 2 ? 0 : 0.04)), (k + 0.5) * h, 0] });
+    }
+    const n = 9;
+    for (let k = 0; k < n; k++) {
+      const a = Math.PI - ((k + 0.5) / n) * Math.PI, key = k === (n - 1) / 2;
+      const mid = new THREE.Vector3(Math.cos(a) * (r + 0.06), DOOR_H - rise + Math.sin(a) * (rise + 0.06), 0);
+      const m = add(g, box(key ? 0.26 : 0.2, key ? 0.36 : 0.28, ROOM_T + (key ? 0.14 : 0.1)), key ? stone : (k % 2 ? dark : stone), { p: mid.toArray() });
+      m.rotation.z = Math.atan2(Math.sin(a) * (rise / r), Math.cos(a)) - Math.PI / 2;
+    }
+    return;
+  }
+  const wood = toon(WOOD), light = toon(shade(WOOD, 0.12)), dark = toon(shade(WOOD, -0.15));
+  for (const z of [-1, 1]) {
+    const f = z * (ROOM_T / 2 + 0.02);
+    for (const s of [-1, 1]) {
+      add(g, box(0.11, DOOR_H - rise, 0.04), wood, { p: [s * (r + 0.02), (DOOR_H - rise) / 2, f] });
+      add(g, box(0.15, 0.22, 0.055), dark, { p: [s * (r + 0.02), 0.11, f] }); // plinth
+    }
+    add(g, new THREE.TubeGeometry(archCurve(r + 0.075, rise + 0.075, 0.075, f), 32, 0.045, 6), wood, { outline: false });
+    add(g, box(0.12, 0.2, 0.06), light, { p: [0, DOOR_H + 0.07, f] }); // keystone
+  }
+  // a lining under the curve, through the wall
+  for (const s of [-1, 1]) add(g, box(0.04, DOOR_H - rise, ROOM_T + 0.01), wood, { p: [s * (r - 0.02), (DOOR_H - rise) / 2, 0], outline: false });
 }
 /** A papered face: the wallpaper repeats every 2 tiles across, and is pinned to the floor going up
  *  (y0: how high its bottom edge is), so it lines up with the room's own walls. */
@@ -1581,7 +1636,9 @@ function papered(w, h, y0 = 0) {
  */
 function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = ROOM_H } = {}) {
   const core = toon('#e8d6b8'), trim = toon('#f4f0ff'), paper = toon('#fff1d6', { side: THREE.DoubleSide });
-  const paperAt = (geom, p, ry, face) => { const m = add(g, geom, paper, { p, r: [0, ry, 0], outline: false }); m.userData.wallpaper = true; m.userData.face = face; };
+  // (wallpaper doesn't take shadows: the wall's own core, a hair behind it, would darken it, and the
+  // house's own walls don't either, so the two always match)
+  const paperAt = (geom, p, ry, face) => { const m = add(g, geom, paper, { p, r: [0, ry, 0], outline: false }); m.receiveShadow = false; m.userData.wallpaper = true; m.userData.face = face; };
   // one solid stretch from x0 to x1, y0 to y1
   const piece = (x0, x1, y0, y1) => {
     const pw = x1 - x0, ph = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;

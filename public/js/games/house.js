@@ -253,7 +253,7 @@ function buildRoom() {
   const wall = (w, h, x, y, z, ry, skirting = true) => {
     const grp = new THREE.Group();
     const face = new THREE.Mesh(tiledPlane(w, h, y - h / 2), wallMat);
-    face.receiveShadow = true;
+    face.receiveShadow = false; // (wallpaper stays evenly lit, the same as on walls you build)
     const shell = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.25), outside);
     shell.position.z = -0.14;
     const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, 0.06), trim);

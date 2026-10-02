@@ -620,16 +620,18 @@ const irisCache = new Map();
 function irisMaterial(color) {
   if (!irisCache.has(color)) {
     const c = new THREE.Color(color), shade = (k) => `#${c.clone().multiplyScalar(k).getHexString()}`;
-    const light = `#${c.clone().lerp(new THREE.Color('#ffffff'), 0.35).getHexString()}`;
+    // (pale colours are deepened, so no eye ends up a washed-out stare)
+    const hsl = c.getHSL({}), deep = new THREE.Color().setHSL(hsl.h, hsl.s, Math.min(hsl.l, 0.55));
+    const tone = (k) => `#${deep.clone().multiplyScalar(k).getHexString()}`;
     const tex = canvasTexture(128, 128, (x) => {
       const g = x.createLinearGradient(0, 4, 0, 124);
-      g.addColorStop(0, shade(0.35)); g.addColorStop(0.45, color); g.addColorStop(1, light);
+      g.addColorStop(0, tone(0.3)); g.addColorStop(0.5, tone(0.75)); g.addColorStop(1, tone(1));
       x.fillStyle = g; x.beginPath(); x.arc(64, 64, 62, 0, TAU); x.fill();
-      x.strokeStyle = 'rgba(255,255,255,.18)'; x.lineWidth = 2;
-      for (let i = 0; i < 18; i++) { const a = (i / 18) * TAU; x.beginPath(); x.moveTo(64 + Math.cos(a) * 26, 64 + Math.sin(a) * 26); x.lineTo(64 + Math.cos(a) * 54, 64 + Math.sin(a) * 54); x.stroke(); }
-      x.fillStyle = 'rgba(255,255,255,.28)'; x.beginPath(); x.ellipse(64, 98, 34, 14, 0, 0, TAU); x.fill();
-      x.fillStyle = '#15131f'; x.beginPath(); x.ellipse(64, 62, 21, 25, 0, 0, TAU); x.fill();
-      x.strokeStyle = shade(0.25); x.lineWidth = 7; x.beginPath(); x.arc(64, 64, 59, 0, TAU); x.stroke();
+      x.strokeStyle = 'rgba(255,255,255,.1)'; x.lineWidth = 2;
+      for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU; x.beginPath(); x.moveTo(64 + Math.cos(a) * 30, 64 + Math.sin(a) * 30); x.lineTo(64 + Math.cos(a) * 52, 64 + Math.sin(a) * 52); x.stroke(); }
+      x.fillStyle = 'rgba(255,255,255,.14)'; x.beginPath(); x.ellipse(64, 100, 30, 12, 0, 0, TAU); x.fill();
+      x.fillStyle = '#15131f'; x.beginPath(); x.ellipse(64, 60, 27, 31, 0, 0, TAU); x.fill();
+      x.strokeStyle = '#15131f'; x.lineWidth = 10; x.beginPath(); x.arc(64, 64, 58, 0, TAU); x.stroke();
     });
     irisCache.set(color, new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
   }
@@ -2145,6 +2147,22 @@ const FACES = {
       taper(head, [a, b, c2], 0.015, 0.015, m);
     }
   },
+  face_pixelshades(head, L) {
+    // chunky 8-bit "deal with it" shades: a black bar with stepped pixel lenses and white glints
+    const m = toon('#141220'), shine = basic('#ffffff');
+    const p = onFace(0, EYE_Y + 0.01, 0.035), q = faceTo(p);
+    const lens = new THREE.Group();
+    lens.position.copy(p);
+    lens.quaternion.copy(q);
+    head.add(lens);
+    part(lens, box(0.5, 0.05, 0.04), m, { p: [0, 0.04, 0], outline: OUT_THIN });
+    for (const s of [-1, 1]) {
+      part(lens, box(0.19, 0.06, 0.04), m, { p: [s * EYE_X, 0, 0], outline: OUT_THIN });
+      part(lens, box(0.13, 0.05, 0.04), m, { p: [s * EYE_X - s * 0.02, -0.05, 0], outline: null });
+      part(lens, box(0.035, 0.025, 0.01), shine, { p: [s * EYE_X - 0.05, 0.005, 0.022], outline: null, shadow: false });
+      part(lens, box(0.025, 0.025, 0.01), shine, { p: [s * EYE_X + 0.0, -0.02, 0.022], outline: null, shadow: false });
+    }
+  },
   face_mustache(head, L) {
     // a curly handlebar: two fat lobes from under the nose, flicking up at the ends
     const m = toon(faceCol(L, mix(L.hairColor, '#000000', 0.15)));
@@ -2315,6 +2333,31 @@ const BACKS = {
     part(back, box(0.44, 0.5, 0.22), toon(c), { p: [0, -0.02, -0.1] });
     part(back, box(0.46, 0.17, 0.25), toon(tint(c, 1.2)), { p: [0, 0.18, -0.1] });
     part(back, box(0.26, 0.16, 0.06), toon(tint(c, 0.8)), { p: [0, -0.14, -0.23], outline: OUT_THIN });
+  },
+  back_arcade(back, anim, state, L) {
+    // a little arcade cabinet worn as a backpack, its screen playing a tiny game
+    const c = backCol(L, '#7c4dff'), body = toon('#221845'), side = toon(c);
+    part(back, box(0.36, 0.56, 0.24), body, { p: [0, 0.0, -0.16] });
+    for (const s of [-1, 1]) part(back, box(0.02, 0.58, 0.26), side, { p: [s * 0.19, 0.0, -0.16], outline: null });
+    part(back, box(0.38, 0.1, 0.14), side, { p: [0, 0.3, -0.2] }); // marquee
+    const scr = canvasTexture(64, 48, (x) => { x.fillStyle = '#0c0a2a'; x.fillRect(0, 0, 64, 48); });
+    const screen = part(back, box(0.26, 0.2, 0.01), new THREE.MeshBasicMaterial({ map: scr }), { p: [0, 0.1, -0.285], r: [0, Math.PI, 0], outline: null, shadow: false });
+    part(back, box(0.32, 0.05, 0.1), toon('#2e2266'), { p: [0, -0.06, -0.3], outline: null });
+    part(back, sphere(0.025, 8, 6), toon('#ff5d73'), { p: [-0.07, -0.02, -0.33], outline: null });
+    for (const [i, bc] of ['#ffd84d', '#39c6ff'].entries()) part(back, cyl(0.018, 0.018, 0.02, 8), toon(bc), { p: [0.04 + i * 0.06, -0.03, -0.34], r: [Math.PI / 2, 0, 0], outline: null });
+    let last = -1;
+    anim.push((t) => {
+      const f = Math.floor(t * 8);
+      if (f === last) return;
+      last = f;
+      const img = scr.image, x = img.getContext('2d');
+      x.fillStyle = '#0c0a2a'; x.fillRect(0, 0, 64, 48);
+      x.fillStyle = '#6ee7a0';
+      for (let k = 0; k < 6; k++) x.fillRect(((f * 3 + k * 11) % 64), 6 + ((k * 7) % 30), 4, 4); // little invaders
+      x.fillStyle = '#ffd84d'; x.fillRect(28 + Math.round(Math.sin(t * 2) * 20), 40, 8, 4);
+      scr.needsUpdate = true;
+    });
+    void screen;
   },
   back_cape(back, anim, state, L) {
     const g = new THREE.PlaneGeometry(0.66, 0.98, 4, 10);
@@ -2719,6 +2762,41 @@ const HANDS = {
       c.stroke();
     }));
     part(g, cyl(0.13, 0.13, 0.04, 28), new THREE.MeshToonMaterial({ map: swirl }), { p: [0, 0.44, 0], r: [Math.PI / 2, 0, 0], outline: OUT_THIN });
+  },
+  hand_lasergun(g, L, anim) {
+    // a chunky laser tag blaster with a glowing muzzle and side strips
+    const col = handCol(L, '#39ff9e'), body = toon('#2a2d3e'), glow = basic(col);
+    part(g, box(0.06, 0.14, 0.08), body, { p: [0, 0, 0], r: [0.25, 0, 0], outline: OUT_THIN }); // grip
+    part(g, box(0.09, 0.11, 0.34), body, { p: [0, 0.1, 0.1], outline: OUT_THIN });
+    part(g, box(0.1, 0.03, 0.26), toon(tint(col, 0.6)), { p: [0, 0.165, 0.1], outline: null });
+    for (const s of [-1, 1]) part(g, box(0.006, 0.025, 0.22), glow, { p: [s * 0.047, 0.1, 0.1], outline: null, shadow: false });
+    part(g, cyl(0.03, 0.035, 0.1, 12), body, { p: [0, 0.1, 0.31], r: [Math.PI / 2, 0, 0], outline: OUT_THIN });
+    part(g, cyl(0.022, 0.022, 0.012, 12), glow, { p: [0, 0.1, 0.362], r: [Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const sp = new THREE.Sprite(additive(glowTexture, new THREE.Color(col).getHex(), 0.7));
+    sp.scale.setScalar(0.16);
+    sp.position.set(0, 0.1, 0.38);
+    g.add(sp);
+    anim.push((t) => { sp.material.opacity = 0.45 + Math.sin(t * 6) * 0.25; });
+  },
+  hand_plushie(g, L) {
+    // a fuzzy teddy bear won from the claw machine, hugged by one paw
+    const col = handCol(L, '#ff9ec7'), fur = toon(col), light = toon(tint(col, 1.25)), ink = basic('#1d1b2e');
+    const bear = new THREE.Group();
+    bear.position.set(0, 0.12, 0.06);
+    g.add(bear);
+    part(bear, sphere(0.12, 16, 12), fur, { p: [0, 0, 0], s: [1, 1.1, 0.9] });
+    part(bear, sphere(0.07, 12, 10), light, { p: [0, -0.01, 0.08], s: [1, 1.1, 0.5], outline: null });
+    part(bear, sphere(0.1, 16, 12), fur, { p: [0, 0.18, 0.01] });
+    for (const s of [-1, 1]) {
+      part(bear, sphere(0.04, 10, 8), fur, { p: [s * 0.075, 0.26, 0], outline: OUT_THIN });
+      part(bear, sphere(0.02, 8, 6), light, { p: [s * 0.075, 0.26, 0.025], outline: null });
+      part(bear, sphere(0.014, 8, 6), ink, { p: [s * 0.035, 0.2, 0.09], outline: null, shadow: false });
+      part(bear, capsule(0.035, 0.06), fur, { p: [s * 0.12, 0.03, 0.02], r: [0, 0, s * 0.6], outline: OUT_THIN }); // arms
+      part(bear, sphere(0.045, 10, 8), fur, { p: [s * 0.06, -0.12, 0.05], outline: OUT_THIN }); // feet
+    }
+    part(bear, sphere(0.035, 10, 8), light, { p: [0, 0.16, 0.09], s: [1.2, 0.9, 0.7], outline: null });
+    part(bear, sphere(0.012, 8, 6), ink, { p: [0, 0.17, 0.115], outline: null, shadow: false });
+    part(bear, torus(0.04, 0.012, TAU, 6, 16), toon('#ffd84d'), { p: [0, 0.1, 0.04], r: [Math.PI / 2.4, 0, 0], outline: null }); // a bow-tie ribbon
   },
   hand_foamfinger(g, L) {
     const col = handCol(L, '#ffd84d');
@@ -3809,7 +3887,11 @@ export class Character {
         eye.userData.sy = sy;
         if (style === 'eyes_surprised') part(eye, sphere(0.026, 10, 8), basic(iris), { p: [0, 0, 0.05], outline: null, shadow: false });
         else if (style === 'eyes_cat') part(eye, sphere(0.03, 10, 8), dark, { p: [0, 0, 0.05], s: [0.3, 1.5, 0.6], outline: null, shadow: false });
-        else part(eye, circle(big ? 0.078 : 0.069), irisMaterial(hex(iris)), { p: [0, 0, big ? 0.081 : 0.072], outline: null, shadow: false }); // (the shaded iris on the front)
+        else {
+          part(eye, circle(big ? 0.078 : 0.069), irisMaterial(hex(iris)), { p: [0, 0, big ? 0.081 : 0.072], outline: null, shadow: false }); // (the shaded iris on the front)
+          // an upper eyelid: a thick dark line curving over the top of the eye, so it looks soft, not staring
+          part(eye, torus(big ? 0.077 : 0.068, 0.016, Math.PI * 0.82, 6, 20), dark, { p: [0, 0, big ? 0.083 : 0.074], r: [0, 0, Math.PI * 0.09], outline: null, shadow: false });
+        }
         part(eye, sphere(big ? 0.026 : 0.022, 10, 8), white, { p: [0.022, 0.024, 0.06], outline: null, shadow: false });
         if (big) part(eye, sphere(0.013, 8, 6), white, { p: [-0.024, -0.026, 0.06], outline: null, shadow: false });
         eyes.push(eye);

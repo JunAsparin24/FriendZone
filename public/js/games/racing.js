@@ -739,12 +739,16 @@ const ITEMS = {
   zap: { icon: '⚡', name: 'Zap' },
   shield: { icon: '🫧', name: 'Bubble Shield' },
   star: { icon: '⭐', name: 'Star' },
+  bomb: { icon: '💣', name: 'Bomb' },
+  bananas: { icon: '🍌', name: 'Triple Banana', n: 3 },
+  turbo3: { icon: '🍄', name: 'Triple Turbo', n: 3 },
 };
 function rollItem(place, field) {
   const back = field > 1 ? place / (field - 1) : 0.5; // 0 = leading, 1 = last
   const odds = {
     banana: 3 - back * 2, oil: 2 - back, shield: 2.2 - back, shell: 2.4, turbo: 1 + back * 2,
     rocket: back * 2.6, zap: back > 0.6 ? back * 1.4 : 0.1, star: back * 1.2,
+    bomb: 1.2 + back * 0.6, bananas: 1.4 - back, turbo3: back * 1.6,
   };
   let r = Math.random() * Object.values(odds).reduce((a, b) => a + b, 0);
   return Object.keys(odds).find((k) => (r -= odds[k]) < 0) ?? 'shell';
@@ -760,13 +764,13 @@ export function racing(stage) {
   const texts = new FloatText(stage.scene);
   stage.hud.innerHTML = `
     <div class="hud-panel race-top"><div class="race-pos"></div><div class="race-lap"></div><div class="race-time"></div></div>
-    <div class="race-item"><span></span><small>Shift / E</small></div>
+    <div class="race-item"><span></span><b class="race-uses"></b><small>E fire · Q back</small></div>
     <div class="hud-panel race-speed"><b>0</b><small>km/h</small></div>
     <canvas class="race-map"></canvas>
     <div class="race-count hidden"></div>
     <div class="hud-panel race-actions"></div>
     <div class="hud-panel race-garage hidden"></div>
-    <p class="hud-panel arena-help"><kbd>W</kbd> gas · <kbd>S</kbd> brake · <kbd>A</kbd>/<kbd>D</kbd> steer · hold <kbd>Space</kbd> to drift (let go for a mini-turbo) · <kbd>Shift</kbd>/<kbd>E</kbd> use your item · hit the ⚡ pads and ❓ boxes!</p>`;
+    <p class="hud-panel arena-help"><kbd>W</kbd> gas · <kbd>S</kbd> brake · <kbd>A</kbd>/<kbd>D</kbd> steer · hold <kbd>Space</kbd> to drift (let go for a mini-turbo) · <kbd>E</kbd> fire your item, <kbd>Q</kbd> fire it behind you · hit the ⚡ pads and ❓ boxes!</p>`;
   const $h = (s) => stage.hud.querySelector(s);
   const posEl = $h('.race-pos'), lapEl = $h('.race-lap'), timeEl = $h('.race-time'), speedEl = $h('.race-speed b'), countEl = $h('.race-count');
   const actions = $h('.race-actions'), itemEl = $h('.race-item'), mapCanvas = $h('.race-map');
@@ -859,6 +863,8 @@ export function racing(stage) {
       !joined && !canJoin ? '<span class="muted">Race in progress. You\'re up next!</span>' : '',
     ].join('');
     actions.classList.toggle('hidden', !actions.innerHTML);
+    // the garage is only for between races: shut it when the countdown starts
+    if (r.state !== 'waiting' && r.state !== 'idle') garageEl.classList.add('hidden');
     if (r.state !== lastState) {
       const was = lastState;
       lastState = r.state;
@@ -896,25 +902,29 @@ export function racing(stage) {
     const span = itemEl.querySelector('span');
     itemEl.classList.toggle('rolling', me.rolling > 0);
     itemEl.classList.toggle('has', !!me.item && me.rolling <= 0);
-    span.textContent = me.rolling > 0 ? Object.values(ITEMS)[Math.floor(performance.now() / 80) % 8].icon : me.item ? ITEMS[me.item].icon : '';
+    const all = Object.values(ITEMS);
+    span.textContent = me.rolling > 0 ? all[Math.floor(performance.now() / 80) % all.length].icon : me.item ? ITEMS[me.item].icon : '';
+    itemEl.querySelector('.race-uses').textContent = me.item && me.rolling <= 0 && me.uses > 1 ? `×${me.uses}` : '';
   }
   const uid = () => `${S.me}-${Math.random().toString(36).slice(2, 8)}`;
-  function useItem() {
+  /** Use your item. `back`: fire it behind you (shells, rockets and bombs go backwards; bananas and
+   *  oil get thrown forward onto the road ahead instead of dropped). */
+  function useItem(back = false) {
     if (!me.item || me.rolling > 0 || !(racing() || S.race?.state === 'waiting')) return;
     const kind = me.item;
-    me.item = null;
+    if ((me.uses = (me.uses ?? 1) - 1) <= 0) me.item = null; // (triple items last three goes)
     renderItem();
-    const fx = Math.sin(me.h), fz = Math.cos(me.h);
-    if (kind === 'turbo') { me.boost = 1.6; sfx('boost'); return; }
-    if (kind === 'shield') { me.shield = 8; sfx('shield'); return; }
-    if (kind === 'star') { me.star = 6; sfx('powerup'); return; }
-    const msg = { kind, id: uid(), h: me.h };
-    if (kind === 'banana' || kind === 'oil') Object.assign(msg, { x: me.x - fx * 3, z: me.z - fz * 3 });
-    else Object.assign(msg, { x: me.x + fx * 2.5, z: me.z + fz * 2.5 });
+    if (kind === 'turbo' || kind === 'turbo3') { me.boost = Math.max(me.boost, 1.6); sfx('boost'); return; }
+    if (kind === 'shield') { me.shield = 12; sfx('shield'); return; }
+    if (kind === 'star') { me.star = 7; me.boost = Math.max(me.boost, 1); sfx('powerup'); return; }
+    const drop = kind === 'banana' || kind === 'oil' || kind === 'bananas';
+    const h = drop ? (back ? me.h : me.h + Math.PI) : (back ? me.h + Math.PI : me.h);
+    const fx = Math.sin(h), fz = Math.cos(h), dist = drop && back ? 14 : drop ? 3 : 2.5;
+    const msg = { kind, id: uid(), h, x: me.x + fx * dist, z: me.z + fz * dist };
     if (kind === 'rocket') {
-      // aim at whoever is just ahead of you
-      const ahead = [...karts.entries()].filter(([k, v]) => k !== S.me && v.prog > myProgress()).sort((a, b) => a[1].prog - b[1].prog)[0];
-      msg.target = ahead?.[0] ?? '';
+      // aim at whoever is just ahead of you (or just behind, fired backwards)
+      const mine = myProgress(), others = [...karts.entries()].filter(([k, v]) => k !== S.me && (back ? v.prog < mine : v.prog > mine));
+      msg.target = others.sort((a, b) => (back ? b[1].prog - a[1].prog : a[1].prog - b[1].prog))[0]?.[0] ?? '';
     }
     sfx(kind === 'zap' ? 'enrage' : 'shoot');
     if (S.race?.state === 'running') net.send('race_item', msg);
@@ -942,6 +952,14 @@ export function racing(stage) {
       m.position.y = 0.6;
       m.add(new THREE.Mesh(m.geometry, OUT));
       g.add(m);
+    } else if (kind === 'bomb') {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 12), toon('#2a2d3e'));
+      m.add(new THREE.Mesh(m.geometry, OUT));
+      const fuse = new THREE.Sprite(additive(glowTexture, 0xffb13b, 1));
+      fuse.scale.setScalar(0.7);
+      fuse.position.set(0, 0.6, 0);
+      m.add(fuse);
+      g.add(m);
     } else if (kind === 'rocket') {
       const m = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.4, 10), toon('#e0463c'));
       m.rotation.x = Math.PI / 2;
@@ -964,10 +982,16 @@ export function racing(stage) {
       }
       return;
     }
+    if (m.kind === 'bananas') {
+      // three bananas in a little V
+      const sx = Math.cos(m.h), sz = -Math.sin(m.h), id = String(m.id).slice(0, 21);
+      [-1.8, 0, 1.8].forEach((o, i) => onItem({ ...m, kind: 'banana', id: `${id}~${i}`, x: m.x + sx * o - Math.sin(m.h) * Math.abs(o), z: m.z + sz * o - Math.cos(m.h) * Math.abs(o) }));
+      return;
+    }
     const mesh = hazardMesh(m.kind);
     mesh.position.set(m.x, 0, m.z);
     stage.scene.add(mesh);
-    const fast = m.kind === 'shell' ? 55 : m.kind === 'rocket' ? 48 : 0;
+    const fast = m.kind === 'shell' ? 62 : m.kind === 'rocket' ? 52 : m.kind === 'bomb' ? 26 : 0;
     hazards.set(m.id, { ...m, mesh, t: 0, vx: Math.sin(m.h) * fast, vz: Math.cos(m.h) * fast });
   }
   function removeHazard(id, pop = true) {
@@ -981,6 +1005,7 @@ export function racing(stage) {
     if (me.star > 0) return;
     if (me.shield > 0) { me.shield = 0; sfx('shield'); texts.add('🫧 Blocked!', me.x, 3, me.z, '#9fe8ff', 0.9); return; }
     if (kind === 'oil') { me.slide = 1.3; sfx('splash'); }
+    else if (kind === 'bomb') { me.spin = 1.5; me.v *= 0.15; stage.shake(1); }
     else { me.spin = 1.1; me.v *= 0.3; sfx('bonk', { power: 1 }); stage.shake(0.6); }
     texts.add(kind === 'oil' ? 'SLIPPY!' : 'OUCH!', me.x, 3, me.z, '#ff5d73', 1);
     if (by && by !== S.me) stage.banner(`💥 ${esc(nameOf(by))} got you with a ${ITEMS[kind]?.name ?? kind}!`, 1500);
@@ -989,7 +1014,8 @@ export function racing(stage) {
   // ---- input -----------------------------------------------------------------------------
   stage.onKey = (e, down) => {
     const k = e.key.toLowerCase();
-    if (down && !e.repeat && (k === 'shift' || k === 'e')) useItem();
+    if (down && !e.repeat && (k === 'shift' || k === 'e')) useItem(false);
+    if (down && !e.repeat && k === 'q') useItem(true);
     if (!down && k === ' ' && me.drift) {
       // let go of a drift: the longer you held it, the bigger the boost
       if (me.driftT > 1.4) { me.boost = Math.max(me.boost, 1.1); sfx('boost'); texts.add('SUPER TURBO!', me.x, 3, me.z, '#ff9f43', 0.9); }
@@ -1152,11 +1178,13 @@ export function racing(stage) {
     }
     if (me.rolling > 0) {
       me.rolling -= dt;
-      if (me.rolling <= 0) { me.item = me.pending; sfx('reveal', { rarity: 'rare' }); }
+      if (me.rolling <= 0) { me.item = me.pending; me.uses = ITEMS[me.item].n ?? 1; sfx('reveal', { rarity: 'rare' }); }
       renderItem();
     }
     // hazards on the road
+    // (every vehicle has the same hitbox: your kart's centre plus the hazard's radius, whatever you drive)
     for (const [id, h] of hazards) {
+      if (h.kind === 'bomb') continue; // (bombs blow up on their own, below)
       if (h.k === S.me && h.t < 0.4) continue;
       const r = h.kind === 'oil' ? 2.2 : h.kind === 'banana' ? 1.4 : 1.6;
       if (Math.hypot(me.x - h.x, me.z - h.z) > r) continue;
@@ -1174,6 +1202,25 @@ export function racing(stage) {
   function updateHazards(dt) {
     for (const [id, h] of hazards) {
       h.t += dt;
+      if (h.kind === 'bomb') {
+        // lobbed in an arc, then it goes off: anyone close spins out (even whoever threw it!)
+        const FLY = 0.75;
+        if (h.t < FLY) {
+          h.x += h.vx * dt;
+          h.z += h.vz * dt;
+          h.mesh.position.set(h.x, 0.6 + Math.sin((h.t / FLY) * Math.PI) * 4, h.z);
+        } else if (h.t < FLY + 0.6) {
+          h.mesh.position.y = 0.55;
+          h.mesh.scale.setScalar(1 + Math.sin(h.t * 40) * 0.12);
+        } else {
+          sparks.burst(h.x, 1, h.z, '#ffb13b', { n: 40, speed: 12 });
+          sparks.burst(h.x, 1, h.z, '#ff5d3b', { n: 24, speed: 8 });
+          sfx('slam');
+          if (inRace() && Math.hypot(me.x - h.x, me.z - h.z) < 5) getHit('bomb', h.k);
+          removeHazard(id, false);
+        }
+        continue;
+      }
       if (h.kind === 'shell' || h.kind === 'rocket') {
         if (h.kind === 'rocket' && h.target) {
           const tv = h.target === S.me ? me : karts.get(h.target);

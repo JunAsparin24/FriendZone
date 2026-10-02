@@ -27,14 +27,14 @@ export function add(parent, geo, mat, { p = [0, 0, 0], r = null, s = null, outli
 }
 
 /** A shop room: floor, walls (the ones between you and the camera hide), a doorway, lights. */
-export function room(stage, { w, d, floor, wall, trim, motif = null }) {
+export function room(stage, { w, d, floor, wall, trim, motif = null, floorDraw = null, windows = true, wainscot = '#ffffff', panel = '#f3eef8', lamp = 0xfff0dc }) {
   const g = new THREE.Group();
-  const floorTex = canvasTexture(256, 256, (c) => {
+  const floorTex = canvasTexture(256, 256, floorDraw ?? ((c) => {
     for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
       c.fillStyle = (x + y) % 2 ? floor[0] : floor[1];
       c.fillRect(x * 32, y * 32, 32, 32);
     }
-  }, { repeat: [w / 4, d / 4] });
+  }), { repeat: [w / 4, d / 4] });
   add(g, new THREE.PlaneGeometry(w, d), new THREE.MeshToonMaterial({ map: floorTex }), { r: [-Math.PI / 2, 0, 0], cast: false });
   // outside: a lawn, and a stone path up to the door
   add(g, new THREE.PlaneGeometry(120, 120), toon('#6fbf5e'), { p: [0, -0.02, 0], r: [-Math.PI / 2, 0, 0], cast: false });
@@ -61,12 +61,12 @@ export function room(stage, { w, d, floor, wall, trim, motif = null }) {
     add(m, new THREE.BoxGeometry(along ? w : d, 0.2, 0.12), toon(trim), { p: [0, H / 2 - 0.1, 0.05], cast: false });
     // panelled wainscot along the bottom with a rail on top
     const len = along ? w : d, n = Math.floor(len / 1.6);
-    add(m, new THREE.BoxGeometry(len, 1.3, 0.06), toon('#ffffff'), { p: [0, -H / 2 + 0.65, 0.03], cast: false });
+    add(m, new THREE.BoxGeometry(len, 1.3, 0.06), toon(wainscot), { p: [0, -H / 2 + 0.65, 0.03], cast: false });
     add(m, new THREE.BoxGeometry(len, 0.1, 0.14), toon(trim), { p: [0, -H / 2 + 1.32, 0.06], cast: false });
-    for (let k = 0; k < n; k++) add(m, new THREE.BoxGeometry(1.2, 0.85, 0.04), toon('#f3eef8'), { p: [-len / 2 + 0.8 + (k * (len - 1.6)) / Math.max(1, n - 1), -H / 2 + 0.68, 0.07], cast: false });
+    for (let k = 0; k < n; k++) add(m, new THREE.BoxGeometry(1.2, 0.85, 0.04), toon(panel), { p: [-len / 2 + 0.8 + (k * (len - 1.6)) / Math.max(1, n - 1), -H / 2 + 0.68, 0.07], cast: false });
   }
   // sunny windows on the side walls
-  for (const side of [walls.left, walls.right]) {
+  if (windows) for (const side of [walls.left, walls.right]) {
     for (const x of [-d / 4, d / 4]) {
       add(side, new THREE.BoxGeometry(2.2, 1.8, 0.1), toon('#ffffff'), { p: [x, 0.7, 0.05], cast: false });
       add(side, new THREE.BoxGeometry(1.9, 1.5, 0.12), toon('#bfe6ff', { emissive: '#bfe6ff', emissiveIntensity: 0.45 }), { p: [x, 0.7, 0.07], cast: false });
@@ -77,7 +77,7 @@ export function room(stage, { w, d, floor, wall, trim, motif = null }) {
   add(walls.front, new THREE.BoxGeometry(2.6, 3.4, 0.2), toon('#ffffff'), { p: [0, -H / 2 + 1.7, 0.02] });
   add(walls.front, new THREE.BoxGeometry(2.1, 3.0, 0.25), basic('#fff3c4'), { p: [0, -H / 2 + 1.5, 0.04], cast: false });
   for (const [x, z] of [[-w / 4, -d / 4], [w / 4, -d / 4], [0, d / 5]]) {
-    const light = new THREE.PointLight(0xfff0dc, 16, 16, 1.6);
+    const light = new THREE.PointLight(lamp, 16, 16, 1.6);
     light.position.set(x, H - 0.4, z);
     g.add(light);
     add(g, new THREE.SphereGeometry(0.3, 12, 8), basic('#fff6c9'), { p: [x, H - 0.2, z], cast: false });
@@ -506,9 +506,19 @@ function petEgg(body) {
 }
 
 export function petShopArea(stage) {
-  stage.lights({ background: '#1a1408', sky: 0xfff6e0, ground: 0x8a6a4a, hemi: 1.35, sun: 1.0, sunPos: [6, 30, 12], box: 16 });
-  const W = 24, D = 18;
-  const g = room(stage, { w: W, d: D, floor: ['#fff1c9', '#ffe4a8'], wall: '#ffeccc', trim: '#ff8fc7',
+  stage.lights({ background: '#1a1408', sky: 0xfff6e0, ground: 0x8a6a4a, hemi: 1.35, sun: 1.0, sunPos: [6, 30, 12], box: 22 });
+  const W = 36, D = 28, hw = W / 2, hd = D / 2;
+  const g = room(stage, { w: W, d: D, wall: '#fff0d8', trim: '#ff8fc7', wainscot: '#ffe2ec', panel: '#fff3f7',
+    // warm honey floorboards
+    floorDraw: (c) => {
+      for (let i = 0; i < 8; i++) {
+        c.fillStyle = ['#e8b77a', '#e2ad6c', '#edc089', '#dda564'][i % 4];
+        c.fillRect(0, i * 32, 256, 32);
+        c.fillStyle = 'rgba(120,70,30,.25)';
+        c.fillRect(0, i * 32 + 31, 256, 1);
+        c.fillRect(((i * 97) % 200) + 20, i * 32, 2, 32);
+      }
+    },
     motif: (c) => {
       // little paw prints
       c.fillStyle = 'rgba(255,143,199,.4)';
@@ -520,46 +530,93 @@ export function petShopArea(stage) {
   stage.scene.add(g);
   const anim = [];
   const solids = [];
-
-  // three pens with low picket fences; pets wander around inside
-  const pens = [
-    { x: -7, z: -4, w: 7, d: 5, rarities: ['common'], sign: 'COMMON PALS', color: '#6ee7a0', grass: '#9fd67a' },
-    { x: 1.5, z: -4.5, w: 7, d: 4.5, rarities: ['rare'], sign: 'RARE FRIENDS', color: '#39c6ff', grass: '#8fd6b0' },
-    { x: 8.5, z: -3, w: 5, d: 6, rarities: ['epic', 'legendary'], sign: 'EPIC & LEGENDARY', color: '#b77bff', grass: '#b8d98a' },
-  ];
   const white = toon('#ffffff');
+
+  // ---- four big pens, each with a kennel, a bush, a pond or sandpit, toys and a water bowl ----
+  const pens = [
+    { x: -12, z: -6.5, w: 9, d: 7, rarities: ['common'], sign: 'COMMON PALS', color: '#6ee7a0', grass: '#9fd67a', extra: 'sand' },
+    { x: -1.5, z: -6.5, w: 9, d: 7, rarities: ['rare'], sign: 'RARE FRIENDS', color: '#39c6ff', grass: '#8fd6b0', extra: 'pond' },
+    { x: 9.5, z: -6.5, w: 8, d: 7, rarities: ['epic'], sign: 'EPIC BUDDIES', color: '#b77bff', grass: '#b8d98a', extra: 'pond' },
+    { x: 13.5, z: 5, w: 7, d: 7, rarities: ['legendary', 'mythic'], sign: '★ LEGENDARY ★', color: '#ffc53d', grass: '#cfe08a', extra: 'pedestal' },
+  ];
   const pets = [];
   pens.forEach((pen) => {
     const grp = new THREE.Group();
     grp.position.set(pen.x, 0, pen.z);
     g.add(grp);
+    const ph = pen.w / 2, pd = pen.d / 2;
     add(grp, new THREE.PlaneGeometry(pen.w, pen.d), toon(pen.grass), { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], cast: false });
-    // a few tufts, a water bowl and a ball in every pen
-    for (let k = 0; k < 6; k++) add(grp, new THREE.ConeGeometry(0.08, 0.25, 4), toon('#6fb85a'), { p: [(((k * 37) % 10) / 10 - 0.5) * (pen.w - 1), 0.12, (((k * 53) % 10) / 10 - 0.5) * (pen.d - 1)], cast: false });
-    add(grp, new THREE.CylinderGeometry(0.3, 0.24, 0.16, 16), toon(pen.color), { p: [pen.w / 2 - 0.6, 0.08, pen.d / 2 - 0.6], outline: true });
-    add(grp, new THREE.CylinderGeometry(0.24, 0.24, 0.02, 16), toon('#8fd3ff'), { p: [pen.w / 2 - 0.6, 0.16, pen.d / 2 - 0.6], cast: false });
-    add(grp, new THREE.SphereGeometry(0.18, 12, 10), toon('#ff5d73'), { p: [-pen.w / 2 + 0.8, 0.18, -pen.d / 2 + 0.8], outline: true });
-    sign(g, pen.sign, { x: pen.x, z: pen.z + pen.d / 2, y: 3.4, w: 3.4, h: 0.8, bg: pen.color });
+    // grass tufts and flowers
+    for (let k = 0; k < 14; k++) {
+      const px = (((k * 37) % 17) / 17 - 0.5) * (pen.w - 1), pz = (((k * 53) % 13) / 13 - 0.5) * (pen.d - 1);
+      if (k % 3) add(grp, new THREE.ConeGeometry(0.08, 0.25, 4), toon('#6fb85a'), { p: [px, 0.12, pz], cast: false });
+      else add(grp, new THREE.SphereGeometry(0.07, 6, 5), toon(['#ff8fc7', '#ffd84d', '#ffffff'][k % 3]), { p: [px, 0.12, pz], cast: false });
+    }
+    // a kennel in the back corner
+    const kennel = new THREE.Group();
+    kennel.position.set(-ph + 1.1, 0, -pd + 1.0);
+    grp.add(kennel);
+    add(kennel, new THREE.BoxGeometry(1.3, 0.9, 1.1), toon(pen.color), { p: [0, 0.45, 0], outline: true });
+    for (const s of [-1, 1]) add(kennel, new THREE.BoxGeometry(0.85, 0.08, 1.25), toon('#c0563f'), { p: [s * 0.32, 1.12, 0], r: [0, 0, -s * 0.62], outline: true });
+    add(kennel, new THREE.CircleGeometry(0.3, 16, 0, Math.PI), basic('#3a2414'), { p: [0, 0.2, 0.56], cast: false });
+    add(kennel, new THREE.PlaneGeometry(0.6, 0.2), basic('#3a2414'), { p: [0, 0.1, 0.56], cast: false });
+    // a round bush and a little tree
+    add(grp, new THREE.SphereGeometry(0.55, 14, 10), toon('#5aa845'), { p: [ph - 0.8, 0.4, -pd + 0.8], outline: true });
+    add(grp, new THREE.CylinderGeometry(0.1, 0.13, 1.2, 8), toon('#8b5a2b'), { p: [ph - 1.6, 0.6, -pd + 0.7] });
+    add(grp, new THREE.SphereGeometry(0.6, 14, 10), toon('#6fbf5e'), { p: [ph - 1.6, 1.45, -pd + 0.7], outline: true });
+    if (pen.extra === 'pond') {
+      add(grp, new THREE.CircleGeometry(0.9, 24), toon('#7fd4ff'), { p: [ph - 1.4, 0.05, pd - 1.2], r: [-Math.PI / 2, 0, 0], s: [1.3, 1, 1], cast: false });
+      add(grp, new THREE.TorusGeometry(0.92, 0.1, 6, 24), toon('#b8b2a6'), { p: [ph - 1.4, 0.06, pd - 1.2], r: [Math.PI / 2, 0, 0], s: [1.3, 1, 1] });
+      const lily = add(grp, new THREE.CircleGeometry(0.18, 12), toon('#4fae5a'), { p: [ph - 1.2, 0.07, pd - 1.3], r: [-Math.PI / 2, 0, 0], cast: false });
+      anim.push((t) => { lily.position.x = ph - 1.2 + Math.sin(t * 0.4 + pen.x) * 0.3; });
+    } else if (pen.extra === 'sand') {
+      add(grp, new THREE.BoxGeometry(1.8, 0.2, 1.5), toon('#c28a4e'), { p: [ph - 1.4, 0.1, pd - 1.1], outline: true });
+      add(grp, new THREE.BoxGeometry(1.6, 0.06, 1.3), toon('#f2d59b'), { p: [ph - 1.4, 0.19, pd - 1.1], cast: false });
+      add(grp, new THREE.ConeGeometry(0.15, 0.2, 8), toon('#ff5d73'), { p: [ph - 1.0, 0.3, pd - 1.0] }); // a bucket
+    } else {
+      // a golden pedestal with a soft glow for the legendary pets
+      add(grp, new THREE.CylinderGeometry(0.9, 1.0, 0.3, 24), toon('#ffe7a0'), { p: [0, 0.15, 0], outline: true });
+      const glow = new THREE.Sprite(additive(glowTexture, 0xffd84d, 0.45));
+      glow.scale.set(3, 2.4, 1);
+      glow.position.set(0, 1, 0);
+      grp.add(glow);
+      anim.push((t) => { glow.material.opacity = 0.3 + Math.sin(t * 1.6) * 0.12; });
+    }
+    // water bowl, food bowl and a ball
+    add(grp, new THREE.CylinderGeometry(0.3, 0.24, 0.16, 16), toon(pen.color), { p: [-ph + 0.7, 0.08, pd - 0.6], outline: true });
+    add(grp, new THREE.CylinderGeometry(0.24, 0.24, 0.02, 16), toon('#8fd3ff'), { p: [-ph + 0.7, 0.16, pd - 0.6], cast: false });
+    add(grp, new THREE.CylinderGeometry(0.3, 0.24, 0.16, 16), toon('#ff8fc7'), { p: [-ph + 1.4, 0.08, pd - 0.6], outline: true });
+    add(grp, new THREE.SphereGeometry(0.2, 10, 6, 0, TAU, 0, Math.PI / 2), toon('#c28a4e'), { p: [-ph + 1.4, 0.14, pd - 0.6], cast: false });
+    add(grp, new THREE.SphereGeometry(0.18, 12, 10), toon('#ff5d73'), { p: [0.4, 0.18, pd - 1.6], outline: true });
+    add(grp, new THREE.TorusGeometry(0.16, 0.05, 6, 16), toon('#39c6ff'), { p: [-0.8, 0.06, -0.4], r: [Math.PI / 2, 0, 0] });
+    sign(g, pen.sign, { x: pen.x, z: pen.z + pd, y: 3.4, w: 3.6, h: 0.8, bg: pen.color });
+    // a picket fence with rounded posts and two rails
     const edge = (x0, z0, x1, z1) => {
-      const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / 0.45);
-      for (let k = 0; k <= n; k++) add(grp, new THREE.BoxGeometry(0.12, 0.9, 0.06), white, { p: [x0 + ((x1 - x0) * k) / n, 0.45, z0 + ((z1 - z0) * k) / n], r: [0, Math.atan2(x1 - x0, z1 - z0), 0] });
-      const rail = add(grp, new THREE.BoxGeometry(len, 0.08, 0.05), white, { p: [(x0 + x1) / 2, 0.65, (z0 + z1) / 2] });
-      rail.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+      const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / 0.42);
+      for (let k = 0; k <= n; k++) {
+        const px = x0 + ((x1 - x0) * k) / n, pz = z0 + ((z1 - z0) * k) / n;
+        add(grp, new THREE.BoxGeometry(0.12, 0.8, 0.06), white, { p: [px, 0.4, pz], r: [0, Math.atan2(x1 - x0, z1 - z0), 0] });
+        add(grp, new THREE.ConeGeometry(0.085, 0.14, 4), white, { p: [px, 0.87, pz], r: [0, Math.PI / 4 + Math.atan2(x1 - x0, z1 - z0), 0], cast: false });
+      }
+      for (const y of [0.3, 0.62]) {
+        const rail = add(grp, new THREE.BoxGeometry(len, 0.07, 0.05), toon(tintHex(pen.color)), { p: [(x0 + x1) / 2, y, (z0 + z1) / 2] });
+        rail.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+      }
     };
-    const hw = pen.w / 2, hd = pen.d / 2;
-    edge(-hw, -hd, hw, -hd); edge(-hw, hd, hw, hd); edge(-hw, -hd, -hw, hd); edge(hw, -hd, hw, hd);
+    edge(-ph, -pd, ph, -pd); edge(-ph, pd, ph, pd); edge(-ph, -pd, -ph, pd); edge(ph, -pd, ph, pd);
     solids.push({ x: pen.x, z: pen.z, w: pen.w + 0.2, d: pen.d + 0.2 });
     const kinds = PETS().filter((p) => pen.rarities.includes(p.rarity));
     kinds.forEach((it, i) => {
       const pet = buildPet(it.id);
       if (!pet) return;
-      const p = { x: (Math.random() - 0.5) * (pen.w - 1.2), z: (Math.random() - 0.5) * (pen.d - 1.2) };
+      const p = { x: (Math.random() - 0.5) * (pen.w - 2), z: (Math.random() - 0.5) * (pen.d - 2) };
       pet.group.position.set(p.x, 0, p.z);
       pet.group.scale.setScalar(1.5);
       grp.add(pet.group);
       pets.push({ pet, pen, target: { ...p }, wait: Math.random() * 2, i });
     });
-    stage.interactable({ x: pen.x, z: pen.z + hd + 1.1, r: 2.4, label: `meet the ${pen.rarities.join(' & ')} pets`, icon: 'shop', obj: grp,
+    const front = pen.x > 12 ? { x: pen.x - ph - 1.1, z: pen.z } : { x: pen.x, z: pen.z + pd + 1.1 };
+    stage.interactable({ ...front, r: 2.4, label: `meet the ${pen.rarities[0]} pets`, icon: 'shop', obj: grp,
       use: () => stage.openPanel({ wide: true, mount: (body) => wardrobe(body, { mode: 'shop', tab: 'pet' }) }) });
   });
   anim.push((t, dt) => {
@@ -573,83 +630,161 @@ export function petShopArea(stage) {
         p.z += (dz / d) * step;
         q.pet.group.rotation.y = Math.atan2(dx, dz);
       } else if ((q.wait -= dt) <= 0 && d <= 0.05) {
-        q.target = { x: (Math.random() - 0.5) * (q.pen.w - 1.2), z: (Math.random() - 0.5) * (q.pen.d - 1.2) };
+        q.target = { x: (Math.random() - 0.5) * (q.pen.w - 2), z: (Math.random() - 0.5) * (q.pen.d - 2) };
         q.wait = 1 + Math.random() * 3;
       }
       q.pet.tick(t + q.i, dt, moving);
     }
   });
 
-  // the egg incubator: a glass dome with a speckled egg that wobbles under a warm lamp
+  // ---- the big aquarium along the back wall: fish, bubbles, swaying weed, a little castle ----
+  const aq = new THREE.Group();
+  aq.position.set(-1.5, 0, -hd + 0.75);
+  g.add(aq);
+  add(aq, new THREE.BoxGeometry(12, 1.0, 1.2), toon('#8b5a2b'), { p: [0, 0.5, 0], outline: true });
+  add(aq, new THREE.BoxGeometry(11.8, 2.2, 1.0), toon('#5fc4ff', { transparent: true, opacity: 0.45 }), { p: [0, 2.1, 0], cast: false });
+  add(aq, new THREE.BoxGeometry(11.8, 0.2, 1.0), toon('#f2d59b'), { p: [0, 1.1, 0], cast: false });
+  add(aq, new THREE.BoxGeometry(12.1, 0.18, 1.25), toon('#8b5a2b'), { p: [0, 3.27, 0] });
+  add(aq, new THREE.BoxGeometry(0.8, 0.8, 0.5), toon('#c9b7e8'), { p: [3.5, 1.6, -0.1] }); // castle
+  for (const s of [-1, 1]) add(aq, new THREE.CylinderGeometry(0.15, 0.15, 1.1, 8), toon('#c9b7e8'), { p: [3.5 + s * 0.4, 1.75, -0.1] });
+  const weeds = [];
+  for (let k = 0; k < 9; k++) weeds.push(add(aq, new THREE.BoxGeometry(0.08, 0.9 + (k % 3) * 0.3, 0.05), toon('#3fae5a'), { p: [-5.2 + k * 1.25, 1.6, 0.2 - (k % 2) * 0.4], cast: false }));
+  const fish = [];
+  for (let k = 0; k < 9; k++) fish.push(add(aq, new THREE.SphereGeometry(0.14, 10, 8), toon(['#ff9f43', '#ffd84d', '#ff5d73', '#39e6ff', '#b77bff'][k % 5]), { p: [0, 1.4 + (k % 4) * 0.4, (k % 3 - 1) * 0.25], s: [1.6, 1, 0.6], cast: false }));
+  const bubbles = Array.from({ length: 10 }, (_, k) => add(aq, new THREE.SphereGeometry(0.05, 6, 5), toon('#ffffff', { transparent: true, opacity: 0.7 }), { p: [-4 + k * 0.9, 1.2, 0.2], cast: false }));
+  anim.push((t) => {
+    fish.forEach((f, k) => { const a = t * (0.3 + (k % 4) * 0.1) + k * 1.7; f.position.x = Math.sin(a) * 5.2; f.position.y = 1.4 + (k % 4) * 0.4 + Math.sin(t * 2 + k) * 0.08; f.rotation.y = Math.cos(a) > 0 ? 0 : Math.PI; });
+    weeds.forEach((w, k) => { w.rotation.z = Math.sin(t * 1.3 + k) * 0.15; });
+    bubbles.forEach((b, k) => { b.position.y = 1.2 + ((t * 0.5 + k * 0.17) % 1) * 1.9; });
+  });
+  solids.push({ x: -1.5, z: -hd + 0.75, w: 12.2, d: 1.4 });
+  sign(g, 'AQUARIUM', { x: -1.5, z: -hd + 0.4, y: 4.2, w: 3, h: 0.7, bg: '#39c6ff', hang: false });
+
+  // ---- the egg incubator: a glass dome on a glowing pedestal, spare eggs in a nest beside it ----
   const inc = new THREE.Group();
-  inc.position.set(-5, 0, 3.5);
+  inc.position.set(-6, 0, 3.5);
   g.add(inc);
-  add(inc, new THREE.CylinderGeometry(1.2, 1.4, 1.0, 24), toon('#ff8fc7'), { p: [0, 0.5, 0], outline: true });
-  add(inc, new THREE.SphereGeometry(1.1, 24, 16, 0, TAU, 0, Math.PI / 2), toon('#dff4ff', { transparent: true, opacity: 0.35 }), { p: [0, 1.0, 0], cast: false });
-  const egg = add(inc, new THREE.SphereGeometry(0.42, 20, 16), toon('#fff6e6'), { p: [0, 1.45, 0], s: [1, 1.3, 1], outline: true });
+  add(inc, new THREE.CylinderGeometry(1.5, 1.7, 0.3, 32), toon('#ffffff'), { p: [0, 0.15, 0], outline: true });
+  const ring = add(inc, new THREE.TorusGeometry(1.45, 0.06, 8, 40), basic('#ffd84d'), { p: [0, 0.32, 0], r: [Math.PI / 2, 0, 0], cast: false });
+  add(inc, new THREE.CylinderGeometry(1.2, 1.4, 0.9, 24), toon('#ff8fc7'), { p: [0, 0.75, 0], outline: true });
+  add(inc, new THREE.SphereGeometry(1.1, 24, 16, 0, TAU, 0, Math.PI / 2), toon('#dff4ff', { transparent: true, opacity: 0.3 }), { p: [0, 1.2, 0], cast: false });
+  add(inc, new THREE.TorusGeometry(1.1, 0.07, 8, 32), toon('#ffffff'), { p: [0, 1.2, 0], r: [Math.PI / 2, 0, 0] });
+  const egg = add(inc, new THREE.SphereGeometry(0.42, 20, 16), toon('#fff6e6'), { p: [0, 1.65, 0], s: [1, 1.3, 1], outline: true });
   [[0.2, 0.1, 0.3], [-0.25, 0.25, 0.2], [0.05, -0.2, 0.38], [-0.1, 0.05, -0.38]].forEach(([x, y, z]) => add(egg, new THREE.SphereGeometry(0.07, 8, 6), toon('#ff8fc7'), { p: [x, y, z], s: [1, 1, 0.4] }));
   const warm = new THREE.Sprite(additive(glowTexture, 0xffc070, 0.5));
-  warm.scale.setScalar(3);
-  warm.position.y = 1.5;
+  warm.scale.setScalar(3.2);
+  warm.position.y = 1.7;
   inc.add(warm);
-  anim.push((t) => { egg.rotation.z = Math.sin(t * 5) * 0.12 * (Math.sin(t * 0.8) > 0.4 ? 1 : 0.2); warm.material.opacity = 0.35 + Math.sin(t * 2) * 0.1; });
-  solids.push({ x: -5, z: 3.5, r: 1.4 });
-  sign(g, 'EGG INCUBATOR', { x: -5, z: 3.5, y: 3.6, w: 3.2, h: 0.75, bg: '#ff8fc7' });
-  stage.interactable({ x: -5, z: 5.2, r: 2.4, label: 'hatch a pet egg', icon: 'shop', obj: inc,
+  const sparks = Array.from({ length: 6 }, (_, k) => add(inc, new THREE.OctahedronGeometry(0.06), basic(['#ffd84d', '#ff8fc7', '#ffffff'][k % 3]), { p: [0, 2, 0], cast: false }));
+  anim.push((t) => {
+    egg.rotation.z = Math.sin(t * 5) * 0.12 * (Math.sin(t * 0.8) > 0.4 ? 1 : 0.2);
+    warm.material.opacity = 0.35 + Math.sin(t * 2) * 0.1;
+    ring.material.color.setHSL((t * 0.1) % 1, 0.9, 0.65);
+    sparks.forEach((s, k) => { const a = t * 0.8 + (k / 6) * TAU; s.position.set(Math.cos(a) * 1.3, 1.6 + Math.sin(t * 2 + k) * 0.4, Math.sin(a) * 1.3); s.rotation.y = t * 3; });
+  });
+  // a straw nest of spare eggs
+  add(g, new THREE.TorusGeometry(0.55, 0.22, 8, 20), toon('#d9b26a'), { p: [-3.6, 0.22, 4.6], r: [Math.PI / 2, 0, 0], outline: true });
+  for (const [x, z, c] of [[-3.75, 4.5, '#b8f0ff'], [-3.45, 4.75, '#ffe08a'], [-3.5, 4.4, '#d9c2ff']]) add(g, new THREE.SphereGeometry(0.2, 12, 10), toon(c), { p: [x, 0.35, z], s: [1, 1.3, 1], outline: true });
+  solids.push({ x: -6, z: 3.5, r: 1.7 }, { x: -3.6, z: 4.6, r: 0.8 });
+  sign(g, 'EGG INCUBATOR', { x: -6, z: 3.5, y: 3.8, w: 3.2, h: 0.75, bg: '#ff8fc7' });
+  stage.interactable({ x: -6, z: 5.6, r: 2.4, label: 'hatch a pet egg', icon: 'shop', obj: inc,
     use: () => stage.openPanel({ mount: (body) => petEgg(body) }) });
 
-  // counter + shopkeeper (with her own giraffe), pet beds and a bowl of treats
-  counter(g, 6, 5, 4, '#ff8fc7');
-  solids.push({ x: 6, z: 5, w: 4.2, d: 1.1 });
-  sign(g, 'CHECKOUT', { x: 6, z: 5, y: 3.6, w: 2.6, h: 0.7, bg: '#ffb13b' });
+  // ---- the grooming station: a bubbly tub, a mirror and a dryer on the left wall ----
+  const groom = new THREE.Group();
+  groom.position.set(-hw + 1.2, 0, 5);
+  groom.rotation.y = Math.PI / 2;
+  g.add(groom);
+  add(groom, new THREE.BoxGeometry(2.4, 0.9, 1.3), toon('#ffffff'), { p: [0, 0.45, 0], outline: true });
+  add(groom, new THREE.BoxGeometry(2.1, 0.1, 1.0), toon('#8fd3ff'), { p: [0, 0.86, 0], cast: false });
+  const suds = [];
+  for (let k = 0; k < 9; k++) suds.push(add(groom, new THREE.SphereGeometry(0.14 + (k % 3) * 0.04, 10, 8), toon('#ffffff', { transparent: true, opacity: 0.9 }), { p: [-0.8 + (k % 5) * 0.4, 0.95, -0.25 + Math.floor(k / 5) * 0.4], cast: false }));
+  add(groom, new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8), toon('#c0c6d4'), { p: [0.9, 1.2, -0.5] }); // tap
+  add(groom, new THREE.BoxGeometry(1.4, 1.3, 0.06), toon('#ffffff'), { p: [0, 2.3, -0.62], outline: true }); // mirror
+  add(groom, new THREE.BoxGeometry(1.25, 1.15, 0.07), toon('#cfeaff', { emissive: '#cfeaff', emissiveIntensity: 0.3 }), { p: [0, 2.3, -0.6], cast: false });
+  anim.push((t) => suds.forEach((s, k) => { s.position.y = 0.95 + Math.abs(Math.sin(t * 1.5 + k)) * 0.08; s.scale.setScalar(1 + Math.sin(t * 2 + k) * 0.1); }));
+  solids.push({ x: -hw + 1.2, z: 5, w: 1.5, d: 2.5 });
+  sign(g, 'GROOMING', { x: -hw + 1.6, z: 5, y: 4.0, ry: Math.PI / 2, w: 2.6, h: 0.7, bg: '#39c6ff' });
 
-  // shelves of pet food along the back wall
-  const shelf = new THREE.Group();
-  shelf.position.set(-2.5, 0, -8.6);
-  g.add(shelf);
-  add(shelf, new THREE.BoxGeometry(4.4, 2.4, 0.08), toon('#c28a4e'), { p: [0, 1.2, -0.26], outline: true });
-  for (const sx of [-2.18, 2.18]) add(shelf, new THREE.BoxGeometry(0.08, 2.4, 0.6), toon('#a0703f'), { p: [sx, 1.2, 0], outline: true });
-  add(shelf, new THREE.BoxGeometry(4.4, 0.1, 0.6), toon('#a0703f'), { p: [0, 2.4, 0] });
-  const cans = ['#ff5d73', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff'];
-  for (const y of [0.5, 1.15, 1.8]) {
-    add(shelf, new THREE.BoxGeometry(4.2, 0.06, 0.55), toon('#a0703f'), { p: [0, y - 0.22, 0.04] });
-    for (let k = 0; k < 7; k++) {
-      const c = cans[(k + Math.round(y * 4)) % cans.length];
-      if ((k + Math.round(y * 2)) % 3 === 0) add(shelf, new THREE.BoxGeometry(0.42, 0.5, 0.3), toon(c), { p: [-1.8 + k * 0.6, y + 0.03, 0.1], outline: true }); // a bag
-      else add(shelf, new THREE.CylinderGeometry(0.14, 0.14, 0.3, 12), toon(c), { p: [-1.8 + k * 0.6, y - 0.07, 0.1], cast: false }); // a can
-    }
+  // ---- bird corner: hanging cages with little birds that bob and hop ----
+  const birds = [];
+  for (const [x, z, c] of [[-14.5, 10.5, '#ffd84d'], [-12.5, 11.2, '#6ee7a0'], [-10.6, 10.6, '#ff5d73']]) {
+    const cage = new THREE.Group();
+    cage.position.set(x, 2.6, z);
+    g.add(cage);
+    add(cage, new THREE.CylinderGeometry(0.02, 0.02, 2.4, 4), toon('#8a8aa0'), { p: [0, 1.6, 0], cast: false });
+    add(cage, new THREE.CylinderGeometry(0.45, 0.45, 0.06, 16), toon('#ffc53d'), { p: [0, -0.6, 0] });
+    add(cage, new THREE.ConeGeometry(0.5, 0.45, 16), toon('#ffc53d'), { p: [0, 0.42, 0], outline: true }); // the roof
+    for (let k = 0; k < 10; k++) { const a = (k / 10) * TAU; add(cage, new THREE.CylinderGeometry(0.012, 0.012, 0.8, 4), toon('#ffc53d'), { p: [Math.cos(a) * 0.44, -0.2, Math.sin(a) * 0.44], cast: false }); }
+    add(cage, new THREE.CylinderGeometry(0.015, 0.015, 0.7, 4), toon('#8b5a2b'), { p: [0, -0.3, 0], r: [0, 0, Math.PI / 2], cast: false });
+    const bird = new THREE.Group();
+    bird.position.set(0, -0.15, 0);
+    cage.add(bird);
+    add(bird, new THREE.SphereGeometry(0.12, 12, 10), toon(c), { p: [0, 0, 0], s: [1, 1, 1.2], outline: true });
+    add(bird, new THREE.SphereGeometry(0.08, 10, 8), toon(c), { p: [0, 0.12, 0.08] });
+    add(bird, new THREE.ConeGeometry(0.03, 0.08, 6), toon('#ff9f43'), { p: [0, 0.11, 0.18], r: [Math.PI / 2, 0, 0] });
+    for (const s of [-1, 1]) add(bird, new THREE.SphereGeometry(0.015, 6, 5), basic('#1d1b2e'), { p: [s * 0.045, 0.15, 0.14], cast: false });
+    birds.push({ cage, bird });
   }
-  solids.push({ x: -2.5, z: -8.6, w: 4.5, d: 0.7 });
-  sign(g, 'TREATS & TOYS', { x: -2.5, z: -8.2, y: 3.0, w: 3.0, h: 0.7, bg: '#ff9f43', hang: false });
+  anim.push((t) => birds.forEach(({ cage, bird }, k) => { cage.rotation.z = Math.sin(t * 0.8 + k) * 0.04; bird.position.y = -0.15 + Math.max(0, Math.sin(t * 4 + k * 2)) * 0.08; bird.rotation.y = Math.sin(t * 0.7 + k) * 1.2; }));
 
-  // a fish tank on a stand by the right wall, fish swimming back and forth
-  const tank = new THREE.Group();
-  tank.position.set(10.8, 0, 3);
-  tank.rotation.y = -Math.PI / 2;
-  g.add(tank);
-  add(tank, new THREE.BoxGeometry(2.6, 1.0, 1.0), toon('#8b5a2b'), { p: [0, 0.5, 0], outline: true });
-  add(tank, new THREE.BoxGeometry(2.4, 1.3, 0.9), toon('#7fd4ff', { transparent: true, opacity: 0.55 }), { p: [0, 1.66, 0], cast: false });
-  add(tank, new THREE.BoxGeometry(2.4, 0.15, 0.9), toon('#f2d59b'), { p: [0, 1.08, 0], cast: false });
-  const fish = [];
-  for (let k = 0; k < 3; k++) fish.push(add(tank, new THREE.SphereGeometry(0.12, 10, 8), toon(['#ff9f43', '#ffd84d', '#ff5d73'][k]), { p: [0, 1.4 + k * 0.25, 0], s: [1.5, 1, 0.6], cast: false }));
-  anim.push((t) => fish.forEach((f, k) => { const a = t * (0.6 + k * 0.2) + k * 2; f.position.x = Math.sin(a) * 0.9; f.rotation.y = Math.cos(a) > 0 ? 0 : Math.PI; }));
-  solids.push({ x: 10.8, z: 3, w: 1.1, d: 2.7 });
+  // ---- checkout counter and shopkeeper (with her own giraffe) ----
+  counter(g, 6, 7, 5, '#ff8fc7');
+  add(g, new THREE.BoxGeometry(0.6, 0.4, 0.5), toon('#ffd84d'), { p: [4.4, 1.37, 7] }); // a jar of treats
+  add(g, new THREE.SphereGeometry(0.25, 10, 8, 0, TAU, 0, Math.PI / 2), toon('#c28a4e'), { p: [4.4, 1.56, 7], cast: false });
+  solids.push({ x: 6, z: 7, w: 5.2, d: 1.1 });
+  sign(g, 'CHECKOUT', { x: 6, z: 7, y: 3.8, w: 2.6, h: 0.7, bg: '#ffb13b' });
+  shopkeeper(g, { skin: '#c68642', hair: 'hair_pigtails', hairColor: '#6e4a2e', top: 'top_hoodie', topColor: '#ffd84d', eyes: 'eyes_sparkle', pet: 'pet_giraffe' }, 5, 5.9, anim);
+  solids.push({ x: 5, z: 5.9, r: 0.6 }, { x: 6.2, z: 5.4, r: 0.6 });
 
-  // a cat tree in the corner
+  // ---- shelves of treats and toys either side of the aquarium ----
+  for (const sx of [-13, 10]) {
+    const shelf = new THREE.Group();
+    shelf.position.set(sx, 0, -hd + 0.45);
+    g.add(shelf);
+    add(shelf, new THREE.BoxGeometry(4.4, 2.6, 0.08), toon('#c28a4e'), { p: [0, 1.3, -0.26], outline: true });
+    for (const x of [-2.18, 2.18]) add(shelf, new THREE.BoxGeometry(0.08, 2.6, 0.6), toon('#a0703f'), { p: [x, 1.3, 0], outline: true });
+    add(shelf, new THREE.BoxGeometry(4.4, 0.1, 0.6), toon('#a0703f'), { p: [0, 2.6, 0] });
+    const cans = ['#ff5d73', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff'];
+    for (const y of [0.5, 1.15, 1.8]) {
+      add(shelf, new THREE.BoxGeometry(4.2, 0.06, 0.55), toon('#a0703f'), { p: [0, y - 0.22, 0.04] });
+      for (let k = 0; k < 7; k++) {
+        const c = cans[(k + Math.round(y * 4) + (sx > 0 ? 2 : 0)) % cans.length];
+        if ((k + Math.round(y * 2)) % 3 === 0) add(shelf, new THREE.BoxGeometry(0.42, 0.5, 0.3), toon(c), { p: [-1.8 + k * 0.6, y + 0.03, 0.1], outline: true });
+        else add(shelf, new THREE.CylinderGeometry(0.14, 0.14, 0.3, 12), toon(c), { p: [-1.8 + k * 0.6, y - 0.07, 0.1], cast: false });
+      }
+    }
+    solids.push({ x: sx, z: -hd + 0.45, w: 4.5, d: 0.7 });
+  }
+  sign(g, 'TREATS & TOYS', { x: -13, z: -hd + 0.8, y: 3.2, w: 3.0, h: 0.7, bg: '#ff9f43', hang: false });
+  sign(g, 'COMFY BEDS', { x: 10, z: -hd + 0.8, y: 3.2, w: 3.0, h: 0.7, bg: '#7c6bff', hang: false });
+
+  // ---- a cat tree, pet beds, a round rug, potted plants and bunting ----
   const tree = new THREE.Group();
-  tree.position.set(-10.3, 0, 1.2);
+  tree.position.set(-hw + 1.4, 0, -0.5);
   g.add(tree);
   add(tree, new THREE.BoxGeometry(1.6, 0.2, 1.6), toon('#c9b7e8'), { p: [0, 0.1, 0], outline: true });
-  add(tree, new THREE.CylinderGeometry(0.16, 0.16, 2.6, 10), toon('#e8d2a8'), { p: [0, 1.4, 0] });
-  for (const [y, x] of [[1.1, 0.35], [1.9, -0.3], [2.7, 0.1]]) add(tree, new THREE.CylinderGeometry(0.55, 0.55, 0.14, 16), toon('#c9b7e8'), { p: [x, y, 0], outline: true });
+  add(tree, new THREE.CylinderGeometry(0.16, 0.16, 2.8, 10), toon('#e8d2a8'), { p: [0, 1.5, 0] });
+  for (const [y, x] of [[1.1, 0.35], [1.9, -0.3], [2.8, 0.1]]) add(tree, new THREE.CylinderGeometry(0.55, 0.55, 0.14, 16), toon('#c9b7e8'), { p: [x, y, 0], outline: true });
   add(tree, new THREE.SphereGeometry(0.1, 8, 6), toon('#ff5d73'), { p: [0.6, 0.85, 0.2] });
-  solids.push({ x: -10.3, z: 1.2, r: 0.9 });
-  shopkeeper(g, { skin: '#c68642', hair: 'hair_pigtails', hairColor: '#6e4a2e', top: 'top_hoodie', topColor: '#ffd84d', eyes: 'eyes_sparkle', pet: 'pet_giraffe' }, 5, 3.9, anim);
-  solids.push({ x: 5, z: 3.9, r: 0.6 }, { x: 6.2, z: 3.4, r: 0.6 });
-  for (const [x, z, c] of [[-10, 6, '#7c6bff'], [-8, 7, '#39c6ff']]) {
+  solids.push({ x: -hw + 1.4, z: -0.5, r: 0.9 });
+  for (const [x, z, c] of [[1, 11, '#7c6bff'], [3, 11.6, '#39c6ff'], [-1, 11.6, '#ff8fc7']]) {
     add(g, new THREE.TorusGeometry(0.7, 0.3, 10, 24), toon(c), { p: [x, 0.3, z], r: [Math.PI / 2, 0, 0], outline: true });
     add(g, new THREE.CylinderGeometry(0.7, 0.7, 0.15, 20), toon('#fff6e6'), { p: [x, 0.1, z] });
     solids.push({ x, z, r: 1 });
+  }
+  add(g, new THREE.CircleGeometry(3, 40), toon('#ffd6e8'), { p: [1.5, 0.02, 3.5], r: [-Math.PI / 2, 0, 0], cast: false });
+  add(g, new THREE.RingGeometry(2.6, 2.8, 40), toon('#ff8fc7'), { p: [1.5, 0.025, 3.5], r: [-Math.PI / 2, 0, 0], cast: false });
+  for (const [x, z] of [[-hw + 0.8, -hd + 2.2], [hw - 0.8, -hd + 2.2], [-hw + 0.8, hd - 2], [hw - 0.8, hd - 2], [-3, hd - 1.2], [3.2, hd - 1.2]]) {
+    add(g, new THREE.CylinderGeometry(0.4, 0.3, 0.6, 12), toon('#e07a4f'), { p: [x, 0.3, z], outline: true });
+    for (let k = 0; k < 5; k++) add(g, new THREE.ConeGeometry(0.16, 0.9, 5), toon('#4fae5a'), { p: [x + Math.cos(k * 1.3) * 0.15, 1.0, z + Math.sin(k * 1.3) * 0.15], r: [Math.cos(k * 1.3) * 0.3, 0, Math.sin(k * 1.3) * 0.3] });
+    solids.push({ x, z, r: 0.5 });
+  }
+  // bunting zig-zagging across the ceiling
+  const flagCols = ['#ff8fc7', '#ffd84d', '#6ee7a0', '#39c6ff', '#b77bff'];
+  for (const z of [-2, 2.5]) for (let k = 0; k < 24; k++) {
+    const x = -hw + 1.5 + k * ((W - 3) / 23);
+    add(g, new THREE.ConeGeometry(0.22, 0.45, 3), toon(flagCols[k % 5]), { p: [x, 4.55 - Math.sin((k / 23) * Math.PI) * 0.5, z], r: [Math.PI, 0, 0], cast: false });
   }
 
   const walker = openWalker(stage, { w: W, d: D, solids });
@@ -657,3 +792,5 @@ export function petShopArea(stage) {
   stage.banner('<div class="big">🐾 Pet Shop</div>Meet the pets in their pens, or hatch a surprise egg!', 3000);
   return () => { walker.stop(); stage.scene?.remove(g); };
 }
+/** A slightly deeper shade of a pen's colour, for its fence rails. */
+function tintHex(hex) { return `#${new THREE.Color(hex).multiplyScalar(0.85).getHexString()}`; }

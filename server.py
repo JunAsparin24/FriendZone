@@ -318,6 +318,7 @@ HOUSE_MAX_ITEMS = 120
 # Cosmetics and fish are shared with the client through one catalog file.
 CATALOG = json.loads((PUBLIC / "cosmetics.json").read_text("utf-8"))
 ITEMS = {item["id"]: item for item in CATALOG["items"]}
+TRIM_COLORS = {t["c"] for t in CATALOG["trimColors"]}  # the house trim (baseboards, half-wall tops)
 FISH = CATALOG["fish"]
 FISH_BAG_MAX = 60
 FISH_BY_NAME = {f["name"]: f for f in FISH}
@@ -575,25 +576,40 @@ ARCADE_GAMES = {
 # Laser Tag (through the doorway in the Arcade): a dark 3D maze, two teams, hitscan blasters. Tagging
 # someone is +100 points, getting tagged is -50 (and stuns you for a moment). Rounds are timed; at the
 # end everyone gets tickets for their points, and the winning team gets a bonus.
-LT_W, LT_H = 1200, 900
+LT_W, LT_H = 1600, 1200
 LT_ROUND = 180
-LT_BREAK = 10
+LT_BREAK = 8        # the results screen
+LT_PICK = 15        # then everyone picks a team before the next round starts
 LT_TAG_PTS, LT_HIT_PTS = 100, 50
 LT_STUN = 2.0
 LT_TEAMS = ("red", "blue")
+_DECK = (2.35, 2.6)  # the upstairs floor: underside and top (world units)
 LT_MAP = {
-    "id": "neon", "name": "Neon Maze", "w": LT_W, "h": LT_H,
-    # [x, y, w, h] in arena px (20 px = 1 world unit)
-    "walls": [
-        [260, 120, 40, 220], [260, 560, 40, 220], [900, 120, 40, 220], [900, 560, 40, 220],
-        [520, 200, 160, 40], [520, 660, 160, 40], [560, 400, 80, 100],
-        [400, 400, 40, 100], [760, 400, 40, 100],
-        [130, 420, 90, 40], [980, 420, 90, 40],
-        [380, 60, 40, 120], [780, 720, 40, 120], [380, 720, 40, 120], [780, 60, 40, 120],
-        [640, 300, 120, 30], [440, 570, 120, 30],
+    "id": "neon2", "name": "Neon Towers", "w": LT_W, "h": LT_H, "ceiling": 6.4,
+    # solid boxes [x, y, w, h, bottom, top]: x/y/w/h in arena px (20 px = 1 world unit), heights in world units
+    "solids": [
+        # upstairs: a deck along the top and bottom, joined by a bridge over the middle
+        [500, 80, 600, 200, *_DECK], [500, 920, 600, 200, *_DECK], [740, 280, 120, 640, *_DECK],
+        # their legs
+        [510, 240, 30, 30, 0, 2.35], [1060, 240, 30, 30, 0, 2.35], [510, 930, 30, 30, 0, 2.35], [1060, 930, 30, 30, 0, 2.35],
+        [785, 430, 30, 30, 0, 2.35], [785, 740, 30, 30, 0, 2.35],
+        # rails upstairs (low: crouch-height cover up there)
+        [500, 272, 240, 8, 2.6, 3.4], [860, 272, 240, 8, 2.6, 3.4], [500, 920, 240, 8, 2.6, 3.4], [860, 920, 240, 8, 2.6, 3.4],
+        [740, 330, 8, 540, 2.6, 3.4], [852, 330, 8, 540, 2.6, 3.4],
+        [620, 140, 60, 60, 2.6, 4.2], [920, 980, 60, 60, 2.6, 4.2],  # crates on the decks
+        # downstairs: tall walls
+        [250, 330, 40, 220, 0, 2.8], [250, 650, 40, 220, 0, 2.8], [1310, 330, 40, 220, 0, 2.8], [1310, 650, 40, 220, 0, 2.8],
+        [420, 520, 160, 40, 0, 2.8], [1020, 640, 160, 40, 0, 2.8], [560, 360, 40, 140, 0, 2.8], [1000, 700, 40, 140, 0, 2.8],
+        [600, 700, 40, 140, 0, 2.8], [960, 360, 40, 140, 0, 2.8], [320, 210, 40, 100, 0, 2.8], [1240, 890, 40, 100, 0, 2.8],
+        # and low cover to lie down behind
+        [130, 560, 100, 80, 0, 1.1], [1370, 560, 100, 80, 0, 1.1], [650, 560, 80, 80, 0, 1.1], [870, 560, 80, 80, 0, 1.1],
+        [400, 250, 90, 60, 0, 1.1], [1110, 890, 90, 60, 0, 1.1], [400, 890, 90, 60, 0, 1.1], [1110, 250, 90, 60, 0, 1.1],
+        [690, 380, 70, 70, 0, 1.1], [840, 750, 70, 70, 0, 1.1],
     ],
-    "spawns": {"red": [[60, 120], [60, 450], [60, 780], [140, 260], [140, 640]],
-               "blue": [[1140, 120], [1140, 450], [1140, 780], [1060, 260], [1060, 640]]},
+    # stairs [x, y, w, h, direction it climbs ("+x" or "-x"), top height]: up to each end of both decks
+    "stairs": [[300, 100, 200, 80, "+x", 2.6], [1100, 100, 200, 80, "-x", 2.6], [300, 1020, 200, 80, "+x", 2.6], [1100, 1020, 200, 80, "-x", 2.6]],
+    "spawns": {"red": [[70, 150], [70, 450], [70, 750], [70, 1050], [160, 300], [160, 900]],
+               "blue": [[1530, 150], [1530, 450], [1530, 750], [1530, 1050], [1440, 300], [1440, 900]]},
 }
 
 # inside the Arcade a go on a cabinet costs coins and pays out tickets (spent at the prize counter);
@@ -902,18 +918,23 @@ def clean_house(p, data):
             w, d = (length, f["d"]) if r % 2 == 0 else (f["d"], length)
             # furniture turned 45° takes up the square it fits in (walls and doors only turn in quarters)
             dg = bool(it.get("dg")) and not f.get("room") and kind != "door"
-            if dg:
-                w = d = math.ceil((length + f["d"]) / math.sqrt(2) * HOUSE_SNAP) / HOUSE_SNAP
             if x < 0 or y < 0 or x + w > W or y + d > D:
                 raise GameError("That doesn't fit in the room.")
             x0, y0 = round(x * HOUSE_SNAP), round(y * HOUSE_SNAP)
-            cells = {(kind, x0 + i, y0 + j) for i in range(round(w * HOUSE_SNAP)) for j in range(round(d * HOUSE_SNAP))}
+            spots = [(x0 + i, y0 + j) for i in range(round(w * HOUSE_SNAP)) for j in range(round(d * HOUSE_SNAP))]
+            cells = {(kind, a, b) for a, b in spots}
+            if kind == "floor":
+                # chairs tuck in under tables and desks (the same rules as the house editor)
+                layers, check = (("chair",), ("chair", "solid")) if f.get("tuck") else (("floor",), ("floor",)) if f.get("desk") else (("floor", "solid"), ("floor", "chair"))
+                cells = {(l, a, b) for l in layers for a, b in spots}
+                if {(l, a, b) for l in check for a, b in spots} & taken:
+                    raise GameError("Things can't overlap.")
             if f.get("drag") and not f.get("wallH"):  # (doors and wall decorations go on full-height walls)
                 wall_cells |= {(c[1], c[2]) for c in cells}
                 drawn.append((r % 2, x if r % 2 == 0 else y, length, y if r % 2 == 0 else x))
             if kind == "door":
                 door_cells.append((f["name"], {(c[1], c[2]) for c in cells}))
-        if cells & taken:
+        if kind != "floor" and cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
         clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
@@ -953,15 +974,16 @@ def clean_house(p, data):
         if not isinstance(k, str) or len(k) > 40 or v not in WALLS or not owns_deco(p, v):
             raise GameError("You don't own that wallpaper yet.")
         clean_wallp[k] = v
+    trim = data.get("trim") if data.get("trim") in TRIM_COLORS else "#f4f0ff"
     return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items,
-            "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp}
+            "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp, "trim": trim}
 
 
 def house_view(p):
     h = p["house"]
     return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"),
             "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"], "areas": h.get("areas", []),
-            "careas": h.get("careas", []), "wallp": h.get("wallp", {})}
+            "careas": h.get("careas", []), "wallp": h.get("wallp", {}), "trim": h.get("trim", "#f4f0ff")}
 
 
 def public(p, client):
@@ -1029,6 +1051,7 @@ class Room:
         self.lt_round = 0       # bumps every round (stale timers check it)
         self.lt_end = 0.0       # when this round ends (0: no round running)
         self.lt_break = 0.0     # while now < this, it's the scoreboard break
+        self.lt_pick = 0.0      # while now < this, everyone picks a team (then the round starts)
         self.lt_tags = {"red": 0, "blue": 0}
         self.doodle = {"id": 0, "state": "idle", "queue": [], "turn": -1, "drawer": None, "word": None, "choices": [],
                        "ends": 0.0, "dur": 0, "guessed": {}, "scores": {}, "strokes": [], "shown": set(), "ranking": []}
@@ -1089,7 +1112,7 @@ IN_ZONE = {
     "race_join", "race_leave", "race_start", "race_ready", "race_vehicle", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "crab_bet", "ball", "ball_steal", "ball_event", "court_join", "court_ready", "court_leave", "court_score", "golf_done", "boat", "boat_take", "boat_leave", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
-    "play_public", "lt_move", "lt_shoot", "arcade_score", "arcade_play", "claw_play", "ticket_shop", "ticket_buy", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
+    "play_public", "lt_move", "lt_shoot", "lt_team", "arcade_score", "arcade_play", "claw_play", "ticket_shop", "ticket_buy", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
     "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
 }
 
@@ -3858,6 +3881,7 @@ class Game:
         now = time.monotonic()
         return {"t": "lt", "players": {k: self.lt_view(f) for k, f in room.lt.items()}, "map": LT_MAP,
                 "left": round(max(0.0, room.lt_end - now), 1), "brk": round(max(0.0, room.lt_break - now), 1),
+                "pick": round(max(0.0, room.lt_pick - now), 1),
                 "tags": room.lt_tags, "pts": [LT_TAG_PTS, LT_HIT_PTS], "stun": LT_STUN}
 
     @staticmethod
@@ -3880,8 +3904,9 @@ class Game:
         x, y = self.lt_spawn(room, team)
         room.lt[c.key] = {"team": team, "x": x, "y": y, "a": 0 if team == "red" else math.pi, "score": 0, "tags": 0, "hits": 0,
                           "stun": 0.0, "spawn": time.monotonic()}
-        if not room.lt_end and time.monotonic() >= room.lt_break:
-            self.lt_start(room)
+        now = time.monotonic()
+        if not room.lt_end and now >= room.lt_break and now >= room.lt_pick:
+            self.lt_begin_pick(room)
         c.ws.send(self.lt_state(room))
         room.broadcast({"t": "lt_add", "k": c.key, **self.lt_view(room.lt[c.key])}, scene="lasertag", exclude=c)
 
@@ -3894,7 +3919,44 @@ class Game:
             room.lt_round += 1
             room.lt_end = 0.0
             room.lt_break = 0.0
+            room.lt_pick = 0.0
             room.lt_tags = {"red": 0, "blue": 0}
+
+    def lt_begin_pick(self, room):
+        """Before a round: LT_PICK seconds to choose a team (you can walk around, but not shoot yet)."""
+        room.lt_round += 1
+        room.lt_end = 0.0
+        room.lt_pick = time.monotonic() + LT_PICK
+        asyncio.get_running_loop().call_later(LT_PICK, self.lt_go, room, room.lt_round)
+
+    def on_lt_team(self, c, m):
+        """Pick a team while teams are being picked (no team can get more than one player ahead)."""
+        room = c.room
+        f = room.lt.get(c.key)
+        team = m.get("team")
+        if not f or team not in LT_TEAMS or team == f["team"] or room.lt_end:
+            return
+        counts = {t: sum(1 for g in room.lt.values() if g["team"] == t) for t in LT_TEAMS}
+        other = LT_TEAMS[1 - LT_TEAMS.index(team)]
+        if counts[team] + 1 > (counts[other] - 1) + 1:  # (after the switch)
+            raise GameError(f"The {team} team is full. Teams can't be more than one player apart.")
+        f["team"] = team
+        f["x"], f["y"] = self.lt_spawn(room, team)
+        room.broadcast({"t": "lt_team", "k": c.key, "team": team, "x": f["x"], "y": f["y"]}, scene="lasertag")
+
+    def lt_go(self, room, round_id):
+        """Picking's over: everyone back to their base and the round begins."""
+        if round_id != room.lt_round or not room.lt:
+            return
+        now = time.monotonic()
+        for f in room.lt.values():
+            f["x"] = f["y"] = -9999
+        for f in room.lt.values():
+            f["x"], f["y"] = self.lt_spawn(room, f["team"])
+            f.update(a=0 if f["team"] == "red" else math.pi, score=0, tags=0, hits=0, stun=0.0, spawn=now)
+        room.lt_pick = 0.0
+        self.lt_start(room)
+        room.broadcast(self.lt_state(room), scene="lasertag")
 
     def lt_start(self, room):
         room.lt_round += 1
@@ -3908,7 +3970,7 @@ class Game:
             return
         f["x"], f["y"], f["a"] = num(m.get("x", 0), 0, LT_W), num(m.get("y", 0), 0, LT_H), num(m.get("a", 0), -7, 7)
         c.room.broadcast({"t": "lt_pos", "k": c.key, "x": round(f["x"], 1), "y": round(f["y"], 1), "a": round(f["a"], 2),
-                          "h": round(num(m.get("h", 0), 0, 6), 2), "pr": bool(m.get("pr"))}, scene="lasertag", exclude=c)
+                          "h": round(num(m.get("h", 0), 0, 8), 2), "pr": bool(m.get("pr"))}, scene="lasertag", exclude=c)
 
     def on_lt_shoot(self, c, m):
         """A hitscan shot: the shooter's game works out what the beam hit (friends are trusted)."""
@@ -3918,7 +3980,7 @@ class Game:
         if not f or not room.lt_end or now < f["stun"] or not c.ready("lt_shoot", 0.22):
             return
         room.broadcast({"t": "lt_beam", "k": c.key, "x": num(m.get("x", 0), 0, LT_W), "y": num(m.get("y", 0), 0, LT_H),
-                        "h": round(num(m.get("h", 1.4), 0, 6), 2), "a": round(num(m.get("a", 0), -7, 7), 3),
+                        "h": round(num(m.get("h", 1.4), 0, 8), 2), "a": round(num(m.get("a", 0), -7, 7), 3),
                         "p": round(num(m.get("p", 0), -1.6, 1.6), 3), "len": round(num(m.get("len", 0), 0, 2000), 1)},
                        scene="lasertag", exclude=c)
         victim_key = str(m.get("hit") or "")
@@ -3959,20 +4021,11 @@ class Game:
         asyncio.get_running_loop().call_later(LT_BREAK, self.lt_next_round, room, round_id)
 
     def lt_next_round(self, room, round_id):
+        """After the results: pick teams again (they stay as they were unless people switch)."""
         if round_id != room.lt_round or not room.lt:
             return
-        # shuffle the teams so they stay even, then everyone back to their base
-        keys = list(room.lt)
-        random.shuffle(keys)
-        now = time.monotonic()
-        for f in room.lt.values():
-            f["x"] = f["y"] = -9999
-        for i, k in enumerate(keys):
-            f = room.lt[k]
-            team = LT_TEAMS[i % 2]
-            x, y = self.lt_spawn(room, team)
-            f.update(team=team, x=x, y=y, a=0 if team == "red" else math.pi, score=0, tags=0, hits=0, stun=0.0, spawn=now)
-        self.lt_start(room)
+        room.lt_break = 0.0
+        self.lt_begin_pick(room)
         room.broadcast(self.lt_state(room), scene="lasertag")
 
     # ---- trading (only in the tavern) ----------------------------------------------

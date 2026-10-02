@@ -287,6 +287,8 @@ export function arena(stage) {
     const p = stage.person(k);
     p.char.setProp('blaster');
     p.char.aiming = true;
+    const tag = p.el.querySelector('.wl-tag'); // (no name tags in the arena: just their hearts)
+    if (tag) tag.style.display = 'none';
     fighters.set(k, { ...f, tx: f.x, ty: f.y, h: 0, p, hurt: 0, buffs: {} });
   };
   const removeFighter = (k) => {

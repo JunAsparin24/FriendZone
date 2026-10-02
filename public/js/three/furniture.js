@@ -459,7 +459,7 @@ export const FURNITURE = {
   },
   window(g, A) {
     const frame = toon('#ffffff');
-    add(g, plane(1.5, 0.95), new THREE.MeshBasicMaterial({ map: skyTex }), { p: [0, 0, 0.01], outline: false, cast: false });
+    add(g, plane(1.5, 0.95), outdoorGlass(), { p: [0, 0, 0.01], outline: false, cast: false }); // (looks outside)
     for (const [w, h, x, y] of [[1.64, 0.08, 0, 0.5], [1.64, 0.08, 0, -0.5], [0.08, 1.08, -0.78, 0], [0.08, 1.08, 0.78, 0], [0.05, 1, 0, 0], [1.5, 0.05, 0, 0]]) {
       add(g, box(w, h, 0.06), frame, { p: [x, y, 0.03], outline: false });
     }
@@ -1582,11 +1582,6 @@ function archFill(g, w, rise) {
   const m = add(g, fill, toon('#fff1d6', { side: THREE.DoubleSide }), { outline: false });
   m.userData.wallpaper = true;
 }
-/** Points round the curve of an arch (radius r across, rising `rise`, inset by `inset`). */
-const archCurve = (r, rise, inset, z = 0) => new THREE.CatmullRomCurve3(Array.from({ length: 25 }, (_, k) => {
-  const a = Math.PI - (k / 24) * Math.PI;
-  return new THREE.Vector3(Math.cos(a) * (r - inset), DOOR_H - rise + Math.sin(a) * (rise - inset), z);
-}));
 /** An open archway `w` wide: round (wooden trim, plinths and a keystone) or stone (a ring of blocks). */
 function archway(g, w, style) {
   const r = w / 2, rise = Math.min(style === 'stone' ? 0.6 : 0.55, r);
@@ -1607,18 +1602,32 @@ function archway(g, w, style) {
     }
     return;
   }
-  const wood = toon(WOOD), light = toon(shade(WOOD, 0.12)), dark = toon(shade(WOOD, -0.15));
+  const wood = toon(WOOD), light = toon(shade(WOOD, 0.14)), dark = toon(shade(WOOD, -0.15));
+  // the lining under the curve, through the wall, then on each face a flat casing round the opening
+  // with a lighter bead along it, standing on plinth blocks
+  add(g, archBand(r, rise, -0.03, 0, ROOM_T + 0.01), wood, { p: [0, 0, -(ROOM_T + 0.01) / 2], outline: false });
   for (const z of [-1, 1]) {
-    const f = z * (ROOM_T / 2 + 0.02);
-    for (const s of [-1, 1]) {
-      add(g, box(0.11, DOOR_H - rise, 0.04), wood, { p: [s * (r + 0.02), (DOOR_H - rise) / 2, f] });
-      add(g, box(0.15, 0.22, 0.055), dark, { p: [s * (r + 0.02), 0.11, f] }); // plinth
-    }
-    add(g, new THREE.TubeGeometry(archCurve(r + 0.075, rise + 0.075, 0.075, f), 32, 0.045, 6), wood, { outline: false });
-    add(g, box(0.12, 0.2, 0.06), light, { p: [0, DOOR_H + 0.07, f] }); // keystone
+    const face = { p: [0, 0, z * (ROOM_T / 2)], r: z < 0 ? [0, Math.PI, 0] : null, outline: false };
+    add(g, archBand(r, rise, 0, 0.11, 0.03), wood, face);
+    add(g, archBand(r, rise, 0.045, 0.065, 0.042), light, face);
+    for (const s of [-1, 1]) add(g, box(0.15, 0.24, 0.05), dark, { p: [s * (r + 0.055), 0.12, z * (ROOM_T / 2 + 0.025)], outline: false });
   }
-  // a lining under the curve, through the wall
-  for (const s of [-1, 1]) add(g, box(0.04, DOOR_H - rise, ROOM_T + 0.01), wood, { p: [s * (r - 0.02), (DOOR_H - rise) / 2, 0], outline: false });
+}
+/** A flat band in the shape of an arched opening (up both sides from the floor and round the curve),
+ *  from `inner` to `outer` beyond the opening's edge, `depth` thick (extruded towards +z). */
+function archBand(r, rise, inner, outer, depth) {
+  const base = DOOR_H - rise, sh = new THREE.Shape(), N = 28;
+  const ro = r + outer, ri = r + inner, yo = rise + outer, yi = rise + inner;
+  sh.moveTo(-ro, 0);
+  sh.lineTo(-ro, base);
+  for (let k = 0; k <= N; k++) { const t = Math.PI - (k / N) * Math.PI; sh.lineTo(Math.cos(t) * ro, base + Math.sin(t) * yo); }
+  sh.lineTo(ro, 0);
+  sh.lineTo(ri, 0);
+  sh.lineTo(ri, base);
+  for (let k = 0; k <= N; k++) { const t = (k / N) * Math.PI; sh.lineTo(Math.cos(t) * ri, base + Math.sin(t) * yi); }
+  sh.lineTo(-ri, 0);
+  sh.closePath();
+  return new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 1, curveSegments: 4 });
 }
 /** A papered face: the wallpaper repeats every 2 tiles across, and is pinned to the floor going up
  *  (y0: how high its bottom edge is), so it lines up with the room's own walls. */
@@ -1634,8 +1643,11 @@ function papered(w, h, y0 = 0) {
  * A stretch of wall `w` long, papered on both faces (and on any open end), with no outlines, so walls
  * that meet run on into each other as one. Openings leave a door-sized gap with wall above it.
  */
+/** The house's trim colour (baseboards and the tops of half walls): shared by every wall, so a house
+ *  recolours it all at once. */
+export const TRIM_MAT = toon('#f4f0ff').clone();
 function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = ROOM_H } = {}) {
-  const core = toon('#e8d6b8'), trim = toon('#f4f0ff'), paper = toon('#fff1d6', { side: THREE.DoubleSide });
+  const core = toon('#e8d6b8'), trim = TRIM_MAT, paper = toon('#fff1d6', { side: THREE.DoubleSide });
   // (wallpaper doesn't take shadows: the wall's own core, a hair behind it, would darken it, and the
   // house's own walls don't either, so the two always match)
   const paperAt = (geom, p, ry, face) => { const m = add(g, geom, paper, { p, r: [0, ry, 0], outline: false }); m.receiveShadow = false; m.userData.wallpaper = true; m.userData.face = face; };
@@ -1657,15 +1669,20 @@ function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = 
     x = b;
   }
   piece(x, w / 2, bottom, top);
-  // a half wall's open edge gets a wooden cap (the top of a divider, the bottom of one hanging down)
-  if (top < ROOM_H) add(g, box(w + 0.02, 0.07, ROOM_T + 0.08), toon(WOOD), { p: [0, top, 0], outline: false });
-  if (bottom > 0) add(g, box(w + 0.02, 0.07, ROOM_T + 0.08), toon(WOOD), { p: [0, bottom, 0], outline: false });
-  // open ends get papered (and skirting) too, so a wall never shows a bare edge
+  // a half wall's open edge gets a cap in the trim colour (a top rail with a little lip under it)
+  for (const [y, dir] of [[top, 1], [bottom, -1]]) {
+    if (dir > 0 ? top >= ROOM_H : bottom <= 0) continue;
+    add(g, box(w + 0.02, 0.05, ROOM_T + 0.07), trim, { p: [0, y + dir * 0.012, 0], outline: false });
+    add(g, box(w, 0.03, ROOM_T + 0.025), trim, { p: [0, y - dir * 0.025, 0], outline: false });
+  }
+  // open ends get papered (and skirting) too, so a wall never shows a bare edge. A cap can be [y0, y1]:
+  // just that much of the end (a full wall where a half wall meets it: only the part above it shows)
   caps.forEach((on, i) => {
     if (!on) return;
-    const s = i ? 1 : -1;
-    paperAt(papered(ROOM_T, top - bottom, bottom), [s * (w / 2 + 0.001), (bottom + top) / 2, 0], s * Math.PI / 2, s > 0 ? 1 : 3);
-    if (bottom === 0) add(g, box(0.05, 0.16, ROOM_T + 0.09), trim, { p: [s * (w / 2 + 0.02), 0.08, 0], outline: false });
+    const s = i ? 1 : -1, [y0, y1] = on === true ? [bottom, top] : on;
+    if (y1 - y0 < 0.01) return;
+    paperAt(papered(ROOM_T, y1 - y0, y0), [s * (w / 2 + 0.001), (y0 + y1) / 2, 0], s * Math.PI / 2, s > 0 ? 1 : 3);
+    if (y0 === 0) add(g, box(0.05, 0.16, ROOM_T + 0.09), trim, { p: [s * (w / 2 + 0.02), 0.08, 0], outline: false });
   });
 }
 
@@ -1903,6 +1920,488 @@ function recolor(group, to, from = null) {
 }
 
 /** color: recolour it (pieces you can recolour, and colour variants of other pieces, which name a base). */
+// ---- big rugs in lots of colours: each one its own catalogue entry, drawn in its own colours ----
+const RUG_COLORS = {
+  navy: ['Navy', '#2b3a6b', '#e9d8a6'], sage: ['Sage', '#8fae8b', '#f4efe1'], mustard: ['Mustard', '#e0a83a', '#5a3a22'],
+  terracotta: ['Terracotta', '#c8643b', '#f3d9b1'], lavender: ['Lavender', '#b39ddb', '#fff3fb'], charcoal: ['Charcoal', '#3a3a48', '#c9c3b8'],
+  cream: ['Cream', '#efe3c8', '#8b5a2b'], blush: ['Blush', '#f2a7b8', '#ffffff'], teal: ['Teal', '#1f8a8a', '#ffd84d'],
+  burgundy: ['Burgundy', '#7a2335', '#e8c27a'], forest: ['Forest', '#2f6b4f', '#f4e3b5'], sky: ['Sky', '#7fc8ff', '#ffffff'],
+};
+const RUG_SHAPES = { rug_large: 'rect', rug_xl: 'rect', rug_runner: 'runner', rug_round_large: 'round', rug_shag: 'shag' };
+const rugTexCache = new Map();
+function bigRugTexture(shape, col, acc, w, d) {
+  const key = `${shape}${col}${acc}${w}${d}`;
+  if (rugTexCache.has(key)) return rugTexCache.get(key);
+  const cw = 512, ch = Math.round((512 * d) / w);
+  const tex = canvasTexture(cw, ch, (c) => {
+    c.fillStyle = col; c.fillRect(0, 0, cw, ch);
+    const light = shade(col, 0.18), dark = shade(col, -0.18);
+    if (shape === 'shag') {
+      // deep pile: thousands of little tufts, lighter and darker
+      for (let i = 0; i < 9000; i++) { c.fillStyle = i % 3 ? light : dark; c.globalAlpha = 0.35; c.fillRect((i * 37.7) % cw, (i * 91.3) % ch, 3, 3); }
+      c.globalAlpha = 1;
+      return;
+    }
+    if (shape === 'round') {
+      for (let r = cw / 2, i = 0; r > 0; r -= cw / 14, i++) { c.fillStyle = [col, acc, dark, light][i % 4]; c.beginPath(); c.arc(cw / 2, ch / 2, r, 0, TAU); c.fill(); }
+      return;
+    }
+    c.strokeStyle = acc;
+    c.lineWidth = 14; c.strokeRect(22, 22, cw - 44, ch - 44);
+    c.lineWidth = 5; c.strokeRect(48, 48, cw - 96, ch - 96);
+    if (shape === 'runner') {
+      // a row of diamonds down the middle
+      const n = Math.max(3, Math.round(w * 2));
+      for (let k = 0; k < n; k++) {
+        const x = 70 + ((cw - 140) * (k + 0.5)) / n, y = ch / 2, s = Math.min(ch * 0.28, (cw - 140) / n / 2.4);
+        c.fillStyle = k % 2 ? acc : light;
+        c.beginPath(); c.moveTo(x, y - s); c.lineTo(x + s, y); c.lineTo(x, y + s); c.lineTo(x - s, y); c.closePath(); c.fill();
+      }
+      return;
+    }
+    // a medallion in the middle and little corner motifs
+    c.fillStyle = dark; c.beginPath(); c.ellipse(cw / 2, ch / 2, cw * 0.2, ch * 0.24, 0, 0, TAU); c.fill();
+    c.fillStyle = acc; c.beginPath(); c.ellipse(cw / 2, ch / 2, cw * 0.12, ch * 0.15, 0, 0, TAU); c.fill();
+    c.fillStyle = light; c.beginPath(); c.ellipse(cw / 2, ch / 2, cw * 0.05, ch * 0.06, 0, 0, TAU); c.fill();
+    for (const [x, y] of [[80, 80], [cw - 80, 80], [80, ch - 80], [cw - 80, ch - 80]]) { c.fillStyle = acc; c.beginPath(); c.arc(x, y, 12, 0, TAU); c.fill(); }
+  });
+  rugTexCache.set(key, tex);
+  return tex;
+}
+function bigRug(g, shape, colorKey, w, d) {
+  const [, col, acc] = RUG_COLORS[colorKey];
+  const mat = new THREE.MeshToonMaterial({ map: bigRugTexture(shape, col, acc, w, d) });
+  const rw = w - 0.12, rd = d - 0.12;
+  if (shape === 'round') add(g, geo(`bigRound${rw}`, () => new THREE.CircleGeometry(rw / 2, 56)), mat, { p: [0, 0.012, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
+  else if (shape === 'shag') {
+    add(g, box(rw, 0.035, rd), mat, { p: [0, 0.018, 0], outline: false, cast: false });
+  } else {
+    add(g, plane(rw, rd), mat, { p: [0, 0.012, 0], r: [-Math.PI / 2, 0, 0], outline: false, cast: false });
+    // fringe along the short ends
+    const fr = toon(acc);
+    for (const s of [-1, 1]) add(g, box(0.06, 0.008, rd * 0.92), fr, { p: [s * (rw / 2 + 0.03), 0.008, 0], outline: false, cast: false });
+  }
+}
+for (const f of CATALOG.furniture) {
+  const m = f.id.match(/^(rug_large|rug_xl|rug_runner|rug_round_large|rug_shag)_([a-z]+)$/);
+  if (m && RUG_COLORS[m[2]]) FURNITURE[f.id] = (g) => bigRug(g, RUG_SHAPES[m[1]], m[2], f.w, f.d);
+}
+
+// ---- bedside tables: a few nicer styles, each with a lamp you can switch on and off ----
+function lampOn(shade, on) { shade.emissiveIntensity = on ? 0.75 : 0; }
+function bedsideLamp(g, x, z, y, { base = '#2b2f4a', shadeCol = '#ffe9b0', kind = 'drum' } = {}) {
+  const shadeMat = toon(shadeCol, { side: THREE.DoubleSide }).clone();
+  shadeMat.emissive = new THREE.Color('#ffcf6b');
+  shadeMat.emissiveIntensity = 0.75;
+  if (kind === 'mushroom') {
+    add(g, cyl(0.035, 0.07, 0.16, 14), toon(base), { p: [x, y + 0.08, z] });
+    add(g, geo('mushLampTop', () => new THREE.SphereGeometry(0.12, 18, 10, 0, TAU, 0, Math.PI / 2)), shadeMat, { p: [x, y + 0.16, z] });
+  } else if (kind === 'globe') {
+    add(g, cyl(0.06, 0.07, 0.03, 14), toon(base), { p: [x, y + 0.015, z] });
+    add(g, sph(0.1, 16, 12), shadeMat, { p: [x, y + 0.13, z], outline: false });
+  } else {
+    add(g, sph(0.07, 14, 10), toon(base), { p: [x, y + 0.07, z], s: [1, 1.15, 1] });
+    add(g, cyl(0.01, 0.01, 0.1, 6), toon('#c0c6d4'), { p: [x, y + 0.18, z], outline: false });
+    add(g, cyl(0.075, 0.11, 0.13, 18, true), shadeMat, { p: [x, y + 0.27, z] });
+  }
+  return shadeMat;
+}
+function bedside(g, A, o) {
+  const { w = 0.58, h = 0.52, d = 0.44, body, front, knob, legs = 'none', drawers = 2, top = null, lamp = {}, extra = null, round = false } = o;
+  const lift = legs === 'none' ? 0.02 : legs === 'tall' ? 0.2 : 0.12;
+  const z0 = -0.12;
+  if (round) {
+    // a round pedestal table
+    add(g, cyl(w / 2, w / 2, 0.04, 28), top ?? body, { p: [0, h + lift, z0] });
+    add(g, cyl(w / 2 - 0.03, w / 2 - 0.03, h - 0.2, 24), body, { p: [0, lift + (h - 0.2) / 2 + 0.17, z0] });
+    add(g, cyl(0.04, 0.05, 0.17, 10), body, { p: [0, lift + 0.085, z0] });
+    add(g, cyl(0.16, 0.2, 0.03, 18), body, { p: [0, 0.015, z0] });
+    add(g, box(w * 0.55, 0.12, 0.02), front, { p: [0, h + lift - 0.12, z0 + w / 2 - 0.025], outline: false });
+    add(g, sph(0.022, 8, 6), knob, { p: [0, h + lift - 0.12, z0 + w / 2 - 0.005], outline: false });
+  } else {
+    add(g, box(w, h, d), body, { p: [0, lift + h / 2, z0] });
+    add(g, box(w + 0.03, 0.035, d + 0.03), top ?? body, { p: [0, lift + h + 0.017, z0] });
+    const dh = (h - 0.06) / Math.max(1, drawers);
+    for (let k = 0; k < drawers; k++) {
+      const y = lift + 0.03 + dh * (k + 0.5);
+      add(g, box(w - 0.07, dh - 0.035, 0.02), front, { p: [0, y, z0 + d / 2 + 0.005], outline: false });
+      if (knob) add(g, box(0.1, 0.018, 0.02), knob, { p: [0, y, z0 + d / 2 + 0.022], outline: false }); // a bar pull
+    }
+    if (!drawers) add(g, box(w - 0.07, h * 0.42, 0.02), toon('#3a2414'), { p: [0, lift + h * 0.72, z0 + d / 2 - 0.01], outline: false }); // an open shelf
+    if (legs !== 'none') {
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const leg = add(g, cyl(0.016, legs === 'tall' ? 0.012 : 0.01, lift, 8), legs === 'gold' ? shiny('#d4af37', { metalness: 0.7 }) : body,
+          { p: [sx * (w / 2 - 0.05), lift / 2, z0 + sz * (d / 2 - 0.05)], outline: false });
+        if (legs === 'splay') leg.rotation.set(sz * 0.18, 0, -sx * 0.18);
+      }
+    }
+  }
+  const lampY = lift + h + (round ? 0.02 : 0.035);
+  const shadeMat = bedsideLamp(g, -0.14, z0 - 0.05, lampY, lamp);
+  extra?.(g, lampY, z0);
+  let on = true;
+  return { use: () => { on = !on; lampOn(shadeMat, on); } };
+}
+const bookPile = (g, y, z0) => bookStack(g, 0.13, y, z0 + 0.02, 3, undefined, 0.2);
+const littlePlant = (g, y, z0) => {
+  add(g, cyl(0.05, 0.04, 0.08, 12), toon('#e07a4f'), { p: [0.15, y + 0.04, z0 - 0.04] });
+  for (let k = 0; k < 4; k++) add(g, cone(0.03, 0.14, 5), toon('#4fae5a'), { p: [0.15 + Math.cos(k * 1.6) * 0.02, y + 0.14, z0 - 0.04 + Math.sin(k * 1.6) * 0.02], r: [Math.cos(k * 1.6) * 0.3, 0, Math.sin(k * 1.6) * 0.3] });
+};
+const alarmClock = (g, y, z0) => {
+  add(g, box(0.12, 0.09, 0.05), toon('#e0463c'), { p: [0.15, y + 0.045, z0 + 0.04] });
+  add(g, plane(0.08, 0.045), basic('#6ee7a0'), { p: [0.15, y + 0.05, z0 + 0.066], outline: false, cast: false });
+};
+Object.assign(FURNITURE, {
+  nightstand_mid(g, A) { return bedside(g, A, { body: toon('#8b5a2b'), front: toon('#a8723f'), knob: shiny('#d4af37', { metalness: 0.7 }), legs: 'splay', drawers: 2, lamp: { kind: 'drum', base: '#e9e4da', shadeCol: '#fff3d6' }, extra: bookPile }); },
+  nightstand_float(g, A) { return bedside(g, A, { h: 0.34, body: toon('#f4f2ee'), front: toon('#ffffff'), knob: null, legs: 'tall', drawers: 1, lamp: { kind: 'globe', base: '#c9a227' }, extra: littlePlant }); },
+  nightstand_rattan(g, A) { return bedside(g, A, { body: toon('#c9a26a'), front: toon('#e2c28e'), knob: toon('#6e4424'), legs: 'short', drawers: 2, lamp: { kind: 'mushroom', base: '#f4efe1', shadeCol: '#fff6e0' }, extra: littlePlant }); },
+  nightstand_round(g, A) { return bedside(g, A, { w: 0.6, h: 0.5, round: true, body: toon('#e9e4da'), front: toon('#d8d0c2'), knob: shiny('#d4af37', { metalness: 0.7 }), lamp: { kind: 'mushroom', base: '#d9a441', shadeCol: '#ffe7a8' }, extra: alarmClock }); },
+  nightstand_glam(g, A) { return bedside(g, A, { body: new THREE.MeshStandardMaterial({ color: '#dfe6ee', metalness: 0.75, roughness: 0.12 }), front: new THREE.MeshStandardMaterial({ color: '#eef3f8', metalness: 0.8, roughness: 0.08 }), knob: shiny('#d4af37', { metalness: 0.8 }), top: shiny('#d4af37', { metalness: 0.6 }), legs: 'gold', drawers: 3, lamp: { kind: 'drum', base: '#d4af37', shadeCol: '#ffffff' }, extra: bookPile }); },
+  nightstand_pastel(g, A) { return bedside(g, A, { body: toon('#ffc2dd'), front: toon('#ffd9ea'), knob: toon('#ff7ab6'), legs: 'splay', drawers: 2, lamp: { kind: 'globe', base: '#ff9fc8' }, extra: alarmClock }); },
+  nightstand_black(g, A) { return bedside(g, A, { body: toon('#23232e'), front: toon('#2e2e3c'), knob: shiny('#d4af37', { metalness: 0.7 }), legs: 'none', drawers: 3, lamp: { kind: 'drum', base: '#16141f', shadeCol: '#f4efe1' }, extra: littlePlant }); },
+  nightstand_open(g, A) { return bedside(g, A, { body: toon('#b98049'), front: toon('#a8723f'), knob: null, legs: 'short', drawers: 0, lamp: { kind: 'globe', base: '#6e4424' }, extra: bookPile }); },
+});
+
+// ---- the view outside: one painted panorama (sky, hills, trees, a meadow and a fence) that windows look
+// out onto and the house's garden sits in. (No fence painted in: it would fill every window.) Windows sample it by view direction, so it shifts as you move.
+let panoTex = null;
+export function outdoorPanorama() {
+  if (panoTex) return panoTex;
+  panoTex = canvasTexture(2048, 1024, (c) => {
+    const W = 2048, H = 1024, hz = H * 0.5;
+    const sky = c.createLinearGradient(0, 0, 0, hz);
+    sky.addColorStop(0, '#5aa8f0'); sky.addColorStop(0.7, '#a8d8ff'); sky.addColorStop(1, '#e6f4ff');
+    c.fillStyle = sky; c.fillRect(0, 0, W, hz + 2);
+    // the sun and soft clouds
+    c.fillStyle = 'rgba(255,250,220,.9)'; c.beginPath(); c.arc(W * 0.3, H * 0.18, 34, 0, TAU); c.fill();
+    c.fillStyle = 'rgba(255,245,200,.25)'; c.beginPath(); c.arc(W * 0.3, H * 0.18, 70, 0, TAU); c.fill();
+    for (let i = 0; i < 26; i++) {
+      const x = (i * 337) % W, y = 60 + ((i * 131) % 300), s = 0.6 + ((i * 7) % 5) / 6;
+      c.fillStyle = 'rgba(255,255,255,.85)';
+      for (let k = 0; k < 5; k++) { c.beginPath(); c.ellipse(x + k * 34 * s, y + Math.sin(k * 1.7) * 8 * s, 46 * s, 22 * s, 0, 0, TAU); c.fill(); }
+    }
+    // far hills, nearer hills
+    const hills = (base, amp, col, seed) => {
+      c.fillStyle = col; c.beginPath(); c.moveTo(0, hz + 4);
+      for (let x = 0; x <= W; x += 16) c.lineTo(x, base - Math.abs(Math.sin(x / 260 + seed)) * amp - Math.sin(x / 90 + seed * 2) * amp * 0.15);
+      c.lineTo(W, hz + 4); c.closePath(); c.fill();
+    };
+    hills(hz, 110, '#9cc7d9', 1);
+    hills(hz, 70, '#7fb07a', 3);
+    // a tree line along the horizon
+    for (let x = 0; x < W; x += 14) {
+      const h = 18 + ((x * 13) % 26);
+      c.fillStyle = ['#3f8a46', '#4f9c4f', '#357a3d'][(x / 14) % 3 | 0];
+      c.beginPath(); c.ellipse(x, hz - h * 0.5, 12, h * 0.75, 0, 0, TAU); c.fill();
+    }
+    // the meadow below the horizon, dotted with flowers
+    const g = c.createLinearGradient(0, hz, 0, H);
+    g.addColorStop(0, '#79b85c'); g.addColorStop(1, '#4f9a45');
+    c.fillStyle = g; c.fillRect(0, hz, W, H - hz);
+    for (let i = 0; i < 1400; i++) {
+      const y = hz + 8 + ((i * 53) % (H - hz - 8)), x = (i * 97.3) % W;
+      c.fillStyle = i % 9 === 0 ? ['#ff8fc7', '#ffd84d', '#ffffff', '#b77bff'][i % 4] : 'rgba(40,90,40,.25)';
+      c.fillRect(x, y, i % 9 === 0 ? 5 : 3, i % 9 === 0 ? 5 : 6);
+    }
+  });
+  panoTex.mapping = THREE.EquirectangularReflectionMapping;
+  return panoTex;
+}
+/** Glass that shows the outdoor panorama in whatever direction you look through it. */
+function outdoorGlass() {
+  return new THREE.ShaderMaterial({
+    uniforms: { map: { value: outdoorPanorama() } },
+    vertexShader: 'varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: `uniform sampler2D map; varying vec3 vW;
+      void main() {
+        vec3 d = normalize(vW - cameraPosition);
+        vec2 uv = vec2(atan(d.z, d.x) / 6.2831853 + 0.5, asin(clamp(d.y, -1.0, 1.0)) / 3.1415926 + 0.5);
+        vec3 col = texture2D(map, uv).rgb;
+        col = mix(col, vec3(0.85, 0.95, 1.0), 0.08); // a faint glassy tint
+        gl_FragColor = vec4(col, 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+}
+/** A window frame (white by default) round a pane of outdoor glass: w×h, with `bars` mullions. */
+function windowFrame(g, w, h, { frame = '#ffffff', bars = [1, 1], sill = true, round = false } = {}) {
+  const fm = toon(frame);
+  if (round) {
+    add(g, geo(`roundPane${w}`, () => new THREE.CircleGeometry(w / 2, 40)), outdoorGlass(), { p: [0, 0, 0.012], outline: false, cast: false });
+    add(g, geo(`roundFrame${w}`, () => new THREE.TorusGeometry(w / 2, 0.06, 10, 40)), fm, { p: [0, 0, 0.04] });
+    add(g, box(w, 0.04, 0.04), fm, { p: [0, 0, 0.04], outline: false });
+    add(g, box(0.04, w, 0.04), fm, { p: [0, 0, 0.04], outline: false });
+    return;
+  }
+  add(g, plane(w, h), outdoorGlass(), { p: [0, 0, 0.012], outline: false, cast: false });
+  for (const [bw, bh, x, y] of [[w + 0.14, 0.08, 0, h / 2 + 0.03], [w + 0.14, 0.08, 0, -h / 2 - 0.03], [0.08, h + 0.12, -w / 2 - 0.03, 0], [0.08, h + 0.12, w / 2 + 0.03, 0]]) add(g, box(bw, bh, 0.07), fm, { p: [x, y, 0.035], outline: false });
+  for (let i = 1; i <= bars[0]; i++) add(g, box(0.04, h, 0.05), fm, { p: [-w / 2 + (i * w) / (bars[0] + 1), 0, 0.03], outline: false });
+  for (let i = 1; i <= bars[1]; i++) add(g, box(w, 0.04, 0.05), fm, { p: [0, -h / 2 + (i * h) / (bars[1] + 1), 0.03], outline: false });
+  if (sill) add(g, box(w + 0.24, 0.07, 0.2), fm, { p: [0, -h / 2 - 0.1, 0.1] });
+}
+
+// ---- desks: a slab on legs or drawers, with things on top (all tuck a chair in) ----
+function desk(g, A, o) {
+  const { w = 1.7, d = 0.72, top, legs, legStyle = 'straight', drawers = false, hutch = false, glass = false, stuff = [] } = o;
+  const z0 = -0.1, H = 0.74;
+  add(g, box(w, 0.05, d), glass ? new THREE.MeshStandardMaterial({ color: '#cfeaff', transparent: true, opacity: 0.45, roughness: 0.05, metalness: 0.2 }) : top, { p: [0, H, z0], outline: !glass });
+  if (legStyle === 'trestle') {
+    for (const s of [-1, 1]) { add(g, box(0.08, H - 0.03, d - 0.12), legs, { p: [s * (w / 2 - 0.12), (H - 0.03) / 2, z0] }); add(g, box(0.1, 0.05, d), legs, { p: [s * (w / 2 - 0.12), 0.025, z0] }); }
+    add(g, box(w - 0.3, 0.06, 0.05), legs, { p: [0, 0.25, z0] });
+  } else if (legStyle === 'frame') {
+    // a metal frame: side loops and a crossbar (standing desks, industrial)
+    for (const s of [-1, 1]) { add(g, box(0.05, H, 0.05), legs, { p: [s * (w / 2 - 0.08), H / 2, z0] }); add(g, box(0.07, 0.04, d - 0.04), legs, { p: [s * (w / 2 - 0.08), 0.02, z0] }); }
+    add(g, box(w - 0.16, 0.05, 0.05), legs, { p: [0, H - 0.08, z0 - d / 2 + 0.08] });
+  } else {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      if (drawers && sx > 0) continue;
+      const l = add(g, cyl(0.025, legStyle === 'tapered' ? 0.016 : 0.025, H, 8), legs, { p: [sx * (w / 2 - 0.07), H / 2, z0 + sz * (d / 2 - 0.07)], outline: false });
+      if (legStyle === 'tapered') l.rotation.set(sz * 0.08, 0, -sx * 0.08);
+    }
+  }
+  if (drawers) {
+    // a pedestal of drawers on the right
+    add(g, box(0.45, H - 0.05, d - 0.06), top, { p: [w / 2 - 0.26, (H - 0.05) / 2, z0] });
+    for (let k = 0; k < 3; k++) {
+      add(g, box(0.39, 0.19, 0.02), legs, { p: [w / 2 - 0.26, 0.13 + k * 0.22, z0 + d / 2 - 0.02], outline: false });
+      add(g, box(0.12, 0.02, 0.02), shiny('#c0c6d4'), { p: [w / 2 - 0.26, 0.17 + k * 0.22, z0 + d / 2 - 0.005], outline: false });
+    }
+  }
+  if (hutch) {
+    // shelves above the back of the desk, with books
+    add(g, box(w, 0.7, 0.04), top, { p: [0, H + 0.37, z0 - d / 2 + 0.02] });
+    for (const s of [-1, 1]) add(g, box(0.04, 0.7, 0.26), top, { p: [s * (w / 2 - 0.02), H + 0.37, z0 - d / 2 + 0.13] });
+    add(g, box(w, 0.04, 0.26), top, { p: [0, H + 0.42, z0 - d / 2 + 0.13] });
+    add(g, box(w, 0.04, 0.28), top, { p: [0, H + 0.73, z0 - d / 2 + 0.13] });
+    bookStack(g, -w / 2 + 0.3, H + 0.44, z0 - d / 2 + 0.13, 4, undefined, 0.22);
+    for (let k = 0; k < 6; k++) add(g, box(0.05, 0.22, 0.17), toon(['#e0463c', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff', '#ff9f43'][k]), { p: [w / 2 - 0.5 + k * 0.065, H + 0.55, z0 - d / 2 + 0.12], outline: false });
+  }
+  const y = H + 0.025;
+  for (const s of stuff) {
+    if (s === 'monitor') {
+      add(g, box(0.62, 0.38, 0.03), toon('#1d1f2e'), { p: [0, y + 0.38, z0 - 0.15] });
+      add(g, plane(0.57, 0.33), basic('#3b82f6'), { p: [0, y + 0.38, z0 - 0.133], outline: false, cast: false });
+      add(g, box(0.05, 0.18, 0.04), toon('#2b2f4a'), { p: [0, y + 0.1, z0 - 0.17] });
+      add(g, box(0.22, 0.02, 0.14), toon('#2b2f4a'), { p: [0, y + 0.01, z0 - 0.15] });
+      add(g, box(0.44, 0.02, 0.14), toon('#2b2f4a'), { p: [0, y + 0.01, z0 + 0.12] }); // keyboard
+      add(g, box(0.07, 0.025, 0.11), toon('#2b2f4a'), { p: [0.32, y + 0.012, z0 + 0.12] }); // mouse
+    } else if (s === 'laptop') {
+      add(g, box(0.36, 0.02, 0.25), toon('#c0c6d4'), { p: [-0.1, y + 0.01, z0 + 0.05] });
+      const lid = add(g, box(0.36, 0.24, 0.015), toon('#c0c6d4'), { p: [-0.1, y + 0.12, z0 - 0.08], r: [-0.25, 0, 0] });
+      add(lid, plane(0.32, 0.2), basic('#9fd8ff'), { p: [0, 0, 0.009], outline: false, cast: false });
+    } else if (s === 'lamp') {
+      add(g, cyl(0.07, 0.08, 0.03, 14), toon('#2b2f4a'), { p: [-w / 2 + 0.25, y + 0.015, z0 - 0.15] });
+      add(g, cyl(0.012, 0.012, 0.32, 6), toon('#2b2f4a'), { p: [-w / 2 + 0.25, y + 0.17, z0 - 0.15], outline: false });
+      const sh = toon('#ffe9b0', { side: THREE.DoubleSide }).clone(); sh.emissive = new THREE.Color('#ffcf6b'); sh.emissiveIntensity = 0.6;
+      add(g, cone(0.11, 0.13, 16), sh, { p: [-w / 2 + 0.32, y + 0.34, z0 - 0.12], r: [0.5, 0, -0.4] });
+    } else if (s === 'plant') {
+      add(g, cyl(0.06, 0.05, 0.1, 12), toon('#e07a4f'), { p: [w / 2 - 0.2, y + 0.05, z0 - 0.18] });
+      for (let k = 0; k < 5; k++) add(g, cone(0.035, 0.18, 5), toon('#4fae5a'), { p: [w / 2 - 0.2 + Math.cos(k * 1.3) * 0.025, y + 0.17, z0 - 0.18 + Math.sin(k * 1.3) * 0.025], r: [Math.cos(k * 1.3) * 0.35, 0, Math.sin(k * 1.3) * 0.35] });
+    } else if (s === 'books') bookStack(g, w / 2 - 0.25, y, z0 + 0.12, 3, undefined, 0.22);
+    else if (s === 'pc') {
+      add(g, box(0.22, 0.48, 0.48), toon('#1d1f2e'), { p: [w / 2 - 0.2, 0.24, z0] });
+      add(g, box(0.005, 0.4, 0.03), basic('#ff4fd8'), { p: [w / 2 - 0.09, 0.26, z0 + 0.15], outline: false });
+    } else if (s === 'mirror') {
+      add(g, box(0.62, 0.72, 0.04), toon('#ff9fc8'), { p: [0, y + 0.44, z0 - d / 2 + 0.06] });
+      add(g, plane(0.54, 0.64), new THREE.MeshStandardMaterial({ color: '#e9f6ff', roughness: 0.05, metalness: 0.6 }), { p: [0, y + 0.44, z0 - d / 2 + 0.085], outline: false });
+    }
+  }
+}
+
+// ---- beds: double and king sizes in several styles; lie down on either side ----
+function bigBed(g, A, o) {
+  const { w = 1.9, frame, blanket, sheet = '#f4f0ff', pillow = '#ffffff', style = 'panel', low = false, extra = null } = o;
+  const L = 1.96, base = low ? 0.16 : 0.3;
+  add(g, box(w, base, L), frame, { p: [0, base / 2 + 0.04, 0] });
+  add(g, box(w - 0.06, 0.2, L - 0.08), toon(sheet), { p: [0, base + 0.14, 0.02] });
+  // the duvet, folded back at the top, and a throw across the foot
+  add(g, box(w - 0.02, 0.1, L * 0.64), toon(blanket), { p: [0, base + 0.27, L * 0.17], outline: true });
+  add(g, box(w - 0.02, 0.12, 0.14), toon(shade(blanket, 0.18)), { p: [0, base + 0.29, -L * 0.14], outline: false });
+  add(g, box(w + 0.01, 0.34, 0.05), toon(blanket), { p: [0, base + 0.12, L / 2 - 0.0], outline: false });
+  // pillows: two (or three) in a row
+  const n = w > 2.2 ? 3 : 2;
+  for (let k = 0; k < n; k++) add(g, sph(0.2, 14, 10), toon(pillow), { p: [-w / 2 + (k + 0.5) * (w / n), base + 0.33, -L / 2 + 0.3], s: [w / n / 0.46, 0.5, 0.8] });
+  if (style === 'panel') add(g, box(w + 0.06, 1.1, 0.1), frame, { p: [0, 0.55, -L / 2 - 0.02] });
+  if (style === 'tufted') {
+    // a tall padded headboard with buttons
+    const pad = toon(o.head ?? '#8a8fa8');
+    add(g, box(w + 0.12, 1.35, 0.16), pad, { p: [0, 0.68, -L / 2 - 0.04] });
+    for (let r = 0; r < 3; r++) for (let k = 0; k < Math.round(w * 3); k++) add(g, sph(0.02, 6, 5), toon(shade(o.head ?? '#8a8fa8', -0.25)), { p: [-w / 2 + 0.17 + k * ((w - 0.3) / Math.max(1, Math.round(w * 3) - 1)), 0.6 + r * 0.25, -L / 2 + 0.05], outline: false });
+  }
+  if (style === 'canopy') {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(g, cyl(0.04, 0.04, 2.3, 10), frame, { p: [sx * (w / 2 - 0.02), 1.15, sz * (L / 2 - 0.02)] });
+    for (const sz of [-1, 1]) add(g, box(w, 0.06, 0.06), frame, { p: [0, 2.3, sz * (L / 2 - 0.02)] });
+    for (const sx of [-1, 1]) add(g, box(0.06, 0.06, L), frame, { p: [sx * (w / 2 - 0.02), 2.3, 0] });
+    const drape = toon(o.drape ?? '#ffffff', { transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(g, box(0.3, 2.1, 0.02), drape, { p: [sx * (w / 2 - 0.15), 1.25, sz * (L / 2 - 0.05)], outline: false });
+    add(g, box(w + 0.04, 0.4, 0.02), drape, { p: [0, 2.12, -L / 2 + 0.01], outline: false });
+    add(g, box(0.9, 1.0, 0.1), frame, { p: [0, 0.6, -L / 2 - 0.02] });
+  }
+  if (style === 'log') {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(g, cyl(0.09, 0.1, sz < 0 ? 1.2 : 0.7, 10), frame, { p: [sx * (w / 2 - 0.04), sz < 0 ? 0.6 : 0.35, sz * (L / 2 - 0.04)] });
+    for (const y of [0.55, 0.85, 1.1]) add(g, cyl(0.07, 0.07, w - 0.1, 10), frame, { p: [0, y, -L / 2 - 0.02], r: [0, 0, Math.PI / 2] });
+  }
+  if (style === 'cloud') {
+    // a puffy headboard made of soft clouds
+    for (let k = 0; k < 5; k++) add(g, sph(0.32, 16, 12), toon(o.head ?? '#ffffff'), { p: [-w / 2 + 0.2 + k * ((w - 0.4) / 4), 0.85 + Math.sin(k * 1.3) * 0.12, -L / 2 - 0.05], s: [1, 1, 0.45] });
+  }
+  if (style === 'platform') add(g, box(w + 0.5, 0.06, L + 0.1), frame, { p: [0, 0.03, 0.02] }); // a wide low plinth, and a slim headboard
+  if (style === 'platform') add(g, box(w + 0.5, 0.6, 0.06), frame, { p: [0, 0.38, -L / 2 - 0.02] });
+  extra?.(g);
+  return { use: () => floatEmoji(g, A, '💤', 0.9) };
+}
+
+// ---- kitchens: modular units (each one tile) in four finishes; line them up to build a kitchen ----
+const KITCHEN = {
+  white: { door: '#f6f4f0', top: '#e9e6ef', handle: ['#c0c6d4', true], vein: '#c9c3d8' },
+  oak: { door: '#c99a62', top: '#a8723f', handle: ['#2b2b33', false], vein: null },
+  mint: { door: '#9fd6b8', top: '#fbfaf6', handle: ['#d4af37', true], vein: null },
+  black: { door: '#2a2a33', top: '#f2f0f5', handle: ['#d4af37', true], vein: '#c9c3d8' },
+};
+function kitchenUnit(g, A, finish, part) {
+  const k = KITCHEN[finish], door = toon(k.door), top = toon(k.top), handle = k.handle[1] ? shiny(k.handle[0], { metalness: 0.7 }) : toon(k.handle[0]);
+  const steel = shiny('#c8ced8', { metalness: 0.7, roughness: 0.3 }), dark = toon('#1d1f2e');
+  const z0 = -0.2, D = 0.6, H = 0.88;
+  const base = () => {
+    add(g, box(0.98, H - 0.1, D - 0.04), door, { p: [0, (H - 0.1) / 2 + 0.08, z0] });
+    add(g, box(0.94, 0.08, D - 0.1), dark, { p: [0, 0.04, z0 - 0.02], outline: false }); // the plinth
+    add(g, box(1.0, 0.05, D + 0.02), top, { p: [0, H, z0 + 0.01] });
+    if (k.vein) for (let i = 0; i < 3; i++) add(g, box(0.5, 0.002, 0.01), toon(k.vein), { p: [-0.2 + i * 0.2, H + 0.026, z0 - 0.15 + i * 0.12], r: [0, 0.4 - i * 0.3, 0], outline: false });
+  };
+  const doors = (n, y0 = 0.12, h = H - 0.2) => {
+    const dw = 0.96 / n;
+    for (let i = 0; i < n; i++) {
+      const x = -0.48 + (i + 0.5) * dw;
+      add(g, box(dw - 0.03, h, 0.02), door, { p: [x, y0 + h / 2, z0 + D / 2 - 0.005] });
+      add(g, box(0.02, 0.14, 0.025), handle, { p: [x + (i % 2 ? -1 : 1) * (dw / 2 - 0.07), y0 + h - 0.12, z0 + D / 2 + 0.012], outline: false });
+    }
+  };
+  if (part === 'counter' || part === 'counter_coffee' || part === 'counter_micro') {
+    base(); doors(2);
+    if (part === 'counter_coffee') {
+      add(g, box(0.26, 0.34, 0.26), dark, { p: [0.15, H + 0.195, z0 - 0.05] });
+      add(g, box(0.2, 0.06, 0.12), steel, { p: [0.15, H + 0.12, z0 + 0.06], outline: false });
+      add(g, cyl(0.035, 0.03, 0.07, 12), toon('#ffffff'), { p: [0.15, H + 0.06, z0 + 0.06] });
+      add(g, sph(0.025, 8, 6), basic('#6ee7a0'), { p: [0.08, H + 0.3, z0 + 0.081], outline: false });
+      add(g, cyl(0.07, 0.06, 0.1, 14), toon('#f2c14e'), { p: [-0.25, H + 0.075, z0] }); // a jar of beans
+    }
+    if (part === 'counter_micro') {
+      add(g, box(0.5, 0.28, 0.34), steel, { p: [0.05, H + 0.165, z0 - 0.04] });
+      add(g, plane(0.32, 0.2), toon('#1d1f2e'), { p: [-0.02, H + 0.165, z0 + 0.131], outline: false, cast: false });
+      add(g, plane(0.08, 0.04), basic('#6ee7a0'), { p: [0.22, H + 0.24, z0 + 0.131], outline: false, cast: false });
+    }
+  } else if (part === 'drawers') {
+    base();
+    for (let i = 0; i < 3; i++) {
+      add(g, box(0.93, 0.21, 0.02), door, { p: [0, 0.2 + i * 0.23, z0 + D / 2 - 0.005] });
+      add(g, box(0.3, 0.02, 0.025), handle, { p: [0, 0.27 + i * 0.23, z0 + D / 2 + 0.012], outline: false });
+    }
+  } else if (part === 'sink') {
+    base(); doors(2);
+    add(g, box(0.62, 0.02, 0.4), steel, { p: [0, H + 0.016, z0 + 0.02], outline: false });
+    add(g, box(0.56, 0.02, 0.34), toon('#8d96a8'), { p: [0, H + 0.02, z0 + 0.02], outline: false });
+    add(g, cyl(0.02, 0.02, 0.32, 8), steel, { p: [0, H + 0.18, z0 - 0.22] });
+    add(g, cyl(0.016, 0.016, 0.2, 8), steel, { p: [0, H + 0.33, z0 - 0.13], r: [Math.PI / 2, 0, 0] });
+    for (const s of [-1, 1]) add(g, cyl(0.025, 0.025, 0.04, 8), steel, { p: [s * 0.1, H + 0.05, z0 - 0.22] });
+  } else if (part === 'stove') {
+    // an oven with a glass door and four burners that glow when it's on
+    add(g, box(0.98, H - 0.1, D - 0.04), steel, { p: [0, (H - 0.1) / 2 + 0.08, z0] });
+    add(g, box(0.94, 0.08, D - 0.1), dark, { p: [0, 0.04, z0 - 0.02], outline: false });
+    add(g, box(1.0, 0.05, D + 0.02), dark, { p: [0, H, z0 + 0.01] });
+    add(g, box(0.8, 0.46, 0.02), dark, { p: [0, 0.4, z0 + D / 2 - 0.005] });
+    add(g, plane(0.6, 0.28), toon('#3a2a20'), { p: [0, 0.42, z0 + D / 2 + 0.008], outline: false, cast: false });
+    add(g, box(0.7, 0.03, 0.04), steel, { p: [0, 0.66, z0 + D / 2 + 0.025], outline: false });
+    for (let i = 0; i < 4; i++) add(g, cyl(0.025, 0.025, 0.03, 10), toon('#2b2b33'), { p: [-0.3 + i * 0.2, 0.76, z0 + D / 2 + 0.01], r: [Math.PI / 2, 0, 0], outline: false });
+    const glow = toon('#2b2b33').clone();
+    glow.emissive = new THREE.Color('#ff4a1a'); glow.emissiveIntensity = 0;
+    for (const [x, z] of [[-0.22, -0.1], [0.22, -0.1], [-0.22, 0.12], [0.22, 0.12]]) add(g, geo('burner', () => new THREE.TorusGeometry(0.08, 0.015, 6, 20)), glow, { p: [x, H + 0.03, z0 + z], r: [Math.PI / 2, 0, 0], outline: false });
+    add(g, cyl(0.12, 0.1, 0.12, 16), toon('#e0463c'), { p: [0.22, H + 0.09, z0 + 0.12] }); // a pot on the back
+    let on = false;
+    return { use: () => { on = !on; glow.emissiveIntensity = on ? 1 : 0; floatEmoji(g, A, on ? '🔥' : '🍳', 1.2); } };
+  } else if (part === 'fridge') {
+    add(g, box(0.92, 1.9, 0.66), door, { p: [0, 0.97, z0 + 0.02] });
+    add(g, box(0.88, 0.02, 0.02), toon(shade(k.door, -0.2)), { p: [0, 1.3, z0 + 0.36], outline: false });
+    for (const [y, h] of [[1.62, 0.5], [0.75, 0.9]]) add(g, box(0.03, Math.min(0.45, h * 0.6), 0.04), handle, { p: [0.36, y, z0 + 0.38], outline: false });
+    add(g, box(0.18, 0.12, 0.01), toon('#ffd84d'), { p: [-0.2, 1.05, z0 + 0.36], r: [0, 0, 0.1], outline: false }); // a note
+    add(g, sph(0.025, 8, 6), toon('#e0463c'), { p: [-0.2, 1.11, z0 + 0.37], outline: false });
+  } else if (part === 'dishwasher') {
+    base();
+    add(g, box(0.92, H - 0.2, 0.02), steel, { p: [0, 0.12 + (H - 0.2) / 2, z0 + D / 2 - 0.005] });
+    add(g, box(0.6, 0.03, 0.04), steel, { p: [0, H - 0.13, z0 + D / 2 + 0.02], outline: false });
+    add(g, plane(0.1, 0.03), basic('#39c6ff'), { p: [0.35, H - 0.13, z0 + D / 2 + 0.01], outline: false, cast: false });
+  } else if (part === 'island') {
+    // two tiles long, with an overhang on the front for stools
+    add(g, box(1.9, H - 0.1, 0.62), door, { p: [0, (H - 0.1) / 2 + 0.08, -0.12] });
+    add(g, box(1.86, 0.08, 0.56), dark, { p: [0, 0.04, -0.14], outline: false });
+    add(g, box(2.0, 0.05, 0.98), top, { p: [0, H, 0.04] });
+    for (let i = 0; i < 4; i++) add(g, box(0.42, H - 0.24, 0.02), door, { p: [-0.72 + i * 0.48, 0.12 + (H - 0.24) / 2, -0.43] });
+    add(g, cyl(0.16, 0.12, 0.08, 16), toon('#ffffff'), { p: [-0.4, H + 0.065, 0.05] }); // a fruit bowl
+    for (const [x, z, c] of [[-0.45, 0.03, '#e0463c'], [-0.36, 0.08, '#ffd84d'], [-0.4, -0.02, '#6ee7a0']]) add(g, sph(0.05, 8, 6), toon(c), { p: [x, H + 0.13, z] });
+  } else if (part === 'upper') {
+    // a wall cabinet (hangs on the wall like decor)
+    add(g, box(0.98, 0.62, 0.34), door, { p: [0, 0, 0.17] });
+    for (const s of [-1, 1]) {
+      add(g, box(0.46, 0.58, 0.02), door, { p: [s * 0.245, 0, 0.345] });
+      add(g, box(0.02, 0.12, 0.025), handle, { p: [s * 0.04, -0.2, 0.36], outline: false });
+    }
+  }
+  return {};
+}
+function barStool(g, A, seat, legs) {
+  add(g, cyl(0.2, 0.18, 0.08, 18), toon(seat), { p: [0, 0.75, 0] });
+  for (let i = 0; i < 4; i++) { const a = (i / 4) * TAU + Math.PI / 4; const l = add(g, cyl(0.018, 0.018, 0.74, 6), legs, { p: [Math.cos(a) * 0.13, 0.37, Math.sin(a) * 0.13], outline: false }); l.rotation.set(Math.sin(a) * -0.12, 0, Math.cos(a) * 0.12); }
+  add(g, geo('stoolRing', () => new THREE.TorusGeometry(0.15, 0.012, 6, 20)), legs, { p: [0, 0.28, 0], r: [Math.PI / 2, 0, 0], outline: false });
+}
+function diningTable(g, A, { round = false, top, legs, w = 1.8 }) {
+  if (round) {
+    add(g, cyl(0.48, 0.48, 0.05, 32), top, { p: [0, 0.74, 0] });
+    add(g, cyl(0.06, 0.08, 0.7, 12), legs, { p: [0, 0.36, 0] });
+    add(g, cyl(0.3, 0.34, 0.05, 20), legs, { p: [0, 0.025, 0] });
+  } else {
+    add(g, box(w, 0.06, 0.9), top, { p: [0, 0.74, 0] });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(g, box(0.07, 0.72, 0.07), legs, { p: [sx * (w / 2 - 0.08), 0.36, sz * 0.36] });
+  }
+  add(g, cyl(0.07, 0.05, 0.16, 14), toon('#ffffff'), { p: [0, 0.85, 0] });
+  for (let k = 0; k < 3; k++) add(g, sph(0.05, 8, 6), toon(['#ff8fc7', '#ffd84d', '#ffffff'][k]), { p: [Math.cos(k * 2.1) * 0.04, 0.96, Math.sin(k * 2.1) * 0.04] });
+}
+
+Object.assign(FURNITURE, {
+  // windows
+  window_big(g) { windowFrame(g, 2.6, 1.3, { bars: [2, 0] }); },
+  window_tall(g) { windowFrame(g, 0.8, 1.7, { bars: [0, 2] }); },
+  window_round(g) { windowFrame(g, 0.8, 0.8, { round: true }); },
+  window_wood(g) { windowFrame(g, 1.5, 1.0, { frame: '#8b5a2b', bars: [1, 1] }); },
+  // desks
+  desk_writing(g, A) { desk(g, A, { top: toon('#a8723f'), legs: toon('#8b5a2b'), legStyle: 'tapered', stuff: ['lamp', 'books', 'laptop'] }); },
+  desk_computer(g, A) { desk(g, A, { top: toon('#f4f2ee'), legs: toon('#e6e2da'), drawers: true, stuff: ['monitor', 'plant'] }); },
+  desk_standing(g, A) { desk(g, A, { top: toon('#c9a26a'), legs: toon('#2b2b33'), legStyle: 'frame', stuff: ['laptop', 'plant'] }); },
+  desk_glass(g, A) { desk(g, A, { glass: true, top: toon('#ffffff'), legs: shiny('#c8ced8', { metalness: 0.7 }), legStyle: 'frame', stuff: ['laptop', 'books'] }); },
+  desk_study(g, A) { desk(g, A, { top: toon('#e2c28e'), legs: toon('#c99a62'), hutch: true, stuff: ['lamp', 'laptop'] }); },
+  desk_pink(g, A) { desk(g, A, { w: 1.4, top: toon('#ffd9ea'), legs: toon('#ffc2dd'), legStyle: 'tapered', stuff: ['mirror', 'plant'] }); },
+  desk_rustic(g, A) { desk(g, A, { top: toon('#8b5a2b'), legs: toon('#6e4424'), legStyle: 'trestle', stuff: ['lamp', 'books'] }); },
+  desk_gamer(g, A) { desk(g, A, { top: toon('#1d1f2e'), legs: toon('#ff4fd8'), legStyle: 'frame', stuff: ['monitor', 'pc'] }); },
+  // beds
+  bed_double(g, A) { return bigBed(g, A, { frame: toon('#a8723f'), blanket: '#5b8ff9' }); },
+  bed_double_tufted(g, A) { return bigBed(g, A, { frame: toon('#8a8fa8'), blanket: '#e9e4f2', pillow: '#c9c3d8', style: 'tufted', head: '#8a8fa8' }); },
+  bed_double_canopy(g, A) { return bigBed(g, A, { frame: toon('#f4f2ee'), blanket: '#ffc2dd', style: 'canopy', drape: '#fff0f6' }); },
+  bed_double_cloud(g, A) { return bigBed(g, A, { frame: toon('#d9ecff'), blanket: '#b7d7ff', sheet: '#ffffff', style: 'cloud', low: true }); },
+  bed_double_platform(g, A) { return bigBed(g, A, { frame: toon('#c99a62'), blanket: '#f4efe1', pillow: '#9a948c', style: 'platform', low: true }); },
+  bed_king(g, A) { return bigBed(g, A, { w: 2.8, frame: toon('#5a3a22'), blanket: '#7a2335', style: 'panel' }); },
+  bed_king_tufted(g, A) { return bigBed(g, A, { w: 2.8, frame: toon('#2a2a33'), blanket: '#1f2a5a', pillow: '#e8c27a', style: 'tufted', head: '#2f3a6b' }); },
+  bed_king_log(g, A) { return bigBed(g, A, { w: 2.8, frame: toon('#8b5a2b'), blanket: '#2f6b4f', pillow: '#f4e3b5', style: 'log' }); },
+  bed_king_canopy(g, A) { return bigBed(g, A, { w: 2.8, frame: toon('#d4af37'), blanket: '#f4efe1', pillow: '#ffffff', style: 'canopy', drape: '#fff8e8' }); },
+  // kitchens
+  bar_stool(g, A) { barStool(g, A, '#2a2a33', shiny('#c8ced8', { metalness: 0.7 })); },
+  bar_stool_wood(g, A) { barStool(g, A, '#a8723f', toon('#8b5a2b')); },
+  dining_table(g, A) { diningTable(g, A, { top: toon('#a8723f'), legs: toon('#8b5a2b') }); },
+  dining_table_round(g, A) { diningTable(g, A, { round: true, top: toon('#f4f2ee'), legs: toon('#c99a62') }); },
+});
+for (const finish of Object.keys(KITCHEN)) {
+  for (const part of ['counter', 'drawers', 'sink', 'stove', 'fridge', 'dishwasher', 'island', 'upper', 'counter_coffee', 'counter_micro']) {
+    FURNITURE[`kit_${finish}_${part}`] = (g, A) => kitchenUnit(g, A, finish, part);
+  }
+}
+
 export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true], color = null } = {}) {
   const data = FURN_DATA[id];
   if (data?.base) return buildFurniture(data.base, { drop, len, openings, caps, color: color ?? data.color });

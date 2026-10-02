@@ -4487,6 +4487,24 @@ export class Character {
       body.rotation.set(-Math.PI / 2, 0, 0);
       body.position.set(0, 0.2, 0.85 + Math.sin(time * 1.3) * 0.004);
       head.rotation.set(0.1, 0, 0);
+    } else if (this.pose === 'crawl') {
+      // an army crawl: flat on your stomach, head up looking ahead, elbows and knees dragging you along
+      const cs = Math.sin(ph * 0.55), cc = Math.cos(ph * 0.55), go = moving ? 1 : 0.15;
+      body.rotation.set(Math.PI / 2 - 0.06, 0, cs * 0.06 * go);
+      body.position.set(cs * 0.03 * go, 0.2, -0.75);
+      head.rotation.set(-1.25, 0, 0);
+      arms.forEach((a, i) => {
+        const sw = (i ? cs : -cs) * go;
+        a.rotation.x = -1.75 + sw * 0.45;
+        a.rotation.z = (i ? 1 : -1) * (0.55 + sw * 0.1);
+      });
+      elbows.forEach((e, i) => { e.rotation.set(-1.2 - (i ? Math.max(0, -cc) : Math.max(0, cc)) * 0.4 * go, 0, 0); });
+      legs.forEach((l, i) => {
+        const sw = (i ? -cs : cs) * go;
+        l.rotation.x = -0.05 - Math.max(0, sw) * 0.5;
+        l.rotation.z = (i ? 1 : -1) * (0.18 + Math.max(0, sw) * 0.45); // the knee comes up and out to the side
+      });
+      knees.forEach((k, i) => { k.rotation.x = 0.15 + Math.max(0, (i ? -cs : cs) * go) * 1.1; });
     } else if (this.pose === 'sit') {
       legs.forEach((l) => { l.rotation.x = -1.45; });
       knees.forEach((k) => { k.rotation.x = 1.45; });

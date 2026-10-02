@@ -20,6 +20,7 @@ import { Fishing, Line } from './games/fishing.js';
 import { Sparks } from './three/fx.js';
 import { registerLook, mouseLooking } from './mouselook.js';
 import { touch, registerTouch, fitFov } from './touch.js';
+import { guardKeys } from './keyguard.js';
 const PITCH_MIN = -0.55, PITCH_LOW = 0.08; // how far you can look up; where the orbit stops dropping
 
 
@@ -59,6 +60,7 @@ export class World {
     this.layout = M.buildLayout();
     this.actors = new Map();
     this.keys = new Set();
+    guardKeys(this.keys);
     this.target = null;
     this.pendingSpot = null;
     this.near = null;

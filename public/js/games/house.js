@@ -8,7 +8,7 @@ import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
-import { buildFurniture, floorTexture, wallTexture, ceilingTexture, wallIsTall, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
+import { buildFurniture, TRIM_MAT, outdoorPanorama, floorTexture, wallTexture, ceilingTexture, wallIsTall, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
 import { settings } from '../settings.js';
 import { buildDoor, doorImage } from '../three/doors.js';
@@ -17,6 +17,8 @@ import { iconSvg } from '../icons.js';
 let NX = 14, NZ = 14;  // this room's size in tiles (width x depth: bigger with house upgrades)
 const T = 1.6;        // world units per tile, so furniture is people-sized
 const WALL_H = 3.2;   // in tiles
+const HALF_TOP = 1.3, HANG_BOTTOM = 2.2; // where a half wall stops, and where a hanging one starts
+const TRIM_DEFAULT = '#f4f0ff';
 const WALL_Y = 1.75;  // default height of a wall decoration's middle (tiles)
 const MAX_DROP = 2.4; // how far below the ceiling a hanging thing can go
 const wallH = (id) => FURN[id]?.wh ?? 1; // how tall a wall decoration is (tiles)
@@ -51,7 +53,9 @@ function maxSize() {
   return [Math.max(...have.map((z) => z.w)), Math.max(...have.map((z) => z.d))];
 }
 // where you sit on things (in tiles above the floor)
-const BEDS = new Set(['bed', 'bed_princess', 'hammock']);
+// things you can walk up to and use (anything else is just there to look at)
+const USEFUL = new Set(['switch', 'tv', 'arcade', 'jukebox', 'piano', 'swap', 'splash', 'bubbles', 'crackle', 'clock', 'domain', 'lever', 'trophy', 'slam', 'roar', 'knock']);
+const BEDS = new Set(['bed', 'bed_princess', 'hammock', 'bed_double', 'bed_double_tufted', 'bed_double_canopy', 'bed_double_cloud', 'bed_double_platform', 'bed_king', 'bed_king_tufted', 'bed_king_log', 'bed_king_canopy']);
 // top: the height of the cushion/mattress; front: how far its front edge is from the middle (model units)
 const SEATS = {
   chair: { top: 0.525, front: 0.25 }, armchair: { top: 0.53, front: 0.41 }, sofa: { top: 0.53, front: 0.41, n: 2 },
@@ -60,7 +64,10 @@ const SEATS = {
   sofa_leather: { top: 0.53, front: 0.41, n: 2 }, armchair_leather: { top: 0.53, front: 0.41 },
   sofa_gray: { top: 0.53, front: 0.41, n: 2 }, armchair_gray: { top: 0.53, front: 0.41 },
   gaming_chair: { top: 0.56, front: 0.25 }, log_bench: { top: 0.62, front: 0.2, n: 2 }, stump_stool: { top: 0.46, front: 0.1 },
-  sofa_green: { top: 0.53, front: 0.41, n: 2 }, armchair_green: { top: 0.53, front: 0.41 }, hammock: { top: 0.62, front: 0 }, piano_bench: { top: 0.53, front: 0.19 }, toilet: { top: 0.52, front: 0.28 },
+  sofa_green: { top: 0.53, front: 0.41, n: 2 }, armchair_green: { top: 0.53, front: 0.41 }, hammock: { top: 0.62, front: 0 },
+  bed_double: { top: 0.6, front: 0, n: 2 }, bed_double_tufted: { top: 0.6, front: 0, n: 2 }, bed_double_canopy: { top: 0.6, front: 0, n: 2 }, bed_double_cloud: { top: 0.46, front: 0, n: 2 }, bed_double_platform: { top: 0.46, front: 0, n: 2 },
+  bed_king: { top: 0.6, front: 0, n: 3 }, bed_king_tufted: { top: 0.6, front: 0, n: 3 }, bed_king_log: { top: 0.6, front: 0, n: 3 }, bed_king_canopy: { top: 0.6, front: 0, n: 3 },
+  bar_stool: { top: 0.79, front: 0.1 }, bar_stool_wood: { top: 0.79, front: 0.1 }, piano_bench: { top: 0.53, front: 0.19 }, toilet: { top: 0.52, front: 0.28 },
 };
 // colour variants (the Ocean sofa…) sit, and lie, just like the piece they're a colour of
 for (const f of CATALOG.furniture) {
@@ -77,7 +84,7 @@ const SNAP = 4;
 const snap = (v) => Math.round(v * SNAP) / SNAP;
 
 /** Footprint cells (on the quarter-tile grid) of a placed item, keyed by layer so rugs can sit under furniture. */
-function cellsOf(it) {
+function cellsOf(it, check = false) {
   const f = FURN[it.id];
   if (!f) return [];
   const kind = kindOf(it.id);
@@ -93,8 +100,12 @@ function cellsOf(it) {
   }
   const [w, d] = footprint(it);
   const x0 = Math.round(it.x * SNAP), y0 = Math.round(it.y * SNAP);
+  // Chairs can tuck in under tables and desks: a chair takes "chair" cells and keeps clear of other
+  // chairs and anything solid; a table/desk takes floor cells only (so a chair can share them); everything
+  // else is solid and keeps clear of chairs too. `check`: the cells this must not overlap (vs occupies).
+  const layers = kind !== 'floor' ? [kind] : f.tuck ? (check ? ['chair', 'solid'] : ['chair']) : f.desk ? ['floor'] : (check ? ['floor', 'chair'] : ['floor', 'solid']);
   const out = [];
-  for (let i = 0; i < w * SNAP; i++) for (let j = 0; j < d * SNAP; j++) out.push(`${kind}:${x0 + i}:${y0 + j}`);
+  for (let i = 0; i < w * SNAP; i++) for (let j = 0; j < d * SNAP; j++) for (const l of layers) out.push(`${l}:${x0 + i}:${y0 + j}`);
   return out;
 }
 
@@ -115,7 +126,7 @@ const lenOf = (it) => (isDragWall(it.id) ? it.l ?? FURN[it.id].w : FURN[it.id].w
 const footprint = (it) => {
   const f = FURN[it.id], w = lenOf(it);
   // turned 45°: it takes up the square it fits in
-  if (it.dg) { const sq = Math.ceil(((w + f.d) / Math.SQRT2) * SNAP) / SNAP; return [sq, sq]; }
+  // (turned 45°, it keeps the same footprint: turning never makes it take more room)
   return it.r % 2 ? [f.d, w] : [w, f.d];
 };
 /** Which way a piece faces: quarter turns (r), plus 45° more if it's turned diagonally (dg). */
@@ -215,10 +226,23 @@ function wallLayout(it, items, walls) {
     .filter(([a, b]) => a >= start - 1e-6 && b <= start + l + 1e-6)
     .sort((p, q) => p[0] - q[0]);
   const openings = gaps.map(([a, b]) => [sign * (a - mid), sign * (b - mid)].sort((p, q) => p - q));
-  // an end is open unless another wall carries on from it (or it runs into the house's own walls)
+  // an end is open unless another wall carries on from it (or it runs into the house's own walls). A full
+  // wall that meets a half wall (or a hanging one) shows its end above (or below) it.
   const N = horiz ? NX : NZ, q = 1 / SNAP;
-  const covered = (along) => along < 0 || along >= N || walls.has(horiz ? `${Math.round(along * SNAP)}:${Math.round(perp * SNAP)}` : `${Math.round(perp * SNAP)}:${Math.round(along * SNAP)}`);
-  const lowOpen = !covered(start - q), highOpen = !covered(start + l);
+  const wallCells = (kind) => { const set = new Set(); items.forEach((o) => { if (FURN[o.id]?.room && !isDoor(o.id) && (FURN[o.id].wallH ?? 'full') === kind) groundCells(o).forEach((c) => set.add(c)); }); return set; };
+  const full = wallCells('full'), low = wallCells('low'), hang = wallCells('hang'), mineH = FURN[it.id].wallH ?? 'full';
+  const capAt = (along) => {
+    if (along < 0 || along >= N) return false;
+    const k = horiz ? `${Math.round(along * SNAP)}:${Math.round(perp * SNAP)}` : `${Math.round(perp * SNAP)}:${Math.round(along * SNAP)}`;
+    if (full.has(k)) return false;
+    if (mineH !== 'full') return !(mineH === 'low' ? low : hang).has(k);
+    if (low.has(k) && hang.has(k)) return [HALF_TOP, HANG_BOTTOM];
+    if (low.has(k)) return [HALF_TOP, WALL_H];
+    if (hang.has(k)) return [0, HANG_BOTTOM];
+    return true;
+  };
+  void walls;
+  const lowOpen = capAt(start - q), highOpen = capAt(start + l);
   const caps = sign > 0 ? [lowOpen, highOpen] : [highOpen, lowOpen];
   const segs = [];
   let a = start;
@@ -247,7 +271,7 @@ function buildRoom() {
   // (room walls you build inside fade out when they're between the camera and you)
   const wallFade = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, opacity: 0.22, depthWrite: false });
   const outside = toon('#e8d6b8');
-  const trim = toon('#f4f0ff');
+  const trim = TRIM_MAT;
   const wallGrids = [];
   const wallGridMat = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.4 });
   const wall = (w, h, x, y, z, ry, skirting = true) => {
@@ -333,6 +357,30 @@ function buildRoom() {
     tree.position.set(NX / 2 + Math.cos(a) * r, -0.4, NZ / 2 + Math.sin(a) * r);
     g.add(tree);
   }
+  // a nicer garden: a picket fence round the yard, flower beds and bushes along the house, stepping stones
+  const fenceMat = toon('#ffffff'), fx0 = -4, fx1 = NX + 4, fz0 = -4, fz1 = NZ + 8;
+  const picket = new THREE.BoxGeometry(0.1, 0.8, 0.05), rail = toon('#f4f0ff');
+  for (const [ax, az, bx, bz] of [[fx0, fz0, fx1, fz0], [fx0, fz0, fx0, fz1], [fx1, fz0, fx1, fz1], [fx0, fz1, NX / 2 - 1.5, fz1], [NX / 2 + 1.5, fz1, fx1, fz1]]) {
+    const len = Math.hypot(bx - ax, bz - az), n = Math.round(len / 0.32), ang = Math.atan2(bx - ax, bz - az);
+    const posts = new THREE.InstancedMesh(picket, fenceMat, n + 1);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ang, 0));
+    for (let k = 0; k <= n; k++) posts.setMatrixAt(k, m4.compose(new THREE.Vector3(ax + ((bx - ax) * k) / n, 0, az + ((bz - az) * k) / n), q, new THREE.Vector3(1, 1, 1)));
+    g.add(posts);
+    for (const y of [-0.15, 0.2]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, len), rail); r.position.set((ax + bx) / 2, y, (az + bz) / 2); r.rotation.y = ang; g.add(r); }
+  }
+  const bloom = ['#ff8fc7', '#ffd84d', '#ffffff', '#b77bff', '#ff5d73'];
+  for (const [x0, z0, x1, z1] of [[-1.4, -1.4, NX + 1.4, -1.4], [-1.4, -1.4, -1.4, NZ + 1.4], [NX + 1.4, -1.4, NX + 1.4, NZ + 1.4]]) {
+    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / 1.1);
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(x0 === x1 ? 1.2 : len, 0.14, x0 === x1 ? len : 1.2), toon('#6b4a2e'));
+    bed.position.set((x0 + x1) / 2, -0.33, (z0 + z1) / 2);
+    g.add(bed);
+    for (let k = 0; k <= n; k++) {
+      const x = x0 + ((x1 - x0) * k) / n, z = z0 + ((z1 - z0) * k) / n;
+      if (k % 3 === 0) { const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 1), toon('#4f9a45')); b.position.set(x, -0.1, z); b.scale.y = 0.75; g.add(b); continue; }
+      for (let f = 0; f < 3; f++) { const fl = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), toon(bloom[(k + f) % bloom.length])); fl.position.set(x + (f - 1) * 0.25, -0.12 + (f % 2) * 0.06, z + ((f * 7) % 3 - 1) * 0.15); g.add(fl); }
+    }
+  }
+  for (let k = 0; k < 5; k++) { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.45, 0.08, 10), toon('#c9c3b8')); st.position.set(NX / 2 + (k % 2 ? 0.25 : -0.25), -0.36, NZ + 1.2 + k * 1.3); g.add(st); }
   // editing helpers
   const gridPts = [];
   for (let i = 0; i <= NX; i++) gridPts.push(i, 0.015, 0, i, 0.015, NZ);
@@ -363,6 +411,7 @@ function buildRoom() {
 export function house(stage) {
   const WX = () => NX * T, WZ = () => NZ * T; // the room in world units
   const sun = stage.lights({ background: '#9fd4ff', sky: 0xfff4e6, ground: 0x6a5a8a, hemi: 1.35, sun: 1.7, box: 16 });
+  stage.scene.background = outdoorPanorama(); // (the same view the windows look out onto)
   sun.position.set(WX() / 2 + 6, 40, WZ() / 2 + 12); // high overhead so the walls don't shade the floor
   sun.target.position.set(WX() / 2, 0, WZ() / 2);
   let room = buildRoom();
@@ -407,7 +456,7 @@ export function house(stage) {
   const payload = () => ({
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
     items: home.items.map(({ id, x, y, r, h, l, iw, dg, c }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}) })),
-    areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {},
+    areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT,
   });
 
   // ---- building the furniture ------------------------------------------------------
@@ -441,7 +490,7 @@ export function house(stage) {
     const walls = roomWallCells(home.items);
     entries = home.items.map((it, index) => {
       const layout = isDragWall(it.id) ? wallLayout(it, home.items, walls) : null;
-      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null });
+      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null });
       built.group.userData.index = index;
       placeGroup(built.group, it);
       built.group.visible = !(placing && placing.from === index);
@@ -476,7 +525,7 @@ export function house(stage) {
       } else if (kind === 'floor') solids.push({ x: cx * T, z: cz * T, w: w * T - 0.15, d: d * T - 0.15 });
       const f = FURN[it.id];
       const seat = SEATS[it.id] != null;
-      if (f.room) return entry; // (nothing to use on a wall)
+      if (f.room || !(seat || f.action || USEFUL.has(f.use))) return entry; // (only things worth using: no towel racks or rocks)
       entry.inter = stage.interactable({
         x: cx * T, z: cz * T, r: Math.max(w, d) * T * 0.5 + 1.1, obj: built.group,
         label: seat ? `${BEDS.has(it.id) ? 'lie on' : 'sit on'} the ${f.name.toLowerCase()}` : f.action === 'wardrobe' ? 'open your wardrobe' : `use the ${f.name.toLowerCase()}`,
@@ -501,6 +550,7 @@ export function house(stage) {
     if (!home) return;
     const floor = preview.floor ?? home.floor;
     const wall = preview.wall ?? home.wall;
+    TRIM_MAT.color.set(home.trim ?? TRIM_DEFAULT);
     // (the room's planes carry their own tiling in their UVs, so every texture repeats once per 2 tiles)
     room.floorMat.map = floorTexture(floor);
     room.floorMat.map.repeat.set(1, 1);
@@ -740,7 +790,7 @@ export function house(stage) {
     if (ghost) room.group.remove(ghost);
     ghost = null;
     if (!placing) { room.marker.visible = false; return; }
-    ghost = buildFurniture(placing.id, { drop: kindOf(placing.id) === 'ceiling' ? heightOf(placing) : 0, len: isDragWall(placing.id) ? lenOf(placing) : 0, color: placing.from >= 0 ? home.items[placing.from].c ?? null : null }).group;
+    ghost = buildFurniture(placing.id, { drop: kindOf(placing.id) === 'ceiling' && !isDragWall(placing.id) ? heightOf(placing) : 0, len: isDragWall(placing.id) ? lenOf(placing) : 0, color: placing.from >= 0 ? home.items[placing.from].c ?? null : null }).group;
     ghost.userData.drop = heightOf(placing);
     ghost.userData.len = lenOf(placing);
     ghost.traverse((o) => {
@@ -764,7 +814,7 @@ export function house(stage) {
     if (kindOf(placing.id) === 'ceiling' && ghost.userData.drop !== heightOf(placing)) { buildGhost(); return updateGhost(); }
     if (isDragWall(placing.id) && ghost.userData.len !== lenOf(placing)) { buildGhost(); return updateGhost(); }
     const taken = takenCells(placing.from);
-    placing.valid = !placing.tooShort && fits(it) && !cellsOf(it).some((c) => taken.has(c)) && !blocksDoor(it)
+    placing.valid = !placing.tooShort && fits(it) && !cellsOf(it, true).some((c) => taken.has(c)) && !blocksDoor(it)
       && (!isDoor(placing.id) || inWall(it, roomWallCells(home.items, placing.from)))
       && (!it.iw || wallHost(it, home.items, placing.from) >= 0);
     const mat = placing.valid ? ghostOk : ghostBad;
@@ -988,7 +1038,7 @@ export function house(stage) {
     if (!next.dg) delete next.dg;
     const taken = new Set();
     home.items.forEach((o, i) => { if (i !== selected) cellsOf(o).forEach((c) => taken.add(c)); });
-    if (!fits(next) || cellsOf(next).some((c) => taken.has(c)) || blocksDoor(next)) { sfx('error'); toast('No room to turn it there.', 'error'); return; }
+    if (!fits(next) || cellsOf(next, true).some((c) => taken.has(c)) || blocksDoor(next)) { sfx('error'); toast('No room to turn it there.', 'error'); return; }
     home.items[selected] = next;
     commit('rotate');
   }
@@ -1010,7 +1060,7 @@ export function house(stage) {
     if (next.h === heightOf(it)) { sfx('error'); return; }
     const taken = new Set();
     home.items.forEach((o, i) => { if (i !== selected) cellsOf(o).forEach((c) => taken.add(c)); });
-    if (!fits(next) || cellsOf(next).some((c) => taken.has(c))) { sfx('error'); toast('Something is in the way.', 'error'); return; }
+    if (!fits(next) || cellsOf(next, true).some((c) => taken.has(c))) { sfx('error'); toast('Something is in the way.', 'error'); return; }
     home.items[selected] = next;
     commit('rotate');
   }
@@ -1021,7 +1071,7 @@ export function house(stage) {
     const it = home.items[selected];
     if (!isDragWall(it.id)) return;
     const next = { ...it, l: Math.max(1 / SNAP, lenOf(it) + dir / SNAP) };
-    if (next.l === lenOf(it) || !fits(next) || cellsOf(next).some((c) => takenCells(selected).has(c)) || blocksDoor(next)) { sfx('error'); return; }
+    if (next.l === lenOf(it) || !fits(next) || cellsOf(next, true).some((c) => takenCells(selected).has(c)) || blocksDoor(next)) { sfx('error'); return; }
     home.items[selected] = next;
     commit('rotate');
   }
@@ -1208,7 +1258,7 @@ export function house(stage) {
   function renderItems() {
     const sel = selected >= 0 ? home?.items[selected] : null;
     // free walls come first (they never run out); retired pieces only show while one is still up
-    const ownedList = CATALOG.furniture.filter((f) => owned(f.id) > 0 && !(f.retired && !placedCount(f.id))).sort((a, b) => !!b.free - !!a.free);
+    const ownedList = CATALOG.furniture.filter((f) => owned(f.id) > 0 && !(f.retired && !placedCount(f.id)) && itemMatches(f)).sort((a, b) => !!b.free - !!a.free);
     panel.innerHTML = `
       ${sel ? `<div class="sel-box"><span class="sel-em">${furniImg(sel.id)}</span><b>${esc(FURN[sel.id].name)}</b>
         <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''}>⟳ Rotate</button>
@@ -1216,6 +1266,7 @@ export function house(stage) {
         ${isDragWall(sel.id) ? `<button class="btn small" data-act="shorter">− Shorter</button><button class="btn small" data-act="longer">＋ Longer</button><span class="muted small">${lenOf(sel)} tiles</span>` : ''}
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div>
         ${FURN[sel.id].recolor ? `<div class="wd-label">🎨 Colour</div><div class="swatches palette"><button type="button" class="swatch orig ${sel.c ? '' : 'on'}" data-recolor="" title="Original colour">↺</button>${CATALOG.clothColors.map((c) => `<button type="button" class="swatch ${sel.c === c ? 'on' : ''}" data-recolor="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}</div>` : ''}
+      ${pageStrip(ITEM_FILTERS, itemFilter, 'item-filter')}
       <p class="muted small">Pick something to place it:</p>
       <div class="furni-grid">${ownedList.map((f) => {
         const left = owned(f.id) - placedCount(f.id);
@@ -1243,14 +1294,17 @@ export function house(stage) {
   // The shop and the style picker are split into pages (a strip of buttons along the top). Furniture is
   // shelved by matching set; floors, wallpapers and ceilings by kind (solid colours, wood, tiles…).
   const SHOP_PAGES = [['furniture', '🛋️ Furniture'], ['rooms', '🧱 Walls & doors'], ['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floors'], ['ceiling', '☁️ Ceilings'], ['door', '🚪 Front doors'], ['earn', '🏆 Earn']];
-  const STYLE_PAGES = [['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floor'], ['ceiling', '☁️ Ceiling'], ['door', '🚪 Front door'], ['size', '🏠 Room size']];
+  const STYLE_PAGES = [['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floor'], ['ceiling', '☁️ Ceiling'], ['trim', '🎨 Trim'], ['door', '🚪 Front door'], ['size', '🏠 Room size']];
+  const ITEM_FILTERS = [['all', 'All'], ['furniture', '🛋️ Furniture'], ['decor', '🖼️ Wall decor'], ['ceiling', '💡 Ceiling'], ['rooms', '🧱 Walls & doors']];
+  const itemMatches = (f) => itemFilter === 'all' || (itemFilter === 'rooms' ? f.set === 'Rooms'
+    : f.set !== 'Rooms' && (itemFilter === 'decor' ? kindOf(f.id) === 'wall' : itemFilter === 'ceiling' ? kindOf(f.id) === 'ceiling' : kindOf(f.id) === 'floor'));
   const SET_LABEL = {
     Classics: '🛋️ Classics', Sweetheart: '💗 Sweetheart set', Rustic: '🪵 Rustic set', Modern: '🤍 Modern set', Nature: '🌿 Nature set',
     Plants: '🪴 Plants', Bathroom: '🛁 Bathroom', Gamer: '🎮 Gamer set', Lights: '💡 Lights & ceiling', 'Wall decor': '🖼️ Wall decor', Rooms: '🧱 Walls & doorways',
-    Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
+    Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🤍 White kitchen', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
   };
   const DECO_LISTS = { floor: CATALOG.floors, wall: CATALOG.walls, ceiling: CATALOG.ceilings, door: CATALOG.doors };
-  let shopPage = 'furniture', stylePage = 'wall';
+  let shopPage = 'furniture', stylePage = 'wall', itemFilter = 'all';
   const shelfId = (g) => `shelf-${String(g).replace(/\W+/g, '')}`;
   /** Items grouped into labelled shelves, in the order the groups first appear. */
   function shelves(list, groupOf, tile, label = (g) => esc(g), grid = 'furni-grid') {
@@ -1297,7 +1351,12 @@ export function house(stage) {
         <span class="style-sw" style="${decoBg(d.id)}"></span><span>${esc(d.name)}</span>
         <small>${ownsDeco(d) ? (home?.[field] === d.id ? '✓ Using' : 'Owned') : isTrying(d.id) ? '👀 Trying on' : `🪙 ${fmt(d.price)}`}</small></button>`;
     let body;
-    if (stylePage === 'size') {
+    if (stylePage === 'trim') {
+      // the baseboards and the tops of half walls, all in one colour (free)
+      const cur = home?.trim ?? TRIM_DEFAULT;
+      body = `<p class="muted small">The colour of the baseboards along every wall and the tops of half walls. Free to change any time.</p>
+        <div class="trim-grid">${CATALOG.trimColors.map((t) => `<button class="trim-opt ${cur === t.c ? 'on' : ''}" data-trim="${t.c}" title="${esc(t.name)}"><span style="--c:${t.c}"></span>${esc(t.name)}</button>`).join('')}</div>`;
+    } else if (stylePage === 'size') {
       // room size: any width and depth up to the biggest house upgrade you own
       const [mw, md] = maxSize(), [sw, sd] = home?.size ?? [14, 14];
       const stepper = (axis, v, max) => `<span class="size-step"><button class="btn small" data-size="${axis}:-1" ${v <= MIN_SIZE ? 'disabled' : ''}>−</button><b>${v}</b><button class="btn small" data-size="${axis}:1" ${v >= max ? 'disabled' : ''}>+</button></span>`;
@@ -1333,9 +1392,11 @@ export function house(stage) {
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor]');
+    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor],[data-trim],[data-item-filter]');
     if (!t) return;
     const ds = t.dataset;
+    if (ds.trim) { if (home.trim !== ds.trim) { home.trim = ds.trim; commit('paint'); } return; }
+    if (ds.itemFilter) { itemFilter = ds.itemFilter; renderPanel(); panel.scrollTop = 0; return; }
     if (ds.recolor != null && selected >= 0) {
       const it = { ...home.items[selected] };
       if (ds.recolor) it.c = ds.recolor; else delete it.c;
@@ -1423,8 +1484,7 @@ export function house(stage) {
     const keep = [], taken = new Set();
     let dropped = 0;
     for (const it of home.items) {
-      const cells = cellsOf(it);
-      if (fits(it) && !blocksDoor(it) && !cells.some((c) => taken.has(c))) { keep.push(it); cells.forEach((c) => taken.add(c)); } else dropped++;
+      if (fits(it) && !blocksDoor(it) && !cellsOf(it, true).some((c) => taken.has(c))) { keep.push(it); cellsOf(it).forEach((c) => taken.add(c)); } else dropped++;
     }
     home.items = keep;
     selected = -1;

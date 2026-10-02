@@ -2,6 +2,7 @@
 // boss cave, arcade and archery range. There is one shared renderer; each area builds its
 // scene into the stage and gets helpers for characters, name tags, input, cameras and prompts.
 import * as THREE from 'three';
+import { guardKeys } from './keyguard.js';
 import { watchContext } from './gfxguard.js';
 import { registerLook, mouseLooking } from './mouselook.js';
 import { net } from './net.js';
@@ -20,6 +21,7 @@ class Stage {
     this.el = null;
     this.active = null;
     this.keys = new Set();
+    guardKeys(this.keys);
     this.mouse = new THREE.Vector2(0, 0);
     this.mouseIn = false;
     this.people = new Map();

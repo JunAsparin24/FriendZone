@@ -106,7 +106,19 @@ function fits(it) {
 /** Plain room walls are dragged out to any length (it.l, in tiles); everything else is its own size. */
 const isDragWall = (id) => !!FURN[id]?.drag;
 const lenOf = (it) => (isDragWall(it.id) ? it.l ?? FURN[it.id].w : FURN[it.id].w);
-const footprint = (it) => { const f = FURN[it.id], w = lenOf(it); return it.r % 2 ? [f.d, w] : [w, f.d]; };
+const footprint = (it) => {
+  const f = FURN[it.id], w = lenOf(it);
+  // turned 45°: it takes up the square it fits in
+  if (it.dg) { const sq = Math.ceil(((w + f.d) / Math.SQRT2) * SNAP) / SNAP; return [sq, sq]; }
+  return it.r % 2 ? [f.d, w] : [w, f.d];
+};
+/** Which way a piece faces: quarter turns (r), plus 45° more if it's turned diagonally (dg). */
+const angleOf = (it) => it.r * (Math.PI / 2) + (it.dg ? Math.PI / 4 : 0);
+/** Furniture that stands on the floor or hangs from the ceiling turns in 8 directions (walls, doors and
+ *  things on walls in 4). */
+const turns8 = (id) => !FURN[id]?.room && kindOf(id) !== 'wall' && kindOf(id) !== 'door';
+/** The next of the 8 directions, going round: r, r + 45°, r + 90°… */
+const nextTurn = (it) => (turns8(it.id) ? (it.dg ? { r: (it.r + 1) % 4, dg: undefined } : { r: it.r, dg: 1 }) : { r: (it.r + 1) % 4 });
 const isDoor = (id) => kindOf(id) === 'door';
 /** The floor cells (quarter tiles) something stands on, whatever layer it's on. */
 function groundCells(it) {
@@ -387,7 +399,7 @@ export function house(stage) {
   const mine = () => viewKey === S.me;
   const payload = () => ({
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
-    items: home.items.map(({ id, x, y, r, h, l, iw }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}) })),
+    items: home.items.map(({ id, x, y, r, h, l, iw, dg }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}) })),
     areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {},
   });
 
@@ -412,7 +424,7 @@ export function house(stage) {
     }
     const [w, d] = footprint(it);
     g.position.set(it.x + w / 2, kindOf(it.id) === 'ceiling' ? WALL_H : 0, it.y + d / 2);
-    g.rotation.y = it.r * (Math.PI / 2);
+    g.rotation.y = angleOf(it);
   }
 
   function rebuildItems() {
@@ -617,14 +629,14 @@ export function house(stage) {
   /** Where seat s of a piece is, across its width (in world units, before any perching forward). */
   function seatSpot(it, s) {
     const [w, d] = footprint(it), n = seatCount(it.id);
-    const h = it.r * (Math.PI / 2), off = (s - (n - 1) / 2) * (FURN[it.id].w / n) * T;
+    const h = angleOf(it), off = (s - (n - 1) / 2) * (FURN[it.id].w / n) * T;
     const x = (it.x + w / 2) * T + Math.cos(h) * off, z = (it.y + d / 2) * T - Math.sin(h) * off;
     return { x, z, dist: (p) => Math.hypot(p.x - x, p.z - z) };
   }
   /** Pose person p on seat s of a piece; returns where they ended up. */
   function placeOnSeat(p, it, s) {
     const seat = SEATS[it.id], bed = BEDS.has(it.id);
-    const heading = it.r * (Math.PI / 2), fx = Math.sin(heading), fz = Math.cos(heading);
+    const heading = angleOf(it), fx = Math.sin(heading), fz = Math.cos(heading);
     p.heading = heading;
     p.char.setPose(bed ? 'lie' : 'sit');
     // rest on top of the cushion, not inside it: find the lowest point of the posed body (for sitting,
@@ -671,7 +683,7 @@ export function house(stage) {
     const [w, d] = footprint(it);
     const p = walker.me;
     // step off in front of the seat (or wherever there's room)
-    const fx = Math.sin(it.r * (Math.PI / 2)), fz = Math.cos(it.r * (Math.PI / 2));
+    const fx = Math.sin(angleOf(it)), fz = Math.cos(angleOf(it));
     const tries = [[fx, fz], [-fx, -fz], [fz, -fx], [-fz, fx]];
     for (const [dx, dz] of tries) {
       const x = (it.x + w / 2 + dx * (w / 2 + 0.6)) * T, z = (it.y + d / 2 + dz * (d / 2 + 0.6)) * T;
@@ -739,7 +751,7 @@ export function house(stage) {
       room.marker.visible = false;
       return;
     }
-    const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r, h: placing.h, l: placing.l, iw: placing.iw };
+    const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r, h: placing.h, l: placing.l, iw: placing.iw, dg: placing.dg };
     if (kindOf(placing.id) === 'ceiling' && ghost.userData.drop !== heightOf(placing)) { buildGhost(); return updateGhost(); }
     if (isDragWall(placing.id) && ghost.userData.len !== lenOf(placing)) { buildGhost(); return updateGhost(); }
     const taken = takenCells(placing.from);
@@ -894,7 +906,7 @@ export function house(stage) {
   }
 
   function startPlacing(id, from = -1) {
-    placing = { id, r: from >= 0 ? home.items[from].r : 0, from, x: -1, y: -1, valid: false, h: from >= 0 ? heightOf(home.items[from]) : kindOf(id) === 'ceiling' ? 0.4 : WALL_Y };
+    placing = { id, r: from >= 0 ? home.items[from].r : 0, dg: from >= 0 ? home.items[from].dg : undefined, from, x: -1, y: -1, valid: false, h: from >= 0 ? heightOf(home.items[from]) : kindOf(id) === 'ceiling' ? 0.4 : WALL_Y };
     if (isDragWall(id)) Object.assign(placing, { l: from >= 0 ? lenOf(home.items[from]) : 1 / SNAP, start: null, armed: false });
     if (kindOf(id) === 'wall' && from < 0) placing.r = 0;
     selected = -1;
@@ -914,7 +926,7 @@ export function house(stage) {
 
   function place() {
     if (!placing?.valid) { sfx('error'); return; }
-    const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r };
+    const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r, ...(placing.dg ? { dg: 1 } : {}) };
     if (kindOf(placing.id) !== 'floor' && kindOf(placing.id) !== 'rug') it.h = placing.h;
     if (isDragWall(placing.id)) it.l = placing.l;
     if (placing.iw) it.iw = 1;
@@ -956,13 +968,14 @@ export function house(stage) {
   function rotate() {
     if (placing) {
       if ((isDragWall(placing.id) && placing.from < 0) || isDoor(placing.id)) return; // (drawn walls go whichever way you drag; doors go along their wall)
-      if (kindOf(placing.id) !== 'wall') { placing.r = (placing.r + 1) % 4; sfx('rotate'); updateGhost(); }
+      if (kindOf(placing.id) !== 'wall') { Object.assign(placing, nextTurn(placing)); sfx('rotate'); updateGhost(); }
       return;
     }
     if (selected < 0) return;
     const it = home.items[selected];
     if (kindOf(it.id) === 'wall') return;
-    const next = { ...it, r: (it.r + 1) % 4 };
+    const next = { ...it, ...nextTurn(it) };
+    if (!next.dg) delete next.dg;
     const taken = new Set();
     home.items.forEach((o, i) => { if (i !== selected) cellsOf(o).forEach((c) => taken.add(c)); });
     if (!fits(next) || cellsOf(next).some((c) => taken.has(c)) || blocksDoor(next)) { sfx('error'); toast('No room to turn it there.', 'error'); return; }

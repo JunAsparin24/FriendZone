@@ -815,6 +815,7 @@ def clean_house(p, data):
         kind = f.get("kind", "floor")
         h = None
         iw = kind == "wall" and bool(it.get("iw"))
+        dg = False
         if iw:
             # on one of your own walls: r is the way it faces; along the wall from `start`, against the
             # face at `face` (x for walls running across, y for walls running up and down... see the client)
@@ -852,6 +853,10 @@ def clean_house(p, data):
                 if not (0.25 <= length <= max(W, D)):
                     raise GameError("That wall is the wrong length.")
             w, d = (length, f["d"]) if r % 2 == 0 else (f["d"], length)
+            # furniture turned 45° takes up the square it fits in (walls and doors only turn in quarters)
+            dg = bool(it.get("dg")) and not f.get("room") and kind != "door"
+            if dg:
+                w = d = math.ceil((length + f["d"]) / math.sqrt(2) * HOUSE_SNAP) / HOUSE_SNAP
             if x < 0 or y < 0 or x + w > W or y + d > D:
                 raise GameError("That doesn't fit in the room.")
             x0, y0 = round(x * HOUSE_SNAP), round(y * HOUSE_SNAP)
@@ -864,7 +869,7 @@ def clean_house(p, data):
         if cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {}), **({"iw": 1} if iw else {})})
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {})})
     for name, cells in door_cells:
         if not cells <= wall_cells:
             raise GameError(f"The {name} has to go in a wall.")

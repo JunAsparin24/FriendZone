@@ -511,7 +511,7 @@ function shellGeo(front, side, back, r, inner = 0, thin = false) {
           // a closed cap thins out towards its edge, so it meets the scalp like hair does (no thick
           // ledge round the hairline)
           // (less so at the back, where the locks at the nape hang over the edge anyway)
-          const k = taper ? Math.pow(Math.max(0, (j / V - 0.55) / 0.45), 1.4) * 0.88 * Math.min(1, Math.max(0.3, (Math.cos(phi) + 0.7) / 0.7)) : 0;
+          const k = taper ? Math.pow(Math.max(0, (j / V - 0.6) / 0.4), 1.6) * 0.6 * Math.min(1, Math.max(0.3, (Math.cos(phi) + 0.7) / 0.7)) : 0;
           const rr = rad + (inner - rad) * k;
           pos.push(n[0] * rr, n[1] * rr, n[2] * rr);
           nor.push(n[0] * sign, n[1] * sign, n[2] * sign);
@@ -614,6 +614,27 @@ function blobs(head, mat, { dist, size, step, front = 1.0, side = 1.55, back = 2
 }
 
 const bigEyes = (style) => style === 'eyes_sparkle';
+/** An anime-style iris: darker at the top, brighter towards the bottom, a dark rim, soft streaks and a
+ *  pupil (one texture per eye colour). */
+const irisCache = new Map();
+function irisMaterial(color) {
+  if (!irisCache.has(color)) {
+    const c = new THREE.Color(color), shade = (k) => `#${c.clone().multiplyScalar(k).getHexString()}`;
+    const light = `#${c.clone().lerp(new THREE.Color('#ffffff'), 0.35).getHexString()}`;
+    const tex = canvasTexture(128, 128, (x) => {
+      const g = x.createLinearGradient(0, 4, 0, 124);
+      g.addColorStop(0, shade(0.35)); g.addColorStop(0.45, color); g.addColorStop(1, light);
+      x.fillStyle = g; x.beginPath(); x.arc(64, 64, 62, 0, TAU); x.fill();
+      x.strokeStyle = 'rgba(255,255,255,.18)'; x.lineWidth = 2;
+      for (let i = 0; i < 18; i++) { const a = (i / 18) * TAU; x.beginPath(); x.moveTo(64 + Math.cos(a) * 26, 64 + Math.sin(a) * 26); x.lineTo(64 + Math.cos(a) * 54, 64 + Math.sin(a) * 54); x.stroke(); }
+      x.fillStyle = 'rgba(255,255,255,.28)'; x.beginPath(); x.ellipse(64, 98, 34, 14, 0, 0, TAU); x.fill();
+      x.fillStyle = '#15131f'; x.beginPath(); x.ellipse(64, 62, 21, 25, 0, 0, TAU); x.fill();
+      x.strokeStyle = shade(0.25); x.lineWidth = 7; x.beginPath(); x.arc(64, 64, 59, 0, TAU); x.stroke();
+    });
+    irisCache.set(color, new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+  }
+  return irisCache.get(color);
+}
 function heartShape(r) {
   const s = new THREE.Shape();
   s.moveTo(0, -r * 0.9);
@@ -767,27 +788,6 @@ function partsMaterial(color, skin) {
   return hairTexCache.get(key);
 }
 const tieColor = (L, def) => L.hairTie || def;
-/** Fine strands of hair: soft streaks running from the crown to the hairline (a grey map over the colour). */
-const strandTexture = canvasTexture(256, 128, (c) => {
-  c.fillStyle = '#ffffff'; c.fillRect(0, 0, 256, 128);
-  let seed = 11;
-  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  for (let i = 0; i < 70; i++) {
-    const x = rnd() * 256, w = 1 + rnd() * 2.5, dark = rnd() < 0.7;
-    c.strokeStyle = dark ? `rgba(0,0,0,${0.08 + rnd() * 0.1})` : `rgba(255,255,255,${0.3 + rnd() * 0.3})`;
-    c.lineWidth = w;
-    c.beginPath();
-    for (let y = 0; y <= 128; y += 8) c.lineTo(x + Math.sin(y / 24 + i) * 3, y);
-    c.stroke();
-  }
-});
-strandTexture.wrapS = strandTexture.wrapT = THREE.RepeatWrapping;
-strandTexture.repeat.set(3, 1);
-const strandCache = new Map();
-function strandMaterial(color) {
-  if (!strandCache.has(color)) strandCache.set(color, new THREE.MeshToonMaterial({ color, map: strandTexture, gradientMap: toon('#ffffff').gradientMap, side: THREE.DoubleSide }));
-  return strandCache.get(color);
-}
 
 const HAIR = {
   hair_short(head, mat) { shell(head, mat, { front: 0.9, side: 1.4, back: 2.15 }); fringe(head, mat); },
@@ -2800,6 +2800,19 @@ function sprites(parent, material, n, scale) {
 }
 
 /** A tall licking flame with a hot white centre (for ki and the like). */
+/** The Developer aura's glowing circle: rings, ticks, a six-pointed star and runes round the edge. */
+const devRuneTexture = canvasTexture(256, 256, (c) => {
+  c.translate(128, 128);
+  c.strokeStyle = '#ffffff'; c.fillStyle = '#ffffff'; c.shadowColor = '#bfe8ff'; c.shadowBlur = 8;
+  for (const [r, w] of [[124, 3], [112, 1.5], [78, 2], [70, 1]]) { c.lineWidth = w; c.beginPath(); c.arc(0, 0, r, 0, TAU); c.stroke(); }
+  for (let i = 0; i < 48; i++) { const a = (i / 48) * TAU, l = i % 4 ? 4 : 9; c.lineWidth = 1.5; c.beginPath(); c.moveTo(Math.cos(a) * 112, Math.sin(a) * 112); c.lineTo(Math.cos(a) * (112 - l), Math.sin(a) * (112 - l)); c.stroke(); }
+  c.lineWidth = 2;
+  for (const off of [0, Math.PI / 3]) { c.beginPath(); for (let k = 0; k <= 3; k++) { const a = off + (k / 3) * TAU - Math.PI / 2; c.lineTo(Math.cos(a) * 70, Math.sin(a) * 70); } c.stroke(); }
+  c.font = 'bold 13px serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  const glyphs = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒ';
+  for (let i = 0; i < glyphs.length; i++) { const a = (i / glyphs.length) * TAU; c.save(); c.rotate(a); c.fillText(glyphs[i], 0, -95); c.restore(); }
+  c.beginPath(); c.arc(0, 0, 16, 0, TAU); c.lineWidth = 2; c.stroke();
+});
 const kiTexture = canvasTexture(64, 128, (c) => {
   const grad = c.createRadialGradient(32, 92, 2, 32, 80, 60);
   grad.addColorStop(0, 'rgba(255,255,255,1)');
@@ -3064,73 +3077,136 @@ const AURAS = {
     });
   },
   aura_og(g, anim, L) {
-    // OG Tester (admin-given only): a full power-up. Tall flickering flames of ki roaring up round you,
-    // a hot white core, lightning crackling through it, shockwaves rippling out along the ground and
-    // pebbles lifting off it. The one aura you can recolour.
+    // OG Tester (admin-given only): a Super Saiyan power-up. Licks of ki rise in a ring round you (around
+    // your outline, never across your body), with the odd crackle of lightning and a soft glow and
+    // shockwave on the ground. The one aura you can recolour.
     const c = new THREE.Color(L?.auraColor || '#ffd84d');
     const hex = c.getHex(), pale = c.clone().lerp(new THREE.Color('#ffffff'), 0.55).getHex();
-    const core = new THREE.Sprite(additive(glowTexture, hex, 0.8));
-    core.scale.set(1.5, 2.8, 1);
-    core.position.y = 1.1;
-    g.add(core);
-    // the flames: two rings of tall licks of ki, the outer ones in the aura colour, the inner ones paler
     const flames = [];
-    for (let k = 0; k < 30; k++) {
-      const outer = k < 20;
-      const sp = new THREE.Sprite(additive(kiTexture, outer ? hex : pale, 1));
+    for (let k = 0; k < 14; k++) {
+      const sp = new THREE.Sprite(additive(kiTexture, k % 3 ? hex : pale, 1));
       g.add(sp);
-      flames.push({ sp, a: ((outer ? k : k - 20) / (outer ? 20 : 10)) * TAU + (outer ? 0 : 0.3), r: outer ? 0.5 : 0.3, seed: k * 1.37, outer });
+      // round the sides and back only (the front is +z, at a = π/2), so it never covers your face
+      flames.push({ sp, a: Math.PI / 2 + 1.0 + (k / 13) * (TAU - 2.0), seed: k * 1.37 });
     }
-    // lightning: little zig-zags that flash on and off round the body
     const boltMat = new THREE.MeshBasicMaterial({ color: pale, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-    const bolts = [0, 1, 2].map(() => {
-      const b = new THREE.Group();
-      let y = 0, x = 0;
-      for (let k = 0; k < 4; k++) {
-        const nx = (k % 2 ? 1 : -1) * 0.09, ny = y - 0.16;
-        const seg = new THREE.Mesh(box(0.018, Math.hypot(nx - x, ny - y), 0.018), boltMat);
-        seg.position.set((x + nx) / 2, (y + ny) / 2, 0);
-        seg.rotation.z = Math.atan2(nx - x, y - ny);
-        b.add(seg);
-        x = nx; y = ny;
-      }
-      g.add(b);
-      return b;
-    });
-    // shockwaves along the ground, and pebbles floating up
+    const bolt = new THREE.Group();
+    let y = 0, x = 0;
+    for (let k = 0; k < 4; k++) {
+      const nx = (k % 2 ? 1 : -1) * 0.08, ny = y - 0.15;
+      const seg = new THREE.Mesh(box(0.014, Math.hypot(nx - x, ny - y), 0.014), boltMat);
+      seg.position.set((x + nx) / 2, (y + ny) / 2, 0);
+      seg.rotation.z = Math.atan2(nx - x, y - ny);
+      bolt.add(seg);
+      x = nx; y = ny;
+    }
+    g.add(bolt);
     const waveMat = new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
     const wave = part(g, geo('kiWave', () => new THREE.RingGeometry(0.85, 1, 48)), waveMat, { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
-    const ground = part(g, geo('kiGround', () => new THREE.CircleGeometry(1.1, 32)), new THREE.MeshBasicMaterial({ map: groundGlowTexture, color: hex, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.02, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
-    const pebbles = [];
-    for (let k = 0; k < 8; k++) pebbles.push(part(g, geo('kiPebble', () => new THREE.IcosahedronGeometry(0.035, 0)), toon('#8d8aa6'), { outline: null, shadow: false }));
-    const motes = sprites(g, additive(glowTexture, pale, 0.9), 14, 0.07);
+    const ground = part(g, geo('kiGround', () => new THREE.CircleGeometry(1.1, 32)), new THREE.MeshBasicMaterial({ map: groundGlowTexture, color: hex, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.02, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
     let boltAt = 0;
-    anim.push((t, dt) => {
-      const surge = 0.85 + Math.sin(t * 9) * 0.08 + Math.sin(t * 23) * 0.05;
-      core.scale.set(1.4 * surge, 2.7 * surge, 1);
-      core.material.opacity = 0.32 + Math.sin(t * 13) * 0.08;
+    anim.push((t) => {
+      const surge = 0.9 + Math.sin(t * 9) * 0.06;
       for (const f of flames) {
-        // each lick roars up from the feet, stretching and flickering
-        const p = (t * (f.outer ? 1.6 : 2.1) + f.seed) % 1;
-        const a = f.a + Math.sin(t * 2 + f.seed) * 0.2;
-        const r = f.r * (1 - p * 0.35);
-        f.sp.position.set(Math.cos(a) * r, 0.2 + p * (f.outer ? 2.3 : 1.7), Math.sin(a) * r);
+        // each lick rises from the ground round your outline, flickering as it goes
+        const p = (t * 1.3 + f.seed) % 1;
+        const a = f.a + Math.sin(t * 1.5 + f.seed) * 0.12;
+        const r = 0.82 - p * 0.18;
+        f.sp.position.set(Math.cos(a) * r, 0.35 + p * 1.6, Math.sin(a) * r);
         const k = Math.sin(p * Math.PI);
-        f.sp.scale.set((f.outer ? 0.6 : 0.42) * (0.7 + k * 0.5), (f.outer ? 1.6 : 1.2) * (0.6 + k * 0.7) * surge, 1);
-        f.sp.material.opacity = (f.outer ? 0.85 : 0.35) * Math.min(1, k * 1.6);
+        f.sp.scale.set(0.42 * (0.7 + k * 0.4), 1.25 * (0.6 + k * 0.6) * surge, 1);
+        f.sp.material.opacity = 0.42 * Math.min(1, k * 1.5);
       }
       if (t > boltAt) {
-        boltAt = t + 0.12 + Math.random() * 0.5;
-        for (const b of bolts) { const a = Math.random() * TAU, y = 0.5 + Math.random() * 1.3; b.position.set(Math.cos(a) * 0.4, y, Math.sin(a) * 0.4); b.rotation.set(0, -a, Math.random() - 0.5); }
+        boltAt = t + 0.8 + Math.random() * 1.6;
+        const a = Math.random() * TAU;
+        bolt.position.set(Math.cos(a) * 0.5, 0.8 + Math.random() * 0.9, Math.sin(a) * 0.5);
+        bolt.rotation.set(0, -a, Math.random() - 0.5);
         boltMat.userData.at = t;
       }
-      boltMat.opacity = Math.max(0, 1 - (t - (boltMat.userData.at ?? -9)) * 9);
-      const w = (t * 0.7) % 1;
-      wave.scale.setScalar(0.4 + w * 1.8);
-      waveMat.opacity = (1 - w) * 0.7;
-      ground.material.opacity = 0.45 + Math.sin(t * 6) * 0.15;
-      pebbles.forEach((pb, k) => { const p = (t * 0.35 + k / 8) % 1, a = k * 2.3; pb.position.set(Math.cos(a) * (0.6 + (k % 3) * 0.15), p * 1.4, Math.sin(a) * (0.6 + (k % 3) * 0.15)); pb.rotation.set(t * 3 + k, t * 2, 0); pb.visible = p < 0.9; });
-      motes.forEach((m, k) => { const p = (t * 1.3 + k / 14) % 1, a = k * 2.4; m.position.set(Math.cos(a) * 0.55, p * 2.4, Math.sin(a) * 0.55); m.material.opacity = 1 - p; });
+      boltMat.opacity = Math.max(0, 1 - (t - (boltMat.userData.at ?? -9)) * 8) * 0.9;
+      const w = (t * 0.5) % 1;
+      wave.scale.setScalar(0.5 + w * 1.4);
+      waveMat.opacity = (1 - w) * 0.35;
+      ground.material.opacity = 0.32 + Math.sin(t * 5) * 0.08;
+    });
+  },
+  aura_dev(g, anim) {
+    // Developer (admin-given only): a glowing rune circle turning on the ground, winds of white energy
+    // whirling round you at different heights, lightning cracking through them and sparks spiralling up
+    const white = 0xffffff, ice = 0xbfe8ff;
+    const add = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+    const runes = part(g, geo('devRunes', () => new THREE.CircleGeometry(1.35, 48)), new THREE.MeshBasicMaterial({ map: devRuneTexture, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.025, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const inner = part(g, geo('devRunes', () => new THREE.CircleGeometry(1.35, 48)), new THREE.MeshBasicMaterial({ map: devRuneTexture, color: ice, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], s: 0.55, outline: null, shadow: false });
+    const pool = part(g, geo('auraPool', () => new THREE.CircleGeometry(1, 32)), new THREE.MeshBasicMaterial({ map: groundGlowTexture, color: ice, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.02, 0], r: [-Math.PI / 2, 0, 0], s: 1.3, outline: null, shadow: false });
+    // the winds: tilted arcs sweeping round you, each its own height, size and speed
+    const winds = [];
+    for (let k = 0; k < 6; k++) {
+      const arc = new THREE.Group();
+      arc.position.y = 0.35 + k * 0.33;
+      arc.rotation.set((k % 2 ? 1 : -1) * (0.25 + (k % 3) * 0.12), 0, (k % 3 - 1) * 0.2);
+      g.add(arc);
+      const r = 0.72 + (k % 3) * 0.16;
+      const m = add(k % 2 ? white : ice, 0.55);
+      const spin = new THREE.Group();
+      arc.add(spin);
+      part(spin, geo(`devArc${r}`, () => new THREE.TorusGeometry(r, 0.018, 4, 40, Math.PI * 1.1)), m, { r: [Math.PI / 2, 0, 0], outline: null, shadow: false });
+      part(spin, geo(`devArcT${r}`, () => new THREE.TorusGeometry(r * 1.04, 0.008, 4, 30, Math.PI * 0.7)), add(white, 0.35), { r: [Math.PI / 2, 0, 0.6], outline: null, shadow: false });
+      winds.push({ spin, m, speed: (k % 2 ? 1 : -1) * (2.2 + k * 0.35), seed: k });
+    }
+    // lightning: jagged bolts flashing between points round you
+    const bolts = [0, 1, 2].map(() => {
+      const mat = add(white, 0);
+      const b = new THREE.Group();
+      g.add(b);
+      // six segments and a flash, reused for every strike (moved and stretched into place)
+      const segs = Array.from({ length: 6 }, () => { const s = new THREE.Mesh(box(0.022, 1, 0.022), mat); b.add(s); return s; });
+      const flash = new THREE.Sprite(additive(glowTexture, ice, 0));
+      flash.scale.setScalar(0.7);
+      b.add(flash);
+      return { mat, segs, flash, at: -9 };
+    });
+    const v = new THREE.Vector3(), d = new THREE.Vector3();
+    const zap = (bolt) => {
+      const a0 = Math.random() * TAU, a1 = a0 + 0.6 + Math.random() * 1.6;
+      const p0 = new THREE.Vector3(Math.cos(a0) * 0.8, 0.3 + Math.random() * 1.6, Math.sin(a0) * 0.8);
+      const p1 = new THREE.Vector3(Math.cos(a1) * 0.8, 0.3 + Math.random() * 1.6, Math.sin(a1) * 0.8);
+      let prev = p0.clone();
+      bolt.segs.forEach((seg, i) => {
+        const q = p0.clone().lerp(p1, (i + 1) / 6);
+        if (i < 5) q.add(v.set((Math.random() - 0.5) * 0.25, (Math.random() - 0.5) * 0.25, (Math.random() - 0.5) * 0.25));
+        d.copy(q).sub(prev);
+        seg.position.copy(prev).add(q).multiplyScalar(0.5);
+        seg.scale.y = d.length();
+        seg.quaternion.setFromUnitVectors(Y, d.normalize());
+        prev = q;
+      });
+      bolt.flash.position.copy(p0).lerp(p1, 0.5);
+    };
+    // sparks spiralling up round you
+    const sparks = [];
+    for (let k = 0; k < 16; k++) { const sp = new THREE.Sprite(additive(starTexture, k % 2 ? white : ice, 1)); sp.scale.setScalar(0.09); g.add(sp); sparks.push(sp); }
+    anim.push((t) => {
+      runes.rotation.z = t * 0.35;
+      inner.rotation.z = -t * 0.6;
+      runes.material.opacity = 0.75 + Math.sin(t * 3) * 0.15;
+      pool.material.opacity = 0.4 + Math.sin(t * 2.4) * 0.12;
+      for (const w of winds) {
+        w.spin.rotation.y = t * w.speed;
+        w.m.opacity = 0.35 + Math.sin(t * 3 + w.seed) * 0.2;
+      }
+      for (const b of bolts) {
+        if (t - b.at > 0.15 + Math.random() * 0.9) { b.at = t; zap(b); }
+        const k = Math.max(0, 1 - (t - b.at) * 7);
+        b.mat.opacity = k;
+        if (b.flash) b.flash.material.opacity = k * 0.6;
+      }
+      sparks.forEach((sp, k) => {
+        const p = (t * 0.45 + k / 16) % 1, a = k * 2.4 + t * 2.5;
+        const r = 0.95 - p * 0.45;
+        sp.position.set(Math.cos(a) * r, p * 2.6, Math.sin(a) * r);
+        sp.material.opacity = Math.sin(p * Math.PI);
+      });
     });
   },
 };
@@ -3614,8 +3690,7 @@ export class Character {
     hairGroup.traverse((o) => { if (o.isMesh && !o.userData.outline && o.material.side === THREE.FrontSide) o.material = doubleSided(o.material); });
     // a little strand texture on the main body of the hair (the cap, long curtains, buns: the pieces
     // that have texture coordinates and are the hair's own colour)
-    const strands = strandMaterial(L.hairColor), own = hairMat.color.getHex();
-    hairGroup.traverse((o) => { if (o.isMesh && !o.userData.outline && o.geometry.attributes.uv && !o.material.map && o.material.color?.getHex() === own) o.material = strands; });
+
     // each face item in its own colour (face -> faceColor, face2 -> face2Color…)
     for (const [k, id] of faces) FACES[id](head, { ...L, faceColor: L[`${k}Color`] }, anim);
     for (const [k, id] of hats) {
@@ -3730,11 +3805,11 @@ export class Character {
         const sy = style === 'eyes_sleepy' ? 0.8 : style === 'eyes_angry' ? 0.95 : style === 'eyes_surprised' ? 1.25 : 1.3;
         // surprised and cat eyes are pale with a small / slit pupil; the rest are big dark (or coloured) eyes
         const pale = style === 'eyes_surprised' || style === 'eyes_cat';
-        const eye = part(head, sphere(big ? 0.08 : 0.071, 18, 14), basic(pale ? (style === 'eyes_cat' ? '#ffe066' : '#ffffff') : iris), { p: p.toArray(), q, s: [0.85, sy, 0.5], outline: pale ? OUT_THIN : null, shadow: false });
+        const eye = part(head, sphere(big ? 0.08 : 0.071, 18, 14), basic(pale ? (style === 'eyes_cat' ? '#ffe066' : '#ffffff') : '#15131f'), { p: p.toArray(), q, s: [0.85, sy, 0.5], outline: pale ? OUT_THIN : null, shadow: false });
         eye.userData.sy = sy;
         if (style === 'eyes_surprised') part(eye, sphere(0.026, 10, 8), basic(iris), { p: [0, 0, 0.05], outline: null, shadow: false });
         else if (style === 'eyes_cat') part(eye, sphere(0.03, 10, 8), dark, { p: [0, 0, 0.05], s: [0.3, 1.5, 0.6], outline: null, shadow: false });
-        else if (iris !== DEFAULT_LOOK.eyeColor) part(eye, sphere(big ? 0.04 : 0.034, 12, 10), dark, { p: [0, -0.004, 0.045], outline: null, shadow: false });
+        else part(eye, circle(big ? 0.078 : 0.069), irisMaterial(hex(iris)), { p: [0, 0, big ? 0.081 : 0.072], outline: null, shadow: false }); // (the shaded iris on the front)
         part(eye, sphere(big ? 0.026 : 0.022, 10, 8), white, { p: [0.022, 0.024, 0.06], outline: null, shadow: false });
         if (big) part(eye, sphere(0.013, 8, 6), white, { p: [-0.024, -0.026, 0.06], outline: null, shadow: false });
         eyes.push(eye);

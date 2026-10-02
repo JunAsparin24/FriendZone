@@ -1505,14 +1505,14 @@ function papered(w, h, y0 = 0) {
  */
 function roomWall(g, w, { openings = [], caps = [true, true] } = {}) {
   const core = toon('#e8d6b8'), trim = toon('#f4f0ff'), paper = toon('#fff1d6', { side: THREE.DoubleSide });
-  const paperAt = (geom, p, ry) => { const m = add(g, geom, paper, { p, r: [0, ry, 0], outline: false }); m.userData.wallpaper = true; };
+  const paperAt = (geom, p, ry, face) => { const m = add(g, geom, paper, { p, r: [0, ry, 0], outline: false }); m.userData.wallpaper = true; m.userData.face = face; };
   // one solid stretch from x0 to x1, y0 to y1
   const piece = (x0, x1, y0, y1) => {
     const pw = x1 - x0, ph = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     if (pw < 0.01) return;
     add(g, box(pw, ph, ROOM_T - 0.004), core, { p: [cx, cy, 0], outline: false });
     for (const s of [-1, 1]) {
-      paperAt(papered(pw, ph, y0), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI);
+      paperAt(papered(pw, ph, y0), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI, s > 0 ? 0 : 2);
       if (y0 === 0) add(g, box(pw, 0.16, 0.05), trim, { p: [cx, 0.08, s * (ROOM_T / 2 + 0.02)], outline: false });
     }
   };
@@ -1528,7 +1528,7 @@ function roomWall(g, w, { openings = [], caps = [true, true] } = {}) {
   caps.forEach((on, i) => {
     if (!on) return;
     const s = i ? 1 : -1;
-    paperAt(papered(ROOM_T, ROOM_H, 0), [s * (w / 2 + 0.001), ROOM_H / 2, 0], s * Math.PI / 2);
+    paperAt(papered(ROOM_T, ROOM_H, 0), [s * (w / 2 + 0.001), ROOM_H / 2, 0], s * Math.PI / 2, s > 0 ? 1 : 3);
     add(g, box(0.05, 0.16, ROOM_T + 0.09), trim, { p: [s * (w / 2 + 0.02), 0.08, 0], outline: false });
   });
 }

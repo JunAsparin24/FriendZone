@@ -575,10 +575,9 @@ export class World {
     const hit = this.raycaster.intersectObjects(this.env.buildings, true)[0];
     let spot = null;
     for (let o = hit?.object; o; o = o.parent) if (o.userData.spot) { spot = o.userData.spot; break; }
+    // (no walking by tapping: a building only opens when you're right by it)
     if (spot) {
-      if (this.near === spot) { this.hooks.onActivity(spot.id); return; }
-      this.pendingSpot = spot;
-      this.walkTo(M.doorOf(spot));
+      if (this.near === spot) this.hooks.onActivity(spot.id);
       return;
     }
     // clicks land on the terrain (hills included)
@@ -586,15 +585,7 @@ export class World {
     if (!p) return;
     const px = p.x * M.PX + M.CENTER.x, py = p.z * M.PX + M.CENTER.y;
     const pond = SPOTS.find((s) => s.kind === 'pond');
-    if (M.inLake(px, py)) {
-      if (this.near === pond) { this.hooks.onActivity(pond.id); return; }
-      // walk to the bit of shore nearest where you clicked, then fish there
-      this.pendingSpot = pond;
-      this.walkTo(M.shorePoint(px, py, 24));
-      return;
-    }
-    this.pendingSpot = null;
-    this.walkTo({ x: clamp(px, 30, M.W - 30), y: clamp(py, 30, M.H - 30) });
+    if (M.inLake(px, py) && this.near === pond) this.hooks.onActivity(pond.id);
   }
 
   /** Pixel ratio + shadows for the chosen graphics quality. */

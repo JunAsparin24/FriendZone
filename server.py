@@ -44,6 +44,7 @@ MIME = {
     ".json": "application/json",
     ".svg": "image/svg+xml",
     ".png": "image/png",
+    ".mp3": "audio/mpeg",
     ".ico": "image/x-icon",
 }
 
@@ -874,22 +875,40 @@ def clean_house(p, data):
     areas = data.get("areas") or []
     if not isinstance(areas, list) or len(areas) > 24:
         raise GameError("That's too many painted rooms.")
-    clean_areas = []
-    for a in areas:
-        fid = a.get("f") if isinstance(a, dict) else None
-        if fid not in FLOORS or not owns_deco(p, fid):
-            raise GameError("You don't own that floor yet.")
-        ax, ay = snap_q(a.get("x", -1)), snap_q(a.get("y", -1))
-        if not (0 <= ax < W and 0 <= ay < D):
-            raise GameError("That's outside the house.")
-        clean_areas.append({"f": fid, "x": ax, "y": ay})
-    return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items, "areas": clean_areas}
+    def painted(spots, kinds, what):
+        """Rooms painted with their own floor / ceiling: one you own, and a spot in the room (it fills out to the walls)."""
+        if not isinstance(spots, list) or len(spots) > 24:
+            raise GameError("That's too many painted rooms.")
+        out = []
+        for a in spots:
+            fid = a.get("f") if isinstance(a, dict) else None
+            if fid not in kinds or not owns_deco(p, fid):
+                raise GameError(f"You don't own that {what} yet.")
+            ax, ay = snap_q(a.get("x", -1)), snap_q(a.get("y", -1))
+            if not (0 <= ax < W and 0 <= ay < D):
+                raise GameError("That's outside the house.")
+            out.append({"f": fid, "x": ax, "y": ay})
+        return out
+    clean_areas = painted(areas, FLOORS, "floor")
+    clean_careas = painted(data.get("careas") or [], CEILINGS, "ceiling")
+    # single walls with their own wallpaper: which face -> which wallpaper
+    wallp = data.get("wallp") or {}
+    if not isinstance(wallp, dict) or len(wallp) > 64:
+        raise GameError("That's too many painted walls.")
+    clean_wallp = {}
+    for k, v in wallp.items():
+        if not isinstance(k, str) or len(k) > 40 or v not in WALLS or not owns_deco(p, v):
+            raise GameError("You don't own that wallpaper yet.")
+        clean_wallp[k] = v
+    return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items,
+            "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp}
 
 
 def house_view(p):
     h = p["house"]
     return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"),
-            "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"], "areas": h.get("areas", [])}
+            "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"], "areas": h.get("areas", []),
+            "careas": h.get("careas", []), "wallp": h.get("wallp", {})}
 
 
 def public(p, client):

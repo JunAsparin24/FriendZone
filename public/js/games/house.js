@@ -10,6 +10,7 @@ import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
 import { buildFurniture, floorTexture, wallTexture, ceilingTexture, wallIsTall, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
+import { settings } from '../settings.js';
 import { buildDoor, doorImage } from '../three/doors.js';
 import { iconSvg } from '../icons.js';
 
@@ -376,7 +377,8 @@ export function house(stage) {
   let viewKey = null, home = null, edit = false, placing = null, selected = -1, tab = 'visit', sideOpen = false;
   let confirmBuy = null, saveTimer = 0, echoes = 0, ghost = null, seated = null;
   let preview = {};        // { floor?, wall? }: ones you're trying on before buying
-  let paintMode = false, brush = null; // painting a room's floor: on, and with which floor
+  let paintMode = false, brush = null; // painting a room's floor / ceiling or one wall: on, and with what
+  const PAINTABLE = new Set(['floor', 'ceiling', 'wall']);
   const areaGroup = new THREE.Group(); // the painted floors, drawn just above the main one
   const trying = () => Object.keys(preview).length > 0;
   const isTrying = (id) => Object.values(preview).includes(id);
@@ -386,7 +388,7 @@ export function house(stage) {
   const payload = () => ({
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
     items: home.items.map(({ id, x, y, r, h, l, iw }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}) })),
-    areas: home.areas ?? [],
+    areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {},
   });
 
   // ---- building the furniture ------------------------------------------------------
@@ -513,9 +515,60 @@ export function house(stage) {
       mesh.receiveShadow = true;
       areaGroup.add(mesh);
     });
+    (home.careas ?? []).forEach((a, i) => {
+      const cells = fillArea(Math.round(a.x * SNAP), Math.round(a.y * SNAP), walls);
+      if (cells) areaGroup.add(new THREE.Mesh(areaGeometry(cells, WALL_H - 0.004 - i * 0.0008), new THREE.MeshToonMaterial({ color: '#ffffff', map: ceilingTexture(a.f), side: THREE.DoubleSide })));
+    });
+    paintWalls();
   }
+  /** A wall face's own wallpaper (house walls h0..h3; built walls by where they are and which way the face looks). */
+  const faceKey = (it, face) => `w:${it.x}:${it.y}:${it.r % 2}:${(face + it.r) % 4}`;
+  const paperMats = new Map();
+  function paperMat(id) {
+    if (!paperMats.has(id)) {
+      const tex = wallTexture(id);
+      tex.repeat.set(1, wallIsTall(id) ? 2 / WALL_H : 1);
+      paperMats.set(id, new THREE.MeshToonMaterial({ color: '#ffffff', map: tex, side: THREE.DoubleSide }));
+    }
+    return paperMats.get(id);
+  }
+  function paintWalls() {
+    const own = home.wallp ?? {};
+    const mat = (key) => (own[key] ? paperMat(own[key]) : room.wallMat);
+    room.walls.back.face.material = mat('h0');
+    room.walls.left.face.material = mat('h1');
+    room.walls.front.faces.forEach((f) => { f.material = mat('h2'); });
+    room.walls.right.face.material = mat('h3');
+    for (const e of entries) {
+      if (!e.roomWall) continue;
+      e.group.traverse((o) => { if (o.userData.wallpaper) o.material = o.userData.face == null ? room.wallMat : mat(faceKey(e.it, o.userData.face)); });
+    }
+  }
+  /** Paint the wall face under the pointer (the main wallpaper takes the paint back off). */
+  function paintWallAt() {
+    stage.raycaster.setFromCamera(stage.mouse, stage.camera);
+    const house = { h0: room.walls.back.face, h1: room.walls.left.face, h3: room.walls.right.face };
+    const targets = [...Object.values(house), ...room.walls.front.faces, ...entries.filter((e) => e.roomWall).map((e) => e.group)];
+    const hit = stage.raycaster.intersectObjects(targets.filter((o) => o.visible !== false), true).find((h) => !h.object.userData.outline);
+    if (!hit) { sfx('error'); return; }
+    let key = Object.keys(house).find((k) => house[k] === hit.object) ?? (room.walls.front.faces.includes(hit.object) ? 'h2' : null);
+    if (!key) {
+      let index = -1;
+      for (let o = hit.object; o; o = o.parent) if (o.userData.index != null) { index = o.userData.index; break; }
+      if (hit.object.userData.face == null || !home.items[index]) { sfx('error'); return; }
+      key = faceKey(home.items[index], hit.object.userData.face);
+    }
+    const own = { ...(home.wallp ?? {}) };
+    if (brush === home.wall) delete own[key]; else own[key] = brush;
+    if (Object.keys(own).length > 64) { toast('That\'s a lot of painted walls! Clear some first.', 'error'); return; }
+    home.wallp = own;
+    commit('paint');
+  }
+
   /** Paint the room under the pointer with the brush (painting the main floor back takes the paint off). */
   function paintAt() {
+    if (stylePage === 'wall') { paintWallAt(); return; }
+    const field = stylePage === 'ceiling' ? 'careas' : 'areas', main = stylePage === 'ceiling' ? home.ceiling ?? 'ceil_plain' : home.floor;
     const p = stage.pointerOnPlane(0);
     if (!p || !brush) return;
     const cx = Math.floor((p.x / T) * SNAP), cz = Math.floor((p.z / T) * SNAP);
@@ -523,10 +576,10 @@ export function house(stage) {
     const here = fillArea(cx, cz, walls);
     if (!here) { sfx('error'); return; }
     // (whatever was painted in this room before goes)
-    home.areas = (home.areas ?? []).filter((a) => !here.has(`${Math.round(a.x * SNAP)}:${Math.round(a.y * SNAP)}`));
-    if (brush !== home.floor) {
-      if (home.areas.length >= MAX_AREAS) { toast(`You can paint up to ${MAX_AREAS} rooms.`, 'error'); return; }
-      home.areas.push({ f: brush, x: cx / SNAP, y: cz / SNAP });
+    home[field] = (home[field] ?? []).filter((a) => !here.has(`${Math.round(a.x * SNAP)}:${Math.round(a.y * SNAP)}`));
+    if (brush !== main) {
+      if (home[field].length >= MAX_AREAS) { toast(`You can paint up to ${MAX_AREAS} rooms.`, 'error'); return; }
+      home[field].push({ f: brush, x: cx / SNAP, y: cz / SNAP });
     }
     commit('paint');
   }
@@ -633,13 +686,24 @@ export function house(stage) {
     net.send('area_sit', { seat: null });
   }
 
+  /** Gojo: "Ryōiki Tenkai" (at the sound-effects volume; one at a time). */
+  let domainClip = null;
+  function domainExpansion() {
+    if (settings.muted) return;
+    domainClip?.pause();
+    domainClip = new Audio('sound/ryouiki_tenkai.mp3');
+    domainClip.volume = Math.min(1, settings.master * settings.sfx);
+    domainClip.play().catch(() => {});
+  }
+
   function useItem(entry) {
     entry.bounce = 0;
     const f = FURN[entry.it.id];
     if (seated) { standUp(); return; } // E again gets you up
     if (SEATS[entry.it.id] != null) { sit(entry); return; }
     entry.use?.();
-    if (f?.use) sfx(f.use);
+    if (f?.use === 'domain') domainExpansion();
+    else if (f?.use) sfx(f.use);
     if (f?.action === 'wardrobe') {
       if (mine()) setTimeout(() => window.dispatchEvent(new CustomEvent('fz:open', { detail: 'wardrobe' })), 250);
       else toast(`That's ${nameOf(viewKey)}'s wardrobe. Use the one in your own house!`);
@@ -1018,7 +1082,7 @@ export function house(stage) {
       if (type === 'up' && d && !d.moved && d.button === 2) { cancelWall(); return; }
     }
     if (type === 'move' && placing) { aimPlacement(); updateGhost(); }
-    if (paintMode && brush && !placing && tab === 'style' && stylePage === 'floor' && type === 'up' && d && !d.moved && d.button === 0) { paintAt(); return; }
+    if (paintMode && brush && !placing && tab === 'style' && PAINTABLE.has(stylePage) && type === 'up' && d && !d.moved && d.button === 0) { paintAt(); return; }
     if (type !== 'up' || !d || d.moved) return;
     if (d.button === 2) { rotate(); return; }
     if (placing) { aimPlacement(); updateGhost(); place(); return; }
@@ -1055,14 +1119,16 @@ export function house(stage) {
 
   function renderAll() {
     renderHeader();
-    side.classList.toggle('hidden', !sideOpen);
+    // while you're placing something the panels get out of the way, so you can see the whole room
+    side.classList.toggle('hidden', !sideOpen || !!placing);
+    $h('.house-bar').classList.toggle('hidden', !!placing);
     side.classList.toggle('wide', sideOpen && tab !== 'visit');
     if (sideOpen) { renderTabs(); renderPanel(); }
     hint.innerHTML = !home ? 'Knocking on the door…'
       : placing && isDragWall(placing.id) && placing.from < 0 ? (placing.start
         ? `Drag (or move and click) to where the wall ends · walls join up flush at corners · <kbd>Esc</kbd> to let go`
         : `Press on the floor where the wall starts and drag it out to any length (or click the start, then the end) · <kbd>Esc</kbd> when you're done`)
-      : paintMode && brush && tab === 'style' && stylePage === 'floor' ? `🪣 Click inside a room to paint its floor · <kbd>Esc</kbd> to stop`
+      : paintMode && brush && tab === 'style' && PAINTABLE.has(stylePage) ? `🪣 Click ${stylePage === 'wall' ? 'a wall' : 'inside a room'} to paint it · <kbd>Esc</kbd> to stop`
       : placing && isDoor(placing.id) ? 'Point at a wall you\'ve built and click to put the door in it · <kbd>Esc</kbd> to cancel'
       : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point anywhere on a wall (the house\'s or either side of one you\'ve built), as high or low as you like' : kindOf(placing.id) === 'ceiling' ? ' · it hangs above the green square · <kbd>[</kbd> <kbd>]</kbd> lower / raise it' : ''}`
         : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
@@ -1202,7 +1268,7 @@ export function house(stage) {
 
   function renderStyle() {
     const opt = (field) => (d) => `
-      <button class="style-opt ${(field === 'floor' && paintMode ? brush === d.id : home?.[field] === d.id && !preview[field]) ? 'on' : ''} ${isTrying(d.id) ? 'previewing' : ''} ${ownsDeco(d) ? '' : 'locked'}" data-style="${field}:${d.id}" title="${esc(d.name)}">
+      <button class="style-opt ${(PAINTABLE.has(field) && paintMode ? brush === d.id : home?.[field] === d.id && !preview[field]) ? 'on' : ''} ${isTrying(d.id) ? 'previewing' : ''} ${ownsDeco(d) ? '' : 'locked'}" data-style="${field}:${d.id}" title="${esc(d.name)}">
         <span class="style-sw" style="${decoBg(d.id)}"></span><span>${esc(d.name)}</span>
         <small>${ownsDeco(d) ? (home?.[field] === d.id ? '✓ Using' : 'Owned') : isTrying(d.id) ? '👀 Trying on' : `🪙 ${fmt(d.price)}`}</small></button>`;
     let body;
@@ -1223,11 +1289,17 @@ export function house(stage) {
     } else {
       // the ones you own first, then the rest by kind (tap one you don't own to try it on)
       const list = DECO_LISTS[stylePage];
-      const painting = stylePage === 'floor' && paintMode;
-      const paintBar = stylePage !== 'floor' ? '' : `<div class="shop-pages paint-bar">
-          <button data-paint="off" class="${painting ? '' : 'on'}">🏠 Whole house</button><button data-paint="on" class="${painting ? 'on' : ''}">🪣 Paint a room</button>
-          ${(home?.areas ?? []).length ? '<button data-paint="clear">✕ Clear painted rooms</button>' : ''}</div>
-        <p class="muted small">${painting ? (brush ? `Click inside a room to give it the <b>${esc(CATALOG.floors.find((x) => x.id === brush)?.name ?? '')}</b> floor. Pick the main floor to paint it back.` : 'Pick one of your floors, then click inside a room (a space closed off by your walls) to give it that floor.') : 'Pick the floor for the whole house. Use 🪣 Paint a room to give rooms like a bathroom their own floor.'}</p>`;
+      const painting = PAINTABLE.has(stylePage) && paintMode, walls = stylePage === 'wall';
+      const what = { floor: 'floor', ceiling: 'ceiling', wall: 'wallpaper' }[stylePage];
+      const painted = walls ? Object.keys(home?.wallp ?? {}).length : (home?.[stylePage === 'ceiling' ? 'careas' : 'areas'] ?? []).length;
+      const brushName = esc(list.find((x) => x.id === brush)?.name ?? '');
+      const paintBar = !PAINTABLE.has(stylePage) ? '' : `<div class="shop-pages paint-bar">
+          <button data-paint="off" class="${painting ? '' : 'on'}">🏠 Whole house</button><button data-paint="on" class="${painting ? 'on' : ''}">🪣 ${walls ? 'Paint one wall' : 'Paint a room'}</button>
+          ${painted ? `<button data-paint="clear">✕ Clear painted ${walls ? 'walls' : 'rooms'}</button>` : ''}</div>
+        <p class="muted small">${painting
+    ? (brush ? `Click ${walls ? 'a wall (either side of the ones you built, or the house walls)' : 'inside a room'} to give it the <b>${brushName}</b> ${what}. Pick the main one to paint it back.`
+      : `Pick one of your ${what}s, then click ${walls ? 'a wall' : 'inside a room (a space closed off by your walls)'} to give it that ${what}.`)
+    : `Pick the ${what} for the whole house. Use 🪣 to give ${walls ? 'single walls' : 'rooms like a bathroom'} their own ${what}.`}</p>`;
       const groupOf = (d) => (ownsDeco(d) ? '✓ Yours' : d.group ?? 'More');
       const sorted = [...list.filter(ownsDeco), ...list.filter((d) => !ownsDeco(d))];
       body = paintBar + jumpStrip([...new Set(sorted.map(groupOf))]) + shelves(sorted, groupOf, opt(stylePage), (g) => esc(g), 'style-grid');
@@ -1240,14 +1312,14 @@ export function house(stage) {
     if (!t) return;
     const ds = t.dataset;
     if (ds.paint) {
-      if (ds.paint === 'clear') { home.areas = []; commit('paint'); return; }
+      if (ds.paint === 'clear') { if (stylePage === 'wall') home.wallp = {}; else home[stylePage === 'ceiling' ? 'careas' : 'areas'] = []; commit('paint'); return; }
       paintMode = ds.paint === 'on';
       if (!paintMode) brush = null;
       renderAll();
       return;
     }
     if (ds.shopPage) { shopPage = ds.shopPage; confirmBuy = null; renderPanel(); panel.scrollTop = 0; return; }
-    if (ds.stylePage) { stylePage = ds.stylePage; confirmBuy = null; renderPanel(); panel.scrollTop = 0; return; }
+    if (ds.stylePage) { stylePage = ds.stylePage; confirmBuy = null; brush = null; renderAll(); panel.scrollTop = 0; return; }
     if (ds.jump) { panel.querySelector(`#${ds.jump}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (ds.size) { resize(ds.size); return; }
     if (ds.previewBuy != null) {
@@ -1298,7 +1370,7 @@ export function house(stage) {
       const [field, id] = ds.style.split(':');
       const d = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings, ...CATALOG.doors].find((x) => x.id === id);
       if (!ownsDeco(d)) { setPreview(field, id); sfx('pop', { vol: 0.4 }); renderPanel(); return; }
-      if (field === 'floor' && paintMode) { brush = id; sfx('click'); renderAll(); return; }
+      if (PAINTABLE.has(field) && paintMode) { brush = id; sfx('click'); renderAll(); return; }
       if (preview[field]) setPreview(field, null);
       if (home[field] !== id) { home[field] = id; commit('paint'); } else renderPanel();
     }
@@ -1430,7 +1502,7 @@ export function house(stage) {
         if (echoes > 0 || saveTimer) { home.likes = m.house.likes; renderHeader(); return; }
       }
       const fresh = !home;
-      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', size: m.house.size ?? [14, 14], items: m.house.items, areas: m.house.areas ?? [] });
+      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', size: m.house.size ?? [14, 14], items: m.house.items, areas: m.house.areas ?? [], careas: m.house.careas ?? [], wallp: m.house.wallp ?? {} });
       const newLikes = home && m.house.likes.length > home.likes.length;
       if (same) home.likes = m.house.likes;
       else {

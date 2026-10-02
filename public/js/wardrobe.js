@@ -82,7 +82,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
   const pctx = hiDpiCanvas(canvas, PW, PH);
 
   // live 3D preview: spins slowly, drag to turn the character
-  let yaw = 0.5, spin = 0.5, dragX = null;
+  let yaw = 0.5, spin = 0, dragX = null; // (no auto-spin: drag to turn)
   canvas.style.cursor = 'grab';
   canvas.onpointerdown = (e) => { dragX = e.clientX; spin = 0; canvas.setPointerCapture(e.pointerId); };
   canvas.onpointermove = (e) => {
@@ -90,7 +90,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
     yaw += (e.clientX - dragX) * 0.012;
     dragX = e.clientX;
   };
-  canvas.onpointerup = () => { dragX = null; setTimeout(() => { if (dragX == null) spin = 0.5; }, 2500); };
+  canvas.onpointerup = () => { dragX = null; }
 
   const stopPreview = loop((dt, now) => {
     yaw += spin * dt;

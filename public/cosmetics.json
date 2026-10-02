@@ -301,6 +301,7 @@
     { "id": "aura_abyss", "slot": "aura", "name": "Abyssal Depths", "rarity": "legendary", "unlock": { "stat": "dungeonBest", "min": 15, "hint": "Reach dungeon floor 15" } },
     { "id": "aura_storm", "slot": "aura", "name": "Stormborn", "rarity": "mythic", "unlock": { "stat": "mythic", "min": 1, "hint": "Catch a mythic fish" } },
     { "id": "aura_og", "slot": "aura", "name": "OG Tester", "rarity": "exclusive", "exclusive": true, "tint": true },
+    { "id": "aura_dev", "slot": "aura", "name": "Developer", "rarity": "exclusive", "exclusive": true },
 
     { "id": "pet_none", "slot": "pet", "name": "No Pet", "rarity": "common", "free": true },
     { "id": "pet_puppy", "slot": "pet", "name": "Puppy", "rarity": "common", "price": 2250, "petRoll": true },
@@ -432,7 +433,7 @@
     { "id": "coat_rack", "name": "Coat Rack", "emoji": "🧥", "w": 1, "d": 1, "price": 110, "use": "rustle" },
     { "id": "book_stack", "name": "Stack of Books", "emoji": "📚", "w": 1, "d": 1, "price": 40, "use": "thud" },
     { "id": "deer_mount", "name": "Deer Head Mount", "emoji": "🦌", "w": 1, "d": 1, "kind": "wall", "price": 380, "set": "Wall decor", "use": "pop", "wh": 0.8 },
-    { "id": "cutout_gojo", "name": "Gojo Cardboard Cutout", "emoji": "🤞", "w": 1, "d": 1, "exclusive": true, "max": 1, "use": "pop" },
+    { "id": "cutout_gojo", "name": "Gojo Cardboard Cutout", "emoji": "🤞", "w": 1, "d": 1, "exclusive": true, "max": 1, "use": "domain" },
     { "id": "log_bench", "name": "Log Bench", "emoji": "🪵", "w": 2, "d": 1, "price": 260, "set": "Nature", "use": "squish" },
     { "id": "stump_table", "name": "Tree Stump Table", "emoji": "🪵", "w": 1, "d": 1, "price": 160, "set": "Nature", "use": "thud" },
     { "id": "stump_stool", "name": "Stump Stool", "emoji": "🪵", "w": 1, "d": 1, "price": 80, "set": "Nature", "use": "squish" },

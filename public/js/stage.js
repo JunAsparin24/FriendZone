@@ -488,7 +488,6 @@ class Stage {
     if (!it) return false;
     const me = this.people.get(S.me);
     if (me && Math.hypot(me.x - it.x, me.z - it.z) < it.r + 3) it.use();
-    else if (this.walkTo) this.walkTo(it);
     return true;
   }
 
@@ -519,8 +518,7 @@ class Stage {
       if (type !== 'up' || !d || d.moved || d.button !== 0) return;
       const objs = this.interactables.filter((i) => i.obj).map((i) => i.obj);
       if (objs.length && this.pick(objs).length) return; // clickInteract handles that
-      const p = this.pointerOnPlane(0);
-      if (p) target = { x: p.x, z: p.z, stopAt: 0.2 };
+      // (no walking by tapping the floor: move with the keys or the stick)
     };
     const offs = [
       net.on('area', (m) => {

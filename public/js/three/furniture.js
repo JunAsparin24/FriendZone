@@ -1431,16 +1431,27 @@ Object.assign(FURNITURE, {
   wdoor_wood(g, A, { len = 1.25 } = {}) { doorFrame(g, len); return doorPanel(g, A, 'wood', len); },
   wdoor_glass(g, A, { len = 1.25 } = {}) { doorFrame(g, len); return doorPanel(g, A, 'glass', len); },
   wdoor_barn(g, A, { len = 1.25 } = {}) { doorFrame(g, len); return doorPanel(g, A, 'barn', len); },
+  wdoor_white(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#f4f0ea'); return doorPanel(g, A, 'white', len); },
+  wdoor_red(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#f4f0ea'); return doorPanel(g, A, 'red', len); },
+  wdoor_shoji(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#6b4226'); return doorPanel(g, A, 'shoji', len); },
+  wdoor_saloon(g, A, { len = 1.25 } = {}) { doorFrame(g, len); return doorPanel(g, A, 'saloon', len); },
+  wdoor_beads(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#c9955a'); beadCurtain(g, A, len); },
+  wdoor_round(g, A, { len = 1.25 } = {}) { archway(g, len, 'round'); },
+  wdoor_stone(g, A, { len = 1.25 } = {}) { archway(g, len, 'stone'); },
+  wdoor_wide(g, A, { len = 2.5 } = {}) { doorFrame(g, len); },
+  // half walls, drawn out like walls: one up from the floor (a divider), one hanging from the ceiling
+  room_halfwall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps, top: HALF_H }); },
+  room_hangwall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps, bottom: ROOM_H - HANG_H }); },
   // (older houses' doorways, each in its own short stretch of wall)
   room_doorway(g) { roomWall(g, 2, { openings: [[-0.5, 0.5]] }); doorFrame(g, 1); },
   room_door(g, A) { roomWall(g, 2, { openings: [[-0.5, 0.5]] }); doorFrame(g, 1); return doorPanel(g, A, 'wood', 1); },
   room_door_glass(g, A) { roomWall(g, 2, { openings: [[-0.5, 0.5]] }); doorFrame(g, 1); return doorPanel(g, A, 'glass', 1); },
   room_door_barn(g, A) { roomWall(g, 2, { openings: [[-0.5, 0.5]] }); doorFrame(g, 1); return doorPanel(g, A, 'barn', 1); },
 });
-const ROOM_H = 3.2, ROOM_T = 0.25, DOOR_H = 2.2; // (the house's wall height, how thick these walls are: their whole footprint, so they meet flush; how tall a door is)
+const ROOM_H = 3.2, ROOM_T = 0.25, DOOR_H = 2.2, HALF_H = 1.3, HANG_H = 1.0; // (the house's wall height, how thick these walls are: their whole footprint, so they meet flush; how tall a door is)
 /** The wooden frame round a door opening `w` wide. */
-function doorFrame(g, w) {
-  const wood = toon(WOOD);
+function doorFrame(g, w, color = WOOD) {
+  const wood = toon(color);
   for (const s of [-1, 1]) add(g, box(0.08, DOOR_H, ROOM_T + 0.06), wood, { p: [s * (w / 2 - 0.04), DOOR_H / 2, 0] });
   add(g, box(w + 0.08, 0.08, ROOM_T + 0.06), wood, { p: [0, DOOR_H, 0] });
 }
@@ -1451,7 +1462,14 @@ function doorPanel(g, A, style, w) {
   g.add(pivot);
   const panel = new THREE.Group();
   pivot.add(panel);
-  if (style === 'barn') {
+  if (style === 'shoji') {
+    // a Japanese sliding screen: a dark wooden lattice over paper, sliding into the wall
+    const paperMat = toon('#fbf6e8');
+    add(panel, box(W, H, 0.03), paperMat, { p: [0, H / 2, 0] });
+    const lat = toon('#5a3a22');
+    for (let k = 0; k <= 3; k++) add(panel, box(0.03, H, 0.045), lat, { p: [-W / 2 + (k / 3) * W, H / 2, 0], outline: false });
+    for (let k = 0; k <= 6; k++) add(panel, box(W, 0.03, 0.045), lat, { p: [0, (k / 6) * H, 0], outline: false });
+  } else if (style === 'barn') {
     // a sliding barn door on a rail across the front of the wall
     pivot.position.set(0, 0, ROOM_T / 2 + 0.06);
     add(g, box(w * 2 + 0.1, 0.06, 0.06), toon('#2b2f4a'), { p: [0, H + 0.12, ROOM_T / 2 + 0.06] });
@@ -1463,17 +1481,30 @@ function doorPanel(g, A, style, w) {
   } else {
     // a hinged door on the left of the opening, swinging away from you
     pivot.position.set(-W / 2, 0, 0);
-    const wood = style === 'glass' ? toon('#f4f2ee') : toon('#a8723f');
-    if (style === 'glass') {
+    const wood = toon({ glass: '#f4f2ee', white: '#fbfaf6', red: '#c8243a' }[style] ?? '#a8723f');
+    if (style === 'saloon') {
+      // two short swing doors, one each side, slatted
+      pivot.position.set(-W / 2, 0, 0);
+      const half = W / 2 - 0.02;
+      add(panel, box(half, 0.9, T), toon('#a8723f'), { p: [half / 2, 1.15, 0] });
+      for (let k = 0; k < 4; k++) add(panel, box(half - 0.12, 0.05, T + 0.02), toon('#7a4a28'), { p: [half / 2, 0.85 + k * 0.2, 0], outline: false });
+      const pivot2 = new THREE.Group();
+      pivot2.position.set(W / 2, 0, 0);
+      g.add(pivot2);
+      add(pivot2, box(half, 0.9, T), toon('#a8723f'), { p: [-half / 2, 1.15, 0] });
+      for (let k = 0; k < 4; k++) add(pivot2, box(half - 0.12, 0.05, T + 0.02), toon('#7a4a28'), { p: [-half / 2, 0.85 + k * 0.2, 0], outline: false });
+      A.second = pivot2;
+    } else if (style === 'glass') {
       // a french door: a white frame round glass panes
       const glass = new THREE.MeshStandardMaterial({ color: '#cfefff', transparent: true, opacity: 0.35, roughness: 0.05, depthWrite: false });
       for (const [bw, bh, x, y] of [[W, 0.1, W / 2, 0.05], [W, 0.1, W / 2, H - 0.05], [0.1, H, 0.05, H / 2], [0.1, H, W - 0.05, H / 2], [W, 0.06, W / 2, 0.75], [W, 0.06, W / 2, 1.45], [0.06, H, W / 2, H / 2]]) add(panel, box(bw, bh, T), wood, { p: [x, y, 0], outline: false });
       add(panel, box(W - 0.1, H - 0.1, 0.02), glass, { p: [W / 2, H / 2, 0], outline: false });
     } else {
       add(panel, box(W, H, T), wood, { p: [W / 2, H / 2, 0] });
-      for (const y of [0.55, 1.5]) add(panel, box(W * 0.7, 0.6, T + 0.02), toon('#96632f'), { p: [W / 2, y, 0], outline: false });
+      const inset = toon({ white: '#efebe2', red: '#b01e32' }[style] ?? '#96632f');
+      for (const y of [0.55, 1.5]) add(panel, box(W * 0.7, 0.6, T + 0.02), inset, { p: [W / 2, y, 0], outline: false });
     }
-    for (const z of [-1, 1]) add(panel, sph(0.045, 10, 8), shiny('#ffd84d'), { p: [W - 0.12, 1.0, z * (T / 2 + 0.03)], outline: false });
+    if (style !== 'saloon') for (const z of [-1, 1]) add(panel, sph(0.045, 10, 8), shiny(style === 'white' ? '#c8ced8' : '#ffd84d'), { p: [W - 0.12, 1.0, z * (T / 2 + 0.03)], outline: false });
   }
   // A.open (0..1) is how far it should be open; the house sets it when someone's near
   let cur = 0, side = 1;
@@ -1483,11 +1514,56 @@ function doorPanel(g, A, style, w) {
     const want = A.open;
     if (want > 0 && cur < 0.05) side = A.side; // swing away from whoever's coming through
     cur += (want - cur) * Math.min(1, dt * 7);
-    if (style === 'barn') pivot.position.x = -cur * (W + 0.05);
+    if (style === 'barn' || style === 'shoji') pivot.position.x = -cur * (W + 0.05);
     else pivot.rotation.y = side * cur * 1.55;
+    if (A.second) A.second.rotation.y = -side * cur * 1.55;
     return false;
   });
   return {};
+}
+/** Strings of beads across a doorway that sway as you walk through. */
+function beadCurtain(g, A, w) {
+  const cols = ['#ff5d73', '#ffd84d', '#39c6ff', '#6ee7a0', '#e57bff'];
+  const strings = [];
+  const n = Math.round(w * 9);
+  for (let i = 0; i < n; i++) {
+    const s = new THREE.Group();
+    s.position.set(-w / 2 + 0.08 + (i / (n - 1)) * (w - 0.16), DOOR_H - 0.05, 0);
+    g.add(s);
+    for (let k = 0; k < 11; k++) add(s, sph(0.025, 6, 5), toon(cols[(i + k) % cols.length]), { p: [0, -0.06 - k * 0.19, 0], outline: false });
+    strings.push(s);
+  }
+  A.open = 0;
+  A.side = 1;
+  let cur = 0;
+  A.anim.push((t, dt) => {
+    cur += (A.open - cur) * Math.min(1, dt * 5);
+    strings.forEach((s, i) => { s.rotation.x = A.side * cur * 0.7 * (0.7 + Math.sin(i * 1.7) * 0.3) + Math.sin(t * 3 + i) * 0.03 * cur; });
+    return false;
+  });
+}
+/** An open archway: a frame with the top corners filled in with wall (round), or a stone surround. */
+function archway(g, w, style) {
+  if (style === 'stone') {
+    const stone = toon('#b8b2a6'), dark = toon('#9a9488');
+    for (const s of [-1, 1]) for (let k = 0; k < 5; k++) add(g, box(k % 2 ? 0.2 : 0.26, DOOR_H / 5 - 0.02, ROOM_T + 0.08), k % 2 ? dark : stone, { p: [s * (w / 2 - 0.1), (k + 0.5) * (DOOR_H / 5), 0] });
+    for (let k = 0; k < 5; k++) add(g, box((w + 0.3) / 5 - 0.02, 0.22, ROOM_T + 0.08), k === 2 ? dark : stone, { p: [-w / 2 - 0.15 + (k + 0.5) * ((w + 0.3) / 5), DOOR_H + 0.08, 0] });
+    return;
+  }
+  // round: the wall comes down into a curve across the top of the opening, with a wooden trim round it
+  const r = w / 2, rise = Math.min(0.55, r);
+  const shape = new THREE.Shape();
+  shape.moveTo(-r, DOOR_H); shape.lineTo(-r, DOOR_H - rise);
+  for (let k = 0; k <= 16; k++) { const a = Math.PI - (k / 16) * Math.PI; shape.lineTo(Math.cos(a) * r, DOOR_H - rise + Math.sin(a) * rise); }
+  shape.lineTo(r, DOOR_H); shape.lineTo(-r, DOOR_H);
+  const fill = new THREE.ExtrudeGeometry(shape, { depth: ROOM_T - 0.01, bevelEnabled: false });
+  fill.translate(0, 0, -(ROOM_T - 0.01) / 2);
+  const m = add(g, fill, toon('#fff1d6', { side: THREE.DoubleSide }), { outline: false });
+  m.userData.wallpaper = true; // (papered like the wall it's in)
+  const trim = toon(WOOD);
+  for (const s of [-1, 1]) add(g, box(0.07, DOOR_H - rise, ROOM_T + 0.05), trim, { p: [s * (r - 0.035), (DOOR_H - rise) / 2, 0] });
+  const curve = new THREE.CatmullRomCurve3(Array.from({ length: 17 }, (_, k) => { const a = Math.PI - (k / 16) * Math.PI; return new THREE.Vector3(Math.cos(a) * (r - 0.035), DOOR_H - rise + Math.sin(a) * (rise - 0.035), 0); }));
+  for (const z of [-1, 1]) add(g, new THREE.TubeGeometry(curve, 24, 0.035, 6), trim, { p: [0, 0, z * (ROOM_T / 2)], outline: false });
 }
 /** A papered face: the wallpaper repeats every 2 tiles across, and is pinned to the floor going up
  *  (y0: how high its bottom edge is), so it lines up with the room's own walls. */
@@ -1503,7 +1579,7 @@ function papered(w, h, y0 = 0) {
  * A stretch of wall `w` long, papered on both faces (and on any open end), with no outlines, so walls
  * that meet run on into each other as one. Openings leave a door-sized gap with wall above it.
  */
-function roomWall(g, w, { openings = [], caps = [true, true] } = {}) {
+function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = ROOM_H } = {}) {
   const core = toon('#e8d6b8'), trim = toon('#f4f0ff'), paper = toon('#fff1d6', { side: THREE.DoubleSide });
   const paperAt = (geom, p, ry, face) => { const m = add(g, geom, paper, { p, r: [0, ry, 0], outline: false }); m.userData.wallpaper = true; m.userData.face = face; };
   // one solid stretch from x0 to x1, y0 to y1
@@ -1519,17 +1595,20 @@ function roomWall(g, w, { openings = [], caps = [true, true] } = {}) {
   const gaps = openings.map(([a, b]) => [Math.max(-w / 2, a), Math.min(w / 2, b)]).filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]);
   let x = -w / 2;
   for (const [a, b] of gaps) {
-    piece(x, a, 0, ROOM_H);
-    piece(a, b, DOOR_H, ROOM_H); // the wall above the door
+    piece(x, a, bottom, top);
+    if (top > DOOR_H) piece(a, b, Math.max(bottom, DOOR_H), top); // the wall above the door
     x = b;
   }
-  piece(x, w / 2, 0, ROOM_H);
+  piece(x, w / 2, bottom, top);
+  // a half wall's open edge gets a wooden cap (the top of a divider, the bottom of one hanging down)
+  if (top < ROOM_H) add(g, box(w + 0.02, 0.07, ROOM_T + 0.08), toon(WOOD), { p: [0, top, 0], outline: false });
+  if (bottom > 0) add(g, box(w + 0.02, 0.07, ROOM_T + 0.08), toon(WOOD), { p: [0, bottom, 0], outline: false });
   // open ends get papered (and skirting) too, so a wall never shows a bare edge
   caps.forEach((on, i) => {
     if (!on) return;
     const s = i ? 1 : -1;
-    paperAt(papered(ROOM_T, ROOM_H, 0), [s * (w / 2 + 0.001), ROOM_H / 2, 0], s * Math.PI / 2, s > 0 ? 1 : 3);
-    add(g, box(0.05, 0.16, ROOM_T + 0.09), trim, { p: [s * (w / 2 + 0.02), 0.08, 0], outline: false });
+    paperAt(papered(ROOM_T, top - bottom, bottom), [s * (w / 2 + 0.001), (bottom + top) / 2, 0], s * Math.PI / 2, s > 0 ? 1 : 3);
+    if (bottom === 0) add(g, box(0.05, 0.16, ROOM_T + 0.09), trim, { p: [s * (w / 2 + 0.02), 0.08, 0], outline: false });
   });
 }
 
@@ -1686,7 +1765,90 @@ const OWN_DROP = new Set(['hanging_plant', 'hanging_plant_short', 'hanging_plant
 
 /** Build a piece of furniture. Returns { group, use, anim }. `drop`: how far below the ceiling a
  *  hanging thing has been let down (it stays tied to the ceiling). */
-export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true] } = {}) {
+const FURN_DATA = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
+const recolorCache = new Map();
+/**
+ * Recolour a piece: find its main colour (the colourful one used on the most parts) and move it, and every
+ * shade of the same hue (darker trims, lighter cushions), to the new colour. Wood, metal and whites stay.
+ */
+/** The most common colourful hue in a canvas texture (sampled), as HSL. */
+function textureHue(img) {
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const x = c.getContext('2d'); x.drawImage(img, 0, 0, 32, 32);
+  const d = x.getImageData(0, 0, 32, 32).data, bins = new Map(), col = new THREE.Color();
+  for (let i = 0; i < d.length; i += 4) {
+    col.setRGB(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
+    const hsl = col.getHSL({});
+    if (d[i + 3] < 128 || hsl.s < 0.25 || hsl.l > 0.92 || hsl.l < 0.1) continue;
+    const k = Math.round(hsl.h * 24) % 24;
+    const b = bins.get(k) ?? { n: 0, s: 0, l: 0 };
+    b.n++; b.s += hsl.s; b.l += hsl.l;
+    bins.set(k, b);
+  }
+  if (!bins.size) return null;
+  const [k, b] = [...bins].sort((p, q) => q[1].n - p[1].n)[0];
+  return { h: k / 24, s: b.s / b.n, l: b.l / b.n };
+}
+/** A textured piece (rugs, mats): the picture hue-shifted (and lightened/darkened) towards the new colour. */
+function recolorTexture(mat, to) {
+  const key = `${mat.map.uuid}${to}`;
+  if (!recolorCache.has(key)) {
+    const img = mat.map.image, from = img && textureHue(img);
+    if (!from) { recolorCache.set(key, mat); return mat; }
+    const t = new THREE.Color(to).getHSL({});
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d');
+    // (gently: whites stay white and the colours stay rich, it's mostly the hue that moves)
+    x.filter = `hue-rotate(${Math.round((t.h - from.h) * 360)}deg) saturate(${Math.max(0.75, Math.min(2.2, t.s / Math.max(0.05, from.s))).toFixed(2)}) brightness(${Math.max(0.6, Math.min(1.3, (t.l + 0.35) / (from.l + 0.35))).toFixed(2)})`;
+    x.drawImage(img, 0, 0);
+    const tex = mat.map.clone();
+    tex.image = c;
+    tex.needsUpdate = true;
+    const m = mat.clone();
+    m.map = tex;
+    recolorCache.set(key, m);
+  }
+  return recolorCache.get(key);
+}
+function recolor(group, to, from = null) {
+  const target = new THREE.Color(to).getHSL({});
+  const mats = [];
+  group.traverse((o) => { if (o.isMesh && !o.userData.outline && o.material?.color && !o.material.map) mats.push(o); });
+  // pieces whose colour is in their texture (rugs, mats) get the texture shifted instead
+  const textured = [];
+  group.traverse((o) => { if (o.isMesh && !o.userData.outline && o.material?.map?.image?.getContext) textured.push(o); });
+  const count = new Map();
+  for (const o of mats) {
+    const hsl = o.material.color.getHSL({});
+    if (hsl.s < 0.18 || hsl.l > 0.93 || hsl.l < 0.08) continue; // (greys, whites and near-blacks aren't "the colour")
+    const k = o.material.color.getHex();
+    count.set(k, (count.get(k) ?? 0) + 1);
+  }
+  if (!count.size || (textured.length && !from)) {
+    // (no plain colourful parts, or the colour lives in a texture: shift the texture)
+    for (const o of textured) o.material = recolorTexture(o.material, to);
+    if (!count.size) return;
+    if (textured.length) return;
+  }
+  const main = new THREE.Color(from ?? [...count].sort((a, b) => b[1] - a[1])[0][0]).getHSL({});
+  const near = (h) => Math.min(Math.abs(h - main.h), 1 - Math.abs(h - main.h)) < 0.07;
+  for (const o of mats) {
+    const hsl = o.material.color.getHSL({});
+    if (hsl.s < 0.18 || !near(hsl.h)) continue;
+    const key = `${o.material.uuid}${to}`;
+    if (!recolorCache.has(key)) {
+      const m = o.material.clone();
+      m.color.setHSL(target.h, Math.min(1, hsl.s * (target.s / Math.max(0.05, main.s))), Math.max(0.04, Math.min(0.96, hsl.l + (target.l - main.l))));
+      recolorCache.set(key, m);
+    }
+    o.material = recolorCache.get(key);
+  }
+}
+
+/** color: recolour it (pieces you can recolour, and colour variants of other pieces, which name a base). */
+export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true], color = null } = {}) {
+  const data = FURN_DATA[id];
+  if (data?.base) return buildFurniture(data.base, { drop, len, openings, caps, color: color ?? data.color });
   const group = new THREE.Group();
   const A = { anim: [] };
   let target = group;
@@ -1697,6 +1859,7 @@ export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [t
     add(group, cyl(0.012, 0.012, drop, 5), toon('#3a3f5a'), { p: [0, -drop / 2, 0], outline: false });
   }
   const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps } : undefined) ?? {};
+  if (color) recolor(group, color, data?.recolorFrom ?? null); // (recolorFrom: which colour is the one to change)
   return { group, use: res.use ?? null, anim: A.anim, A };
 }
 
@@ -2210,6 +2373,10 @@ function decoDraw(d, kind) {
       paint: (x) => { x.fillStyle = c; x.fillRect(0, 0, 256, 256); x.fillStyle = 'rgba(255,255,255,.05)'; for (let i = 0; i < 6; i++) x.fillRect(i * 48, 0, 20, 256); },
     },
     ceiling: {
+      coffered: (x) => { x.fillStyle = c; x.fillRect(0, 0, 256, 256); for (let yy = 0; yy < 256; yy += 64) for (let xx = 0; xx < 256; xx += 64) { x.fillStyle = shade(c, -0.08); x.fillRect(xx + 8, yy + 8, 48, 48); x.fillStyle = shade(c, -0.14); x.fillRect(xx + 14, yy + 14, 36, 36); } },
+      planks: (x) => planks(x, c),
+      tiles: (x) => squareTiles(x, 4, [c, shade(c, 0.05)], c2 ?? shade(c, -0.2), 2.5),
+      stars: (x) => { x.fillStyle = c; x.fillRect(0, 0, 256, 256); const rnd = prng(17); for (let i = 0; i < 70; i++) { x.fillStyle = i % 6 ? '#ffffff' : (c2 ?? '#ffd84d'); x.beginPath(); x.arc(rnd() * 256, rnd() * 256, i % 6 ? 1.2 : 2.6, 0, TAU); x.fill(); } },
       beams: (x) => { plainWall(x, c); for (let k = 0; k < 256; k += 64) { x.fillStyle = c2 ?? '#6e4424'; x.fillRect(k, 0, 18, 256); x.fillStyle = 'rgba(0,0,0,.2)'; x.fillRect(k + 14, 0, 4, 256); } },
     },
   };
@@ -2230,6 +2397,38 @@ function plainWall(ctx, color) {
 }
 
 const CEIL_DRAW = {
+  ceil_galaxy(ctx) {
+    const g = ctx.createRadialGradient(90, 110, 10, 128, 128, 200);
+    g.addColorStop(0, '#b25bff'); g.addColorStop(0.35, '#4a2a9a'); g.addColorStop(0.7, '#1a1a4a'); g.addColorStop(1, '#0d0d26');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = 'rgba(255,120,220,.18)'; ctx.beginPath(); ctx.ellipse(170, 170, 70, 30, 0.6, 0, TAU); ctx.fill();
+    const rnd = prng(23);
+    for (let i = 0; i < 90; i++) { ctx.fillStyle = i % 9 ? 'rgba(255,255,255,.9)' : '#9fe8ff'; ctx.beginPath(); ctx.arc(rnd() * 256, rnd() * 256, i % 9 ? 1 : 2.4, 0, TAU); ctx.fill(); }
+  },
+  ceil_sunset(ctx) {
+    const g = ctx.createLinearGradient(0, 0, 256, 256);
+    g.addColorStop(0, '#ff7a59'); g.addColorStop(0.5, '#ffb36b'); g.addColorStop(1, '#c86bd0');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = 'rgba(255,240,220,.55)';
+    for (const [x, y, r] of [[50, 80, 22], [75, 74, 18], [190, 180, 26], [215, 172, 20]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+  },
+  ceil_clouds(ctx) {
+    ctx.fillStyle = '#9fd4ff'; ctx.fillRect(0, 0, 256, 256);
+    const rnd = prng(41);
+    for (let i = 0; i < 9; i++) { const x = rnd() * 256, y = rnd() * 256; ctx.fillStyle = 'rgba(255,255,255,.92)'; for (let k = 0; k < 5; k++) { ctx.beginPath(); ctx.arc(x + k * 13 - 26, y + Math.sin(k) * 6, 14 + (k % 2) * 5, 0, TAU); ctx.fill(); } }
+  },
+  ceil_rainbow(ctx) {
+    ['#ff8a8a', '#ffc27a', '#fff09a', '#a8f0a0', '#9fd8ff', '#c8a8ff'].forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(0, (i * 256) / 6, 256, 256 / 6 + 1); });
+  },
+  ceil_stained(ctx) {
+    ctx.fillStyle = '#2b2f4a'; ctx.fillRect(0, 0, 256, 256);
+    const cols = ['#ff5d73', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff'];
+    for (let yy = 0; yy < 4; yy++) for (let xx = 0; xx < 4; xx++) {
+      ctx.fillStyle = cols[(xx * 3 + yy * 2) % 5];
+      ctx.beginPath(); ctx.moveTo(xx * 64 + 32, yy * 64 + 4); ctx.lineTo(xx * 64 + 60, yy * 64 + 32); ctx.lineTo(xx * 64 + 32, yy * 64 + 60); ctx.lineTo(xx * 64 + 4, yy * 64 + 32); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.15)'; for (let i = 0; i < 16; i++) ctx.fillRect((i % 4) * 64 + 20, Math.floor(i / 4) * 64 + 16, 8, 14);
+  },
   ceil_forest(ctx) { plainWall(ctx, '#2c5238'); },
   ceil_walnut(ctx) {
     for (let x = 0; x < 256; x += 32) { ctx.fillStyle = (x / 32) % 2 ? '#523422' : '#46291a'; ctx.fillRect(x, 0, 30, 256); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(x + 30, 0, 2, 256); }

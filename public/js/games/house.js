@@ -62,6 +62,12 @@ const SEATS = {
   gaming_chair: { top: 0.56, front: 0.25 }, log_bench: { top: 0.62, front: 0.2, n: 2 }, stump_stool: { top: 0.46, front: 0.1 },
   sofa_green: { top: 0.53, front: 0.41, n: 2 }, armchair_green: { top: 0.53, front: 0.41 }, hammock: { top: 0.62, front: 0 }, piano_bench: { top: 0.53, front: 0.19 }, toilet: { top: 0.52, front: 0.28 },
 };
+// colour variants (the Ocean sofa…) sit, and lie, just like the piece they're a colour of
+for (const f of CATALOG.furniture) {
+  if (!f.base) continue;
+  if (SEATS[f.base]) SEATS[f.id] = SEATS[f.base];
+  if (BEDS.has(f.base)) BEDS.add(f.id);
+}
 // pictures of the real thing: a 3D snapshot of furniture, the actual texture for floors and walls
 const furniImg = (id) => `<img class="fem-img" src="${furnitureThumb(id)}" alt="">`;
 const decoBg = (id) => (id.startsWith('door_') ? `background:url(${doorImage(id)}) center/cover` : `background:url(${surfaceImage(id)}) center/cover, ${SWATCH[id] ?? '#888'}`);
@@ -129,7 +135,8 @@ function groundCells(it) {
 /** Every cell covered by a wall you've built (leaving one item out). */
 function roomWallCells(items, skip = -1) {
   const set = new Set();
-  items.forEach((o, i) => { if (i !== skip && FURN[o.id]?.room && !isDoor(o.id)) groundCells(o).forEach((c) => set.add(c)); });
+  // (a wall hanging from the ceiling doesn't split the floor into rooms)
+  items.forEach((o, i) => { if (i !== skip && FURN[o.id]?.room && !isDoor(o.id) && FURN[o.id].wallH !== 'hang') groundCells(o).forEach((c) => set.add(c)); });
   return set;
 }
 /**
@@ -140,7 +147,7 @@ function wallHost(it, items, skip = -1) {
   const f = FURN[it.id], horiz = it.r % 2 === 0, face = horiz ? it.y : it.x, start = horiz ? it.x : it.y;
   const low = (it.h ?? 1.75) - (f.wh ?? 1) / 2;
   return items.findIndex((w, i) => {
-    if (i === skip || !isDragWall(w.id) || (w.r % 2 === 0) !== horiz) return false;
+    if (i === skip || !isDragWall(w.id) || FURN[w.id].wallH || (w.r % 2 === 0) !== horiz) return false; // (full-height walls only)
     const wf = horiz ? w.y : w.x, ws = horiz ? w.x : w.y;
     if (Math.abs(face - wf) > 1e-6 && Math.abs(face - (wf + 0.25)) > 1e-6) return false;
     if (start < ws - 1e-6 || start + f.w > ws + lenOf(w) + 1e-6) return false;
@@ -399,7 +406,7 @@ export function house(stage) {
   const mine = () => viewKey === S.me;
   const payload = () => ({
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
-    items: home.items.map(({ id, x, y, r, h, l, iw, dg }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}) })),
+    items: home.items.map(({ id, x, y, r, h, l, iw, dg, c }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}) })),
     areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {},
   });
 
@@ -423,7 +430,7 @@ export function house(stage) {
       return;
     }
     const [w, d] = footprint(it);
-    g.position.set(it.x + w / 2, kindOf(it.id) === 'ceiling' ? WALL_H : 0, it.y + d / 2);
+    g.position.set(it.x + w / 2, kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? WALL_H : 0, it.y + d / 2); // (a hanging wall is built at its own height)
     g.rotation.y = angleOf(it);
   }
 
@@ -434,7 +441,7 @@ export function house(stage) {
     const walls = roomWallCells(home.items);
     entries = home.items.map((it, index) => {
       const layout = isDragWall(it.id) ? wallLayout(it, home.items, walls) : null;
-      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps });
+      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null });
       built.group.userData.index = index;
       placeGroup(built.group, it);
       built.group.visible = !(placing && placing.from === index);
@@ -447,13 +454,15 @@ export function house(stage) {
       const cz = kind === 'wall' ? (it.iw ? [it.y + 0.6, it.y + half, it.y - 0.6, it.y + half][wr] : [0.6, it.y + half, NZ - 0.6, it.y + half][wr]) : it.y + d / 2;
       const f0 = FURN[it.id];
       if (isDoor(it.id)) {
-        // a door in a wall: you walk through it (it opens for you)
+        // a door in a wall: you walk through it (it opens for you); an archway's curve is papered like the wall
+        built.group.traverse((o) => { if (o.userData.wallpaper) o.material = room.wallMat; });
       } else if (f0.room) {
         // walls you build inside: papered like the room, and solid right up to their ends (but not
         // through the doors in them)
         built.group.traverse((o) => { if (o.userData.wallpaper) o.material = room.wallMat; });
         entry.roomWall = true;
-        if (layout) {
+        if (layout && f0.wallH === 'hang') entry.roomWall = 'hang'; // (overhead: you walk under it)
+        else if (layout) {
           for (const [a, b] of layout.segs) {
             if (w >= d) solids.push({ x: ((a + b) / 2) * T, z: cz * T, w: (b - a) * T + 0.1, d: d * T + 0.1 });
             else solids.push({ x: cx * T, z: ((a + b) / 2) * T, w: w * T + 0.1, d: (b - a) * T + 0.1 });
@@ -731,7 +740,7 @@ export function house(stage) {
     if (ghost) room.group.remove(ghost);
     ghost = null;
     if (!placing) { room.marker.visible = false; return; }
-    ghost = buildFurniture(placing.id, { drop: kindOf(placing.id) === 'ceiling' ? heightOf(placing) : 0, len: isDragWall(placing.id) ? lenOf(placing) : 0 }).group;
+    ghost = buildFurniture(placing.id, { drop: kindOf(placing.id) === 'ceiling' ? heightOf(placing) : 0, len: isDragWall(placing.id) ? lenOf(placing) : 0, color: placing.from >= 0 ? home.items[placing.from].c ?? null : null }).group;
     ghost.userData.drop = heightOf(placing);
     ghost.userData.len = lenOf(placing);
     ghost.traverse((o) => {
@@ -846,7 +855,7 @@ export function house(stage) {
     const px = p.x / T, pz = p.z / T, fw = FURN[placing.id].w;
     let best = null, bestD = 0.9;
     home.items.forEach((o, i) => {
-      if (!isDragWall(o.id) || i === placing.from) return;
+      if (!isDragWall(o.id) || FURN[o.id].wallH || i === placing.from) return; // (doors go in full-height walls)
       const l = lenOf(o), horiz = o.r % 2 === 0;
       const along = horiz ? px : pz, across = horiz ? pz - (o.y + 0.125) : px - (o.x + 0.125), start = horiz ? o.x : o.y;
       const off = Math.max(0, start - along, along - (start + l));
@@ -930,6 +939,7 @@ export function house(stage) {
     if (kindOf(placing.id) !== 'floor' && kindOf(placing.id) !== 'rug') it.h = placing.h;
     if (isDragWall(placing.id)) it.l = placing.l;
     if (placing.iw) it.iw = 1;
+    if (placing.from >= 0 && home.items[placing.from].c) it.c = home.items[placing.from].c;
     if (placing.from >= 0) home.items[placing.from] = it;
     else home.items.push(it);
     selected = placing.from >= 0 ? placing.from : home.items.length - 1;
@@ -1204,7 +1214,8 @@ export function house(stage) {
         <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''}>⟳ Rotate</button>
         ${kindOf(sel.id) === 'wall' || kindOf(sel.id) === 'ceiling' ? '<button class="btn small" data-act="up" title="[ ]">▲ Up</button><button class="btn small" data-act="down" title="[ ]">▼ Down</button>' : ''}
         ${isDragWall(sel.id) ? `<button class="btn small" data-act="shorter">− Shorter</button><button class="btn small" data-act="longer">＋ Longer</button><span class="muted small">${lenOf(sel)} tiles</span>` : ''}
-        <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div></div>` : ''}
+        <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div>
+        ${FURN[sel.id].recolor ? `<div class="wd-label">🎨 Colour</div><div class="swatches palette"><button type="button" class="swatch orig ${sel.c ? '' : 'on'}" data-recolor="" title="Original colour">↺</button>${CATALOG.clothColors.map((c) => `<button type="button" class="swatch ${sel.c === c ? 'on' : ''}" data-recolor="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}</div>` : ''}
       <p class="muted small">Pick something to place it:</p>
       <div class="furni-grid">${ownedList.map((f) => {
         const left = owned(f.id) - placedCount(f.id);
@@ -1236,6 +1247,7 @@ export function house(stage) {
   const SET_LABEL = {
     Classics: '🛋️ Classics', Sweetheart: '💗 Sweetheart set', Rustic: '🪵 Rustic set', Modern: '🤍 Modern set', Nature: '🌿 Nature set',
     Plants: '🪴 Plants', Bathroom: '🛁 Bathroom', Gamer: '🎮 Gamer set', Lights: '💡 Lights & ceiling', 'Wall decor': '🖼️ Wall decor', Rooms: '🧱 Walls & doorways',
+    Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
   };
   const DECO_LISTS = { floor: CATALOG.floors, wall: CATALOG.walls, ceiling: CATALOG.ceilings, door: CATALOG.doors };
   let shopPage = 'furniture', stylePage = 'wall';
@@ -1321,9 +1333,16 @@ export function house(stage) {
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint]');
+    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor]');
     if (!t) return;
     const ds = t.dataset;
+    if (ds.recolor != null && selected >= 0) {
+      const it = { ...home.items[selected] };
+      if (ds.recolor) it.c = ds.recolor; else delete it.c;
+      home.items[selected] = it;
+      commit('paint');
+      return;
+    }
     if (ds.paint) {
       if (ds.paint === 'clear') { if (stylePage === 'wall') home.wallp = {}; else home[stylePage === 'ceiling' ? 'careas' : 'areas'] = []; commit('paint'); return; }
       paintMode = ds.paint === 'on';
@@ -1599,7 +1618,7 @@ export function house(stage) {
         e.group.scale.set(1 + k * 0.25, 1 - k * 0.3, 1 + k * 0.25);
       }
     }
-    if (ghost?.visible) ghost.position.y = (kindOf(placing.id) === 'wall' ? heightOf(placing) : kindOf(placing.id) === 'ceiling' ? WALL_H : 0) + Math.sin(t * 6) * 0.03;
+    if (ghost?.visible) ghost.position.y = (kindOf(placing.id) === 'wall' ? heightOf(placing) : kindOf(placing.id) === 'ceiling' && !isDragWall(placing.id) ? WALL_H : 0) + Math.sin(t * 6) * 0.03;
     // hide the walls between the camera and the room
     const c = stage.camera.position;
     if (!edit && orbit.fps) { orbit.fps = false; orbit.height = baseHeight; }
@@ -1609,7 +1628,7 @@ export function house(stage) {
     room.walls.right.grp.visible = c.x < WX() - 0.2;
     // walls you've built inside are solid: the camera stops in front of them instead (see stage.applyOrbit)
     if (stage.camRoom) {
-      stage.camRoom.blockers = entries.filter((e) => e.roomWall).map((e) => {
+      stage.camRoom.blockers = entries.filter((e) => e.roomWall && e.roomWall !== 'hang').map((e) => {
         const [w, d] = footprint(e.it);
         return { x0: e.it.x * T, z0: e.it.y * T, x1: (e.it.x + w) * T, z1: (e.it.y + d) * T };
       });

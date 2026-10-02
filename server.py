@@ -861,7 +861,7 @@ def clean_house(p, data):
                 raise GameError("That doesn't fit in the room.")
             x0, y0 = round(x * HOUSE_SNAP), round(y * HOUSE_SNAP)
             cells = {(kind, x0 + i, y0 + j) for i in range(round(w * HOUSE_SNAP)) for j in range(round(d * HOUSE_SNAP))}
-            if f.get("drag"):
+            if f.get("drag") and not f.get("wallH"):  # (doors and wall decorations go on full-height walls)
                 wall_cells |= {(c[1], c[2]) for c in cells}
                 drawn.append((r % 2, x if r % 2 == 0 else y, length, y if r % 2 == 0 else x))
             if kind == "door":
@@ -869,7 +869,8 @@ def clean_house(p, data):
         if cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {})})
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
+                            **({"c": it["c"]} if f.get("recolor") and it.get("c") in CATALOG["clothColors"] else {})})
     for name, cells in door_cells:
         if not cells <= wall_cells:
             raise GameError(f"The {name} has to go in a wall.")

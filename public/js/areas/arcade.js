@@ -11,8 +11,8 @@ import { toon, basic, canvasTexture, additive, glowTexture, TAU } from '../three
 import { room, add, openWalker, sign, counter, shopkeeper } from './store.js';
 import { ARCADE_GAMES, arcadeCabinet } from '../games/arcadegames.js';
 import { listen, confetti } from '../games/util.js';
+import { clawMachine, clawGame, skeeLane, skeeGame, hockeyTable, hockeyGame } from './arcadeplay.js';
 
-const CLAW_COST = 25;
 const NEON = ['#ff4fd8', '#39e6ff', '#ffd84d', '#6ee7a0', '#b77bff', '#ff9f43'];
 
 /** A cabinet: body, a glowing screen with the game's title art, a marquee, joystick and buttons. */
@@ -101,185 +101,6 @@ function neonSign(g, text, color, { p, r = [0, 0, 0], w = 4, h = 1 }) {
     c.shadowBlur = 8; c.fillStyle = '#ffffff'; c.fillText(text, cw / 2, ch / 2 + 4);
   });
   return add(g, new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }), { p, r, cast: false });
-}
-
-/** A claw machine: glass box full of plushies, a moving claw, a prize chute and flashing bulbs. */
-function clawMachine(g, x, z, color, anim) {
-  const m = new THREE.Group();
-  m.position.set(x, 0, z);
-  g.add(m);
-  add(m, new THREE.BoxGeometry(1.7, 1.0, 1.7), toon(color), { p: [0, 0.5, 0], outline: true });
-  add(m, new THREE.BoxGeometry(1.6, 1.5, 1.6), toon('#dff4ff', { transparent: true, opacity: 0.22 }), { p: [0, 1.75, 0], cast: false });
-  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(m, new THREE.BoxGeometry(0.08, 1.5, 0.08), toon(color), { p: [sx * 0.8, 1.75, sz * 0.8] });
-  add(m, new THREE.BoxGeometry(1.75, 0.35, 1.75), toon(color), { p: [0, 2.67, 0], outline: true });
-  add(m, new THREE.BoxGeometry(1.6, 0.25, 0.05), basic('#ffffff'), { p: [0, 2.67, 0.88], cast: false });
-  neonSign(m, 'CLAW', '#ffd84d', { p: [0, 2.67, 0.91], w: 1.4, h: 0.32 });
-  // a heap of plushies
-  for (let i = 0; i < 14; i++) {
-    const px = (((i * 37) % 11) / 11 - 0.5) * 1.2, pz = (((i * 53) % 11) / 11 - 0.5) * 1.2;
-    add(m, new THREE.SphereGeometry(0.17, 12, 10), toon(NEON[i % NEON.length]), { p: [px, 1.15 + (i % 3) * 0.1, pz] });
-  }
-  add(m, new THREE.BoxGeometry(0.5, 0.35, 0.06), toon('#1a1330'), { p: [0.45, 0.45, 0.86] }); // prize chute
-  add(m, new THREE.BoxGeometry(0.6, 0.12, 0.4), toon('#2e2266'), { p: [-0.35, 1.05, 0.95], r: [0.3, 0, 0] }); // controls
-  add(m, new THREE.SphereGeometry(0.06, 10, 8), toon('#ff5d73'), { p: [-0.5, 1.2, 0.98] });
-  add(m, new THREE.CylinderGeometry(0.06, 0.06, 0.04, 12), toon('#6ee7a0'), { p: [-0.2, 1.13, 0.98], r: [0.3, 0, 0] });
-  const rail = add(m, new THREE.BoxGeometry(1.5, 0.04, 0.06), toon('#c0c6d4'), { p: [0, 2.42, 0] });
-  const head = new THREE.Group();
-  m.add(head);
-  add(head, new THREE.CylinderGeometry(0.012, 0.012, 0.4, 6), toon('#c0c6d4'), { p: [0, 0.2, 0] });
-  add(head, new THREE.CylinderGeometry(0.08, 0.1, 0.1, 10), toon('#c0c6d4'), { p: [0, 0, 0] });
-  for (let k = 0; k < 3; k++) {
-    const a = (k / 3) * TAU;
-    add(head, new THREE.BoxGeometry(0.03, 0.18, 0.03), toon('#c0c6d4'), { p: [Math.cos(a) * 0.08, -0.1, Math.sin(a) * 0.08], r: [Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4] });
-  }
-  const bulbs = [];
-  for (let k = 0; k < 10; k++) bulbs.push(add(m, new THREE.SphereGeometry(0.045, 8, 6), basic('#ffffff'), { p: [-0.8 + (k / 9) * 1.6, 2.86, 0.88], cast: false }));
-  anim.push((t) => {
-    head.position.set(Math.sin(t * 0.7 + x) * 0.5, 2.2 - Math.max(0, Math.sin(t * 0.9 + z)) * 0.5, Math.cos(t * 0.5) * 0.4);
-    rail.position.z = head.position.z;
-    bulbs.forEach((b, k) => b.material.color.set(NEON[(k + Math.floor(t * 6)) % NEON.length]));
-  });
-  return m;
-}
-
-/** The claw machine panel: line up the claw over a plushie and drop it. */
-function clawPanel(body) {
-  const CW = 360, CH = 420;
-  body.innerHTML = `<div class="claw">
-    <h2>🕹️ Claw Machine</h2>
-    <p class="muted small">Line the claw up over a plushie and drop it. Prizes are tickets, and if you're <i>really</i> lucky, the claw-only <b>Claw Plushie</b>!</p>
-    <canvas width="${CW}" height="${CH}"></canvas>
-    <div class="claw-ctl">
-      <button class="btn" data-c="l">◀</button>
-      <button class="btn primary" data-c="go"></button>
-      <button class="btn" data-c="r">▶</button>
-    </div>
-    <p class="claw-msg center"></p>
-    <p class="muted small center arc-wallet"></p>
-  </div>`;
-  const cv = body.querySelector('canvas'), ctx = cv.getContext('2d');
-  const goBtn = body.querySelector('[data-c="go"]'), msg = body.querySelector('.claw-msg'), wallet = body.querySelector('.arc-wallet');
-  const prizes = Array.from({ length: 11 }, (_, i) => ({ x: 40 + ((i * 97) % 280), y: CH - 70 - (i % 3) * 22, c: NEON[i % NEON.length] }));
-  // state: idle → aim (moving the claw) → drop → (waiting on the server) → lift → idle
-  const st = { phase: 'idle', x: CW / 2, y: 40, dir: 0, open: 1, held: null, result: null, timer: 0, t: 0 };
-  let raf = 0, last = performance.now();
-  const renderWallet = () => { wallet.innerHTML = `🪙 <b>${fmt(me()?.coins ?? 0)}</b> · 🎟️ <b>${fmt(me()?.tickets ?? 0)}</b> tickets`; };
-  const renderBtn = () => {
-    goBtn.textContent = st.phase === 'aim' ? '⬇ DROP!' : st.phase === 'idle' ? `🪙 ${CLAW_COST} · Play` : '…';
-    goBtn.disabled = st.phase !== 'idle' && st.phase !== 'aim';
-  };
-  const drop = () => {
-    if (st.phase !== 'aim') return;
-    st.phase = 'drop';
-    const near = prizes.reduce((b, p) => (Math.abs(p.x - st.x) < Math.abs(b.x - st.x) ? p : b), prizes[0]);
-    st.target = near;
-    const aim = Math.max(0, 1 - Math.abs(near.x - st.x) / 34);
-    net.send('claw_play', { aim });
-    sfx('whoosh');
-    renderBtn();
-  };
-  const go = () => {
-    if (st.phase === 'aim') return drop();
-    if (st.phase !== 'idle') return;
-    if ((me()?.coins ?? 0) < CLAW_COST) { msg.innerHTML = `<span class="lose">You need 🪙 ${CLAW_COST} to play.</span>`; return; }
-    Object.assign(st, { phase: 'aim', timer: 12, held: null, result: null, open: 1, y: 40 });
-    msg.textContent = 'Move the claw with ◀ ▶ (or the arrow keys), then DROP!';
-    sfx('coin');
-    renderBtn();
-  };
-  const finish = () => {
-    const r = st.result;
-    if (st.held) {
-      prizes.splice(prizes.indexOf(st.held), 1);
-      if (prizes.length < 6) prizes.push(...Array.from({ length: 6 }, (_, i) => ({ x: 40 + Math.random() * 230, y: CH - 70 - (i % 3) * 22, c: NEON[i % NEON.length] })));
-      msg.innerHTML = r.item ? `<span class="win">🧸 You won the <b>${esc(ITEMS[r.item]?.name ?? 'prize')}</b>!</span>` : `<span class="win">🎉 You won <b>${fmt(r.tickets)}</b> tickets!</span>`;
-      sfx(r.item ? 'reveal' : 'coins', { rarity: 'legendary', n: 5 });
-      if (r.item) confetti(body);
-    } else {
-      msg.innerHTML = '<span class="lose">So close! It slipped out of the claw.</span>';
-      sfx('lose');
-    }
-    Object.assign(st, { held: null, phase: 'idle' });
-    renderBtn();
-  };
-  const tick = (now) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    st.t += dt;
-    if (st.phase === 'aim') {
-      st.x = Math.max(30, Math.min(CW - 30, st.x + st.dir * 160 * dt));
-      if ((st.timer -= dt) <= 0) drop();
-    } else if (st.phase === 'drop') {
-      const floor = (st.target?.y ?? CH - 80) - 30;
-      if (st.y < floor) st.y = Math.min(floor, st.y + 200 * dt);
-      else if (st.result) {
-        st.open = Math.max(0, st.open - dt * 3);
-        if (st.open <= 0) { st.phase = 'lift'; st.held = st.target; }
-      }
-    } else if (st.phase === 'lift') {
-      // up it comes (a miss slips out halfway), then over to the chute
-      if (!st.result.win && st.held && st.y < 230) { st.held = null; sfx('bonk', { power: 0.3 }); }
-      if (st.y > 40) st.y = Math.max(40, st.y - 160 * dt);
-      else if (st.held && st.x < CW - 45) st.x = Math.min(CW - 45, st.x + 140 * dt);
-      else finish();
-    }
-    if (st.phase === 'idle') st.open = Math.min(1, st.open + dt * 2);
-    draw();
-    raf = requestAnimationFrame(tick);
-  };
-  const draw = () => {
-    const g = ctx.createLinearGradient(0, 0, 0, CH); g.addColorStop(0, '#1d1450'); g.addColorStop(1, '#0c0a2a');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, CW, CH);
-    ctx.fillStyle = '#2a1f5e'; ctx.fillRect(CW - 80, CH - 120, 70, 110); // the chute
-    ctx.fillStyle = '#ffd84d'; ctx.font = '16px "Luckiest Guy", Rubik, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PRIZE', CW - 45, CH - 130);
-    for (const p of prizes) {
-      if (p === st.held) continue;
-      bear(p.x, p.y, p.c);
-    }
-    // the rail and the claw
-    ctx.fillStyle = '#c0c6d4'; ctx.fillRect(0, 18, CW, 6);
-    ctx.strokeStyle = '#c0c6d4'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(st.x, 24); ctx.lineTo(st.x, st.y); ctx.stroke();
-    ctx.fillStyle = '#e4e8f2'; ctx.fillRect(st.x - 14, st.y - 6, 28, 12);
-    const spread = 6 + st.open * 16;
-    ctx.lineWidth = 5; ctx.lineCap = 'round';
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(st.x + s * 10, st.y + 4); ctx.lineTo(st.x + s * spread, st.y + 26); ctx.lineTo(st.x + s * (spread - 8), st.y + 36); ctx.stroke(); }
-    if (st.held) bear(st.x, st.y + 40, st.held.c);
-    if (st.phase === 'aim') { ctx.fillStyle = '#fff'; ctx.font = '22px "Luckiest Guy", Rubik, sans-serif'; ctx.fillText(Math.ceil(st.timer), 24, 52); }
-    // the glass
-    ctx.fillStyle = 'rgba(200,235,255,.06)'; ctx.fillRect(0, 0, CW, CH);
-    ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(40, CH); ctx.lineTo(120, 0); ctx.stroke();
-  };
-  const bear = (x, y, c) => {
-    ctx.fillStyle = c;
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(x + s * 13, y - 16, 7, 0, TAU); ctx.fill(); }
-    ctx.beginPath(); ctx.arc(x, y, 20, 0, TAU); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.ellipse(x, y + 5, 9, 7, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#1a1330'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(x + s * 7, y - 4, 2.5, 0, TAU); ctx.fill(); }
-  };
-  const hold = (dir) => (e) => { e.preventDefault(); st.dir = dir; };
-  for (const [sel, dir] of [['[data-c="l"]', -1], ['[data-c="r"]', 1]]) {
-    const b = body.querySelector(sel);
-    b.addEventListener('pointerdown', hold(dir));
-    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => { st.dir = 0; });
-  }
-  goBtn.onclick = go;
-  const onKey = (e) => {
-    const k = e.key.toLowerCase();
-    if (['arrowleft', 'a'].includes(k)) st.dir = e.type === 'keydown' ? -1 : st.dir === -1 ? 0 : st.dir;
-    else if (['arrowright', 'd'].includes(k)) st.dir = e.type === 'keydown' ? 1 : st.dir === 1 ? 0 : st.dir;
-    else if ((k === ' ' || k === 'enter') && e.type === 'keydown' && !e.repeat) { e.preventDefault(); go(); }
-  };
-  window.addEventListener('keydown', onKey, true);
-  window.addEventListener('keyup', onKey, true);
-  const off = listen({
-    claw_result: (m) => { st.result = m; },
-    error: (m) => { if (m.for === 'claw_play') { st.phase = 'idle'; st.y = 40; renderBtn(); } },
-    player: () => renderWallet(),
-  });
-  renderWallet();
-  renderBtn();
-  raf = requestAnimationFrame(tick);
-  return () => { cancelAnimationFrame(raf); off(); window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKey, true); };
 }
 
 /** The prize counter: this hour's prizes for tickets (exclusives first). */
@@ -406,12 +227,39 @@ export function arcadeArea(stage) {
     add(lt, new THREE.BoxGeometry(0.14, 0.14, 0.04), basic(c), { p: [x, y + 0.08, 0.36], cast: false });
   }
 
-  // ---- claw machines and the prize counter at the front ----
-  clawMachine(g, 10, 7, '#ff4fd8', anim);
-  clawMachine(g, 12.6, 7, '#39c6ff', anim);
-  for (const x of [10, 12.6]) {
+  // ---- walk-up machines: you play them right there (the camera moves in, buttons come up) ----
+  let mode = null, saved = null;
+  const playHud = document.createElement('div');
+  playHud.className = 'arc-play hidden';
+  stage.hud.append(playHud);
+  const play = (make) => {
+    if (mode) return;
+    saved = { orbit: stage.orbit, inter: stage.interactables };
+    stage.orbit = null; // (we steer the camera ourselves)
+    stage.interactables = [];
+    stage.person(S.me).visible = false;
+    playHud.classList.remove('hidden');
+    mode = make({ hud: playHud, done: leave });
+  };
+  const leave = () => {
+    if (!mode) return;
+    mode.stop();
+    mode = null;
+    stage.orbit = saved.orbit;
+    stage.orbit.cur = null;
+    stage.interactables = saved.inter;
+    stage.person(S.me).visible = true;
+    playHud.classList.add('hidden');
+    playHud.innerHTML = '';
+  };
+  stage.onKey = (e, down) => mode?.key?.(e, down);
+  stage.onFrame((dt, now) => mode?.update(Math.min(dt, 0.05), now / 1000, stage.camera));
+
+  // the claw machines: full of real plushies
+  for (const [x, col] of [[10, '#ff4fd8'], [12.6, '#39c6ff']]) {
+    const M = clawMachine(g, x, 7, col, anim);
     solids.push({ x, z: 7, w: 1.9, d: 1.9 });
-    stage.interactable({ x, z: 8.7, r: 1.3, label: 'play the claw machine', icon: 'arcade', use: () => stage.openPanel({ mount: (body) => clawPanel(body) }) });
+    stage.interactable({ x, z: 8.7, r: 1.3, label: 'play the claw machine (🪙 25)', icon: 'arcade', use: () => play((ui) => clawGame(M, ui)) });
   }
   // the prize counter: a glass counter, shelves of prizes behind, and the attendant
   counter(g, -11, 6.5, 6, '#7c4dff');
@@ -436,30 +284,19 @@ export function arcadeArea(stage) {
   stage.interactable({ x: -11, z: 8, r: 2.2, label: 'trade tickets for prizes', icon: 'shop', use: () => stage.openPanel({ wide: true, mount: (body) => ticketShop(body) }) });
   sign(g, 'TICKET PRIZES', { x: -11, z: 6.5, y: 4.3, w: 3.6, h: 0.8, bg: '#7c4dff' });
 
-  // ---- in the middle: air hockey tables and skee-ball lanes (just for show) and a token machine ----
-  for (const [x, z] of [[-4, 0], [4, 0]]) {
-    add(g, new THREE.BoxGeometry(2.0, 0.9, 3.4), toon('#2a1f5e'), { p: [x, 0.45, z], outline: true });
-    add(g, new THREE.BoxGeometry(1.8, 0.04, 3.2), toon('#e6f4ff'), { p: [x, 0.92, z], cast: false });
-    add(g, new THREE.BoxGeometry(1.8, 0.02, 0.04), basic('#ff4fd8'), { p: [x, 0.95, z], cast: false });
-    const puck = add(g, new THREE.CylinderGeometry(0.1, 0.1, 0.03, 14), toon('#ff3b4f'), { p: [x, 0.96, z] });
-    for (const s of [-1, 1]) add(g, new THREE.CylinderGeometry(0.14, 0.14, 0.1, 14), toon(s < 0 ? '#39c6ff' : '#ffd84d'), { p: [x, 0.98, z + s * 1.3] });
-    anim.push((t) => { puck.position.x = x + Math.sin(t * 2.3 + x) * 0.7; puck.position.z = z + Math.sin(t * 1.7) * 1.3; });
-    solids.push({ x, z, w: 2.1, d: 3.5 });
+  // ---- in the middle: air hockey tables and skee-ball lanes (both playable) ----
+  for (const x of [-4, 4]) {
+    const T = hockeyTable(g, x, 0, anim);
+    solids.push({ x, z: 0, w: 2.1, d: 3.5 });
+    stage.interactable({ x, z: 2.4, r: 1.3, label: 'play air hockey (🪙 10)', icon: 'arcade', use: () => play((ui) => hockeyGame(T, ui, stage)) });
   }
   for (let k = 0; k < 3; k++) {
     const x = -2 + k * 2, z = -6.5;
-    const lane = new THREE.Group();
-    lane.position.set(x, 0, z);
-    g.add(lane);
-    add(lane, new THREE.BoxGeometry(1.4, 0.8, 3.2), toon('#7c4dff'), { p: [0, 0.4, 0], outline: true });
-    add(lane, new THREE.BoxGeometry(1.2, 0.05, 2.6), toon('#d8b07a'), { p: [0, 0.82, 0.2], r: [-0.12, 0, 0], cast: false });
-    add(lane, new THREE.BoxGeometry(1.4, 1.6, 0.5), toon('#2a1f5e'), { p: [0, 1.2, -1.5], outline: true });
-    for (const [r, y, c] of [[0.5, 1.25, '#ffd84d'], [0.32, 1.25, '#ff4fd8'], [0.15, 1.25, '#39e6ff']]) add(lane, new THREE.TorusGeometry(r, 0.04, 6, 24), basic(c), { p: [0, y, -1.24], cast: false });
-    const ball = add(lane, new THREE.SphereGeometry(0.1, 10, 8), toon('#ffffff'), { p: [0, 0.95, 1] });
-    anim.push((t) => { const f = (t * 0.6 + k * 0.33) % 1; ball.position.set(Math.sin(f * 9) * 0.1, 0.95 + f * 0.35 + Math.sin(f * Math.PI) * 0.3, 1.2 - f * 2.6); });
+    const L = skeeLane(g, x, z, anim);
     solids.push({ x, z: z - 0.1, w: 1.5, d: 3.6 });
+    stage.interactable({ x, z: z + 2.2, r: 0.9, label: 'play skee-ball (🪙 10)', icon: 'arcade', use: () => play((ui) => skeeGame(L, ui)) });
   }
-  neonSign(g, 'SKEE-BALL', '#b77bff', { p: [0, 3.1, -8.2], w: 3.6, h: 0.8 });
+  neonSign(g, 'SKEE-BALL', '#b77bff', { p: [0, 3.7, -8.2], w: 3.6, h: 0.8 });
 
   // neon strips along the floor edges and a ring of coloured spotlights
   const strips = [];
@@ -474,9 +311,9 @@ export function arcadeArea(stage) {
   }
   anim.push((t) => spots2.forEach((l, i) => { l.intensity = 11 + Math.sin(t * 1.5 + i * 2) * 4; }));
 
-  const walker = openWalker(stage, { w: W, d: D, solids });
+  const walker = openWalker(stage, { w: W, d: D, solids, frozen: () => !!mode });
   const off = listen({ arcade_board: () => board.draw() });
   stage.onFrame((dt, now) => { for (const fn of anim) fn(now / 1000, dt); });
   stage.banner(`<div class="big">🕹️ Arcade</div>Each go costs 🪙 coins and wins 🎟️ tickets. Spend them at the prize counter: new prizes every hour!`, 3500);
-  return () => { off(); walker.stop(); stage.scene?.remove(g); };
+  return () => { leave(); off(); walker.stop(); stage.scene?.remove(g); };
 }

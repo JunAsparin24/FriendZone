@@ -572,6 +572,8 @@ ARCADE_GAMES = {
     "memory": {"name": "Memory Match", "max": 5000, "pay": 0.03, "cap": 50},
     "blaster": {"name": "Star Blaster", "max": 100000, "pay": 0.01, "cap": 70},
     "whack": {"name": "Whack-a-Mole", "max": 5000, "pay": 0.03, "cap": 60},
+    "skeeball": {"name": "Skee-Ball", "max": 900, "pay": 0.12, "cap": 90},  # (the lanes in the middle of the Arcade)
+    "hockey": {"name": "Air Hockey", "max": 800, "pay": 0.1, "cap": 80},
 }
 # Laser Tag (through the doorway in the Arcade): a dark 3D maze, two teams, hitscan blasters. Tagging
 # someone is +100 points, getting tagged is -50 (and stuns you for a moment). Rounds are timed; at the
@@ -616,8 +618,8 @@ LT_MAP = {
 # Surf Rush at the beach is still free and pays coins
 ARCADE_PLAY_COST = 10
 CLAW_COST = 25
-CLAW_TICKETS = [(20, 30), (40, 25), (60, 20), (100, 14), (150, 8), (300, 3)]  # (tickets, weight)
-CLAW_PLUSH_CHANCE = 0.08  # of a win: the claw-only plushie, if you haven't got one
+CLAW_RARITY = {"common": 1.0, "rare": 0.7, "epic": 0.45}  # rarer plushies are harder to grab
+CLAW_PLUSH_CHANCE = 0.04  # of a win: also the claw-only plushie you can hold, if you haven't got one
 # the prize counter: a new line-up every hour, a couple of ticket-only exclusives plus regular cosmetics
 TICKET_PRICES = {"common": 150, "rare": 400, "epic": 900, "legendary": 2200, "mythic": 4500}
 TICKET_SHOP_SIZE, TICKET_SHOP_EXCLUSIVES = 6, 2
@@ -654,6 +656,8 @@ ADMIN_HELP = [
     "/furni <name|me> <furniture id|all> [count] — give furniture, floors or wallpaper",
     "/items [search] — list item ids",
     "/score <name|me> <game> <value> — set a high score / leaderboard stat (/score me list for the games)",
+    "/tp <name> — teleport yourself to someone (in town, or into the shop/area they're in)",
+    "/bring <name> — teleport someone to you",
     "/kick <name> — send someone back to the home screen",
     "/boot <name> [minutes] — kick someone off the whole server (every zone) and keep them out (default 10 min)",
     "/unboot <name> — let someone booted come back early",
@@ -1753,7 +1757,8 @@ class Game:
             t = match["teams"]
             if c.key not in t or holder not in t or t[c.key] == t[holder]:
                 return  # (no stealing from your own team, or from outside the game)
-        if random.random() < STEAL_CHANCE:
+        # never a sure thing: best right up close, a long shot at arm's length
+        if random.random() < STEAL_CHANCE * (1.35 - math.hypot(h.ax - c.ax, h.az - c.az) / 2.4):
             b.update(held=c.key, own=c.key, vx=0, vy=0, vz=0, lock=(c.key, time.time()))
             room.broadcast({"t": "ball", **{k: v for k, v in b.items() if k != "lock"}, "steal": True}, scene="beach")
             room.broadcast({"t": "ball_event", "kind": "steal", "by": c.key, "from": holder, "id": bid}, scene="beach")
@@ -2166,6 +2171,39 @@ class Game:
         target.ws.send({"t": "kicked", "msg": "An admin sent you back to the home screen."})
         self.leave(target)
         self.sys(c, f"Kicked {self.names(c, keys)}.", "ok")
+
+    def _one_online(self, c, args, what):
+        keys = self._adm_targets(c, " ".join(args))
+        if keys == [c.key] or len(keys) != 1:
+            raise GameError(f"Name one other person to {what}.")
+        target = c.room.clients.get(keys[0])
+        if not target:
+            raise GameError("They aren't online right now.")
+        return target
+
+    def _teleport(self, mover, dest):
+        """Move `mover` next to `dest`: in town, or into the walk-in area (shop, arcade…) they're in."""
+        if dest.scene == "world" and dest.x is not None:
+            mover.x = num(dest.x + random.uniform(-30, 30), 0, WORLD_W)
+            mover.y = num(dest.y + random.uniform(-30, 30), 0, WORLD_H)
+            mover.ws.send({"t": "tp", "scene": "world", "x": mover.x, "y": mover.y})
+            if mover.scene == "world":
+                mover.room.broadcast({"t": "pos", "k": mover.key, "x": round(mover.x, 1), "y": round(mover.y, 1)}, scene="world", exclude=mover)
+        elif dest.scene in AREA_SCENES:
+            mover.ws.send({"t": "tp", "scene": dest.scene, "ax": round((dest.ax or 0) + 0.9, 2), "az": round(dest.az or 0, 2)})
+        else:
+            raise GameError(f"{dest.player['name']} is busy ({dest.scene or 'in the lobby'}). Teleporting works in town and in the shops and areas.")
+
+    def admin_tp(self, c, args):
+        target = self._one_online(c, args, "teleport to")
+        self._teleport(c, target)
+        self.sys(c, f"✨ Teleported to {target.player['name']}.", "ok")
+
+    def admin_bring(self, c, args):
+        target = self._one_online(c, args, "bring")
+        self._teleport(target, c)
+        self.sys(target, f"✨ {c.player['name']} (admin) brought you to them.", "ok")
+        self.sys(c, f"✨ Brought {target.player['name']} to you.", "ok")
 
     def admin_boot(self, c, args):
         if not args:
@@ -3829,27 +3867,32 @@ class Game:
             self.post_feed(c.room, f"🕹️ {c.player['name']} set a new {cfg['name']} high score: {score:,}!")
 
     def on_claw_play(self, c, m):
-        """A go on the claw machine: `aim` (0..1) is how well the claw lined up with a prize."""
+        """A go on the claw machine: `prize` is the plushie the claw came down on, `aim` (0..1) how
+        well it lined up. Win and that plushie goes into your house storage."""
         if c.scene != "arcade" or not c.ready("claw", 1.5):
+            return
+        prize = FURN.get(str(m.get("prize", "")))
+        if not prize or not prize.get("claw"):
             return
         if c.player["coins"] < CLAW_COST:
             raise GameError(f"The claw costs {CLAW_COST} coins.")
         aim = num(m.get("aim", 0), 0, 1)
         self.reward(c, coins=-CLAW_COST)
-        win = random.random() < 0.1 + 0.55 * aim
-        tickets, item = 0, None
+        odds = (0.12 + 0.55 * aim) * CLAW_RARITY.get(prize.get("rarity", "common"), 1)
+        win = random.random() < odds
+        bonus = None
         if win:
+            p = c.player
+            p["furni"][prize["id"]] = min(prize.get("max", 30), p["furni"].get(prize["id"], 0) + 1)
             plush = ITEMS.get("hand_plushie")
-            if plush and plush["id"] not in c.player["owned"] and random.random() < CLAW_PLUSH_CHANCE:
-                item = plush["id"]
+            if plush and plush["id"] not in p["owned"] and random.random() < CLAW_PLUSH_CHANCE:
+                bonus = plush["id"]
                 self.grant(c, plush, "claw")
-                self.post_feed(c.room, f"🧸 {c.player['name']} won the Claw Plushie!")
-            else:
-                tickets = random.choices([t for t, _ in CLAW_TICKETS], [w for _, w in CLAW_TICKETS])[0]
-                c.player["tickets"] = c.player.get("tickets", 0) + tickets
+            if prize.get("rarity") == "epic":
+                self.post_feed(c.room, f"🕹️ {p['name']} won the {prize['name']} from the claw machine!")
             self.store.mark()
             self.push_player(c.room, c.key)
-        c.ws.send({"t": "claw_result", "win": win, "tickets": tickets, "item": item})
+        c.ws.send({"t": "claw_result", "win": win, "prize": prize["id"], "item": bonus})
 
     def on_ticket_shop(self, c, m):
         hour = int(time.time() // 3600)

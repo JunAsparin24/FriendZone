@@ -176,6 +176,9 @@ export function lasertag(stage) {
   /** Would standing here (feet at f) put you inside something? */
   const blocked = (x, y, f, tall) => x < 16 || y < 16 || x > map.w - 16 || y > map.h - 16
     || solids.some((sd) => sd[5] > f + STEP && sd[4] < f + tall && Math.hypot(Math.max(sd[0] - x, 0, x - (sd[0] + sd[2])), Math.max(sd[1] - y, 0, y - (sd[1] + sd[3]))) < PR);
+  /** How far into things you are (0: clear), so you can always back out of a tight spot. */
+  const overlap = (x, y, f, tall) => solids.reduce((most, sd) => (sd[5] > f + STEP && sd[4] < f + tall
+    ? Math.max(most, PR - Math.hypot(Math.max(sd[0] - x, 0, x - (sd[0] + sd[2])), Math.max(sd[1] - y, 0, y - (sd[1] + sd[3])))) : most), 0);
   const solidAt = (x, y, h) => solids.some((sd) => h >= sd[4] && h <= sd[5] && inside(x, y, sd));
 
   // ---- people (no name tags in here: you have to spot people by their vests) ----
@@ -430,11 +433,13 @@ export function lasertag(stage) {
       const tall = prone ? PRONE_BODY : BODY;
       const dir = inputDir();
       const speed = (prone ? PRONE_MOVE : MOVE) * (stunned ? 0.5 : 1);
-      mine.moving = !!dir && !onBreak;
+      mine.moving = !!dir; // (you can walk about during the results and team picking too, just not shoot)
       if (mine.moving) {
         const nx = mine.x + dir.dx * speed * dt, ny = mine.y + dir.dy * speed * dt;
-        if (!blocked(nx, mine.y, feet, tall)) mine.x = nx;
-        if (!blocked(mine.x, ny, feet, tall)) mine.y = ny;
+        // already overlapping something (a step edge, a landing): any move that gets you less stuck is allowed
+        const ok = (x, y) => !blocked(x, y, feet, tall) || overlap(x, y, feet, tall) < overlap(mine.x, mine.y, feet, tall) - 0.01;
+        if (ok(nx, mine.y)) mine.x = Math.min(map.w - 16, Math.max(16, nx));
+        if (ok(mine.x, ny)) mine.y = Math.min(map.h - 16, Math.max(16, ny));
       }
       // up steps, down off edges, and jumping
       const ground = groundAt(mine.x, mine.y, feet);

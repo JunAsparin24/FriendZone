@@ -377,7 +377,12 @@ export class Balls {
     const n = this.near(me, people);
     if (!n) return false;
     const b = n.b, dir = new THREE.Vector3(Math.sin(me.heading), 0, Math.cos(me.heading));
-    if (n.verb === 'Steal') { net.send('ball_steal', { id: b.id }); me.char.emote('kick'); sfx('whoosh', { vol: 0.3 }); return true; }
+    if (n.verb === 'Steal') { this.steal(me, people); return true; }
+    if (b.kind === 'basketball' && b.held === S.me) {
+      // hold F to wind up the shot meter, let go in the green
+      if (!this.meter) { this.meter = { b, t: 0 }; me.char.emote('shoot'); }
+      return true;
+    }
     b.lastBy = S.me;
     if (b.kind === 'soccer' && b.held === S.me) {
       // throw-in: both hands over the head
@@ -387,21 +392,7 @@ export class Balls {
       me.char.emote('shoot');
       sfx('whoosh', { vol: 0.4 });
     } else if (b.kind === 'basketball') {
-      const hs = this.park.hoops[b.ct.id];
-      const hp = hs.reduce((a, h) => (Math.hypot(h.x - me.x, h.z - me.z) < Math.hypot(a.x - me.x, a.z - me.z) ? h : a));
-      const dist = Math.hypot(hp.x - me.x, hp.z - me.z);
-      // contested shots go in less often
-      const guarded = [...people.values()].some((p) => p !== me && Math.hypot(p.x - me.x, p.z - me.z) < 1.8 && this.rivals(b.ct, p.k));
-      const make = Math.random() < (dist < 2.5 ? 0.82 : dist < 6.7 ? 0.52 : 0.34) * (guarded ? 0.7 : 1);
-      const miss = make ? 0 : (0.3 + Math.random() * 0.35) * (Math.random() < 0.5 ? -1 : 1);
-      const target = new THREE.Vector3(hp.x + miss * 0.8, RIM_Y + 0.1, hp.z + miss * 0.6);
-      b.held = null;
-      b.p.set(me.x + dir.x * 0.4, 2.4, me.z + dir.z * 0.4);
-      const T = 0.75 + dist * 0.045;
-      b.v.set((target.x - b.p.x) / T, (target.y - b.p.y + 0.5 * G * T * T) / T, (target.z - b.p.z) / T);
-      b.shot = { three: dist > 6.75 };
-      me.char.emote('shoot');
-      sfx('whoosh', { vol: 0.4 });
+      return false; // (basketballs go up with the shot meter: see release())
     } else if (b.kind === 'soccer') {
       b.v.set(dir.x * 19, 4.5, dir.z * 19);
       me.char.emote('kick');
@@ -418,6 +409,58 @@ export class Balls {
     }
     this.send(b, true);
     return true;
+  }
+
+  /** The shot meter: where the green window is (narrower when someone's guarding you or you're far out). */
+  meterZone(me, people) {
+    const b = this.meter?.b;
+    const guarded = b && [...people.values()].some((p) => p !== me && Math.hypot(p.x - me.x, p.z - me.z) < 1.8 && this.rivals(b.ct, p.k));
+    return { at: 0.8, half: guarded ? 0.045 : 0.075, guarded };
+  }
+  /** Let go of F: shoot, better the closer to the middle of the green you let go. */
+  release(me, people) {
+    const m = this.meter;
+    if (!m) return;
+    this.meter = null;
+    const b = m.b;
+    if (b.held !== S.me) return;
+    const v = Math.min(1, m.t / 0.85), zone = this.meterZone(me, people);
+    const off = Math.abs(v - zone.at), perfect = off < 0.025, green = off <= zone.half;
+    const q = Math.max(0, 1 - off / 0.35);
+    this.onShot?.(perfect ? 'PERFECT' : green ? 'GOOD' : v < zone.at ? 'EARLY' : 'LATE');
+    b.lastBy = S.me;
+    const dir = new THREE.Vector3(Math.sin(me.heading), 0, Math.cos(me.heading));
+    const hs = this.park.hoops[b.ct.id];
+    const hp = hs.reduce((a, h) => (Math.hypot(h.x - me.x, h.z - me.z) < Math.hypot(a.x - me.x, a.z - me.z) ? h : a));
+    const dist = Math.hypot(hp.x - me.x, hp.z - me.z);
+    const base = (dist < 2.5 ? 0.82 : dist < 6.7 ? 0.55 : 0.38) * (zone.guarded ? 0.75 : 1);
+    // timing matters most: a perfect release almost always drops, a bad one rarely does
+    const chance = perfect ? 0.95 : green ? Math.min(0.92, base + 0.25) : base * (0.25 + 0.6 * q);
+    const make = Math.random() < chance;
+    const miss = make ? 0 : (0.3 + Math.random() * 0.35) * (Math.random() < 0.5 ? -1 : 1);
+    const target = new THREE.Vector3(hp.x + miss * 0.8, RIM_Y + 0.1, hp.z + miss * 0.6);
+    b.held = null;
+    b.p.set(me.x + dir.x * 0.4, 2.4, me.z + dir.z * 0.4);
+    const T = 0.75 + dist * 0.045;
+    b.v.set((target.x - b.p.x) / T, (target.y - b.p.y + 0.5 * G * T * T) / T, (target.z - b.p.z) / T);
+    b.shot = { three: dist > 6.75 };
+    me.char.emote('shoot');
+    sfx('whoosh', { vol: 0.4 });
+    this.send(b, true);
+  }
+
+  /** C / the Steal button: reach for the ball of a rival right next to you (the server rolls the dice). */
+  steal(me) {
+    let best = null, bd = 2.3;
+    for (const b of this.balls.values()) {
+      if (!b.held || b.held === S.me || !this.rivals(b.ct, b.held)) continue;
+      const d = Math.hypot(b.p.x - me.x, b.p.z - me.z);
+      if (d < bd) { bd = d; best = b; }
+    }
+    me.char.emote('kick');
+    sfx('whoosh', { vol: 0.3 });
+    if (best) net.send('ball_steal', { id: best.id });
+    else this.onEvent?.('Nobody to steal from');
   }
 
   score(b, side, pts) {
@@ -442,6 +485,13 @@ export class Balls {
 
   update(dt, me, people, jumping) {
     const now = performance.now();
+    // the shot meter fills while F is held; hold it too long and the shot goes up anyway (late)
+    if (this.meter) {
+      this.meter.t += dt;
+      if (this.meter.b.held !== S.me) { this.meter = null; this.onMeter?.(null); }
+      else if (this.meter.t > 1.35) this.release(me, people);
+      else this.onMeter?.(Math.min(1, this.meter.t / 0.85), this.meterZone(me, people));
+    } else this.onMeter?.(null);
     for (const b of this.balls.values()) {
       const def = b.def, ct = b.ct;
       const mine = b.own === S.me;
@@ -520,15 +570,19 @@ export class Balls {
         }
         // block: jump into a rival's shot on its way up
         if (jumping && b.shotBy && b.shotBy !== S.me && now - b.shotAt < 900 && b.v.y > -2 && b.p.y > 1.4 && b.p.y < 3.9
-          && Math.hypot(b.p.x - me.x, b.p.z - me.z) < 1.7 && this.rivals(ct, b.shotBy)) {
-          const away = new THREE.Vector3(b.p.x - me.x, 0, b.p.z - me.z).normalize();
-          b.v.set(away.x * 7, 2.5, away.z * 7);
-          const from = b.shotBy;
-          b.shotBy = null; b.shot = null; b.lastBy = S.me;
-          this.send(b, true);
-          net.send('ball_event', { kind: 'block', id: b.id, from });
-          sfx('slam'); me.char.emote('bump');
-          this.onEvent?.('🚫 BLOCKED!');
+          && Math.hypot(b.p.x - me.x, b.p.z - me.z) < 1.7 && this.rivals(ct, b.shotBy) && b.blockTry !== b.shotAt) {
+          b.blockTry = b.shotAt; // (one try per shot: closer is likelier)
+          if (Math.random() > 0.85 - Math.hypot(b.p.x - me.x, b.p.z - me.z) * 0.25) this.onEvent?.('Just missed the block!');
+          else {
+            const away = new THREE.Vector3(b.p.x - me.x, 0, b.p.z - me.z).normalize();
+            b.v.set(away.x * 7, 2.5, away.z * 7);
+            const from = b.shotBy;
+            b.shotBy = null; b.shot = null; b.lastBy = S.me;
+            this.send(b, true);
+            net.send('ball_event', { kind: 'block', id: b.id, from });
+            sfx('slam'); me.char.emote('bump');
+            this.onEvent?.('🚫 BLOCKED!');
+          }
         }
       }
       // volleyball: it can't go through the net

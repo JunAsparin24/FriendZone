@@ -142,9 +142,9 @@ export function counter(g, x, z, w, color) {
   add(g, new THREE.BoxGeometry(0.5, 0.4, 0.4), toon('#2b2f4a'), { p: [x + w / 2 - 0.5, 1.37, z] }); // till
 }
 
-export function openWalker(stage, { w, d, solids }) {
+export function openWalker(stage, { w, d, solids, frozen = null }) {
   const walker = stage.walker({
-    spawn: { x: 0, z: d / 2 - 2.5 }, speed: 5, solids,
+    spawn: { x: 0, z: d / 2 - 2.5 }, speed: 5, solids, frozen,
     bounds: { minX: -w / 2, maxX: w / 2, minZ: -d / 2, maxZ: d / 2 },
     orbit: { yaw: 0, pitch: 0.65, dist: 12, maxDist: 18 },
   });

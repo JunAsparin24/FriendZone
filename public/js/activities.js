@@ -46,7 +46,7 @@ export const ACTIVITIES = {
   pets: { icon: 'pets', emoji: '🐾', name: 'Pet Shop', place: 'Pet Shop', scene: 'petshop', area: petShopArea,
     touch: { hint: 'Left thumb: walk · Right thumb: look around · tap things to use them' } },
   portal: { icon: 'portal', emoji: '🌴', name: 'Coral Cove', place: 'Coral Cove', scene: 'beach', area: beachArea,
-    touch: { buttons: [{ icon: '⛏️', label: 'Dig', key: 'f', code: 'KeyF' }], hint: 'Left thumb: walk · Right thumb: look around · <b>Dig</b> where the detector beeps fastest' } },
+    touch: { buttons: [{ icon: '🏀', label: 'Shoot/Dig', key: 'f', code: 'KeyF', big: true }, { icon: '🫳', label: 'Steal', key: 'c', code: 'KeyC' }, { icon: '✋', label: 'Block', key: 'b', code: 'KeyB' }], hint: 'Left thumb: walk · Right thumb: look around · <b>Dig</b> where the detector beeps fastest' } },
   wardrobe: { icon: 'wardrobe', emoji: '🪞', name: 'Wardrobe', wide: true, mount: (body) => wardrobe(body) },
   house: { icon: 'house', emoji: '🏠', name: 'Houses', place: 'Houses', scene: 'house', area: house,
     touch: { buttons: [{ icon: '🔄', label: 'Rotate', key: 'r', code: 'KeyR' }], hint: 'Left thumb: walk · Right thumb: look around · tap to place furniture' } },

@@ -1531,6 +1531,28 @@ html.touch .gar-sw { width: 28px; height: 28px; }
 html.touch .lt-points { top: 64px; }
 html.touch .lt-board { display: none; }
 
+/* Coral Park basketball: the shot meter (fills up; let go in the green) */
+.shot-meter { position: absolute; right: 22%; top: 50%; transform: translateY(-50%); width: 22px; height: 170px; border-radius: 12px; background: #0d1f4ad9; border: 3px solid #fff; overflow: visible; pointer-events: none; }
+.shot-meter.hidden { display: none; }
+.shot-meter i { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 8px; }
+.shot-meter .sm-zone { background: #6ee7a0aa; border-top: 2px solid #6ee7a0; border-bottom: 2px solid #6ee7a0; border-radius: 0; }
+.shot-meter .sm-fill { background: linear-gradient(0deg, #ff9f43, #ffd84d); opacity: 0.85; }
+.shot-meter b { position: absolute; left: 50%; top: -30px; transform: translateX(-50%); font: 18px var(--pixel); white-space: nowrap; text-shadow: 0 2px 0 #0008; }
+.shot-meter b.perfect { color: #6ee7a0; } .shot-meter b.good { color: #ffd84d; } .shot-meter b.early, .shot-meter b.late { color: #ff5d73; }
+
+/* the Arcade's walk-up machines: a strip of info at the top, big buttons at the bottom */
+.arc-play { position: absolute; inset: 0; pointer-events: none; }
+.arc-play.hidden { display: none; }
+.arc-play .ap-top { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 16px; align-items: center; padding: 8px 16px; border-radius: 14px; background: #0d0a2ae6; border: 2px solid #ff4fd8; color: #fff; font-size: 15px; white-space: nowrap; }
+.arc-play .ap-top b { font-family: var(--pixel); }
+.arc-play .ap-msg { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); max-width: min(560px, 92vw); text-align: center; padding: 6px 14px; border-radius: 12px; background: #0d0a2acc; color: #fff; font-weight: 700; }
+.arc-play .ap-pad { position: absolute; bottom: max(18px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: auto; flex-wrap: wrap; justify-content: center; }
+.arc-play .ap-pad .btn { min-width: 64px; min-height: 52px; font-size: 20px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.arc-play .ap-pad .btn.primary { min-width: 150px; }
+.arc-play .ap-meter { position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%); width: min(320px, 70vw); height: 16px; border-radius: 99px; background: #0d0a2acc; border: 2px solid #fff; overflow: hidden; }
+.arc-play .ap-meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #6ee7a0, #ffd84d, #ff4fd8); }
+.arc-play .ap-meter.hidden { display: none; }
+
 /* the Arcade: wallet line, the claw machine and the ticket prize counter */
 .arc-wallet { font-weight: 700; color: var(--text); margin: 6px 0; }
 .arc-tix { color: #ffd84d; font-weight: 800; }

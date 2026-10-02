@@ -527,6 +527,17 @@ export class World {
     if (this.fishing && e.code === 'Space') this.fishing.release();
   };
   onBlur = () => this.keys.clear();
+  /** An admin teleport: jump straight to (x, y) in town. */
+  teleport(x, y) {
+    const me = this.actors.get(S.me);
+    if (!me) return;
+    if (this.fishing) this.stopActivity();
+    this.seated = null;
+    this.target = this.pendingSpot = null;
+    me.x = me.tx = x;
+    me.y = me.ty = y;
+    net.send('move', { x, y });
+  }
   onContext = (e) => e.preventDefault();
 
   onPointerDown = (e) => {

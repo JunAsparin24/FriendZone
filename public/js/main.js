@@ -566,6 +566,23 @@ function closeArea() {
   if (activity.scene && screen === 'world') net.send('scene', { scene: 'world' });
   if (activity.back && screen === 'world') setTimeout(() => openActivity(activity.back), 60); // (e.g. Laser Tag back into the Arcade)
 }
+// admin teleports (/tp, /bring): into town, or into the walk-in area someone's in
+const TP_AREAS = { arcade: 'arcade', casino: 'casino', shop: 'shop', petshop: 'pets', tavern: 'trading', beach: 'portal' };
+net.on('tp', (m) => {
+  closeModal(true);
+  if (m.scene === 'world') {
+    // (leaving an area puts you in town where the server already moved you)
+    if (area) closeArea(); else world.teleport(m.x, m.y);
+    sfx('spawn');
+    return;
+  }
+  const activity = ACTIVITIES[TP_AREAS[m.scene]];
+  if (!activity) return;
+  const place = () => { const p = stage.person(S.me); p.x = m.ax; p.z = m.az; sfx('spawn'); };
+  if (area === activity) { place(); return; }
+  if (area) closeArea();
+  setTimeout(() => { if (!area) openArea(activity); setTimeout(place, 400); }, 80);
+});
 // one area opens another (the Arcade's Laser Tag doorway)
 window.addEventListener('fz:area', (e) => {
   if (!ACTIVITIES[e.detail]) return;

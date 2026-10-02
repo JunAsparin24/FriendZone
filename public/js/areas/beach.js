@@ -644,7 +644,7 @@ export function beachArea(stage) {
     <div class="hud-panel beach-ctx hidden"></div>
     <div class="hud-panel court-panel hidden"></div>
     <div class="hud-panel golf-panel hidden"></div>
-    <p class="hud-panel arena-help">Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski (<kbd>WASD</kbd>) · Fish off the end of the pier or from a boat · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park: pick a side and ready up for a game. <kbd>F</kbd> shoots, kicks, steals and throws in, <kbd>Space</kbd> jumps (block shots!) · Golf at Coral Links: <kbd>A</kbd>/<kbd>D</kbd> aim, hold <kbd>F</kbd> to swing · The portal goes back to The Town</p>`);
+    <p class="hud-panel arena-help">Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski (<kbd>WASD</kbd>) · Fish off the end of the pier or from a boat · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park: pick a side and ready up for a game. hold <kbd>F</kbd> and let go in the green to shoot (kicks and throws in too), <kbd>C</kbd> steals, <kbd>Space</kbd>/<kbd>B</kbd> jumps to block · Golf at Coral Links: <kbd>A</kbd>/<kbd>D</kbd> aim, hold <kbd>F</kbd> to swing · The portal goes back to The Town</p>`);
   const $h = (sel) => stage.hud.querySelector(sel);
   const ctxEl = $h('.beach-ctx'), courtEl = $h('.court-panel'), golfEl = $h('.golf-panel'), clockEl = $h('.cove-clock'), mapEl = $h('.cove-map');
   if (touch.enabled) setTouchButtons([{ icon: '✋', label: 'Action', key: 'f', code: 'KeyF', big: true }, { icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }]);
@@ -834,10 +834,35 @@ export function beachArea(stage) {
     if (k === 'f' && !e.repeat) action();
     if (k === ' ' && !e.repeat && mode === 'walk' && !fishing && performance.now() > jumpUntil) { me3.char.jump(); jumpUntil = performance.now() + 550; sfx('jump', { vol: 0.4 }); }
     if (k === 'e' && !e.repeat && performance.now() - boardedAt > 400) { if (mode === 'boat') leaveBoat(); else if (mode === 'ride') endRide(); else if (mode === 'golf') golfStop(); }
+    if (k === 'c' && !e.repeat && mode === 'walk') balls.steal(me3);
+    if (k === 'b' && !e.repeat && mode === 'walk' && performance.now() > jumpUntil) { me3.char.jump(); jumpUntil = performance.now() + 550; sfx('jump', { vol: 0.4 }); } // (block)
   }, (e) => {
     const k = e.key.toLowerCase();
     if (mode === 'golf' && (k === 'f' || k === ' ')) golf.release();
+    if (k === 'f' && balls.meter) balls.release(me3, stage.people);
   });
+  // the basketball shot meter: a bar that fills while you hold F, with a green window to let go in
+  const meterEl = document.createElement('div');
+  meterEl.className = 'shot-meter hidden';
+  meterEl.innerHTML = '<i class="sm-zone"></i><i class="sm-fill"></i><b></b>';
+  stage.hud.append(meterEl);
+  let gradeUntil = 0;
+  balls.onMeter = (v, zone) => {
+    if (v == null) { if (performance.now() > gradeUntil) meterEl.classList.add('hidden'); return; }
+    meterEl.classList.remove('hidden');
+    meterEl.querySelector('.sm-fill').style.height = `${v * 100}%`;
+    const z = meterEl.querySelector('.sm-zone');
+    z.style.bottom = `${(zone.at - zone.half) * 100}%`;
+    z.style.height = `${zone.half * 200}%`;
+  };
+  balls.onShot = (grade) => {
+    const t = meterEl.querySelector('b');
+    t.textContent = grade;
+    t.className = grade.toLowerCase();
+    meterEl.classList.remove('hidden');
+    gradeUntil = performance.now() + 800;
+    setTimeout(() => { t.textContent = ''; }, 800);
+  };
   stage.onKey = (e, down) => {
     if (!fishing) return;
     if (e.code === 'Space') { if (down && !e.repeat) fishing.press(); else if (!down) fishing.release(); }

@@ -2402,6 +2402,184 @@ for (const finish of Object.keys(KITCHEN)) {
   }
 }
 
+// ---- plushies: prizes from the Arcade's claw machines (and furniture for your house). One squishy
+// style for all of them: bears, animals, and little chibi anime characters. ----
+const PLUSH = {
+  // bears
+  plush_bear_brown: { kind: 'bear', fur: '#a8723f', belly: '#e8c99a', bow: '#e0463c' },
+  plush_bear_pink: { kind: 'bear', fur: '#ffb3d0', belly: '#ffe3ee', bow: '#ffffff' },
+  plush_bear_blue: { kind: 'bear', fur: '#8fc4ff', belly: '#e3f1ff', bow: '#ffd84d' },
+  plush_bear_white: { kind: 'bear', fur: '#f6f3ee', belly: '#ffffff', bow: '#39c6ff' },
+  plush_bear_panda: { kind: 'bear', fur: '#ffffff', belly: '#ffffff', ears: '#1d1b2e', patches: '#1d1b2e', limbs: '#1d1b2e' },
+  plush_bear_gold: { kind: 'bear', fur: '#ffcf4a', belly: '#fff2c2', bow: '#b03a48', shiny: true },
+  plush_bear_lavender: { kind: 'bear', fur: '#c9b0f0', belly: '#f1e8ff', bow: '#ff8fc7' },
+  // animals
+  plush_bunny: { kind: 'bunny', fur: '#ffffff', belly: '#ffe3ee', inner: '#ffb3d0' },
+  plush_cat: { kind: 'cat', fur: '#ff9f43', belly: '#fff1dc', inner: '#ffb3d0' },
+  plush_cat_black: { kind: 'cat', fur: '#2b2b38', belly: '#3a3a4a', inner: '#ff8fc7', eyeCol: '#ffd84d' },
+  plush_fox: { kind: 'fox', fur: '#ff7a2f', belly: '#ffffff', inner: '#2b1d14' },
+  plush_frog: { kind: 'frog', fur: '#6ccf5a', belly: '#dff7b8' },
+  plush_dino: { kind: 'dino', fur: '#6ee7a0', belly: '#e9fff2', spikes: '#ffd84d' },
+  plush_penguin: { kind: 'penguin', fur: '#2b2f4a', belly: '#ffffff', beak: '#ff9f43' },
+  plush_duck: { kind: 'duck', fur: '#ffd84d', belly: '#fff3b0', beak: '#ff9f43' },
+  plush_octopus: { kind: 'octopus', fur: '#ff7aa8', belly: '#ffd0e0' },
+  plush_axolotl: { kind: 'axolotl', fur: '#ffb3d0', belly: '#ffe3ee', gills: '#ff5d8f' },
+  plush_shark: { kind: 'shark', fur: '#7f9cb8', belly: '#ffffff' },
+  plush_pig: { kind: 'pig', fur: '#ffb6c8', belly: '#ffd6e0', inner: '#ff8fae' },
+  // chibis
+  plush_gojo: { kind: 'chibi', skin: '#ffe0c8', hair: '#f4f6ff', style: 'spiky', outfit: '#1d2340', extra: ['blindfold', 'collar'] },
+  plush_sukuna: { kind: 'chibi', skin: '#ffd9c0', hair: '#ff9fb4', style: 'undercut', outfit: '#f4efe6', outfit2: '#1d1b2e', extra: ['marks', 'kimono'] },
+  plush_itadori: { kind: 'chibi', skin: '#ffd9c0', hair: '#ff9fb4', style: 'undercut', hair2: '#4a2e22', outfit: '#1d2340', extra: ['hood'] },
+  plush_megumi: { kind: 'chibi', skin: '#ffe0c8', hair: '#1d1b2e', style: 'spiky', outfit: '#1d2340', extra: ['collar'] },
+  plush_naruto: { kind: 'chibi', skin: '#ffd2a8', hair: '#ffd23f', style: 'spiky', outfit: '#ff7a1a', outfit2: '#1d2340', extra: ['headband', 'whiskers'] },
+  plush_goku: { kind: 'chibi', skin: '#ffd2a8', hair: '#1d1b2e', style: 'bigspiky', outfit: '#ff7a1a', outfit2: '#2f5bd6', extra: ['belt'] },
+  plush_luffy: { kind: 'chibi', skin: '#ffd2a8', hair: '#1d1b2e', style: 'messy', outfit: '#d6283a', outfit2: '#3b6fd6', extra: ['strawhat', 'scar'] },
+  plush_tanjiro: { kind: 'chibi', skin: '#ffd9c0', hair: '#7a2a2a', style: 'messy', outfit: '#1d1b2e', extra: ['checker', 'earrings', 'forehead'] },
+  plush_nezuko: { kind: 'chibi', skin: '#ffe3d2', hair: '#1d1b2e', style: 'long', hair2: '#ff8a3d', outfit: '#ff9fc8', extra: ['muzzle', 'ribbon'] },
+};
+const PLUSH_EMOJI = { bear: '🧸', bunny: '🐰', cat: '🐱', fox: '🦊', frog: '🐸', dino: '🦖', penguin: '🐧', duck: '🦆', octopus: '🐙', axolotl: '🦎', shark: '🦈', pig: '🐷', chibi: '✨' };
+const checkerTex = canvasTexture(64, 64, (c) => { for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { c.fillStyle = (x + y) % 2 ? '#1d1b2e' : '#2f8a5a'; c.fillRect(x * 16, y * 16, 16, 16); } });
+
+/** A soft toy, about half a tile across and 0.55 tall, sitting on the floor facing +z. */
+function plushie(g, A, sp) {
+  const fur = sp.shiny ? shiny(sp.fur, { metalness: 0.35, roughness: 0.35 }) : toon(sp.fur), belly = toon(sp.belly ?? sp.fur), ink = basic('#1d1b2e'), white = basic('#ffffff');
+  const P = new THREE.Group();
+  g.add(P);
+  const S = (geo, mat, p, s, r, outline = true) => add(P, geo, mat, { p, s, r, outline });
+  const eyes = (y, z, gap = 0.07, r = 0.028, col = '#1d1b2e') => { for (const s of [-1, 1]) { const e = S(sph(r, 10, 8), basic(col), [s * gap, y, z], [1, 1.25, 0.5], null, false); S(sph(r * 0.38, 6, 5), white, [s * gap + 0.008, y + 0.01, z + 0.012], null, null, false); void e; } };
+  const blush = (y, z, gap = 0.11) => { for (const s of [-1, 1]) S(sph(0.025, 8, 6), toon('#ff9fb4'), [s * gap, y, z], [1.3, 0.7, 0.3], null, false); };
+  if (sp.kind === 'chibi') {
+    const skin = toon(sp.skin), cloth = toon(sp.outfit), cloth2 = toon(sp.outfit2 ?? sp.outfit), hair = toon(sp.hair);
+    // a little body with stubby arms and legs, then a big head
+    S(cyl(0.1, 0.12, 0.17, 16), sp.extra.includes('checker') ? new THREE.MeshToonMaterial({ map: checkerTex }) : cloth, [0, 0.16, 0]);
+    if (sp.extra.includes('kimono')) S(box(0.05, 0.17, 0.02), toon(sp.outfit2), [0, 0.16, 0.115], null, [0, 0, 0.3], false);
+    if (sp.extra.includes('belt')) S(cyl(0.122, 0.122, 0.03, 16), toon(sp.outfit2), [0, 0.12, 0], null, null, false);
+    for (const s of [-1, 1]) {
+      S(sph(0.045, 10, 8), cloth2, [s * 0.055, 0.05, 0.03], [1, 0.9, 1.3]);
+      S(sph(0.04, 10, 8), sp.extra.includes('checker') ? cloth : cloth, [s * 0.13, 0.17, 0.02], [0.9, 1.3, 0.9]);
+      S(sph(0.025, 8, 6), skin, [s * 0.15, 0.12, 0.04], null, null, false);
+    }
+    const hy = 0.36;
+    S(sph(0.16, 20, 16), skin, [0, hy, 0], [1.05, 0.98, 1]);
+    // hair: a cap over the top and back, then the style on top
+    S(sph(0.168, 20, 16), hair, [0, hy + 0.025, -0.02], [1.06, 0.95, 1.02]);
+    if (sp.style === 'spiky' || sp.style === 'bigspiky') {
+      const big = sp.style === 'bigspiky' ? 1.6 : 1;
+      for (let k = 0; k < 9; k++) {
+        const a = (k / 9) * TAU, up = k % 2 ? 0.9 : 1.1;
+        S(cone(0.05 * big, 0.14 * big * up, 6), hair, [Math.cos(a) * 0.1, hy + 0.13 + Math.sin(a) * 0.02, Math.sin(a) * 0.1 - 0.02], null, [Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5]);
+      }
+      S(cone(0.06 * big, 0.18 * big, 6), hair, [0, hy + 0.2, -0.02]);
+      for (let k = -2; k <= 2; k++) S(cone(0.035, 0.1, 5), hair, [k * 0.05, hy + 0.08, 0.13], null, [1.9, 0, k * 0.15], false); // a fringe
+    } else if (sp.style === 'undercut') {
+      for (let k = 0; k < 7; k++) { const a = Math.PI * (0.15 + (k / 6) * 0.7); S(cone(0.04, 0.09, 5), hair, [Math.cos(a) * 0.12, hy + 0.14, Math.sin(a) * 0.04], null, [0, 0, (Math.PI / 2 - a) * 0.6]); }
+      S(sph(0.165, 16, 12), toon(sp.hair2 ?? shade(sp.hair, -0.35)), [0, hy - 0.01, -0.03], [1.04, 0.8, 1.0], null, false); // the shaved sides
+      for (let k = -1; k <= 1; k++) S(cone(0.03, 0.08, 5), hair, [k * 0.05, hy + 0.1, 0.13], null, [1.9, 0, k * 0.2], false);
+    } else if (sp.style === 'messy') {
+      for (let k = 0; k < 10; k++) { const a = (k / 10) * TAU; S(sph(0.06, 8, 6), hair, [Math.cos(a) * 0.13, hy + 0.1 + (k % 3) * 0.02, Math.sin(a) * 0.12 - 0.01]); }
+      for (let k = -2; k <= 2; k++) S(cone(0.04, 0.09, 5), hair, [k * 0.045, hy + 0.09, 0.135], null, [2, 0, k * 0.2], false);
+    } else if (sp.style === 'long') {
+      S(box(0.3, 0.32, 0.1), hair, [0, hy - 0.1, -0.12]);
+      S(box(0.3, 0.1, 0.1), toon(sp.hair2), [0, hy - 0.29, -0.12], null, null, false); // dip-dyed ends
+      for (let k = -2; k <= 2; k++) S(cone(0.035, 0.09, 5), hair, [k * 0.045, hy + 0.09, 0.135], null, [2, 0, k * 0.15], false);
+    }
+    // face
+    const fz = 0.152;
+    if (sp.extra.includes('blindfold')) S(box(0.34, 0.06, 0.04), toon('#14141c'), [0, hy + 0.03, 0.135], null, null, false);
+    else eyes(hy + 0.01, fz, 0.065, 0.03, sp.extra.includes('marks') ? '#b0172a' : '#1d1b2e');
+    blush(hy - 0.045, fz - 0.01);
+    S(sph(0.015, 8, 6), toon('#b03a48'), [0, hy - 0.06, fz], [1.4, 0.7, 0.4], null, false); // a little mouth
+    if (sp.extra.includes('marks')) for (const s of [-1, 1]) { S(box(0.04, 0.008, 0.01), ink, [s * 0.065, hy - 0.03, fz + 0.002], null, null, false); S(box(0.04, 0.008, 0.01), ink, [s * 0.065, hy - 0.045, fz], null, null, false); S(sph(0.012, 6, 5), basic('#b0172a'), [s * 0.065, hy + 0.06, fz - 0.01], null, null, false); }
+    if (sp.extra.includes('whiskers')) for (const s of [-1, 1]) for (let k = 0; k < 3; k++) S(box(0.05, 0.006, 0.006), ink, [s * 0.1, hy - 0.025 - k * 0.015, fz - 0.015], null, [0, s * 0.4, 0], false);
+    if (sp.extra.includes('scar')) S(box(0.006, 0.035, 0.006), toon('#b03a48'), [-0.07, hy - 0.035, fz + 0.002], null, null, false);
+    if (sp.extra.includes('forehead')) S(box(0.04, 0.02, 0.006), toon('#b03a48'), [-0.05, hy + 0.08, fz - 0.01], null, null, false);
+    if (sp.extra.includes('earrings')) for (const s of [-1, 1]) S(box(0.025, 0.05, 0.005), toon('#f4efe6'), [s * 0.165, hy - 0.06, 0], null, null, false);
+    if (sp.extra.includes('muzzle')) S(cyl(0.018, 0.018, 0.2, 8), toon('#7fae5a'), [0, hy - 0.055, fz + 0.01], null, [0, 0, Math.PI / 2]);
+    if (sp.extra.includes('ribbon')) S(sph(0.05, 10, 8), toon('#ff8fc7'), [0.08, hy + 0.12, -0.08], [1.4, 0.7, 0.5]);
+    if (sp.extra.includes('headband')) { S(cyl(0.172, 0.172, 0.04, 20, true), toon('#2f5bd6'), [0, hy + 0.06, 0], null, null, false); S(box(0.11, 0.045, 0.01), shiny('#c8ced8', { metalness: 0.6 }), [0, hy + 0.06, 0.168], null, null, false); }
+    if (sp.extra.includes('collar')) S(cyl(0.1, 0.11, 0.06, 16), cloth, [0, 0.27, 0]);
+    if (sp.extra.includes('hood')) S(geo('hoodRing', () => new THREE.TorusGeometry(0.1, 0.035, 8, 16)), toon('#d6283a'), [0, 0.26, -0.01], null, [Math.PI / 2, 0, 0]);
+    if (sp.extra.includes('strawhat')) {
+      S(cyl(0.26, 0.26, 0.015, 24), toon('#f2d27a'), [0, hy + 0.15, 0], null, [0.12, 0, 0]);
+      S(cyl(0.13, 0.15, 0.09, 18), toon('#f2d27a'), [0, hy + 0.2, -0.01], null, [0.12, 0, 0]);
+      S(cyl(0.152, 0.152, 0.03, 18, true), toon('#d6283a'), [0, hy + 0.17, -0.01], null, [0.12, 0, 0], false);
+    }
+    return { use: () => floatEmoji(g, A, '💖', 0.7) };
+  }
+  // animals: a round body and a round head, then each kind's features
+  const tall = sp.kind === 'penguin' || sp.kind === 'duck';
+  if (sp.kind !== 'octopus') {
+    S(sph(0.15, 18, 14), fur, [0, 0.15, 0], [1, tall ? 1.15 : 0.95, 0.95]);
+    S(sph(0.09, 14, 10), belly, [0, 0.14, 0.09], [1, 1.1, 0.5], null, false);
+  }
+  const hy = sp.kind === 'octopus' ? 0.22 : tall ? 0.38 : 0.37, hr = sp.kind === 'octopus' ? 0.18 : 0.14;
+  S(sph(hr, 18, 14), sp.patches ? toon(sp.fur) : fur, [0, hy, 0.01], [1.05, sp.kind === 'octopus' ? 1.1 : 0.95, 1]);
+  const fz = hr * 0.94 + 0.01;
+  const limbs = toon(sp.limbs ?? sp.fur);
+  if (!['octopus', 'shark', 'penguin', 'duck'].includes(sp.kind)) for (const s of [-1, 1]) {
+    S(sph(0.05, 10, 8), limbs, [s * 0.13, 0.17, 0.05], [0.9, 1.3, 0.9]); // arms
+    S(sph(0.055, 10, 8), limbs, [s * 0.08, 0.04, 0.09], [1, 0.7, 1.3]); // feet
+  }
+  const earCol = toon(sp.ears ?? sp.fur);
+  if (sp.kind === 'bear' || sp.kind === 'pig') {
+    for (const s of [-1, 1]) {
+      S(sph(sp.kind === 'pig' ? 0.04 : 0.05, 10, 8), earCol, [s * 0.1, hy + 0.11, -0.01], sp.kind === 'pig' ? [1, 1.2, 0.5] : null);
+      if (sp.patches) S(sph(0.04, 10, 8), toon(sp.patches), [s * 0.055, hy + 0.01, fz - 0.025], [1, 1.2, 0.5], null, false);
+    }
+    if (sp.kind === 'pig') { S(cyl(0.045, 0.045, 0.03, 14), toon(sp.inner), [0, hy - 0.03, fz], null, [Math.PI / 2, 0, 0], false); for (const s of [-1, 1]) S(sph(0.01, 6, 5), ink, [s * 0.016, hy - 0.03, fz + 0.016], null, null, false); }
+    else { S(sph(0.05, 10, 8), toon(sp.belly), [0, hy - 0.035, fz - 0.02], [1.2, 0.85, 0.6], null, false); S(sph(0.016, 8, 6), ink, [0, hy - 0.02, fz + 0.005], null, null, false); }
+    if (sp.bow) S(sph(0.04, 10, 8), toon(sp.bow), [0, 0.27, 0.1], [1.6, 0.7, 0.5]);
+    eyes(hy + 0.01, fz - 0.01, 0.055, 0.022);
+  } else if (sp.kind === 'bunny') {
+    for (const s of [-1, 1]) { S(sph(0.04, 10, 8), fur, [s * 0.05, hy + 0.2, -0.01], [0.8, 2.6, 0.6], [0, 0, -s * 0.12]); S(sph(0.022, 8, 6), toon(sp.inner), [s * 0.05, hy + 0.2, 0.01], [0.7, 2.4, 0.3], [0, 0, -s * 0.12], false); }
+    S(sph(0.016, 8, 6), toon(sp.inner), [0, hy - 0.02, fz], null, null, false);
+    eyes(hy + 0.01, fz - 0.01, 0.055, 0.022);
+  } else if (sp.kind === 'cat' || sp.kind === 'fox') {
+    for (const s of [-1, 1]) { S(cone(0.05, 0.09, 4), fur, [s * 0.08, hy + 0.13, 0], null, [0, Math.PI / 4, -s * 0.25]); S(cone(0.028, 0.05, 4), toon(sp.inner), [s * 0.08, hy + 0.125, 0.02], null, [0, Math.PI / 4, -s * 0.25], false); }
+    if (sp.kind === 'fox') {
+      S(sph(0.06, 10, 8), belly, [0, hy - 0.035, fz - 0.02], [1.3, 0.8, 0.8], null, false);
+      S(sph(0.07, 12, 10), fur, [0.1, 0.12, -0.15], [0.9, 0.9, 1.9], [0.3, 0.5, 0]); // a big bushy tail
+      S(sph(0.045, 10, 8), belly, [0.15, 0.15, -0.27], null, null, false); // with a white tip
+    }
+    else S(capsuleGeo(0.025, 0.18), fur, [0.12, 0.12, -0.12], null, [0.6, 0, -0.9]);
+    S(sph(0.014, 8, 6), toon(sp.kind === 'fox' ? '#1d1b2e' : '#ff8fae'), [0, hy - 0.02, fz + 0.005], null, null, false);
+    eyes(hy + 0.01, fz - 0.01, 0.055, 0.024, sp.eyeCol ?? '#1d1b2e');
+  } else if (sp.kind === 'frog') {
+    for (const s of [-1, 1]) { S(sph(0.05, 12, 10), fur, [s * 0.07, hy + 0.1, 0.05]); S(sph(0.03, 10, 8), white, [s * 0.07, hy + 0.11, 0.09], null, null, false); S(sph(0.016, 8, 6), ink, [s * 0.07, hy + 0.11, 0.115], null, null, false); }
+    S(geo('frogMouth', () => new THREE.TorusGeometry(0.06, 0.008, 6, 16, Math.PI)), ink, [0, hy - 0.02, fz - 0.005], null, [0, 0, Math.PI], false);
+  } else if (sp.kind === 'dino') {
+    for (let k = 0; k < 5; k++) S(cone(0.035, 0.07, 4), toon(sp.spikes), [0, hy + 0.12 - k * 0.07, -0.08 - k * 0.025], null, [-0.6 - k * 0.15, 0, 0]);
+    S(cone(0.07, 0.22, 10), fur, [0, 0.1, -0.2], null, [-1.9, 0, 0]);
+    eyes(hy + 0.02, fz - 0.01, 0.06, 0.024);
+  } else if (sp.kind === 'penguin' || sp.kind === 'duck') {
+    S(cone(0.035, 0.08, 8), toon(sp.beak), [0, hy - 0.02, fz + 0.02], [sp.kind === 'duck' ? 1.6 : 1, 1, sp.kind === 'duck' ? 0.6 : 1], [Math.PI / 2, 0, 0]);
+    for (const s of [-1, 1]) { S(sph(0.05, 10, 8), fur, [s * 0.15, 0.17, 0], [0.5, 1.4, 0.9], [0, 0, s * 0.3]); S(sph(0.045, 8, 6), toon(sp.beak), [s * 0.06, 0.02, 0.08], [1, 0.4, 1.4], null, false); }
+    if (sp.kind === 'duck') S(sph(0.03, 8, 6), fur, [0, hy + 0.14, 0], [0.6, 1.6, 0.6]);
+    eyes(hy + 0.03, fz - 0.01, 0.055, 0.022);
+  } else if (sp.kind === 'octopus') {
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU + 0.3; S(capsuleGeo(0.035, 0.12), fur, [Math.cos(a) * 0.13, 0.05, Math.sin(a) * 0.13], null, [Math.sin(a) * 1.2, 0, -Math.cos(a) * 1.2]); }
+    eyes(hy, fz, 0.07, 0.03);
+    blush(hy - 0.05, fz - 0.01, 0.12);
+  } else if (sp.kind === 'axolotl') {
+    for (const s of [-1, 1]) for (let k = 0; k < 3; k++) S(cone(0.022, 0.09, 6), toon(sp.gills), [s * 0.14, hy + 0.05 - k * 0.04, -0.02], null, [0, 0, -s * (1.0 + k * 0.4)]);
+    S(capsuleGeo(0.04, 0.14), fur, [0, 0.12, -0.17], null, [1.2, 0, 0]);
+    eyes(hy, fz - 0.005, 0.07, 0.022);
+    S(geo('axoSmile', () => new THREE.TorusGeometry(0.03, 0.006, 6, 12, Math.PI)), ink, [0, hy - 0.04, fz], null, [0, 0, Math.PI], false);
+  } else if (sp.kind === 'shark') {
+    S(cone(0.06, 0.14, 4), fur, [0, hy + 0.16, -0.03], [0.4, 1, 1], [-0.3, 0, 0]);
+    S(cone(0.07, 0.16, 4), fur, [0, 0.12, -0.2], [0.4, 1, 1], [-1.6, 0, 0]);
+    for (const s of [-1, 1]) S(cone(0.05, 0.12, 4), fur, [s * 0.15, 0.13, 0.02], [1, 1, 0.4], [0, 0, s * 1.9]);
+    S(sph(0.1, 14, 10), belly, [0, hy - 0.06, fz - 0.06], [1.2, 0.6, 0.6], null, false);
+    eyes(hy + 0.02, fz - 0.01, 0.07, 0.022);
+    for (let k = -2; k <= 2; k++) S(cone(0.008, 0.016, 3), white, [k * 0.015, hy - 0.05, fz + 0.005], null, [Math.PI, 0, 0], false);
+  }
+  if (sp.kind !== 'octopus' && sp.kind !== 'axolotl') blush(hy - 0.035, fz - 0.02, 0.09);
+  return { use: () => floatEmoji(g, A, '💖', 0.7) };
+}
+for (const [id, sp] of Object.entries(PLUSH)) FURNITURE[id] = (g, A) => plushie(g, A, sp);
+export const PLUSH_IDS = Object.keys(PLUSH);
+export const plushEmoji = (id) => PLUSH_EMOJI[PLUSH[id]?.kind] ?? '🧸';
+
 export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true], color = null } = {}) {
   const data = FURN_DATA[id];
   if (data?.base) return buildFurniture(data.base, { drop, len, openings, caps, color: color ?? data.color });

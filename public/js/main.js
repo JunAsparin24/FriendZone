@@ -63,6 +63,102 @@ function forgetZone(code) {
 }
 
 // ---------------------------------------------------------------------------
+// Accounts: sign in once (username + password) and your zones follow you to any device. The device
+// keeps a sign-in token, never your password.
+// ---------------------------------------------------------------------------
+
+const ACCOUNT_KEY = 'friendzone.account';
+let account = null; // { name, zones: [{ code, zoneName, name, online }] } once signed in
+
+function storedAccount() {
+  try { return JSON.parse(localStorage.getItem(ACCOUNT_KEY)); } catch { return null; }
+}
+function storeAccount(v) {
+  try { if (v) localStorage.setItem(ACCOUNT_KEY, JSON.stringify(v)); else localStorage.removeItem(ACCOUNT_KEY); } catch { /* private mode */ }
+}
+/** Ask the server for your account (and its list of zones) again, with the token this device has. */
+function refreshAccount() {
+  const a = storedAccount();
+  if (a?.token) net.send('account_resume', { username: a.username, token: a.token });
+}
+
+function renderAccount() {
+  const btn = $('#accountBtn');
+  btn.innerHTML = account ? `👤 ${esc(account.name)}` : '👤 Sign in';
+  btn.title = account ? 'Your account' : 'Sign in to your account';
+  btn.classList.toggle('on', !!account);
+  $('#accountBar').innerHTML = account
+    ? `<span>Signed in as <b>${esc(account.name)}</b></span>`
+    : '<span>Sign in to see your zones on any device.</span><button class="btn small primary" data-account>Sign in</button>';
+  // signed in, you don't need a name or PIN to create or join a zone
+  for (const form of [$('#createForm'), $('#joinForm')]) {
+    const creating = form.id === 'createForm';
+    form.querySelector('.f-signed').hidden = !account;
+    form.name.required = form.pin.required = !account;
+    form.querySelector('.f-name').hidden = form.querySelector('.f-pin').hidden = !!account && creating;
+    if (account && !creating) form.name.placeholder = account.name;
+  }
+}
+
+/** The sign-in / create-account panel. */
+function openAccountPanel() {
+  if (account) {
+    openModal({ account: true, mount: (body) => {
+      body.innerHTML = `<div class="acct-panel"><h2>👤 ${esc(account.name)}</h2>
+        <p class="muted">You're signed in. Your FriendZones are listed on the home screen on any device you sign in on.</p>
+        <button class="btn danger" id="acctOut">Sign out</button></div>`;
+      $('#acctOut').onclick = () => { net.send('signout', { token: storedAccount()?.token }); signedOut(); closeModal(true); };
+    } });
+    return;
+  }
+  openModal({ account: true, mount: (body) => {
+    let mode = 'signin';
+    body.innerHTML = `<form class="acct-panel form" id="acctForm" autocomplete="on">
+      <div class="tabs"><button type="button" data-mode="signin" class="on">Sign in</button><button type="button" data-mode="signup">Create account</button></div>
+      <label>Username<input name="username" maxlength="16" required autocomplete="username" placeholder="jun"></label>
+      <label>Password<input name="password" type="password" maxlength="64" required autocomplete="current-password"></label>
+      <p class="acct-hint muted small"></p>
+      <p class="error" id="acctErr"></p>
+      <button class="btn primary" id="acctGo">Sign in</button></form>`;
+    const form = $('#acctForm');
+    const setMode = (m) => {
+      mode = m;
+      form.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
+      $('#acctGo').textContent = m === 'signin' ? 'Sign in' : 'Create account';
+      form.password.autocomplete = m === 'signin' ? 'current-password' : 'new-password';
+      form.querySelector('.acct-hint').textContent = m === 'signin' ? '' : 'Pick a username (3–16 letters or numbers) and a password (4+ characters). Zones you play while signed in are saved to it.';
+      $('#acctErr').textContent = '';
+    };
+    form.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      $('#acctErr').textContent = net.connected ? '' : 'Not connected to the server yet…';
+      net.send(mode, { username: form.username.value.trim(), password: form.password.value });
+    };
+    setMode('signin');
+    form.username.focus();
+  } });
+}
+
+function signedOut() {
+  account = null;
+  storeAccount(null);
+  renderAccount();
+  if (screen === 'home') renderHome();
+}
+
+net.on('account', (m) => {
+  const fresh = !account;
+  account = { name: m.name, zones: m.zones ?? [] };
+  if (m.token) storeAccount({ username: m.name, token: m.token });
+  if (modal?.activity?.account) closeModal(true);
+  if (fresh && m.token) toast(`👋 Signed in as ${m.name}`);
+  renderAccount();
+  if (screen === 'home') renderHome(false);
+});
+net.on('signed_out', () => {});
+
+// ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
 
@@ -74,40 +170,59 @@ function show(id) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('hidden', s.id !== id));
   $('#versionTag').hidden = $('#feedbackBtn').hidden = id === 'world'; // (menus only)
   $('#chatBtn').hidden = $('#rideBtn').hidden = id !== 'world';
+  $('#accountBtn').hidden = id === 'world'; // (menus only)
   $('.chat').classList.remove('open');
-  if (id === 'home') renderHome();
+  if (id === 'home') { renderHome(); if (account) refreshAccount(); }
   if (id === 'lobby') renderLobby();
   if (id === 'world') { renderHud(); renderChat(); }
 }
 
 let onlineCounts = {};
 function askOnline() {
-  const codes = savedZones().map((z) => z.code);
+  const codes = [...new Set([...(account?.zones ?? []).map((z) => z.code), ...savedZones().map((z) => z.code)])];
   if (codes.length && screen === 'home') net.send('zones_online', { codes });
 }
 setInterval(askOnline, 10000);
 net.on('zones_online', (m) => { onlineCounts = m.counts ?? {}; if (screen === 'home') renderHome(false); });
 
-function renderHome(ask = true) {
-  const list = savedZones();
-  $('#noZones').hidden = list.length > 0;
-  $('#myZones').innerHTML = list.map((z) => {
-    const n = onlineCounts[String(z.code).toUpperCase()];
-    const badge = n == null ? '' : `<span class="zone-online ${n ? 'on' : ''}"><i class="zo-dot"></i>${n} online</span>`;
-    return `
+function zoneRow(z, attr, forget = true) {
+  const n = onlineCounts[String(z.code).toUpperCase()] ?? z.online;
+  const badge = n == null ? '' : `<span class="zone-online ${n ? 'on' : ''}"><i class="zo-dot"></i>${n} online</span>`;
+  return `
     <li>
-      <button class="zone-item" data-code="${esc(z.code)}">
+      <button class="zone-item" ${attr}="${esc(z.code)}">
         <span class="zn">${esc(z.zoneName)}</span>
         <span class="muted">as ${esc(z.name)} · ${esc(z.code)}</span>
         ${badge}
       </button>
-      <button class="icon-btn" data-forget="${esc(z.code)}" title="Remove from this device">✕</button>
+      ${forget ? `<button class="icon-btn" data-forget="${esc(z.code)}" title="Remove from this device">✕</button>` : ''}
     </li>`;
-  }).join('');
+}
+
+function renderHome(ask = true) {
+  renderAccount();
+  const device = savedZones();
+  if (account) {
+    // signed in: your account's zones (on any device), then any others this device remembers
+    const mine = new Set(account.zones.map((z) => z.code));
+    const others = device.filter((z) => !mine.has(z.code));
+    $('#myZones').innerHTML = account.zones.map((z) => zoneRow(z, 'data-play', false)).join('');
+    $('#noZones').hidden = account.zones.length > 0;
+    $('#deviceZonesWrap').hidden = !others.length;
+    $('#deviceZones').innerHTML = others.map((z) => zoneRow(z, 'data-code')).join('');
+  } else {
+    $('#noZones').hidden = device.length > 0;
+    $('#myZones').innerHTML = device.map((z) => zoneRow(z, 'data-code')).join('');
+    $('#deviceZonesWrap').hidden = true;
+  }
   if (ask) askOnline();
 }
 
-$('#myZones').addEventListener('click', (e) => {
+$('#home').addEventListener('click', (e) => {
+  if (e.target.closest('[data-account]')) { openAccountPanel(); return; }
+  const play = e.target.closest('[data-play]');
+  if (play) { net.send('play', { code: play.dataset.play }); return; }
+  if (!e.target.closest('.zone-list')) return;
   const forget = e.target.closest('[data-forget]');
   if (forget) {
     forgetZone(forget.dataset.forget);
@@ -146,6 +261,7 @@ $('#muteBtn').onclick = () => {
   sfx('pop');
 };
 $('#settingsBtn').innerHTML = iconSvg('settings');
+$('#accountBtn').onclick = () => openAccountPanel();
 $('#settingsBtn').onclick = () => openSettings();
 onSettings(renderSound);
 renderSound();
@@ -629,7 +745,15 @@ net.on('error', (m) => {
   // Activities mark errors they display themselves; everything else becomes a toast.
   setTimeout(() => {
     if (m.handled) return;
-    if (m.for === 'create' || m.for === 'join') {
+    if (m.for === 'signin' || m.for === 'signup') {
+      const el = document.querySelector('#acctErr');
+      if (el) el.textContent = m.msg; else toast(m.msg, 'error');
+    } else if (m.for === 'account_resume') {
+      signedOut();
+    } else if (m.for === 'play') {
+      toast(m.msg, 'error');
+      refreshAccount();
+    } else if (m.for === 'create' || m.for === 'join') {
       $(`#${m.for}Form .error`).textContent = m.msg;
     } else if (m.for === 'resume') {
       const z = session;
@@ -643,6 +767,7 @@ net.on('error', (m) => {
 
 net.onOpen = () => {
   $('#conn').classList.add('hidden');
+  refreshAccount(); // (first, so a zone you open after is linked to your account)
   if (session) net.send('resume', session);
   askOnline();
 };
@@ -667,6 +792,7 @@ if (joinCode) {
 } else {
   show('home');
 }
+renderAccount();
 $('#conn').classList.remove('hidden');
 net.connect();
 setInterval(() => { if (screen === 'lobby') renderProfile(); }, 60000); // keep the daily-bonus timer fresh

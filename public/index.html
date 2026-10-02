@@ -20,6 +20,7 @@
   <div class="top-ctl">
     <button id="chatBtn" class="touch-only" aria-label="Chat">💬</button>
     <button id="rideBtn" aria-label="Ride your mount" title="Ride your mount (G)" hidden>🐴</button>
+    <button id="accountBtn" class="account-btn" title="Sign in to your account">👤 Sign in</button>
     <button id="muteBtn" aria-label="Mute">🔊</button>
     <button id="settingsBtn" aria-label="Settings" title="Settings"></button>
   </div>
@@ -29,9 +30,11 @@
     <img class="logo-mark" src="icon.svg" alt="" width="84" height="84">
     <h1 class="logo" aria-label="FRIEND ZONE"><span data-text="FRIEND">FRIEND</span><span data-text="ZONE">ZONE</span></h1>
     <div class="card narrow">
+      <div class="account-bar" id="accountBar"></div>
       <h2>Your FriendZones</h2>
       <ul id="myZones" class="zone-list"></ul>
       <p id="noZones" class="muted">You're not in any zones yet. Create one for your group, or join a friend's with their code.</p>
+      <div id="deviceZonesWrap" hidden><h3 class="muted small">Also on this device</h3><ul id="deviceZones" class="zone-list"></ul></div>
     </div>
     <div class="row">
       <button class="btn primary" data-go="create">＋ Create a FriendZone</button>
@@ -48,9 +51,10 @@
     <h1 class="logo small" aria-label="NEW ZONE"><span data-text="NEW">NEW</span><span data-text="ZONE">ZONE</span></h1>
     <form id="createForm" class="card narrow form" autocomplete="off">
       <label>Zone name<input name="zoneName" maxlength="24" required placeholder="The Squad"></label>
-      <label>Your name<input name="name" maxlength="16" required placeholder="Jun"></label>
-      <label>PIN <small>4–6 digits, used to sign in on other devices</small>
+      <label class="f-name">Your name<input name="name" maxlength="16" required placeholder="Jun"></label>
+      <label class="f-pin">PIN <small>4–6 digits, used to sign in on other devices</small>
         <input name="pin" type="password" inputmode="numeric" pattern="\d{4,6}" maxlength="6" required></label>
+      <p class="f-signed muted small" hidden>Signed in: this zone goes on your account, so you can open it from any device.</p>
       <div class="field-label">Your color</div>
       <div class="swatches"></div>
       <p class="error"></p>
@@ -63,9 +67,10 @@
     <h1 class="logo small" aria-label="JOIN ZONE"><span data-text="JOIN">JOIN</span><span data-text="ZONE">ZONE</span></h1>
     <form id="joinForm" class="card narrow form" autocomplete="off">
       <label>Invite code<input name="code" maxlength="8" required placeholder="ABC123" class="code-input"></label>
-      <label>Your name<input name="name" maxlength="16" required placeholder="Dani"></label>
-      <label>PIN <small>new here? pick one. returning? use yours</small>
+      <label class="f-name">Your name<input name="name" maxlength="16" required placeholder="Dani"></label>
+      <label class="f-pin">PIN <small>new here? pick one. returning? use yours</small>
         <input name="pin" type="password" inputmode="numeric" pattern="\d{4,6}" maxlength="6" required></label>
+      <p class="f-signed muted small" hidden>Signed in: you'll join with your account. Already have a profile in this zone from before? Put its name and PIN in to add it to your account.</p>
       <div class="field-label">Your color <small>(new members)</small></div>
       <div class="swatches"></div>
       <p class="error"></p>

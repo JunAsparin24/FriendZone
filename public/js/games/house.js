@@ -103,6 +103,45 @@ function fits(it) {
 const isDragWall = (id) => !!FURN[id]?.drag;
 const lenOf = (it) => (isDragWall(it.id) ? it.l ?? FURN[it.id].w : FURN[it.id].w);
 const footprint = (it) => { const f = FURN[it.id], w = lenOf(it); return it.r % 2 ? [f.d, w] : [w, f.d]; };
+const isDoor = (id) => kindOf(id) === 'door';
+/** The floor cells (quarter tiles) something stands on, whatever layer it's on. */
+function groundCells(it) {
+  const [w, d] = footprint(it), x0 = Math.round(it.x * SNAP), y0 = Math.round(it.y * SNAP), out = [];
+  for (let i = 0; i < w * SNAP; i++) for (let j = 0; j < d * SNAP; j++) out.push(`${x0 + i}:${y0 + j}`);
+  return out;
+}
+/** Every cell covered by a wall you've built (leaving one item out). */
+function roomWallCells(items, skip = -1) {
+  const set = new Set();
+  items.forEach((o, i) => { if (i !== skip && FURN[o.id]?.room && !isDoor(o.id)) groundCells(o).forEach((c) => set.add(c)); });
+  return set;
+}
+/** A door has to sit wholly inside a wall. */
+const inWall = (it, walls) => groundCells(it).every((c) => walls.has(c));
+/**
+ * How a drawn wall is built: the gaps where doors are in it (in the wall's own frame, which runs from
+ * -len/2 to len/2 and may run either way along the room depending on how it's turned), which ends are
+ * open (and so get papered), and the solid stretches either side of each door (room tiles).
+ */
+function wallLayout(it, items, walls) {
+  const l = lenOf(it), horiz = it.r % 2 === 0, start = horiz ? it.x : it.y, perp = horiz ? it.y : it.x;
+  const sign = it.r % 4 === 0 || it.r % 4 === 3 ? 1 : -1, mid = start + l / 2;
+  const gaps = items.filter((o) => isDoor(o.id) && o.r % 2 === it.r % 2 && (horiz ? o.y : o.x) === perp)
+    .map((o) => { const a = horiz ? o.x : o.y; return [a, a + FURN[o.id].w]; })
+    .filter(([a, b]) => a >= start - 1e-6 && b <= start + l + 1e-6)
+    .sort((p, q) => p[0] - q[0]);
+  const openings = gaps.map(([a, b]) => [sign * (a - mid), sign * (b - mid)].sort((p, q) => p - q));
+  // an end is open unless another wall carries on from it (or it runs into the house's own walls)
+  const N = horiz ? NX : NZ, q = 1 / SNAP;
+  const covered = (along) => along < 0 || along >= N || walls.has(horiz ? `${Math.round(along * SNAP)}:${Math.round(perp * SNAP)}` : `${Math.round(perp * SNAP)}:${Math.round(along * SNAP)}`);
+  const lowOpen = !covered(start - q), highOpen = !covered(start + l);
+  const caps = sign > 0 ? [lowOpen, highOpen] : [highOpen, lowOpen];
+  const segs = [];
+  let a = start;
+  for (const [g0, g1] of gaps) { if (g0 > a) segs.push([a, g0]); a = g1; }
+  if (start + l > a) segs.push([a, start + l]);
+  return { openings, caps, segs };
+}
 
 // ---------------------------------------------------------------------------
 // the room: floor, four walls (a doorway in the front one) and a garden outside
@@ -305,8 +344,10 @@ export function house(stage) {
     while (room.items.children.length) room.items.remove(room.items.children[0]);
     stage.interactables = stage.interactables.filter((i) => !i.house);
     solids.length = 0;
+    const walls = roomWallCells(home.items);
     entries = home.items.map((it, index) => {
-      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' ? heightOf(it) : 0, len: isDragWall(it.id) ? lenOf(it) : 0 });
+      const layout = isDragWall(it.id) ? wallLayout(it, home.items, walls) : null;
+      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps });
       built.group.userData.index = index;
       placeGroup(built.group, it);
       built.group.visible = !(placing && placing.from === index);
@@ -318,11 +359,19 @@ export function house(stage) {
       const cx = kind === 'wall' ? [it.x + half, 0.6, it.x + half, NX - 0.6][wr] : it.x + w / 2;
       const cz = kind === 'wall' ? [0.6, it.y + half, NZ - 0.6, it.y + half][wr] : it.y + d / 2;
       const f0 = FURN[it.id];
-      if (f0.room) {
-        // walls you build inside: papered like the room, and solid right up to their ends
+      if (isDoor(it.id)) {
+        // a door in a wall: you walk through it (it opens for you)
+      } else if (f0.room) {
+        // walls you build inside: papered like the room, and solid right up to their ends (but not
+        // through the doors in them)
         built.group.traverse((o) => { if (o.userData.wallpaper) o.material = room.wallMat; });
         entry.roomWall = true;
-        if (f0.doorway) {
+        if (layout) {
+          for (const [a, b] of layout.segs) {
+            if (w >= d) solids.push({ x: ((a + b) / 2) * T, z: cz * T, w: (b - a) * T + 0.1, d: d * T + 0.1 });
+            else solids.push({ x: cx * T, z: ((a + b) / 2) * T, w: w * T + 0.1, d: (b - a) * T + 0.1 });
+          }
+        } else if (f0.doorway) {
           // a doorway: only the posts either side are solid, so you can walk through the middle
           const post = 0.5;
           if (w >= d) for (const px of [it.x + post / 2, it.x + w - post / 2]) solids.push({ x: px * T, z: cz * T, w: post * T, d: d * T + 0.1 });
@@ -524,7 +573,8 @@ export function house(stage) {
     if (kindOf(placing.id) === 'ceiling' && ghost.userData.drop !== heightOf(placing)) { buildGhost(); return updateGhost(); }
     if (isDragWall(placing.id) && ghost.userData.len !== lenOf(placing)) { buildGhost(); return updateGhost(); }
     const taken = takenCells(placing.from);
-    placing.valid = !placing.tooShort && fits(it) && !cellsOf(it).some((c) => taken.has(c)) && !blocksDoor(it);
+    placing.valid = !placing.tooShort && fits(it) && !cellsOf(it).some((c) => taken.has(c)) && !blocksDoor(it)
+      && (!isDoor(placing.id) || inWall(it, roomWallCells(home.items, placing.from)));
     const mat = placing.valid ? ghostOk : ghostBad;
     ghost.traverse((o) => { if (o.isMesh && !o.userData.outline) o.material = mat; });
     ghost.visible = true;
@@ -571,11 +621,36 @@ export function house(stage) {
       return;
     }
     if (isDragWall(placing.id) && placing.from < 0) { aimWall(); return; }
+    if (isDoor(placing.id)) { aimDoor(); return; }
     const p = stage.pointerOnPlane(0);
     if (!p) { placing.x = -1; return; }
     const [w, d] = footprint(placing);
     placing.x = Math.max(0, Math.min(NX - w, snap(p.x / T - w / 2)));
     placing.y = Math.max(0, Math.min(NZ - d, snap(p.z / T - d / 2)));
+  }
+
+  /** A door snaps into whichever wall you point at (or near), centred on the pointer along it. */
+  function aimDoor() {
+    const p = stage.pointerOnPlane(0);
+    if (!p) { placing.x = -1; return; }
+    const px = p.x / T, pz = p.z / T, fw = FURN[placing.id].w;
+    let best = null, bestD = 0.9;
+    home.items.forEach((o, i) => {
+      if (!isDragWall(o.id) || i === placing.from) return;
+      const l = lenOf(o), horiz = o.r % 2 === 0;
+      const along = horiz ? px : pz, across = horiz ? pz - (o.y + 0.125) : px - (o.x + 0.125), start = horiz ? o.x : o.y;
+      const off = Math.max(0, start - along, along - (start + l));
+      const dist = Math.hypot(off, across);
+      if (l >= fw && dist < bestD) { bestD = dist; best = o; }
+    });
+    if (!best) {
+      // not near a wall: show it (red) where you're pointing
+      Object.assign(placing, { x: Math.max(0, Math.min(NX - fw, snap(px - fw / 2))), y: Math.max(0, Math.min(NZ - 0.25, snap(pz))), r: 0 });
+      return;
+    }
+    const l = lenOf(best), horiz = best.r % 2 === 0, start = horiz ? best.x : best.y;
+    const a = Math.max(start, Math.min(start + l - fw, snap((horiz ? px : pz) - fw / 2)));
+    Object.assign(placing, horiz ? { x: a, y: best.y, r: 0 } : { x: best.x, y: a, r: 1 });
   }
 
   /** The quarter-tile grid point under the pointer (in tiles), or null off the floor. */
@@ -681,7 +756,7 @@ export function house(stage) {
 
   function rotate() {
     if (placing) {
-      if (isDragWall(placing.id) && placing.from < 0) return; // (drawn walls go whichever way you drag)
+      if ((isDragWall(placing.id) && placing.from < 0) || isDoor(placing.id)) return; // (drawn walls go whichever way you drag; doors go along their wall)
       if (kindOf(placing.id) !== 'wall') { placing.r = (placing.r + 1) % 4; sfx('rotate'); updateGhost(); }
       return;
     }
@@ -739,6 +814,14 @@ export function house(stage) {
   /** Apply a local change: rebuild, save (debounced) and refresh the side panel. */
   function commit(sound) {
     if (sound) sfx(sound);
+    const walls = roomWallCells(home.items);
+    const orphans = home.items.filter((it) => isDoor(it.id) && !inWall(it, walls));
+    if (orphans.length) {
+      const sel = home.items[selected];
+      home.items = home.items.filter((it) => !orphans.includes(it));
+      selected = sel ? home.items.indexOf(sel) : -1;
+      toast(`🚪 Put away ${orphans.length > 1 ? `${orphans.length} doors` : 'a door'} that wasn't in a wall any more.`);
+    }
     if (seated) standUp();
     rebuildItems();
     clearTimeout(saveTimer);
@@ -842,6 +925,7 @@ export function house(stage) {
       : placing && isDragWall(placing.id) && placing.from < 0 ? (placing.start
         ? `Drag (or move and click) to where the wall ends · walls join up flush at corners · <kbd>Esc</kbd> to let go`
         : `Press on the floor where the wall starts and drag it out to any length (or click the start, then the end) · <kbd>Esc</kbd> when you're done`)
+      : placing && isDoor(placing.id) ? 'Point at a wall you\'ve built and click to put the door in it · <kbd>Esc</kbd> to cancel'
       : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point anywhere on a wall, as high or low as you like' : kindOf(placing.id) === 'ceiling' ? ' · it hangs above the green square · <kbd>[</kbd> <kbd>]</kbd> lower / raise it' : ''}`
         : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
           : 'Walk around with <kbd>WASD</kbd> · <kbd>E</kbd> uses furniture (sit on chairs!) · head to the front door to leave';
@@ -918,7 +1002,8 @@ export function house(stage) {
     const deco = kind !== 'furni';
     const max = deco ? 1 : item.max ?? 10;
     let foot;
-    if (item.free) foot = 'Free';
+    if (item.exclusive) foot = have ? 'Owned ✓' : '∞ · admins only';
+    else if (item.free) foot = 'Free';
     else if (item.price) foot = have >= max ? (deco ? 'Owned' : `Max ${max}`) : confirmBuy === item.id ? `Buy for ${fmt(item.price)}?` : `🪙 ${fmt(item.price)}${deco ? ' · tap to try' : ''}`;
     else foot = have ? 'Owned ✓' : item.unlock ? `🔒 ${esc(item.unlock.hint)}` : item.drop ? `👾 Beat the ${esc(item.drop)}` : '';
     const emoji = deco ? `<span class="fem swatch-em" style="${decoBg(item.id)}"></span>` : `<span class="fem">${furniImg(item.id)}</span>`;

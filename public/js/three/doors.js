@@ -12,7 +12,7 @@ function add(g, geo, mat, p = [0, 0, 0], r = null) {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(...p);
   if (r) m.rotation.set(...r);
-  m.castShadow = m.receiveShadow = true;
+  m.castShadow = true; // (not receiving shadows: the door's own parts would stripe themselves with shadow acne)
   g.add(m);
   return m;
 }
@@ -22,9 +22,10 @@ const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 function frame(g, color, { casing = 0.16, header = 0.18 } = {}) {
   const c = toon(color);
   // casing on both faces of the wall, liners right through it
-  for (const z of [-0.03, WALL_T + 0.03]) {
-    for (const sx of [-1, 1]) add(g, box(casing, DOOR_H + header, 0.06), c, [sx * (DOOR_W / 2 + casing / 2 - 0.02), (DOOR_H + header) / 2, z]);
-    add(g, box(DOOR_W + casing * 2 + 0.06, header, 0.08), c, [0, DOOR_H + header / 2 - 0.02, z]);
+  // (standing just proud of the wall and the skirting board, never on the same plane as either)
+  for (const z of [-0.042, WALL_T + 0.042]) {
+    for (const sx of [-1, 1]) add(g, box(casing, DOOR_H + header, 0.07), c, [sx * (DOOR_W / 2 + casing / 2 - 0.02), (DOOR_H + header) / 2, z]);
+    add(g, box(DOOR_W + casing * 2 + 0.06, header, 0.09), c, [0, DOOR_H + header / 2 - 0.02, z]);
   }
   for (const sx of [-1, 1]) add(g, box(0.05, DOOR_H + 0.02, WALL_T + 0.04), c, [sx * (DOOR_W / 2 - 0.025), DOOR_H / 2, WALL_T / 2]);
   add(g, box(DOOR_W, 0.05, WALL_T + 0.04), c, [0, DOOR_H - 0.025, WALL_T / 2]);

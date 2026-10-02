@@ -38,10 +38,10 @@ const BOTTOMS = {
   bottom_joggers: { legs: 'pants', jogger: true, stripe: true },
   bottom_flares: { legs: 'pants', flare: true, seams: true },
   bottom_ripped: { legs: 'pants', ripped: true, seams: true },
-  bottom_overalls: { legs: 'pants', overalls: true, cuffs: true },
+  bottom_overalls: { legs: 'pants', overalls: true, cuffs: true, pattern: 'denim', seams: true },
   bottom_leather: { legs: 'pants', leather: true, seams: true },
   bottom_athletic: { legs: 'shorts', stripe: true },
-  bottom_plaidskirt: { legs: 'skin', socks: true, skirt: { len: 0.25, flare: 0.34, plaid: true } },
+  bottom_plaidskirt: { legs: 'skin', socks: true, skirt: { len: 0.25, flare: 0.34, pattern: 'plaid' } },
 };
 
 const R = 0.42; // head radius
@@ -327,7 +327,6 @@ Object.assign(BOTTOMS, {
   bottom_cargoshorts: { legs: 'shorts', long: true, pockets: true, baggy: 1.1 },
   bottom_capri: { legs: 'capri' },
   bottom_miniskirt: { legs: 'skin', socks: true, skirt: { len: 0.19, flare: 0.31 } },
-  bottom_denimskirt: { legs: 'skin', socks: true, skirt: { len: 0.24, flare: 0.33, pattern: 'denim', seams: true } },
   bottom_pleated: { legs: 'skin', socks: true, skirt: { len: 0.27, flare: 0.42, pleats: 14 } },
   bottom_longskirt: { legs: 'skin', skirt: { len: 'ankle', flare: 0.38 } },
   bottom_widelegs: { legs: 'pants', baggy: 1.1, flare: true, crease: true },
@@ -340,7 +339,7 @@ Object.assign(BOTTOMS, {
   checkpants: { legs: 'pants', pattern: 'check' },
   gipants: { legs: 'pants', baggy: 1.16, flare: true },
   astropants: { legs: 'pants', baggy: 1.22, puffy: true, cuffs: true },
-  skirt_sun: { legs: 'skin', skirt: { len: 0.3, flare: 0.44, pattern: 'floral' } },
+  skirt_sun: { legs: 'skin', skirt: { len: 0.3, flare: 0.44, pattern: 'floral', frill: true } },
   skirt_slip: { legs: 'skin', skirt: { len: 'midi', flare: 0.32, shiny: true } },
   skirt_maxi: { legs: 'skin', skirt: { len: 'ankle', flare: 0.42, belt: true } },
   skirt_party: { legs: 'skin', skirt: { len: 0.24, flare: 0.5, frill: true, tulle: true } },
@@ -362,7 +361,6 @@ const OUTFITS = {
   outfit_tennis: { top: 'dress_polo', bottom: 'skirt_tennis', color: '#ffffff', accent: '#2f9e44' },
   outfit_slip: { top: 'dress_slip', bottom: 'skirt_slip', color: '#e3d9ff' },
   outfit_maxi: { top: 'dress_short', bottom: 'skirt_maxi', color: '#ff7a59', accent: '#8a3d00' },
-  outfit_partydress: { top: 'dress_sweetheart', bottom: 'skirt_party', color: '#ff6fb5', accent: '#ffd1e8' },
   outfit_lbd: { top: 'dress_sleeveless', bottom: 'skirt_lbd', color: '#1d1b22' },
   outfit_tracksuit: { top: 'track_jacket', bottom: 'trackpants', color: '#3b5bdb', accent: '#ffffff' },
   outfit_jumpsuit: { top: 'jump_top', bottom: 'jumppants', color: '#2f9e44', accent: '#1d1b2e' },
@@ -390,14 +388,64 @@ function bodiceGeo(y0, y1, lift = 0.012) {
     return new THREE.LatheGeometry(pts, 36);
   });
 }
-/** A strap over one shoulder (at x), from the front edge of a top to the back. */
-function strapGeo(x, y, r) {
-  return geo(`strap${x},${y},${r}`, () => {
-    const z = (yy) => torsoR(yy) * 0.8 + 0.016;
-    const top = 0.1 + Math.sqrt(Math.max(0, 0.0625 - (x / 1.02) ** 2)) + 0.012;
-    const pts = [new THREE.Vector3(x, y, z(y)), new THREE.Vector3(x, (y + top) / 2 + 0.02, z((y + top) / 2) * 0.85), new THREE.Vector3(x, top, 0), new THREE.Vector3(x, (y + top) / 2 + 0.02, -z((y + top) / 2) * 0.85), new THREE.Vector3(x, y, -z(y))];
-    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, r, 6);
+/** A strap over one shoulder (at x), from the front edge of a top (height y) round to the back: a flat
+ *  ribbon `w` wide lying right on the body. */
+function strapGeo(x, y, w) {
+  return geo(`strap2${x},${y},${w}`, () => {
+    const xs = x / 1.02, rho = Math.sqrt(Math.max(0.001, 0.0625 - xs * xs)), lift = 0.006;
+    // in the torso's unscaled frame: up the front, over the top of the shoulder, down the back
+    const path = [];
+    for (let k = 0; k <= 4; k++) { const yy = y + (0.1 - y) * (k / 4); path.push([yy, rho, 0, 1]); }
+    for (let k = 1; k < 16; k++) { const a = (k / 16) * Math.PI; path.push([0.1 + Math.sin(a) * rho, Math.cos(a) * rho, Math.sin(a), Math.cos(a)]); }
+    for (let k = 0; k <= 4; k++) { const yy = 0.1 + (y - 0.1) * (k / 4); path.push([yy, -rho, 0, -1]); }
+    const pos = [], idx = [];
+    path.forEach(([yy, z, ny, nz], i) => {
+      for (const side of [-1, 1]) pos.push((xs + side * w / 2) * 1.02, yy + ny * lift, (z + nz * lift) * 0.8);
+      if (i) idx.push(i * 2 - 2, i * 2 - 1, i * 2, i * 2 - 1, i * 2 + 1, i * 2);
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
   });
+}
+/**
+ * Bend the flat pieces sewn onto a top (plackets, stripes, zips, panels, straps…) round the curve of
+ * the body, so they lie on it from top to bottom instead of sticking out where the torso narrows.
+ * Every vertex keeps how far it was off the body at the piece's middle.
+ */
+function conformToTorso(torso, from) {
+  const surf = (y, x, z) => {
+    const r = torsoR(Math.max(-0.35, Math.min(0.35, y))), a = Math.atan2(x, z);
+    return 1 / Math.sqrt((Math.sin(a) / (r * 1.02)) ** 2 + (Math.cos(a) / (r * 0.8)) ** 2 + 1e-9);
+  };
+  const v = new THREE.Vector3(), inv = new THREE.Matrix4();
+  for (const m of torso.children.slice(from)) {
+    if (!m.isMesh || m.geometry.type !== 'BoxGeometry') continue;
+    const { width, height, depth } = m.geometry.parameters;
+    m.updateMatrix();
+    const centre = new THREE.Vector3().setFromMatrixPosition(m.matrix);
+    // only pieces lying on the surface that run up or down it far enough to need bending
+    if (Math.abs(Math.hypot(centre.x, centre.z) - surf(centre.y, centre.x, centre.z)) > 0.08) continue;
+    const tall = new THREE.Box3().setFromBufferAttribute(m.geometry.attributes.position).applyMatrix4(m.matrix);
+    if (tall.max.y - tall.min.y < 0.07) continue;
+    const g = new THREE.BoxGeometry(width, height, depth, Math.max(1, Math.round(width / 0.04)), 10, 1);
+    const p = g.attributes.position;
+    inv.copy(m.matrix).invert();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrix);
+      const rad = Math.hypot(v.x, v.z);
+      if (rad < 1e-4) continue;
+      const k = (surf(v.y, v.x, v.z) + rad - surf(centre.y, v.x, v.z)) / rad;
+      v.x *= k; v.z *= k;
+      v.applyMatrix4(inv);
+      p.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    m.geometry = g;
+    for (const o of m.children) if (o.userData.outline) o.geometry = g;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -450,23 +498,28 @@ function hairline(phi, front, side, back) {
 /** A hair shell hugging the head down to a hairline: high over the forehead, low at the nape.
  *  inner > 0 closes it: a second layer at that radius (the scalp) joined to the outside by a rim along
  *  the hairline, so it's solid hair, not a hollow helmet you can see into. */
-function shellGeo(front, side, back, r, inner = 0) {
-  return geo(`shell${front},${side},${back},${r},${inner}`, () => {
+function shellGeo(front, side, back, r, inner = 0, thin = false) {
+  return geo(`shell${front},${side},${back},${r},${inner},${thin}`, () => {
     const U = 56, V = 18, pos = [], nor = [], uv = [], idx = [];
-    const layer = (rad, sign) => {
+    const layer = (rad, sign, taper = false) => {
       for (let i = 0; i <= U; i++) {
         const phi = (i / U) * TAU;
         const lim = hairline(phi, front, side, back);
         for (let j = 0; j <= V; j++) {
           const th = (j / V) * lim;
           const n = [Math.sin(th) * Math.sin(phi), Math.cos(th), Math.sin(th) * Math.cos(phi)];
-          pos.push(n[0] * rad, n[1] * rad, n[2] * rad);
+          // a closed cap thins out towards its edge, so it meets the scalp like hair does (no thick
+          // ledge round the hairline)
+          // (less so at the back, where the locks at the nape hang over the edge anyway)
+          const k = taper ? Math.pow(Math.max(0, (j / V - 0.55) / 0.45), 1.4) * 0.88 * Math.min(1, Math.max(0.3, (Math.cos(phi) + 0.7) / 0.7)) : 0;
+          const rr = rad + (inner - rad) * k;
+          pos.push(n[0] * rr, n[1] * rr, n[2] * rr);
           nor.push(n[0] * sign, n[1] * sign, n[2] * sign);
           uv.push(i / U, j / V); // u: round the head, v: crown -> hairline
         }
       }
     };
-    layer(r, 1);
+    layer(r, 1, thin);
     for (let i = 0; i < U; i++) {
       for (let j = 0; j < V; j++) {
         const a = i * (V + 1) + j, b = (i + 1) * (V + 1) + j;
@@ -714,6 +767,27 @@ function partsMaterial(color, skin) {
   return hairTexCache.get(key);
 }
 const tieColor = (L, def) => L.hairTie || def;
+/** Fine strands of hair: soft streaks running from the crown to the hairline (a grey map over the colour). */
+const strandTexture = canvasTexture(256, 128, (c) => {
+  c.fillStyle = '#ffffff'; c.fillRect(0, 0, 256, 128);
+  let seed = 11;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < 70; i++) {
+    const x = rnd() * 256, w = 1 + rnd() * 2.5, dark = rnd() < 0.7;
+    c.strokeStyle = dark ? `rgba(0,0,0,${0.08 + rnd() * 0.1})` : `rgba(255,255,255,${0.3 + rnd() * 0.3})`;
+    c.lineWidth = w;
+    c.beginPath();
+    for (let y = 0; y <= 128; y += 8) c.lineTo(x + Math.sin(y / 24 + i) * 3, y);
+    c.stroke();
+  }
+});
+strandTexture.wrapS = strandTexture.wrapT = THREE.RepeatWrapping;
+strandTexture.repeat.set(3, 1);
+const strandCache = new Map();
+function strandMaterial(color) {
+  if (!strandCache.has(color)) strandCache.set(color, new THREE.MeshToonMaterial({ color, map: strandTexture, gradientMap: toon('#ffffff').gradientMap, side: THREE.DoubleSide }));
+  return strandCache.get(color);
+}
 
 const HAIR = {
   hair_short(head, mat) { shell(head, mat, { front: 0.9, side: 1.4, back: 2.15 }); fringe(head, mat); },
@@ -1124,7 +1198,7 @@ function acLock(head, mat, pts, w = 0.1, thick = 0.035, tipW = 0.12) {
 /** The puffy cap of hair, sitting a little off the scalp. */
 function acCap(head, mat, { front = 0.98, side = 1.5, back = 2.25, lift = AC_LIFT, sy = 1.03 } = {}) {
   // (closed underneath, its inner layer sitting right on the scalp once it's scaled up)
-  return part(head, shellGeo(front, side, back + 0.18, R + lift, (R - 0.008) / 1.05), mat, { p: [0, 0.02, -0.015], s: [1.05, sy + 0.03, 1.03], outline: OUT });
+  return part(head, shellGeo(front, side, back + 0.18, R + lift, (R - 0.008) / 1.05, true), mat, { p: [0, 0.02, -0.015], s: [1.05, sy + 0.03, 1.03], outline: OUT });
 }
 
 /** A lighter streak of shine curving over the top of the hair. */
@@ -3399,7 +3473,7 @@ export class Character {
       const edge = toon(tint(topColor, top.sparkle ? 1.2 : 0.85));
       part(torso, torus(torsoR(y1) + 0.012, 0.012, TAU, 6, 36), edge, { p: [0, y1, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.8, 1], outline: null });
       if (y0 > -0.3) part(torso, torus(torsoR(y0) + 0.012, 0.012, TAU, 6, 36), edge, { p: [0, y0, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.8, 1], outline: null });
-      if (top.straps) for (const sx of [-1, 1]) part(torso, strapGeo(sx * 0.13, y1 - 0.01, top.straps), topPattern ? toon(topColor) : topMat, { outline: null });
+      if (top.straps) for (const sx of [-1, 1]) part(torso, strapGeo(sx * 0.13, y1 - 0.01, top.straps * 2), toon(topColor, { side: THREE.DoubleSide }), { outline: null });
       if (top.halter) for (const sx of [-1, 1]) {
         // two straps from the neckline up round the back of the neck
         const a = new THREE.Vector3(sx * 0.09, y1, torsoR(y1) * 0.8 + 0.01), b = new THREE.Vector3(sx * 0.07, 0.38, 0.06), c2 = new THREE.Vector3(sx * 0.02, 0.42, -0.08);
@@ -3418,19 +3492,23 @@ export class Character {
       part(torso, hemGeo, doubleSided(topMat), { s: [1.02, 1, 0.82], outline: OUT_THIN });
       part(torso, torus(0.3, 0.014, TAU, 6, 32), toon(accent), { p: [0, -0.62, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.82, 1], outline: null });
     }
+    const sewnOn = torso.children.length;
     this.decorateTop(torso, L, top, topColor, accent);
     if (bottom.overalls || top.bib) {
-      // a bib over the shirt with two straps and brass buttons
+      // a bib up the front of the shirt (following the chest), straps over the shoulders crossing at
+      // the back, a pocket with stitching and brass buttons
       const bibCol = top.bib ? topColor : L.bottomColor;
-      const bib = top.bib ? topMat : toon(L.bottomColor), brass = shiny('#ffc53d', { metalness: 0.6 });
-      part(torso, box(0.26, 0.24, 0.03), bib, { p: [0, -0.06, 0.205], outline: OUT_THIN });
-      part(torso, box(0.1, 0.06, 0.015), toon(tint(bibCol, 0.82)), { p: [0, -0.04, 0.224], outline: null });
+      const bib = top.bib ? topMat : pants, brass = shiny('#ffc53d', { metalness: 0.6 }), stitch = toon(tint(bibCol, 1.35));
+      part(torso, bodiceGeo(-0.35, 0.08, 0.02), doubleSided(bib), { s: [0.62, 1, 0.8], p: [0, 0, 0.005], outline: OUT_THIN });
+      part(torso, box(0.11, 0.07, 0.012), toon(tint(bibCol, 0.88)), { p: [0, -0.06, 0.218], outline: OUT_THIN });
+      part(torso, box(0.11, 0.004, 0.004), stitch, { p: [0, -0.03, 0.226], outline: null, shadow: false });
       for (const sx of [-1, 1]) {
-        part(torso, box(0.045, 0.3, 0.02), bib, { p: [sx * 0.1, 0.16, 0.13], r: [-0.55, 0, 0], outline: null });
-        part(torso, box(0.045, 0.34, 0.02), bib, { p: [sx * 0.1, 0.1, -0.19], r: [0.3, 0, 0], outline: null });
-        part(torso, sphere(0.022, 8, 6), brass, { p: [sx * 0.1, 0.06, 0.225], outline: null });
+        part(torso, strapGeo(sx * 0.1, 0.06, 0.05), toon(bibCol, { side: THREE.DoubleSide }), { outline: null });
+        part(torso, cyl(0.022, 0.022, 0.012, 12), brass, { p: [sx * 0.1, 0.05, 0.212], r: [Math.PI / 2, 0, 0], outline: null });
+        part(torso, sphere(0.014, 8, 6), brass, { p: [sx * 0.255, -0.2, 0.0], outline: null }); // the side buttons
       }
     }
+    conformToTorso(torso, sewnOn);
 
     part(body, cyl(0.09, 0.1, 0.16), skin, { p: [0, up(1.2), 0], s: [0.9 + B.w * 0.1, 1, 0.9 + B.w * 0.1], outline: null });
 
@@ -3534,6 +3612,10 @@ export class Character {
     // hair is solid all the way through: seen from underneath (or inside a lock) it shows its own
     // colour, never the dark outline shell behind it
     hairGroup.traverse((o) => { if (o.isMesh && !o.userData.outline && o.material.side === THREE.FrontSide) o.material = doubleSided(o.material); });
+    // a little strand texture on the main body of the hair (the cap, long curtains, buns: the pieces
+    // that have texture coordinates and are the hair's own colour)
+    const strands = strandMaterial(L.hairColor), own = hairMat.color.getHex();
+    hairGroup.traverse((o) => { if (o.isMesh && !o.userData.outline && o.geometry.attributes.uv && !o.material.map && o.material.color?.getHex() === own) o.material = strands; });
     // each face item in its own colour (face -> faceColor, face2 -> face2Color…)
     for (const [k, id] of faces) FACES[id](head, { ...L, faceColor: L[`${k}Color`] }, anim);
     for (const [k, id] of hats) {
@@ -3915,7 +3997,10 @@ export class Character {
         part(torso, sphere(0.03, 8, 6), acc, { p: front(0, 0.15, 0.03), s: [1.6, 0.8, 0.6], outline: null });
         break;
       case 'dress_strap':
-        ring(0.02, toon(tint(color, 0.85)), 0.012);
+        // smocking across the bodice, and a little bow at the neckline
+        for (const y of [0.08, 0.02, -0.04]) ring(y, toon(tint(color, 0.88)), 0.006);
+        for (const sx of [-1, 1]) part(torso, sphere(0.03, 10, 8), acc, { p: front(sx * 0.03, 0.15, 0.02), s: [1.4, 0.8, 0.5], r: [0, 0, sx * 0.35], outline: OUT_THIN });
+        part(torso, sphere(0.014, 8, 6), acc, { p: front(0, 0.15, 0.026), outline: null });
         break;
       case 'dress_short':
         part(torso, circle(0.1), toon(L.skin), { p: front(0, 0.27, 0.004), r: [-0.5, 0, 0], outline: null, shadow: false });

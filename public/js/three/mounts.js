@@ -50,7 +50,7 @@ function limb(parent, a, b, ra, rb, mat, outline = true) {
 }
 
 // how far a horse travels per stride (world units), so the hooves keep pace with the ground
-const TROT_STRIDE = 3.0, GALLOP_STRIDE = 4.4;
+const TROT_STRIDE = 7.0, GALLOP_STRIDE = 9.5; // (about two strides a second at riding speed)
 
 function horse(g, { coat, dark, mane, hoof = '#2a1d16', saddle = '#8b3a2b', unicorn = false, blaze = null, socks = null }) {
   const coatM = toon(coat), darkM = toon(dark), hoofM = toon(hoof);
@@ -317,7 +317,7 @@ function bike(g, { frame = '#e0463c' }) {
       const v = ground ?? (moving ? 7.5 * this.speed * speed : 0);
       roll += (dt * v) / R;
       front.rotation.x = back.rotation.x = roll;
-      crankA = roll * 0.32;
+      crankA = roll * 0.2; // (an easy cadence)
       crank.rotation.x = crankA;
       for (const p of pedals) p.rotation.x = -crankA - p.parent.rotation.x; // (pedals stay flat)
       this.pedal = crankA;

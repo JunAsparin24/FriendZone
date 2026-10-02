@@ -1421,18 +1421,32 @@ const mossRugTex = canvasTexture(256, 256, (ctx) => {
 
 // ---- walls for building rooms inside your house (the house papers them with its wallpaper) ----
 Object.assign(FURNITURE, {
-  // plain walls are dragged out to any length (len, in tiles)
-  room_wall(g, A, { len = 2 } = {}) { roomWall(g, len); },
-  room_wall_short(g, A, { len = 1 } = {}) { roomWall(g, len); },
-  room_doorway(g) { roomWall(g, 2, true); },
-  // doorways with a door in them: they swing (or slide) open when someone walks up, and shut behind them
-  room_door(g, A) { return roomDoor(g, A, 'wood'); },
-  room_door_glass(g, A) { return roomDoor(g, A, 'glass'); },
-  room_door_barn(g, A) { return roomDoor(g, A, 'barn'); },
+  // plain walls are dragged out to any length (len, in tiles). openings: [from, to] gaps along the wall
+  // (in its own frame, -len/2..len/2) where a door has been put in it; caps: [left end, right end]
+  // papered (an open end), or left bare (it butts up against another wall)
+  room_wall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps }); },
+  room_wall_short(g, A, { len = 1, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps }); },
+  // doors go into a wall like a picture goes on one: the wall opens up around them
+  wdoor_arch(g, A, { len = 1.25 } = {}) { doorFrame(g, len); },
+  wdoor_wood(g, A, { len = 1.25 } = {}) { doorFrame(g, len); return doorPanel(g, A, 'wood', len); },
+  wdoor_glass(g, A, { len = 1.25 } = {}) { doorFrame(g, len); return doorPanel(g, A, 'glass', len); },
+  wdoor_barn(g, A, { len = 1.25 } = {}) { doorFrame(g, len); return doorPanel(g, A, 'barn', len); },
+  // (older houses' doorways, each in its own short stretch of wall)
+  room_doorway(g) { roomWall(g, 2, { openings: [[-0.5, 0.5]] }); doorFrame(g, 1); },
+  room_door(g, A) { roomWall(g, 2, { openings: [[-0.5, 0.5]] }); doorFrame(g, 1); return doorPanel(g, A, 'wood', 1); },
+  room_door_glass(g, A) { roomWall(g, 2, { openings: [[-0.5, 0.5]] }); doorFrame(g, 1); return doorPanel(g, A, 'glass', 1); },
+  room_door_barn(g, A) { roomWall(g, 2, { openings: [[-0.5, 0.5]] }); doorFrame(g, 1); return doorPanel(g, A, 'barn', 1); },
 });
-function roomDoor(g, A, style) {
-  roomWall(g, 2, true);
-  const W = 1.0, H = 2.2, T = 0.06;
+const ROOM_H = 3.2, ROOM_T = 0.25, DOOR_H = 2.2; // (the house's wall height, how thick these walls are: their whole footprint, so they meet flush; how tall a door is)
+/** The wooden frame round a door opening `w` wide. */
+function doorFrame(g, w) {
+  const wood = toon(WOOD);
+  for (const s of [-1, 1]) add(g, box(0.08, DOOR_H, ROOM_T + 0.06), wood, { p: [s * (w / 2 - 0.04), DOOR_H / 2, 0] });
+  add(g, box(w + 0.08, 0.08, ROOM_T + 0.06), wood, { p: [0, DOOR_H, 0] });
+}
+/** A door in an opening `w` wide: it swings (or slides) open when someone walks up, and shuts behind them. */
+function doorPanel(g, A, style, w) {
+  const W = w - 0.08, H = DOOR_H - 0.04, T = 0.06;
   const pivot = new THREE.Group();
   g.add(pivot);
   const panel = new THREE.Group();
@@ -1440,12 +1454,12 @@ function roomDoor(g, A, style) {
   if (style === 'barn') {
     // a sliding barn door on a rail across the front of the wall
     pivot.position.set(0, 0, ROOM_T / 2 + 0.06);
-    add(g, box(2.1, 0.06, 0.06), toon('#2b2f4a'), { p: [0, H + 0.12, ROOM_T / 2 + 0.06] });
-    add(panel, box(W + 0.1, H, T), toon('#9a5a2e'), { p: [0, H / 2, 0] });
-    for (const y of [0.3, H - 0.3]) add(panel, box(W + 0.1, 0.12, T + 0.02), toon('#6b3a1c'), { p: [0, y, 0], outline: false });
+    add(g, box(w * 2 + 0.1, 0.06, 0.06), toon('#2b2f4a'), { p: [0, H + 0.12, ROOM_T / 2 + 0.06] });
+    add(panel, box(W + 0.14, H, T), toon('#9a5a2e'), { p: [0, H / 2, 0] });
+    for (const y of [0.3, H - 0.3]) add(panel, box(W + 0.14, 0.12, T + 0.02), toon('#6b3a1c'), { p: [0, y, 0], outline: false });
     add(panel, box(0.1, H * 1.05, T + 0.02), toon('#6b3a1c'), { p: [0, H / 2, 0], r: [0, 0, Math.atan2(W, H - 0.6)], outline: false });
-    for (const x of [-0.35, 0.35]) add(panel, cyl(0.05, 0.05, 0.04, 10), toon('#2b2f4a'), { p: [x, H + 0.12, 0.03], r: [Math.PI / 2, 0, 0], outline: false });
-    add(panel, box(0.04, 0.3, 0.04), toon('#2b2f4a'), { p: [0.4, 1.0, 0.05], outline: false });
+    for (const x of [-0.35, 0.35]) add(panel, cyl(0.05, 0.05, 0.04, 10), toon('#2b2f4a'), { p: [x * W, H + 0.12, 0.03], r: [Math.PI / 2, 0, 0], outline: false });
+    add(panel, box(0.04, 0.3, 0.04), toon('#2b2f4a'), { p: [W * 0.4, 1.0, 0.05], outline: false });
   } else {
     // a hinged door on the left of the opening, swinging away from you
     pivot.position.set(-W / 2, 0, 0);
@@ -1453,7 +1467,7 @@ function roomDoor(g, A, style) {
     if (style === 'glass') {
       // a french door: a white frame round glass panes
       const glass = new THREE.MeshStandardMaterial({ color: '#cfefff', transparent: true, opacity: 0.35, roughness: 0.05, depthWrite: false });
-      for (const [w, h, x, y] of [[W, 0.1, W / 2, 0.05], [W, 0.1, W / 2, H - 0.05], [0.1, H, 0.05, H / 2], [0.1, H, W - 0.05, H / 2], [W, 0.06, W / 2, 0.75], [W, 0.06, W / 2, 1.45], [0.06, H, W / 2, H / 2]]) add(panel, box(w, h, T), wood, { p: [x, y, 0], outline: false });
+      for (const [bw, bh, x, y] of [[W, 0.1, W / 2, 0.05], [W, 0.1, W / 2, H - 0.05], [0.1, H, 0.05, H / 2], [0.1, H, W - 0.05, H / 2], [W, 0.06, W / 2, 0.75], [W, 0.06, W / 2, 1.45], [0.06, H, W / 2, H / 2]]) add(panel, box(bw, bh, T), wood, { p: [x, y, 0], outline: false });
       add(panel, box(W - 0.1, H - 0.1, 0.02), glass, { p: [W / 2, H / 2, 0], outline: false });
     } else {
       add(panel, box(W, H, T), wood, { p: [W / 2, H / 2, 0] });
@@ -1475,7 +1489,6 @@ function roomDoor(g, A, style) {
   });
   return {};
 }
-const ROOM_H = 3.2, ROOM_T = 0.25; // (the house's wall height, in tiles; how thick these walls are: their whole footprint, so they meet flush)
 /** A papered face: the wallpaper repeats every 2 tiles across, and is pinned to the floor going up
  *  (y0: how high its bottom edge is), so it lines up with the room's own walls. */
 function papered(w, h, y0 = 0) {
@@ -1486,29 +1499,38 @@ function papered(w, h, y0 = 0) {
     return pg;
   });
 }
-function roomWall(g, w, door = false) {
+/**
+ * A stretch of wall `w` long, papered on both faces (and on any open end), with no outlines, so walls
+ * that meet run on into each other as one. Openings leave a door-sized gap with wall above it.
+ */
+function roomWall(g, w, { openings = [], caps = [true, true] } = {}) {
   const core = toon('#e8d6b8'), trim = toon('#f4f0ff'), paper = toon('#fff1d6', { side: THREE.DoubleSide });
-  // one solid stretch of wall from x0 to x1, y0 to y1, papered on both faces
+  const paperAt = (geom, p, ry) => { const m = add(g, geom, paper, { p, r: [0, ry, 0], outline: false }); m.userData.wallpaper = true; };
+  // one solid stretch from x0 to x1, y0 to y1
   const piece = (x0, x1, y0, y1) => {
     const pw = x1 - x0, ph = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    add(g, box(pw, ph, ROOM_T - 0.004), core, { p: [cx, cy, 0] });
+    if (pw < 0.01) return;
+    add(g, box(pw, ph, ROOM_T - 0.004), core, { p: [cx, cy, 0], outline: false });
     for (const s of [-1, 1]) {
-      const m = add(g, papered(pw, ph, y0), paper, { p: [cx, cy, s * (ROOM_T / 2 - 0.001)], r: [0, s > 0 ? 0 : Math.PI, 0], outline: false });
-      m.userData.wallpaper = true;
+      paperAt(papered(pw, ph, y0), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI);
       if (y0 === 0) add(g, box(pw, 0.16, 0.05), trim, { p: [cx, 0.08, s * (ROOM_T / 2 + 0.02)], outline: false });
     }
   };
-  if (!door) piece(-w / 2, w / 2, 0, ROOM_H);
-  else {
-    const post = 0.5, top = 2.2;
-    piece(-w / 2, -w / 2 + post, 0, ROOM_H);
-    piece(w / 2 - post, w / 2, 0, ROOM_H);
-    piece(-w / 2 + post, w / 2 - post, top, ROOM_H);
-    // a wooden frame round the opening
-    const wood = toon(WOOD);
-    for (const s of [-1, 1]) add(g, box(0.08, top, ROOM_T + 0.06), wood, { p: [s * (w / 2 - post), top / 2, 0] });
-    add(g, box(w - post * 2 + 0.16, 0.08, ROOM_T + 0.06), wood, { p: [0, top, 0] });
+  const gaps = openings.map(([a, b]) => [Math.max(-w / 2, a), Math.min(w / 2, b)]).filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]);
+  let x = -w / 2;
+  for (const [a, b] of gaps) {
+    piece(x, a, 0, ROOM_H);
+    piece(a, b, DOOR_H, ROOM_H); // the wall above the door
+    x = b;
   }
+  piece(x, w / 2, 0, ROOM_H);
+  // open ends get papered (and skirting) too, so a wall never shows a bare edge
+  caps.forEach((on, i) => {
+    if (!on) return;
+    const s = i ? 1 : -1;
+    paperAt(papered(ROOM_T, ROOM_H, 0), [s * (w / 2 + 0.001), ROOM_H / 2, 0], s * Math.PI / 2);
+    add(g, box(0.05, 0.16, ROOM_T + 0.09), trim, { p: [s * (w / 2 + 0.02), 0.08, 0], outline: false });
+  });
 }
 
 // ---- helpers for the newer furniture ----
@@ -1664,7 +1686,7 @@ const OWN_DROP = new Set(['hanging_plant', 'hanging_plant_short', 'hanging_plant
 
 /** Build a piece of furniture. Returns { group, use, anim }. `drop`: how far below the ceiling a
  *  hanging thing has been let down (it stays tied to the ceiling). */
-export function buildFurniture(id, { drop = 0, len = 0 } = {}) {
+export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true] } = {}) {
   const group = new THREE.Group();
   const A = { anim: [] };
   let target = group;
@@ -1674,7 +1696,7 @@ export function buildFurniture(id, { drop = 0, len = 0 } = {}) {
     group.add(target);
     add(group, cyl(0.012, 0.012, drop, 5), toon('#3a3f5a'), { p: [0, -drop / 2, 0], outline: false });
   }
-  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len } : undefined) ?? {};
+  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps } : undefined) ?? {};
   return { group, use: res.use ?? null, anim: A.anim, A };
 }
 

@@ -49,7 +49,6 @@ MIME = {
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 NAME_RE = re.compile(r"^[A-Za-z0-9 _\-]{1,16}$")
-PIN_RE = re.compile(r"^\d{4,6}$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 MAX_MEMBERS = 50
 # accounts: one username + password that signs you in to all your zones, on any device
@@ -550,10 +549,6 @@ class Store:
 # Helpers
 # --------------------------------------------------------------------------
 
-def hash_pin(pin, salt):
-    return hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(salt), 20_000).hex()
-
-
 def hash_password(pw, salt):
     return hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), 120_000).hex()
 
@@ -736,10 +731,9 @@ def migrate(p):
     return p
 
 
-def new_player(name, pin, color):
-    salt = secrets.token_hex(8)
+def new_player(name, color, account=None):
     return migrate({
-        "key": name.lower(), "name": name, "color": color, "salt": salt, "pin": hash_pin(pin, salt), "tokens": [],
+        "key": name.lower(), "name": name, "color": color, "tokens": [], **({"account": account} if account else {}),
         "coins": START_COINS, "xp": 0, "lastDaily": 0, "created": int(time.time()), "stats": {},
     })
 
@@ -806,6 +800,7 @@ def clean_house(p, data):
         raise GameError(f"A house can hold up to {HOUSE_MAX_ITEMS} things.")
     used, taken, clean_items = {}, set(), []
     wall_cells, door_cells = set(), []  # (every door has to sit inside a wall)
+    drawn, hanging = [], []  # the walls you've built, and what hangs on them (each must be on one)
     for it in items:
         f = FURN.get(it.get("id")) if isinstance(it, dict) else None
         if not f:
@@ -818,7 +813,19 @@ def clean_house(p, data):
             raise GameError(f"You don't have another {f['name']}.")
         kind = f.get("kind", "floor")
         h = None
-        if kind == "wall":
+        iw = kind == "wall" and bool(it.get("iw"))
+        if iw:
+            # on one of your own walls: r is the way it faces; along the wall from `start`, against the
+            # face at `face` (x for walls running across, y for walls running up and down... see the client)
+            start, face = (x, y) if r % 2 == 0 else (y, x)
+            wh = f.get("wh", 1)
+            h = snap_q(it.get("h", HOUSE_WALL_Y))
+            if not (wh / 2 - 0.01 <= h <= HOUSE_WALL_H - wh / 2 + 0.01):
+                raise GameError("That doesn't fit on the wall.")
+            rows = range(round((h - wh / 2) * HOUSE_SNAP), round((h + wh / 2) * HOUSE_SNAP))
+            cells = {("wall", "iw", round(face * HOUSE_SNAP), r, round(start * HOUSE_SNAP) + i, j) for i in range(round(f["w"] * HOUSE_SNAP)) for j in rows}
+            hanging.append((f["name"], r % 2, face, start, f["w"]))
+        elif kind == "wall":
             # which wall: r 0 back (column x), 1 left (row y), 2 front (column x), 3 right (row y); h: how
             # high its middle is. The wall is a grid too, so things can stack up it.
             start = x if r % 2 == 0 else y
@@ -850,22 +857,39 @@ def clean_house(p, data):
             cells = {(kind, x0 + i, y0 + j) for i in range(round(w * HOUSE_SNAP)) for j in range(round(d * HOUSE_SNAP))}
             if f.get("drag"):
                 wall_cells |= {(c[1], c[2]) for c in cells}
+                drawn.append((r % 2, x if r % 2 == 0 else y, length, y if r % 2 == 0 else x))
             if kind == "door":
                 door_cells.append((f["name"], {(c[1], c[2]) for c in cells}))
         if cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {})})
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {}), **({"iw": 1} if iw else {})})
     for name, cells in door_cells:
         if not cells <= wall_cells:
             raise GameError(f"The {name} has to go in a wall.")
-    return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items}
+    for name, axis, face, start, w in hanging:
+        if not any(a == axis and face in (perp, perp + 0.25) and ws <= start and start + w <= ws + l for a, ws, l, perp in drawn):
+            raise GameError(f"The {name} has to hang on a wall.")
+    # rooms with their own floor: a floor you own and a spot in the room (it fills out to the walls)
+    areas = data.get("areas") or []
+    if not isinstance(areas, list) or len(areas) > 24:
+        raise GameError("That's too many painted rooms.")
+    clean_areas = []
+    for a in areas:
+        fid = a.get("f") if isinstance(a, dict) else None
+        if fid not in FLOORS or not owns_deco(p, fid):
+            raise GameError("You don't own that floor yet.")
+        ax, ay = snap_q(a.get("x", -1)), snap_q(a.get("y", -1))
+        if not (0 <= ax < W and 0 <= ay < D):
+            raise GameError("That's outside the house.")
+        clean_areas.append({"f": fid, "x": ax, "y": ay})
+    return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items, "areas": clean_areas}
 
 
 def house_view(p):
     h = p["house"]
     return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"),
-            "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"]}
+            "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"], "areas": h.get("areas", [])}
 
 
 def public(p, client):
@@ -1124,26 +1148,20 @@ class Game:
                 counts[code] = len(room.clients) if room else 0
         c.ws.send({"t": "zones_online", "counts": counts})
 
-    def profile_fields(self, m, c=None):
-        acct = self.store.accounts.get(getattr(c, "account", None) or "")
-        name = clean(m.get("name"), 16) or (acct["name"] if acct else "")
-        pin = str(m.get("pin", ""))
-        # signed in: the account is how you get back in, so the profile gets a long random PIN nobody knows
-        auto_pin = bool(acct) and not pin
-        if auto_pin:
-            pin = secrets.token_hex(16)
+    def signed_in(self, c):
+        """Your account (you need one to make or join a zone: it's how you get back in on any device)."""
+        acct = self.store.accounts.get(c.account or "")
+        if not acct:
+            raise GameError("Sign in first (top right), then you can make or join zones.")
+        return acct
+
+    @staticmethod
+    def zone_color(m):
         color = str(m.get("color", "#39c6ff"))
-        if not NAME_RE.match(name):
-            raise GameError("Names are 1–16 letters, numbers, spaces, - or _.")
-        if is_rude(name):
-            raise GameError("That name has a word that isn't allowed. Keep it friendly!")
-        if not auto_pin and not PIN_RE.match(pin):
-            raise GameError("Your PIN must be 4–6 digits.")
-        if not COLOR_RE.match(color):
-            color = "#39c6ff"
-        return name, pin, color
+        return color if COLOR_RE.match(color) else "#39c6ff"
 
     def on_create(self, c, m):
+        acct = self.signed_in(c)
         if not c.ready("create", 10):
             raise GameError("Hang on a few seconds before making another zone.")
         zone_name = clean(m.get("zoneName"), 24)
@@ -1151,14 +1169,13 @@ class Game:
             raise GameError("That zone name has a word that isn't allowed. Keep it friendly!")
         if not zone_name:
             raise GameError("Give your FriendZone a name.")
-        name, pin, color = self.profile_fields(m, c)
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
         while code in self.store.zones:
             code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
-        key = name.lower()
+        key = acct["name"].lower()
         self.store.zones[code] = {
             "code": code, "name": zone_name, "owner": key, "created": int(time.time()),
-            "players": {key: new_player(name, pin, color)},
+            "players": {key: new_player(acct["name"], self.zone_color(m), c.account)},
         }
         self.enter(c, code, key)
 
@@ -1174,26 +1191,28 @@ class Game:
         return low, None
 
     def on_join(self, c, m):
+        """Join a zone with its invite code: you go in under your username (your profile there from
+        before, if you have one), and it's on your home screen from then on."""
+        acct = self.signed_in(c)
         code = clean(m.get("code"), 12).upper().replace(" ", "")
         zone = self.store.zones.get(code)
         if not zone:
             raise GameError("No FriendZone has that code.")
-        name, pin, color = self.profile_fields(m, c)
-        key, player = self.find_member(zone, name)
-        if player and c.account and player.get("account") == c.account:
-            pass  # (already yours)
-        elif player and c.account and not m.get("pin"):
-            raise GameError(f"Someone in this zone is already called {player['name']}. Pick a different name, or enter that profile's PIN if it's yours.")
-        elif player:
-            if not hmac.compare_digest(player["pin"], hash_pin(pin, player["salt"])):
-                c.failed_pins += 1
-                if c.failed_pins >= 5:
-                    c.ws.close()
-                raise GameError(f"{player['name']} is already in this zone and that PIN doesn't match.")
-        else:
-            if len(zone["players"]) >= MAX_MEMBERS:
-                raise GameError("This FriendZone is full.")
-            zone["players"][key] = new_player(name, pin, color)
+        key = acct["zones"].get(code)
+        if key not in zone["players"]:
+            key, player = self.find_member(zone, acct["name"])
+            if player and player.get("account") in (None, c.account):
+                pass  # (a profile under your name from before accounts: it's yours now)
+            else:
+                if len(zone["players"]) >= MAX_MEMBERS:
+                    raise GameError("This FriendZone is full.")
+                # someone else already goes by your username here: you're "name 2" (rename in the lobby)
+                name, n = acct["name"], 2
+                while self.find_member(zone, name)[1]:
+                    name = f"{acct['name'][:13]} {n}"
+                    n += 1
+                key = name.lower()
+                zone["players"][key] = new_player(name, self.zone_color(m), c.account)
         self.enter(c, code, key)
 
     def on_resume(self, c, m):
@@ -1201,7 +1220,7 @@ class Game:
         key, player = self.find_member(zone, m.get("name")) if zone else (None, None)
         token = str(m.get("token", ""))
         if not player or token not in player["tokens"]:
-            raise GameError("Please sign in again with your PIN.")
+            raise GameError("That zone needs you to sign in again.")
         self.enter(c, zone["code"], key, token)
 
     def enter(self, c, code, key, token=None):

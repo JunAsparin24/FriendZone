@@ -60,7 +60,7 @@ function render() {
           <h3>🖥️ Graphics</h3>
           <div class="set-row"><span>Quality</span><div class="seg">${['low', 'medium', 'high'].map((q) =>
             `<button data-quality="${q}" class="${settings.quality === q ? 'on' : ''}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div></div>
-          <p class="muted small">Lower quality turns off shadows and renders fewer pixels. Try it if the game feels slow.</p>
+          <p class="muted small">Lower quality turns off shadows, renders fewer pixels and builds less grass and fewer trees (the scenery changes next time you load the game). Use Low on phones.</p>
           ${toggle('shake')}${toggle('names')}${toggle('dayNight')}
         </section>
       </div>

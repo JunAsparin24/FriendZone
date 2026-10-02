@@ -5,6 +5,12 @@ import { TAU, toon, basic, shiny, canvasTexture, additive, glowTexture, puffText
 import { buildBuilding } from './buildings.js';
 import { buildLamps, buildFences, buildTown } from './town.js';
 import * as M from '../map.js';
+import { settings } from '../settings.js';
+
+// How much scenery to build for the chosen graphics quality (phones can't draw a million blades of
+// grass). It's read once when the world is built, so a change shows after a reload.
+const DETAIL = { high: 1, medium: 0.55, low: 0.25 }[settings.quality] ?? 1;
+const LOW = settings.quality === 'low';
 
 const U = (px) => px / M.PX;
 const pos3 = (x, y) => M.to3(x, y);
@@ -41,18 +47,35 @@ const T = (x, y, z, sx = 1, sy = sx, sz = sx) => new THREE.Matrix4().compose(new
 
 const withWind = (shared, _wind, strength, from) => windMat(shared, strength, from);
 
+const TILE = 56; // (world units: big enough to keep the number of draw calls down)
+/**
+ * Lots of copies of one thing (trees, grass, rocks…). They're grouped into map tiles, one instanced
+ * mesh per tile, so whatever's behind the camera or off to the side isn't drawn at all (one mesh over
+ * the whole map would always draw every copy).
+ */
 function instanced(geo, material, list, { cast = true, colorOf = null } = {}) {
-  const mesh = new THREE.InstancedMesh(geo, material, list.length);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
+  const tiles = new Map();
   list.forEach((it, i) => {
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), it.rot ?? 0);
-    m.compose(new THREE.Vector3(it.x, it.y ?? 0, it.z), q, new THREE.Vector3(it.s, it.sy ?? it.s, it.s));
-    mesh.setMatrixAt(i, m);
-    if (colorOf) mesh.setColorAt(i, c.set(colorOf(it, i)));
+    const key = `${Math.floor(it.x / TILE)},${Math.floor(it.z / TILE)}`;
+    if (!tiles.has(key)) tiles.set(key, []);
+    tiles.get(key).push([it, i]);
   });
-  mesh.castShadow = cast;
-  mesh.receiveShadow = true;
-  return mesh;
+  const group = new THREE.Group();
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+  for (const items of tiles.values()) {
+    const mesh = new THREE.InstancedMesh(geo, material, items.length);
+    items.forEach(([it, i], k) => {
+      q.setFromAxisAngle(up, it.rot ?? 0);
+      m.compose(new THREE.Vector3(it.x, it.y ?? 0, it.z), q, new THREE.Vector3(it.s, it.sy ?? it.s, it.s));
+      mesh.setMatrixAt(k, m);
+      if (colorOf) mesh.setColorAt(k, c.set(colorOf(it, i)));
+    });
+    mesh.computeBoundingSphere(); // (around this tile's copies, so the tile is culled when out of view)
+    mesh.castShadow = cast;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  return group;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +151,8 @@ export function buildEnvironment(scene) {
   const groundTex = new THREE.CanvasTexture(groundCanvas);
   groundTex.colorSpace = THREE.SRGBColorSpace;
   groundTex.anisotropy = 8;
-  const groundGeo = new THREE.PlaneGeometry(HALF_W * 2, HALF_H * 2, Math.round(HALF_W * 2), Math.round(HALF_H * 2));
+  const gridRes = LOW ? 0.5 : DETAIL < 1 ? 0.75 : 1; // (ground vertices per world unit)
+  const groundGeo = new THREE.PlaneGeometry(HALF_W * 2, HALF_H * 2, Math.round(HALF_W * 2 * gridRes), Math.round(HALF_H * 2 * gridRes));
   const gp = groundGeo.attributes.position;
   for (let i = 0; i < gp.count; i++) gp.setZ(i, groundAt(gp.getX(i), -gp.getY(i))); // plane z becomes height once it's laid flat
   groundGeo.computeVertexNormals();
@@ -209,11 +233,11 @@ export function buildEnvironment(scene) {
   oakTrunk.translate(0, 1.3, 0);
   const oakCanopy = merge([
     [0, 3.3, 0, 1.45], [0.95, 2.9, 0.25, 1.05], [-0.9, 3.0, -0.3, 1.1], [0.15, 4.1, -0.1, 0.95], [0.3, 2.8, 0.85, 0.85], [-0.4, 2.7, 0.7, 0.8],
-  ].map(([x, y, z, r], i) => ({ geo: new THREE.IcosahedronGeometry(r, 1), matrix: T(x, y, z), color: i === 3 ? '#e8ffe0' : '#ffffff' })));
+  ].map(([x, y, z, r], i) => ({ geo: new THREE.IcosahedronGeometry(r, LOW ? 0 : 1), matrix: T(x, y, z), color: i === 3 ? '#e8ffe0' : '#ffffff' })));
   const pineTrunk = new THREE.CylinderGeometry(0.18, 0.26, 1.8, 8);
   pineTrunk.translate(0, 0.9, 0);
   const pineCanopy = merge([[1.55, 2.3, 2.3], [1.2, 2.0, 3.4], [0.82, 1.7, 4.4], [0.45, 1.2, 5.2]].map(([r, h, y]) => ({ geo: new THREE.ConeGeometry(r, h, 8), matrix: T(0, y, 0) })));
-  const bushGeo = merge([[0, 0.55, 0, 0.75], [0.6, 0.45, 0.2, 0.6], [-0.55, 0.45, -0.1, 0.62], [0.1, 0.9, -0.1, 0.5]].map(([x, y, z, r]) => ({ geo: new THREE.IcosahedronGeometry(r, 1), matrix: T(x, y, z) })));
+  const bushGeo = merge([[0, 0.55, 0, 0.75], [0.6, 0.45, 0.2, 0.6], [-0.55, 0.45, -0.1, 0.62], [0.1, 0.9, -0.1, 0.5]].map(([x, y, z, r]) => ({ geo: new THREE.IcosahedronGeometry(r, LOW ? 0 : 1), matrix: T(x, y, z) })));
 
   const oaks = [], pines = [], bushes = [];
   const place = (t) => {
@@ -226,7 +250,8 @@ export function buildEnvironment(scene) {
   layout.trees.forEach(place);
   layout.border.forEach(place);
   // forest outside the fence
-  for (let i = 0; i < 1300; i++) {
+  const forest = Math.round(1300 * Math.max(0.3, DETAIL));
+  for (let i = 0; i < forest; i++) {
     const x = (rnd() - 0.5) * 360, z = (rnd() - 0.5) * 260;
     if (Math.abs(x) < HALF_W + 2 && Math.abs(z) < HALF_H + 2) continue;
     const kind = rnd() < 0.55 ? 'pine' : 'oak';
@@ -259,13 +284,13 @@ export function buildEnvironment(scene) {
     return merge(parts);
   })();
   const tufts = [];
-  for (let i = 0; i < 60000 && tufts.length < 17000; i++) {
+  for (let i = 0; i < 60000 && tufts.length < 17000 * DETAIL; i++) {
     const px = 30 + rnd() * (M.W - 60), py = 30 + rnd() * (M.H - 60);
     if (!M.openGround({ x: px, y: py }, 0)) continue;
     const p = pos3(px, py);
     tufts.push({ x: p.x, y: M.heightAt(px, py), z: p.z, rot: rnd() * TAU, s: 0.7 + rnd() * 0.7 });
   }
-  for (let i = 0; i < 3000; i++) {
+  for (let i = 0; i < 3000 * DETAIL; i++) {
     const x = (rnd() - 0.5) * 260, z = (rnd() - 0.5) * 190;
     if (Math.abs(x) < HALF_W && Math.abs(z) < HALF_H) continue;
     tufts.push({ x, z, rot: rnd() * TAU, s: 0.8 + rnd() * 0.8 });
@@ -275,7 +300,7 @@ export function buildEnvironment(scene) {
 
   // 3D flowers
   const flowers = [];
-  for (let i = 0; i < 30000 && flowers.length < 2200; i++) {
+  for (let i = 0; i < 30000 && flowers.length < 2200 * Math.max(0.35, DETAIL); i++) {
     const px = 40 + rnd() * (M.W - 80), py = 40 + rnd() * (M.H - 80);
     if (!M.openGround({ x: px, y: py }, 0)) continue;
     const p = pos3(px, py);

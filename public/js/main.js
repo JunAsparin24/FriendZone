@@ -90,14 +90,6 @@ function renderAccount() {
   $('#accountBar').innerHTML = account
     ? `<span>Signed in as <b>${esc(account.name)}</b></span>`
     : '<span>Sign in to see your zones on any device.</span><button class="btn small primary" data-account>Sign in</button>';
-  // signed in, you don't need a name or PIN to create or join a zone
-  for (const form of [$('#createForm'), $('#joinForm')]) {
-    const creating = form.id === 'createForm';
-    form.querySelector('.f-signed').hidden = !account;
-    form.name.required = form.pin.required = !account;
-    form.querySelector('.f-name').hidden = form.querySelector('.f-pin').hidden = !!account && creating;
-    if (account && !creating) form.name.placeholder = account.name;
-  }
 }
 
 /** The sign-in / create-account panel. */
@@ -155,6 +147,7 @@ net.on('account', (m) => {
   if (fresh && m.token) toast(`👋 Signed in as ${m.name}`);
   renderAccount();
   if (screen === 'home') renderHome(false);
+  joinPending();
 });
 net.on('signed_out', () => {});
 
@@ -242,7 +235,10 @@ function enterSaved(z) {
 
 document.addEventListener('click', (e) => {
   const go = e.target.closest('[data-go]');
-  if (go) show(go.dataset.go);
+  if (go && !account && (go.dataset.go === 'create' || go.dataset.go === 'join')) {
+    toast('Sign in first: your zones are saved to your account.');
+    openAccountPanel();
+  } else if (go) show(go.dataset.go);
   const b = e.target.closest('button, .swatch, [data-k]');
   if (b && !b.disabled) sfx('click');
 });
@@ -293,14 +289,13 @@ function setupForm(form, type) {
 setupForm($('#createForm'), 'create');
 setupForm($('#joinForm'), 'join');
 
-function openJoin(code = '', name = '', message = '') {
-  const form = $('#joinForm');
-  form.code.value = code;
-  form.name.value = name;
-  form.pin.value = '';
-  form.querySelector('.error').textContent = message;
-  show('join');
-  (code ? (name ? form.pin : form.name) : form.code).focus();
+// An invite link (?join=CODE): signed in, you go straight in; otherwise you sign in first, then go in.
+let pendingJoin = new URLSearchParams(location.search).get('join')?.toUpperCase() || null;
+function joinPending() {
+  if (!pendingJoin || !account || !net.connected) return;
+  const known = account.zones.find((z) => z.code === pendingJoin);
+  net.send(known ? 'play' : 'join', { code: pendingJoin, color: COLORS[Math.floor(Math.random() * COLORS.length)] });
+  pendingJoin = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -758,7 +753,7 @@ net.on('error', (m) => {
     } else if (m.for === 'resume') {
       const z = session;
       session = null;
-      if (z) openJoin(z.code, z.name, m.msg);
+      if (z) { forgetZone(z.code); show('home'); toast(account ? 'Join that zone again with its invite code: it will stay on your account.' : 'Sign in, then join that zone again with its invite code.', 'error'); }
     } else {
       toast(m.msg, 'error');
     }
@@ -783,15 +778,8 @@ net.onClose = () => {
 // Boot
 // ---------------------------------------------------------------------------
 
-const joinCode = new URLSearchParams(location.search).get('join')?.toUpperCase();
-const saved = savedZones();
-if (joinCode) {
-  const known = saved.find((z) => z.code === joinCode);
-  if (known) session = { code: known.code, name: known.name, token: known.token };
-  else openJoin(joinCode);
-} else {
-  show('home');
-}
+if (pendingJoin && !storedAccount()?.token) setTimeout(() => { toast('Sign in (or make an account) to join this zone.'); openAccountPanel(); }, 300);
+show('home');
 renderAccount();
 $('#conn').classList.remove('hidden');
 net.connect();

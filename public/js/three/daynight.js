@@ -187,8 +187,10 @@ export class DayNight {
     u.mid.value.copy(t.mid);
     u.bottom.value.copy(t.bottom);
     this.scene.fog.color.copy(t.fog);
-    this.scene.fog.far = 380 - storm * 170;
-    this.scene.fog.near = 120 - storm * 70;
+    // (low graphics: closer fog, and the world stops drawing things beyond it)
+    const reach = settings.quality === 'low' ? 0.42 : 1;
+    this.scene.fog.far = (380 - storm * 170) * reach;
+    this.scene.fog.near = (120 - storm * 70) * reach;
     this.hemi.color.copy(t.hemiSky);
     this.hemi.groundColor.copy(t.hemiGround);
     this.hemi.intensity = (0.28 + 0.97 * day) * (1 - storm * 0.2);

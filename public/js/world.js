@@ -100,6 +100,7 @@ export class World {
     onSettings((s, changed) => { if ('quality' in changed) this.applyQuality(); });
 
     this.env = buildEnvironment(this.scene);
+    this.collectCullables(); // (before the day/night cycle adds its moon and rain, which it shows and hides itself)
     this.dayNight = new DayNight(this.scene, this.env, this.hemi, this.sun);
     // rain splashes land on the terrain (or the lake's surface)
     this.dayNight.groundAt = (X, Z) => {
@@ -921,6 +922,39 @@ export class World {
 
   // ---- rendering ------------------------------------------------------------------
 
+  /**
+   * On low graphics, buildings and scenery far enough away to be lost in the fog aren't drawn at all
+   * (phones choke on drawing the whole town every frame). Everything static gets a bounding sphere
+   * once; the big backdrop (sky, hills, mountains, the ground) is left alone.
+   */
+  collectCullables() {
+    this.cullables = [];
+    const box = new THREE.Box3(), sphere = new THREE.Sphere();
+    const consider = (o) => {
+      if (o.isSprite || o.isLight || o === this.env.sky || o === this.env.sunGlow) return;
+      box.setFromObject(o);
+      if (box.isEmpty()) return;
+      box.getBoundingSphere(sphere);
+      if (sphere.radius > 45) {
+        // too big to judge as one piece (a group of tiles, a whole district): try its parts
+        if (o.isGroup && o.children.length) o.children.forEach(consider);
+        return;
+      }
+      this.cullables.push({ o, c: sphere.center.clone(), r: sphere.radius });
+    };
+    this.scene.updateMatrixWorld(true);
+    this.scene.children.forEach(consider);
+  }
+
+  /** Low graphics: hide what's beyond the fog (checked a few times a second, not every frame). */
+  cullFar(now) {
+    if (settings.quality !== 'low' || !this.cullables) return;
+    if (this.cullAt && now - this.cullAt < 250) return;
+    this.cullAt = now;
+    const cam = this.camera.position, far = this.scene.fog ? this.scene.fog.far + 10 : 200;
+    for (const it of this.cullables) it.o.visible = cam.distanceTo(it.c) - it.r < far;
+  }
+
   frame = (now) => {
     if (!this.running) return;
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
@@ -930,6 +964,7 @@ export class World {
     this.frameNo++;
     // behind an activity panel the world only needs an occasional redraw
     if (!this.paused || this.frameNo % 4 === 0) {
+      this.cullFar(now);
       this.renderer.render(this.scene, this.camera);
       this.updateLabels();
     }

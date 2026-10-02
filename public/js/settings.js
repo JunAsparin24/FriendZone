@@ -66,5 +66,6 @@ export const shakeScale = () => (settings.shake ? 1 : 0);
 /** Renderer pixel ratio for the chosen quality. */
 export const pixelRatio = () => {
   const dpr = window.devicePixelRatio || 1;
-  return settings.quality === 'low' ? Math.min(1, dpr) * 0.75 : settings.quality === 'medium' ? Math.min(1.25, dpr) : Math.min(2, dpr);
+  // (low draws far less scenery instead of rendering fewer pixels, so it still looks sharp)
+  return settings.quality === 'low' ? Math.min(1, dpr) : settings.quality === 'medium' ? Math.min(1.5, dpr) : Math.min(2, dpr);
 };

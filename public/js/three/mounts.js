@@ -166,8 +166,8 @@ function horse(g, { coat, dark, mane, hoof = '#2a1d16', saddle = '#8b3a2b', unic
         const p = phase + trotOff * (1 - gallop) + gallopOff * gallop;
         const reach = 0.42 + gallop * 0.28;
         L.hip.rotation.x = Math.sin(p) * reach * w + Math.sin(t * 0.8 + L.side) * 0.02 * (1 - w);
-        // knees fold as the leg swings forward (front knees bend back, hocks bend forward)
-        L.knee.rotation.x = (L.front ? 1 : -1) * Math.max(0, Math.cos(p)) * (0.9 + gallop * 0.4) * w;
+        // as each leg swings forward its lower half folds back, the hoof flicking up behind it
+        L.knee.rotation.x = Math.max(0, Math.cos(p)) * (L.front ? 0.9 + gallop * 0.4 : 0.7 + gallop * 0.35) * w;
       }
       body.position.y = Math.abs(Math.sin(phase)) * (0.04 + gallop * 0.05) * w;
       this.bob = body.position.y;

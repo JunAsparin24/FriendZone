@@ -136,6 +136,10 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 
 /* ---------- home ---------- */
 .zone-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+/* the online world, at the top of the home screen */
+.online-card { margin-bottom: 14px; border-color: var(--accent); box-shadow: 0 0 22px #ffb34733; }
+.online-card h2 { margin-top: 0; }
+.online-card #playOnline { font-size: 18px; padding: 12px; }
 .zone-list li { display: flex; gap: 6px; }
 .zone-item {
   flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left;

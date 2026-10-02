@@ -142,6 +142,7 @@ function signedOut() {
 net.on('account', (m) => {
   const fresh = !account;
   account = { name: m.name, zones: m.zones ?? [] };
+  publicOnline = m.public ?? publicOnline;
   if (m.token) storeAccount({ username: m.name, token: m.token });
   if (modal?.activity?.account) closeModal(true);
   if (fresh && m.token) toast(`👋 Signed in as ${m.name}`);
@@ -173,10 +174,15 @@ function show(id) {
 let onlineCounts = {};
 function askOnline() {
   const codes = [...new Set([...(account?.zones ?? []).map((z) => z.code), ...savedZones().map((z) => z.code)])];
-  if (codes.length && screen === 'home') net.send('zones_online', { codes });
+  if (screen === 'home') net.send('zones_online', { codes });
 }
 setInterval(askOnline, 10000);
-net.on('zones_online', (m) => { onlineCounts = m.counts ?? {}; if (screen === 'home') renderHome(false); });
+net.on('zones_online', (m) => { onlineCounts = m.counts ?? {}; publicOnline = m.public ?? publicOnline; if (screen === 'home') renderHome(false); });
+let publicOnline = 0;
+$('#playOnline').onclick = () => {
+  if (!account) { toast('Sign in first: your online progress is saved to your account.'); openAccountPanel(); return; }
+  net.send('play_public', { color: COLORS[Math.floor(Math.random() * COLORS.length)] });
+};
 
 function zoneRow(z, attr, forget = true) {
   const n = onlineCounts[String(z.code).toUpperCase()] ?? z.online;
@@ -194,6 +200,7 @@ function zoneRow(z, attr, forget = true) {
 
 function renderHome(ask = true) {
   renderAccount();
+  $('#playOnline').innerHTML = `Play online${publicOnline ? ` · <b>${publicOnline}</b> playing` : ''}`;
   const device = savedZones();
   if (account) {
     // signed in: your account's zones (on any device), then any others this device remembers
@@ -304,8 +311,10 @@ function joinPending() {
 
 function renderLobby() {
   if (screen !== 'lobby' || !S.zone) return;
-  $('#lobbyZone').textContent = S.zone.name;
+  $('#lobbyZone').textContent = S.zone.public ? `${S.zone.name} · Server ${S.zone.server}` : S.zone.name;
   $('#lobbyCode').textContent = S.zone.code;
+  for (const id of ['#inviteBtn', '#quitZone']) $(id).classList.toggle('hidden', !!S.zone.public);
+  $('#switchZone').textContent = S.zone.public ? 'Back to menu' : 'Switch zone';
   const list = Object.values(S.players).sort((a, b) =>
     b.online - a.online || b.level - a.level || a.name.localeCompare(b.name));
   $('#onlineCount').textContent = list.filter((p) => p.online).length;
@@ -668,7 +677,7 @@ net.on('welcome', (m) => {
   S.weather = weatherState.kind = m.weather ?? (m.rain ? 'rain' : 'sunny');
   S.admin = !!m.admin;
   session ={ code: m.zone.code, name: me().name, token: m.token };
-  rememberZone({ ...session, zoneName: m.zone.name });
+  if (!m.zone.public) rememberZone({ ...session, zoneName: m.zone.name });
   for (const form of [$('#createForm'), $('#joinForm')]) {
     form.reset();
     form.querySelector('.error').textContent = '';

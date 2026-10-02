@@ -52,6 +52,10 @@ CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 NAME_RE = re.compile(r"^[A-Za-z0-9 _\-]{1,16}$")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 MAX_MEMBERS = 50
+# the online world anyone signed in can join: one shared save (your progress there is your account's),
+# played in copies ("servers") of up to PUBLIC_MAX people each
+PUBLIC_CODE = "PUBLIC"
+PUBLIC_MAX = 20
 # accounts: one username + password that signs you in to all your zones, on any device
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-]{3,16}$")
 PASSWORD_MIN, PASSWORD_MAX = 4, 64
@@ -1030,7 +1034,7 @@ class DungeonRun:
 # Game logic
 # --------------------------------------------------------------------------
 
-PRE_AUTH = {"create", "join", "resume", "zones_online", "signup", "signin", "account_resume", "signout", "play"}
+PRE_AUTH = {"create", "join", "resume", "zones_online", "signup", "signin", "account_resume", "signout", "play", "play_public"}
 IN_ZONE = {
     "leave_zone", "scene", "move", "chat", "emote", "fish", "archery", "gamble", "daily", "rename", "quit_zone",
     "look", "buy", "crate", "pet_egg", "rod", "bj_deal", "bj_hit", "bj_stand", "bj_double",
@@ -1078,7 +1082,7 @@ class Game:
                 continue
             room = self.rooms.get(code)
             zones.append({"code": code, "zoneName": zone["name"], "name": member["name"], "online": len(room.clients) if room else 0})
-        return {"t": "account", "name": acct["name"], "zones": zones}
+        return {"t": "account", "name": acct["name"], "zones": zones, "public": self.public_online()}
 
     def sign_in_as(self, c, user, token=None):
         acct = self.store.accounts[user]
@@ -1147,6 +1151,48 @@ class Game:
             raise GameError("You're not in that zone any more.")
         self.enter(c, code, key)
 
+    def public_zone(self):
+        zone = self.store.zones.get(PUBLIC_CODE)
+        if not zone:
+            zone = {"code": PUBLIC_CODE, "name": "FriendZone Online", "owner": "", "public": True, "created": int(time.time()), "players": {}}
+            self.store.zones[PUBLIC_CODE] = zone
+            self.store.mark()
+        return zone
+
+    def public_rooms(self):
+        return [r for k, r in self.rooms.items() if k.startswith(PUBLIC_CODE + "#")]
+
+    def public_online(self):
+        return sum(len(r.clients) for r in self.public_rooms())
+
+    def public_room(self, key):
+        """Which online server you go in: the one you're already in (coming back after a blip), else the
+        busiest one with space (so people end up together), else a new one."""
+        rooms = self.public_rooms()
+        for r in rooms:
+            if key in r.clients:
+                return r
+        open_ = [r for r in rooms if len(r.clients) < PUBLIC_MAX]
+        if open_:
+            return max(open_, key=lambda r: len(r.clients))
+        n = 1
+        while f"{PUBLIC_CODE}#{n}" in self.rooms:
+            n += 1
+        room = Room(self.public_zone())
+        room.server = n
+        self.rooms[f"{PUBLIC_CODE}#{n}"] = room
+        return room
+
+    def on_play_public(self, c, m):
+        """Join the online world (your progress there is saved to your account)."""
+        acct = self.signed_in(c)
+        zone = self.public_zone()
+        key = c.account
+        if key not in zone["players"]:
+            zone["players"][key] = new_player(acct["name"], self.zone_color(m), c.account)
+            self.store.mark()
+        self.enter(c, PUBLIC_CODE, key)
+
     def link_account(self, c, code, key):
         """Tie a zone profile to the signed-in account (once it's yours, it's yours on every device)."""
         acct = self.store.accounts.get(c.account or "")
@@ -1164,14 +1210,14 @@ class Game:
         """The home screen asks how many people are in each of your saved zones right now."""
         if not c.ready("zones_online", 2):
             return
-        raw = m.get("codes")
+        raw = m.get("codes") or []
         codes = [str(x).upper()[:12] for x in raw[:20]] if isinstance(raw, list) else []
         counts = {}
         for code in codes:
             if code in self.store.zones:
                 room = self.rooms.get(code)
                 counts[code] = len(room.clients) if room else 0
-        c.ws.send({"t": "zones_online", "counts": counts})
+        c.ws.send({"t": "zones_online", "counts": counts, "public": self.public_online()})
 
     def signed_in(self, c):
         """Your account (you need one to make or join a zone: it's how you get back in on any device)."""
@@ -1249,11 +1295,12 @@ class Game:
         self.enter(c, zone["code"], key, token)
 
     def enter(self, c, code, key, token=None):
+        online = code == PUBLIC_CODE
         until = self.booted.get(key, 0)
         if until > time.time():
             mins = max(1, round((until - time.time()) / 60))
             raise GameError(f"An admin removed you from the server. You can come back in {mins} minute{'s' if mins != 1 else ''}.")
-        room = self.room(code)
+        room = self.public_room(key) if online else self.room(code)
         player = room.zone["players"][key]
         player.setdefault("key", key)  # older saves: pin the key before the name can change
         if token is None:
@@ -1267,11 +1314,11 @@ class Game:
             old.ws.close()
         c.room, c.key, c.scene = room, key, "lobby"
         room.clients[key] = c
-        if c.account:
+        if c.account and not online:  # (the online world isn't one of "your zones": it's always there)
             self.link_account(c, code, key)
         c.ws.send({
             "t": "welcome", "you": key, "token": token,
-            "zone": {"code": code, "name": room.zone["name"], "owner": room.zone["owner"]},
+            "zone": {"code": code, "name": room.zone["name"], "owner": room.zone["owner"], **({"public": True, "server": getattr(room, "server", 1), "max": PUBLIC_MAX} if online else {})},
             "players": [public(p, room.clients.get(k)) for k, p in room.zone["players"].items()],
             "chat": room.chat, "feed": room.feed, "race": self.race_view(room), "arcade": room.zone.get("arcade", {}),
             "rain": raining(room), "weather": weather(room), "admin": c.admin,
@@ -1298,6 +1345,8 @@ class Game:
         name disappears from the member list, chat, news, leaderboards' likes and so on."""
         if m.get("confirm") is not True:
             raise GameError("Please confirm you want to leave this zone.")
+        if c.room.zone.get("public"):
+            raise GameError("You can't delete yourself from the online world. Head back to the menu instead.")
         room, key, name = c.room, c.key, c.player["name"]
         zone = room.zone
         self.leave(c)

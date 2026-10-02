@@ -982,6 +982,23 @@ body.no-names .wl-tag { display: none; }
   top: 70px; right: 12px; bottom: 60px; width: min(340px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 10px; overflow: hidden;
 }
 .house-side .house-panel { overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+/* the shop, style and items pages get a much bigger panel */
+.house-side.wide { width: min(760px, calc(100vw - 24px)); }
+.house-side.wide .furni-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.house-side.wide .furni { padding: 10px 6px; font-size: 13px; }
+.house-side.wide .fem-img, .house-side.wide .furni .swatch-em { width: 72px; height: 72px; }
+.house-side.wide .style-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.house-side.wide .style-sw { height: 46px; }
+.shop-pages { display: flex; flex-wrap: wrap; gap: 6px; position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 2px 0 8px; }
+.shop-pages button, .shelf-jump button {
+  border: 2px solid var(--line); background: var(--bg-2); color: var(--text); border-radius: 99px; padding: 6px 12px;
+  font: 700 13px var(--body); cursor: pointer;
+}
+.shop-pages button.on { border-color: var(--accent); background: var(--accent); color: #1d1b2e; }
+.shop-pages button:hover:not(.on), .shelf-jump button:hover { border-color: var(--accent); }
+.shelf-jump { display: flex; flex-wrap: wrap; gap: 4px; }
+.shelf-jump button { padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.shelf-label { scroll-margin-top: 52px; margin-top: 6px; }
 .house-hint { max-width: min(760px, calc(100vw - 420px)); }
 @media (max-width: 800px) {
   .house-bar { max-width: calc(100vw - 24px); top: 56px; }
@@ -997,14 +1014,14 @@ body.no-names .wl-tag { display: none; }
 body.mouselooking .chat { bottom: 38px; }
 
 /* ---------- wardrobe / character creator ---------- */
-.wd2 { display: grid; grid-template-columns: 250px 92px 1fr; gap: 14px; height: min(640px, calc(100vh - 150px)); }
+.wd2 { display: grid; grid-template-columns: 280px 92px 1fr; gap: 14px; height: min(700px, calc(100vh - 130px)); }
 .wd2-stage {
   display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; border-radius: 18px; min-height: 0;
   background: radial-gradient(circle at 50% 35%, #5a8fe8, var(--bg) 78%); border: 2px solid var(--line);
 }
 .wd2-title { font-size: 20px; margin: 0; text-align: center; }
 .wd2-preview { position: relative; }
-.wd2-preview .wd-canvas { width: 220px; height: 290px; display: block; }
+.wd2-preview .wd-canvas { width: 250px; height: 330px; display: block; }
 .wd2-zoom { position: absolute; right: -4px; top: 4px; display: flex; flex-direction: column; gap: 4px; }
 .wd2-zoom button {
   width: 32px; height: 32px; border-radius: 10px; border: 2px solid var(--line); background: #0d1f4acc; cursor: pointer; font-size: 15px; padding: 0;
@@ -1028,6 +1045,29 @@ body.mouselooking .chat { bottom: 38px; }
 .wd2-filters:empty { display: none; }
 .wd2-filters button { border: 0; background: transparent; color: var(--muted); font: 700 12px var(--body); padding: 5px 12px; border-radius: 99px; cursor: pointer; }
 .wd2-filters button.on { background: var(--accent); color: #1a1330; }
+.wd2-search {
+  flex: 1; min-width: 120px; max-width: 240px; background: var(--bg-2); border: 2px solid var(--line); border-radius: 99px;
+  color: var(--text); font: 600 13px var(--body); padding: 6px 12px;
+}
+.wd2-search:focus { outline: none; border-color: var(--accent); }
+/* things you're trying on but haven't bought */
+.wd2-try { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: center; font-size: 12px; background: #0d1f4acc; border: 2px solid #ff8fc7; border-radius: 12px; padding: 6px 8px; }
+.wd2-try-item { display: inline-flex; align-items: center; gap: 3px; background: var(--bg-2); border: 2px solid var(--r); border-radius: 99px; padding: 1px 4px 1px 8px; }
+.wd2-try-item button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 11px; padding: 0 2px; }
+.wd2-try-item button:hover { color: var(--text); }
+/* accessory slots (three hats, three face items, two hands) */
+.wd2-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.wd2-slot {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; cursor: pointer;
+  background: var(--bg-2); border: 2px solid var(--line); border-radius: 12px; padding: 7px 26px 7px 10px; color: var(--text); font: 13px var(--body);
+}
+.wd2-slot small { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.wd2-slot b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.wd2-slot.on { border-color: var(--accent); box-shadow: 0 0 12px #ffb34755; background: linear-gradient(180deg, var(--card-2), var(--card)); }
+.wd2-slot i { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-style: normal; color: var(--muted); font-size: 12px; }
+.wd2-slot i:hover { color: var(--text); }
+.wd2 .tile.worn { border-color: #6ee7a0; }
+.wd2-note { margin: 0; padding: 8px 12px; border-radius: 12px; background: #ff8fc722; border: 2px solid #ff8fc766; font-size: 13px; }
 .wd2 .wd-content { flex: 1; max-height: none; min-height: 0; overflow: auto; gap: 12px; }
 .wd2-card { background: #0d1f4a88; border: 2px solid #3a6fd066; border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .wd2-card .wd-label { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; color: var(--text); }

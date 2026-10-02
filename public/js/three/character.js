@@ -51,7 +51,7 @@ const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new TH
 const _xAxis = new THREE.Vector3(1, 0, 0), _yAxis = new THREE.Vector3(0, 1, 0);
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _v5 = new THREE.Vector3(), _v6 = new THREE.Vector3(), _v7 = new THREE.Vector3();
-const _v8 = new THREE.Vector3(), _m1 = new THREE.Matrix4();
+const _v8 = new THREE.Vector3(), _m1 = new THREE.Matrix4(), _gs = new THREE.Vector3();
 const BOW_SCALE = 0.72;
 
 /**
@@ -78,6 +78,20 @@ function ikArm(pivot, elbow, target, pole) {
   pivot.quaternion.copy(q);
 }
 const _ik1 = new THREE.Vector3(), _ik2 = new THREE.Vector3(), _ik3 = new THREE.Vector3(), _ik4 = new THREE.Vector3();
+
+/**
+ * Two-bone IK for a leg: swing the hip and bend the knee (backwards, like a knee does) so the foot lands
+ * on `target` (in the hip pivot's parent frame). thigh, shin: the bone lengths.
+ */
+function ikLeg(pivot, knee, target, thigh, shin) {
+  const dx = target.x - pivot.position.x, dy = target.y - pivot.position.y, dz = target.z - pivot.position.z;
+  const d = Math.min(Math.max(Math.hypot(dy, dz), 0.05), (thigh + shin) * 0.999);
+  const bend = Math.PI - Math.acos(Math.min(1, Math.max(-1, (thigh * thigh + shin * shin - d * d) / (2 * thigh * shin))));
+  const along = Math.atan2(-dz, -dy); // (0 straight down, negative swings forward)
+  const offset = Math.asin(Math.min(1, Math.max(-1, (shin * Math.sin(bend)) / d)));
+  pivot.rotation.set(along - offset, 0, Math.asin(Math.max(-0.5, Math.min(0.5, dx / Math.max(d, 0.05)))));
+  knee.rotation.set(bend, 0, 0);
+}
 const _ikq = new THREE.Quaternion(), _ikq2 = new THREE.Quaternion();
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _q4 = new THREE.Quaternion();
 
@@ -125,10 +139,47 @@ function patternMaterial(kind, main, accent) {
         ctx.fillStyle = 'rgba(40,120,60,.55)';
         for (const [x, y, a] of [[20, 90, 0.6], [80, 30, -0.4], [110, 100, 1.2], [50, 50, 2]]) { ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.beginPath(); ctx.ellipse(0, 0, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
         flower(30, 30, 14, accent); flower(96, 70, 16, '#ffffff'); flower(40, 104, 11, accent); flower(110, 16, 10, '#ff9fb4'); flower(70, 118, 9, '#ffffff');
+      } else if (kind === 'dots') {
+        ctx.fillStyle = accent;
+        for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { ctx.beginPath(); ctx.arc(x * 32 + (y % 2) * 16 + 8, y * 32 + 16, 6, 0, TAU); ctx.fill(); }
+      } else if (kind === 'check' || kind === 'gingham') {
+        // chef's check (hard squares) or soft gingham (see-through stripes both ways)
+        const n = kind === 'check' ? 8 : 6, w = 128 / n;
+        ctx.fillStyle = accent;
+        for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+          if (kind === 'check' ? (x + y) % 2 : false) ctx.fillRect(x * w, y * w, w, w);
+        }
+        if (kind === 'gingham') {
+          ctx.globalAlpha = 0.45;
+          for (let i = 0; i < n; i += 2) { ctx.fillRect(i * w, 0, w, 128); ctx.fillRect(0, i * w, 128, w); }
+        }
+      } else if (kind === 'floral') {
+        // little five-petal blossoms scattered over the fabric (kimonos, sundresses)
+        const rnd = (k) => ((Math.sin(k * 91.7) * 43758.5453) % 1 + 1) % 1;
+        for (let i = 0; i < 14; i++) {
+          const x = rnd(i) * 128, y = rnd(i + 50) * 128, r = 5 + rnd(i + 99) * 5;
+          for (let k = 0; k < 5; k++) { const a = (k / 5) * TAU; ctx.fillStyle = i % 3 ? accent : '#ffffff'; ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.6, y + Math.sin(a) * r * 0.6, r * 0.45, 0, TAU); ctx.fill(); }
+          ctx.fillStyle = '#ffd84d'; ctx.beginPath(); ctx.arc(x, y, r * 0.25, 0, TAU); ctx.fill();
+        }
+      } else if (kind === 'ribs' || kind === 'stripes') {
+        ctx.fillStyle = kind === 'ribs' ? 'rgba(0,0,0,.14)' : accent;
+        for (let x = 0; x < 128; x += kind === 'ribs' ? 8 : 32) ctx.fillRect(x, 0, kind === 'ribs' ? 3 : 14, 128);
+      } else if (kind === 'argyle') {
+        ctx.fillStyle = accent;
+        for (const [x, y] of [[32, 32], [96, 96], [96, 32], [32, 96]]) { ctx.globalAlpha = (x + y) % 128 ? 0.55 : 1; ctx.beginPath(); ctx.moveTo(x, y - 30); ctx.lineTo(x + 30, y); ctx.lineTo(x, y + 30); ctx.lineTo(x - 30, y); ctx.fill(); }
+        ctx.globalAlpha = 0.6; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(128, 128); ctx.moveTo(128, 0); ctx.lineTo(0, 128); ctx.moveTo(64, 0); ctx.lineTo(128, 64); ctx.lineTo(64, 128); ctx.lineTo(0, 64); ctx.closePath(); ctx.stroke();
+      } else if (kind === 'sparkle') {
+        ctx.fillStyle = 'rgba(255,255,255,.75)';
+        for (let i = 0; i < 40; i++) { const x = (i * 37) % 128, y = (i * 71) % 128; ctx.fillRect(x, y, 2, 2); }
+      } else if (kind === 'denim') {
+        ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 1;
+        for (let i = -128; i < 128; i += 4) { ctx.beginPath(); ctx.moveTo(i, 128); ctx.lineTo(i + 128, 0); ctx.stroke(); }
       }
     });
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(kind === 'plaid' ? 3 : 2, kind === 'plaid' ? 2 : 1.5);
+    const rep = { plaid: [3, 2], hawaiian: [2, 1.5], dots: [3, 2], check: [3, 2], gingham: [3, 2], floral: [2, 1.5], ribs: [4, 1], stripes: [3, 1], argyle: [2, 1.5], sparkle: [3, 2], denim: [3, 2] }[kind] ?? [2, 1.5];
+    tex.repeat.set(rep[0], rep[1]);
     patternCache.set(key, new THREE.MeshToonMaterial({ color: '#ffffff', map: tex, gradientMap: toon('#ffffff').gradientMap }));
   }
   return patternCache.get(key);
@@ -226,6 +277,129 @@ function taper(parent, points, r0, r1, mat) {
   }
 }
 
+// more tops. bodice: [bottom, top] of a fitted piece over bare skin (tank, cami, crop…); shirt: a collared
+// shirt worn under a vest; sleeve: 'none' | 'short' | 'long' | 'puff' | 'puffLong' | 'flutter' | 'off' | 'kimono'
+Object.assign(TOPS, {
+  top_tank: { sleeve: 'none', bodice: [-0.35, 0.22], straps: 0.034 },
+  top_kimono: { sleeve: 'kimono', kimono: true, pattern: 'floral', accent: '#ffc53d' },
+  top_oxford: { sleeve: 'long', accent: '#f4f0ff' },
+  top_crop: { sleeve: 'short', bodice: [-0.03, 0.36] },
+  top_cami: { sleeve: 'none', bodice: [-0.35, 0.15], straps: 0.012 },
+  top_tube: { sleeve: 'none', bodice: [-0.15, 0.15] },
+  top_halter: { sleeve: 'none', bodice: [-0.35, 0.18], halter: true },
+  top_ribbed: { sleeve: 'long', pattern: 'ribs' },
+  top_cardigan: { sleeve: 'long', accent: '#f4f0ff' },
+  top_babydoll: { sleeve: 'puff', accent: '#ffffff' },
+  top_ruffle: { sleeve: 'flutter', accent: '#ffffff' },
+  top_blouse: { sleeve: 'puffLong', accent: '#ff5d8f' },
+  top_offshoulder: { sleeve: 'off', bodice: [-0.35, 0.12] },
+  top_sailor: { sleeve: 'short', accent: '#e0463c' },
+  top_sweatervest: { sleeve: 'long', shirt: '#f6f4ee', vest: 'argyle', accent: '#1d1b2e' },
+  top_vest_plaid: { sleeve: 'long', shirt: '#f6f4ee', vest: 'plaid', accent: '#1d1b2e' },
+  top_vest_brown: { sleeve: 'long', shirt: '#f6f4ee', vest: 'plain', color: '#7a4a2a', accent: '#c9a227' },
+  top_corset: { sleeve: 'none', bodice: [-0.32, 0.16], shiny: true, accent: '#1d1b2e' },
+  // (the tops that full outfits are made of)
+  dress_strap: { sleeve: 'none', bodice: [-0.35, 0.17], straps: 0.02 },
+  dress_slip: { sleeve: 'none', bodice: [-0.35, 0.15], straps: 0.01, shiny: true },
+  dress_short: { sleeve: 'short' },
+  dress_sweetheart: { sleeve: 'none', bodice: [-0.35, 0.14], sweetheart: true },
+  dress_sleeveless: { sleeve: 'none' },
+  dress_off: { sleeve: 'off', bodice: [-0.35, 0.12] },
+  dress_puff: { sleeve: 'puff', square: true },
+  dress_bridal: { sleeve: 'none', bodice: [-0.35, 0.15], sweetheart: true, sparkle: true },
+  dress_polo: { sleeve: 'none', polo: true },
+  dress_pinafore: { sleeve: 'short', shirt: '#f6f4ee', bib: true },
+  suit3: { sleeve: 'long', color: '#2b2f4a', accent: '#c9a227' },
+  track_jacket: { sleeve: 'long', armStripe: true, accent: '#ffffff' },
+  jump_top: { sleeve: 'long', accent: '#1d1b2e' },
+  pj_top: { sleeve: 'long', pattern: 'gingham', accent: '#ffffff' },
+  scrub_top: { sleeve: 'short', color: '#2fa58a' },
+  chef_jacket: { sleeve: 'long', color: '#fbfbf6', accent: '#1d1b2e' },
+  gi_top: { sleeve: 'long', color: '#fbfbf6', accent: '#1d1b2e' },
+  astro_top: { sleeve: 'long', puffy: true, color: '#f4f4f2', accent: '#39c6ff' },
+  cheer_top: { sleeve: 'none', accent: '#ffffff' },
+  school_top: { sleeve: 'long', shirt: '#f6f4ee', blazer: true, color: '#2b3a6b', accent: '#e0463c' },
+});
+// more bottoms (and the outfits' own). skirt.len can be 'midi', 'ankle' or 'floor' as well as a length
+Object.assign(BOTTOMS, {
+  bottom_chinos: { legs: 'pants', crease: true, cuffs: true },
+  bottom_sweats: { legs: 'pants', jogger: true, baggy: 1.12 },
+  bottom_cargoshorts: { legs: 'shorts', long: true, pockets: true, baggy: 1.1 },
+  bottom_capri: { legs: 'capri' },
+  bottom_miniskirt: { legs: 'skin', socks: true, skirt: { len: 0.19, flare: 0.31 } },
+  bottom_denimskirt: { legs: 'skin', socks: true, skirt: { len: 0.24, flare: 0.33, pattern: 'denim', seams: true } },
+  bottom_pleated: { legs: 'skin', socks: true, skirt: { len: 0.27, flare: 0.42, pleats: 14 } },
+  bottom_longskirt: { legs: 'skin', skirt: { len: 'ankle', flare: 0.38 } },
+  bottom_widelegs: { legs: 'pants', baggy: 1.1, flare: true, crease: true },
+  bottom_plaidpants: { legs: 'pants', pattern: 'plaid', crease: true },
+  suitpants: { legs: 'pants', crease: true },
+  tuxpants: { legs: 'pants', crease: true, satin: true },
+  trackpants: { legs: 'pants', jogger: true, stripe: true },
+  jumppants: { legs: 'pants', cuffs: true },
+  pjpants: { legs: 'pants', pattern: 'gingham', cuffs: true },
+  checkpants: { legs: 'pants', pattern: 'check' },
+  gipants: { legs: 'pants', baggy: 1.16, flare: true },
+  astropants: { legs: 'pants', baggy: 1.22, puffy: true, cuffs: true },
+  skirt_sun: { legs: 'skin', skirt: { len: 0.3, flare: 0.44, pattern: 'floral' } },
+  skirt_slip: { legs: 'skin', skirt: { len: 'midi', flare: 0.32, shiny: true } },
+  skirt_maxi: { legs: 'skin', skirt: { len: 'ankle', flare: 0.42, belt: true } },
+  skirt_party: { legs: 'skin', skirt: { len: 0.24, flare: 0.5, frill: true, tulle: true } },
+  skirt_lbd: { legs: 'skin', skirt: { len: 0.22, flare: 0.3 } },
+  skirt_gown: { legs: 'skin', skirt: { len: 'floor', flare: 0.62, sparkle: true, belt: true } },
+  skirt_princess: { legs: 'skin', skirt: { len: 'floor', flare: 0.72, tiers: true, belt: true } },
+  skirt_bridal: { legs: 'skin', skirt: { len: 'floor', flare: 0.66, sparkle: true, tiers: true } },
+  skirt_tennis: { legs: 'skin', socks: true, skirt: { len: 0.2, flare: 0.38, pleats: 16 } },
+  skirt_pinafore: { legs: 'skin', socks: true, skirt: { len: 0.27, flare: 0.36 } },
+  skirt_cheer: { legs: 'skin', socks: true, skirt: { len: 0.18, flare: 0.42, pleats: 14, hem: true } },
+  skirt_school: { legs: 'skin', socks: true, skirt: { len: 0.25, flare: 0.42, pleats: 16, pattern: 'plaid' } },
+  skirt_kimono: { legs: 'skin', skirt: { len: 'ankle', flare: 0.3, pattern: 'floral', wrap: true } },
+});
+// full outfits: a top and a bottom (worn instead of yours), in the outfit's colour + accent
+const OUTFITS = {
+  outfit_sundress: { top: 'dress_strap', bottom: 'skirt_sun', color: '#ffd84d', accent: '#ffffff' },
+  outfit_pajamas: { top: 'pj_top', bottom: 'pjpants', color: '#8fd3ff', accent: '#ffffff' },
+  outfit_pinafore: { top: 'dress_pinafore', bottom: 'skirt_pinafore', color: '#c2185b', accent: '#ffd84d' },
+  outfit_tennis: { top: 'dress_polo', bottom: 'skirt_tennis', color: '#ffffff', accent: '#2f9e44' },
+  outfit_slip: { top: 'dress_slip', bottom: 'skirt_slip', color: '#e3d9ff' },
+  outfit_maxi: { top: 'dress_short', bottom: 'skirt_maxi', color: '#ff7a59', accent: '#8a3d00' },
+  outfit_partydress: { top: 'dress_sweetheart', bottom: 'skirt_party', color: '#ff6fb5', accent: '#ffd1e8' },
+  outfit_lbd: { top: 'dress_sleeveless', bottom: 'skirt_lbd', color: '#1d1b22' },
+  outfit_tracksuit: { top: 'track_jacket', bottom: 'trackpants', color: '#3b5bdb', accent: '#ffffff' },
+  outfit_jumpsuit: { top: 'jump_top', bottom: 'jumppants', color: '#2f9e44', accent: '#1d1b2e' },
+  outfit_school: { top: 'school_top', bottom: 'skirt_school', color: '#2b3a6b', accent: '#e0463c' },
+  outfit_cheer: { top: 'cheer_top', bottom: 'skirt_cheer', color: '#e0463c', accent: '#ffffff' },
+  outfit_scrubs: { top: 'scrub_top', bottom: 'suitpants', color: '#2fa58a' },
+  outfit_chef: { top: 'chef_jacket', bottom: 'checkpants', color: '#fbfbf6', accent: '#1d1b2e', pants: '#fbfbf6', pantsAccent: '#1d1b2e' },
+  outfit_gi: { top: 'gi_top', bottom: 'gipants', color: '#fbfbf6', accent: '#1d1b2e' },
+  outfit_suit: { top: 'top_suit', bottom: 'suitpants', color: '#23263f', accent: '#e0463c' },
+  outfit_threepiece: { top: 'suit3', bottom: 'suitpants', color: '#2b2f4a', accent: '#c9a227' },
+  outfit_gown: { top: 'dress_off', bottom: 'skirt_gown', color: '#7048e8', accent: '#ffd84d' },
+  outfit_kimono: { top: 'top_kimono', bottom: 'skirt_kimono', color: '#c2185b', accent: '#ffc53d' },
+  outfit_princess: { top: 'dress_puff', bottom: 'skirt_princess', color: '#ffa3cf', accent: '#ffd84d' },
+  outfit_tux: { top: 'top_tux', bottom: 'tuxpants', color: '#15141c', accent: '#15141c' },
+  outfit_wedding: { top: 'dress_bridal', bottom: 'skirt_bridal', color: '#fbfbf8', accent: '#f4e8cf' },
+  outfit_astronaut: { top: 'astro_top', bottom: 'astropants', color: '#f4f4f2', accent: '#39c6ff' },
+};
+/** The capsule torso's radius at height y (its own frame, before the torso's scale). */
+const torsoR = (y) => (Math.abs(y) <= 0.1 ? 0.25 : Math.sqrt(Math.max(0, 0.0625 - (Math.abs(y) - 0.1) ** 2)));
+/** A fitted piece of clothing following the torso from y0 up to y1 (tank tops, bodices, vests). */
+function bodiceGeo(y0, y1, lift = 0.012) {
+  return geo(`bodice${y0},${y1},${lift}`, () => {
+    const pts = [];
+    for (let i = 0; i <= 18; i++) { const y = y0 + (y1 - y0) * (i / 18); pts.push(new THREE.Vector2(torsoR(y) + lift, y)); }
+    return new THREE.LatheGeometry(pts, 36);
+  });
+}
+/** A strap over one shoulder (at x), from the front edge of a top to the back. */
+function strapGeo(x, y, r) {
+  return geo(`strap${x},${y},${r}`, () => {
+    const z = (yy) => torsoR(yy) * 0.8 + 0.016;
+    const top = 0.1 + Math.sqrt(Math.max(0, 0.0625 - (x / 1.02) ** 2)) + 0.012;
+    const pts = [new THREE.Vector3(x, y, z(y)), new THREE.Vector3(x, (y + top) / 2 + 0.02, z((y + top) / 2) * 0.85), new THREE.Vector3(x, top, 0), new THREE.Vector3(x, (y + top) / 2 + 0.02, -z((y + top) / 2) * 0.85), new THREE.Vector3(x, y, -z(y))];
+    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, r, 6);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // textures
 // ---------------------------------------------------------------------------
@@ -273,28 +447,51 @@ function hairline(phi, front, side, back) {
   return c >= 0 ? side + (front - side) * Math.pow(c, 1.4) : side + (back - side) * Math.pow(-c, 0.35);
 }
 
-/** A hair shell hugging the head down to a hairline: high over the forehead, low at the nape. */
-function shellGeo(front, side, back, r) {
-  return geo(`shell${front},${side},${back},${r}`, () => {
+/** A hair shell hugging the head down to a hairline: high over the forehead, low at the nape.
+ *  inner > 0 closes it: a second layer at that radius (the scalp) joined to the outside by a rim along
+ *  the hairline, so it's solid hair, not a hollow helmet you can see into. */
+function shellGeo(front, side, back, r, inner = 0) {
+  return geo(`shell${front},${side},${back},${r},${inner}`, () => {
     const U = 56, V = 18, pos = [], nor = [], uv = [], idx = [];
-    for (let i = 0; i <= U; i++) {
-      const phi = (i / U) * TAU;
-      const lim = hairline(phi, front, side, back);
-      for (let j = 0; j <= V; j++) {
-        const th = (j / V) * lim;
-        const n = [Math.sin(th) * Math.sin(phi), Math.cos(th), Math.sin(th) * Math.cos(phi)];
-        pos.push(n[0] * r, n[1] * r, n[2] * r);
-        nor.push(...n);
-        uv.push(i / U, j / V); // u: round the head, v: crown -> hairline
+    const layer = (rad, sign) => {
+      for (let i = 0; i <= U; i++) {
+        const phi = (i / U) * TAU;
+        const lim = hairline(phi, front, side, back);
+        for (let j = 0; j <= V; j++) {
+          const th = (j / V) * lim;
+          const n = [Math.sin(th) * Math.sin(phi), Math.cos(th), Math.sin(th) * Math.cos(phi)];
+          pos.push(n[0] * rad, n[1] * rad, n[2] * rad);
+          nor.push(n[0] * sign, n[1] * sign, n[2] * sign);
+          uv.push(i / U, j / V); // u: round the head, v: crown -> hairline
+        }
       }
-    }
+    };
+    layer(r, 1);
     for (let i = 0; i < U; i++) {
       for (let j = 0; j < V; j++) {
         const a = i * (V + 1) + j, b = (i + 1) * (V + 1) + j;
         idx.push(a, a + 1, b, b, a + 1, b + 1);
       }
     }
+    const outer = pos.length / 3;
+    if (inner) {
+      layer(inner, -1);
+      for (let i = 0; i < U; i++) for (let j = 0; j < V; j++) {
+        const a = outer + i * (V + 1) + j, b = outer + (i + 1) * (V + 1) + j;
+        idx.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+      // the rim: its own vertices (shaded like the outside of the hair), outer edge to inner edge
+      const rim = pos.length / 3;
+      for (let i = 0; i <= U; i++) {
+        const o = (i * (V + 1) + V) * 3, n = (outer + i * (V + 1) + V) * 3;
+        pos.push(pos[o], pos[o + 1], pos[o + 2], pos[n], pos[n + 1], pos[n + 2]);
+        nor.push(nor[o], nor[o + 1], nor[o + 2], nor[o], nor[o + 1], nor[o + 2]);
+        uv.push(i / U, 1, i / U, 1);
+      }
+      for (let i = 0; i < U; i++) { const a = rim + i * 2, b = a + 2; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+    }
     const g = new THREE.BufferGeometry();
+    g.userData.outer = outer; // (vertices before this are the outside of the hair)
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -304,7 +501,7 @@ function shellGeo(front, side, back, r) {
 }
 
 function shell(head, mat, { front = 0.95, side = 1.45, back = 2.25, lift = 0.035, outline = OUT } = {}) {
-  return part(head, shellGeo(front, side, back + 0.18, R + lift), mat, { outline });
+  return part(head, shellGeo(front, side, back + 0.18, R + lift, R - 0.012), mat, { outline });
 }
 
 /** Point at angle phi (0 = front) and theta (down from the crown) on a sphere of radius r. */
@@ -926,7 +1123,8 @@ function acLock(head, mat, pts, w = 0.1, thick = 0.035, tipW = 0.12) {
 
 /** The puffy cap of hair, sitting a little off the scalp. */
 function acCap(head, mat, { front = 0.98, side = 1.5, back = 2.25, lift = AC_LIFT, sy = 1.03 } = {}) {
-  return part(head, shellGeo(front, side, back + 0.18, R + lift), mat, { p: [0, 0.02, -0.015], s: [1.05, sy + 0.03, 1.03], outline: OUT });
+  // (closed underneath, its inner layer sitting right on the scalp once it's scaled up)
+  return part(head, shellGeo(front, side, back + 0.18, R + lift, (R - 0.008) / 1.05), mat, { p: [0, 0.02, -0.015], s: [1.05, sy + 0.03, 1.03], outline: OUT });
 }
 
 /** A lighter streak of shine curving over the top of the hair. */
@@ -1073,10 +1271,13 @@ function braidAlong(head, mat, L, pts, { n = 24, size = 0.075, closed = false } 
 /** A lumpy cap: like the hair cap but standing well off the head with a bumpy, cloud-like outline. */
 function lumpyCap(head, mat, { front = 0.95, side = 1.6, back = 2.25, r = R + 0.16, amp = 0.07, lumps = 7, y = 0.02, s = [1, 1, 1] } = {}) {
   const g = geo(`lumpy${front},${side},${back},${r},${amp},${lumps}`, () => {
-    const base = shellGeo(front, side, back + 0.18, r).clone();
+    const solid = shellGeo(front, side, back + 0.18, r, R - 0.01);
+    const base = solid.clone();
     const p = base.attributes.position;
     const v = new THREE.Vector3();
+    const rimStart = p.count - (56 + 1) * 2; // (the rim's outer vertices move with the outside)
     for (let i = 0; i < p.count; i++) {
+      if (i >= solid.userData.outer && (i < rimStart || (i - rimStart) % 2)) continue; // (the scalp layer stays put)
       v.fromBufferAttribute(p, i);
       const n = v.clone().normalize();
       const bump = Math.sin(n.x * lumps + 1.3) * Math.sin(n.y * lumps + 0.7) * Math.sin(n.z * lumps + 2.1);
@@ -1810,17 +2011,55 @@ function dotsMaterial(color) {
 // ---------------------------------------------------------------------------
 
 const EYE_X = 0.16, EYE_Y = 0.0;
+// face items marked "tint" take the colour picked for their slot, otherwise their own
+const faceCol = (L, def) => L.faceColor || def;
+
+/** The full beard: one thick, soft piece along the jaw from sideburn to sideburn, full at the chin,
+ *  stopping under the bottom lip so the mouth still shows. */
+function beardGeo() {
+  return geo('beard2', () => {
+    const U = 34, V = 12, pos = [], idx = [];
+    const v = new THREE.Vector3();
+    for (let i = 0; i <= U; i++) {
+      const phi = -1.72 + (i / U) * 3.44, front = Math.max(0, Math.cos(phi));
+      // where it starts (top) and ends (bottom), measured down from the crown
+      const top = Math.PI / 2 - 0.2 + front * front * 0.58; // sideburns up by the ears, just under the lip in front
+      const bot = Math.PI / 2 + 0.78 + front * 0.22;        // along the jawline, round under the chin
+      for (let j = 0; j <= V; j++) {
+        const t = j / V, th = top + (bot - top) * t;
+        // thicker towards the chin and the lower edge, a little lumpy so it reads as hair
+        const thick = 0.022 + front * front * (0.03 + t * 0.05) + Math.sin(t * Math.PI) * 0.02 + Math.sin(i * 1.7 + j * 2.3) * 0.004;
+        v.set(Math.sin(th) * Math.sin(phi), Math.cos(th), Math.sin(th) * Math.cos(phi)).multiplyScalar(R + thick);
+        if (front > 0.6 && t > 0.65) v.y -= (t - 0.65) * 0.12 * (front - 0.6) * 2.5; // the chin comes to a soft point
+        pos.push(v.x, v.y, v.z);
+      }
+    }
+    for (let i = 0; i < U; i++) for (let j = 0; j < V; j++) {
+      const a = i * (V + 1) + j, b = (i + 1) * (V + 1) + j;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  });
+}
+
 const FACES = {
-  face_glasses(head) {
-    const m = toon('#1d1b2e');
+  face_glasses(head, L) {
+    const m = toon(faceCol(L, '#1d1b2e'));
     for (const s of [-1, 1]) {
       const p = onFace(s * EYE_X, EYE_Y, 0.035);
       part(head, torus(0.1, 0.014, TAU, 8, 28), m, { p: p.toArray(), q: faceTo(p), outline: null });
+      // the arms back to the ears
+      const a = onFace(s * (EYE_X + 0.1), EYE_Y + 0.01, 0.03), b = new THREE.Vector3(s * (R + 0.012), EYE_Y + 0.01, 0.02), c2 = new THREE.Vector3(s * (R - 0.04), EYE_Y - 0.02, -0.2);
+      taper(head, [a, b, c2], 0.011, 0.011, m);
     }
     part(head, cyl(0.012, 0.012, 0.1, 6), m, { p: [0, EYE_Y + 0.01, R + 0.02], r: [0, 0, Math.PI / 2], outline: null });
   },
-  face_sunglasses(head) {
-    const m = shiny('#141220', { metalness: 0.4, roughness: 0.15 });
+  face_sunglasses(head, L) {
+    const m = shiny(faceCol(L, '#141220'), { metalness: 0.4, roughness: 0.15 });
     for (const s of [-1, 1]) {
       const p = onFace(s * EYE_X, EYE_Y, 0.03);
       part(head, box(0.2, 0.13, 0.04), m, { p: p.toArray(), q: faceTo(p), outline: OUT_THIN });
@@ -1832,14 +2071,18 @@ const FACES = {
       taper(head, [a, b, c2], 0.015, 0.015, m);
     }
   },
-  face_mustache(head) {
+  face_mustache(head, L) {
+    // a curly handlebar: two fat lobes from under the nose, flicking up at the ends
+    const m = toon(faceCol(L, mix(L.hairColor, '#000000', 0.15)));
     for (const s of [-1, 1]) {
-      const p = onFace(s * 0.075, -0.075, 0.015);
-      part(head, sphere(0.07, 14, 10), toon('#4a2e1c'), { p: p.toArray(), s: [1.5, 0.55, 0.6], r: [0, 0, s * 0.35], outline: null });
+      const p = onFace(s * 0.07, -0.085, 0.016);
+      part(head, sphere(0.06, 14, 10), m, { p: p.toArray(), s: [1.45, 0.6, 0.65], r: [0, 0, s * 0.3], outline: OUT_THIN });
+      const tip = onFace(s * 0.15, -0.065, 0.012);
+      part(head, sphere(0.03, 10, 8), m, { p: tip.toArray(), s: [1.3, 0.7, 0.7], r: [0, 0, -s * 0.6], outline: null });
     }
   },
-  face_eyepatch(head) {
-    const m = toon('#15131f');
+  face_eyepatch(head, L) {
+    const m = toon(faceCol(L, '#15131f'));
     const p = onFace(EYE_X, EYE_Y, 0.02);
     part(head, cyl(0.1, 0.1, 0.025, 20), m, { p: p.toArray(), q: new THREE.Quaternion().setFromUnitVectors(Y, p.clone().normalize()), outline: null });
     // the strap: a great circle through the patch, running up across the forehead and round the back
@@ -1855,8 +2098,9 @@ const FACES = {
     });
     part(head, strap, m, { outline: null });
   },
-  face_heartshades(head) {
-    const m = shiny('#ff4f8b', { roughness: 0.2 }), frame = toon('#c2185b');
+  face_heartshades(head, L) {
+    const c = faceCol(L, '#ff4f8b');
+    const m = shiny(c, { roughness: 0.2 }), frame = toon(tint(c, 0.6));
     for (const s of [-1, 1]) {
       const p = onFace(s * EYE_X, EYE_Y, 0.035);
       part(head, geo('heartLens', () => new THREE.ExtrudeGeometry(heartShape(0.1), { depth: 0.025, bevelEnabled: false })), m, { p: p.toArray(), q: faceTo(p), outline: OUT_THIN });
@@ -1876,8 +2120,8 @@ const FACES = {
       part(head, box(0.22, 0.15, 0.01), frame, { p: onFace(s * EYE_X, EYE_Y, 0.028).toArray(), q: faceTo(p), outline: OUT_THIN });
     });
   },
-  face_goggles(head) {
-    const strap = toon('#5a3a1e'), lens = shiny('#8fd3ff', { roughness: 0.1 }), rim = shiny('#c9a44a', { metalness: 0.6 });
+  face_goggles(head, L) {
+    const strap = toon(faceCol(L, '#5a3a1e')), lens = shiny('#8fd3ff', { roughness: 0.1 }), rim = shiny('#c9a44a', { metalness: 0.6 });
     part(head, torus(R + 0.02, 0.028, TAU, 6, 48), strap, { p: [0, EYE_Y + 0.1, 0], r: [Math.PI / 2 - 0.12, 0, 0], outline: null });
     for (const s of [-1, 1]) {
       const p = onFace(s * EYE_X, EYE_Y + 0.02, 0.05);
@@ -1885,24 +2129,48 @@ const FACES = {
       part(head, circle(0.07), lens, { p: onFace(s * EYE_X, EYE_Y + 0.02, 0.082).toArray(), q: faceTo(p), outline: null });
     }
   },
-  face_bandana(head) {
-    const m = toon('#d6334a', { side: THREE.DoubleSide }), dots = toon('#ffffff');
-    const band = geo('bandanaBand', () => new THREE.SphereGeometry(R + 0.02, 36, 16, -1.9, 3.8, Math.PI / 2 + 0.05, 0.66));
-    part(head, band, m, { outline: OUT_THIN });
-    part(head, cone(0.14, 0.2, 3), m, { p: [0, -0.34, R - 0.05], r: [Math.PI, 0, 0], s: [1, 1, 0.3], outline: OUT_THIN });
-    for (const [x, y] of [[-0.14, -0.06], [0.1, -0.1], [-0.02, -0.18], [0.2, -0.02], [-0.22, -0.16]]) part(head, circle(0.018), dots, { p: onFace(x, y, 0.026).toArray(), q: faceTo(onFace(x, y)), outline: null, shadow: false });
-    part(head, sphere(0.05, 10, 8), m, { p: [0, -0.02, -R - 0.03] });
+  face_bandana(head, L) {
+    // a cowboy bandana: a printed cloth tied snugly over the nose and all the way round, its point hanging
+    // down over the chin in front, knotted at the back of the neck with two short tails
+    const c = faceCol(L, '#d6334a');
+    const cloth = dotsMaterial(hex(c)).clone();
+    cloth.side = THREE.DoubleSide;
+    const band = geo('bandanaBand2', () => new THREE.SphereGeometry(R + 0.022, 40, 14, 0, TAU, Math.PI / 2 + 0.08, 0.7));
+    part(head, band, cloth, { outline: OUT_THIN });
+    // a rolled top edge, just under the eyes
+    part(head, torus(Math.sin(Math.PI / 2 + 0.08) * (R + 0.024), 0.014, TAU, 6, 48), toon(tint(c, 0.8)), { p: [0, Math.cos(Math.PI / 2 + 0.08) * (R + 0.024), 0], r: [Math.PI / 2, 0, 0], outline: null });
+    // the point: a triangle of the same cloth hanging off the front, tucked against the chin
+    const tri = geo('bandanaPoint', () => {
+      const sh = new THREE.Shape();
+      sh.moveTo(-0.15, 0); sh.lineTo(0.15, 0); sh.quadraticCurveTo(0.05, -0.11, 0, -0.2); sh.quadraticCurveTo(-0.05, -0.11, -0.15, 0);
+      const g = new THREE.ShapeGeometry(sh, 6);
+      const uv = g.attributes.uv; // (so the print lines up roughly with the band)
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 2.5, uv.getY(i) * 2.5);
+      return g;
+    });
+    part(head, tri, cloth, { p: [0, -0.29, R - 0.095], r: [0.55, 0, 0], outline: OUT_THIN });
+    const knot = new THREE.Vector3(0, -0.12, -R - 0.03);
+    part(head, sphere(0.05, 10, 8), toon(c), { p: knot.toArray(), s: [1.2, 0.9, 0.8], outline: OUT_THIN });
+    for (const sx of [-1, 1]) part(head, box(0.06, 0.17, 0.015), toon(c), { p: [sx * 0.04, -0.21, -R - 0.05], r: [0.25, 0, sx * 0.4], outline: OUT_THIN });
   },
-  face_clownnose(head) {
-    part(head, sphere(0.07, 16, 12), shiny('#ff2d3d', { roughness: 0.15 }), { p: onFace(0, -0.04, 0.035).toArray(), outline: OUT_THIN });
+  face_clownnose(head, L) {
+    part(head, sphere(0.07, 16, 12), shiny(faceCol(L, '#ff2d3d'), { roughness: 0.15 }), { p: onFace(0, -0.04, 0.035).toArray(), outline: OUT_THIN });
   },
   face_beard(head, L) {
-    const m = toon(tint(L.hairColor, 0.95));
-    const band = geo('beardBand', () => new THREE.SphereGeometry(R + 0.03, 32, 14, -1.5, 3.0, Math.PI / 2 + 0.18, 0.62));
-    part(head, band, m, { outline: OUT_THIN });
-    part(head, sphere(0.12, 16, 12), m, { p: [0, -0.3, 0.28], s: [1.2, 0.9, 0.7], outline: OUT_THIN });
-    for (const s of [-1, 1]) part(head, sphere(0.065, 12, 8), m, { p: onFace(s * 0.07, -0.08, 0.02).toArray(), s: [1.5, 0.55, 0.6], r: [0, 0, s * 0.3], outline: null });
-    part(head, circle(0.035), toon('#8a2a3a'), { p: onFace(0, -0.15, 0.03).toArray(), q: faceTo(onFace(0, -0.15)), s: [1.4, 0.5, 1], outline: null, shadow: false });
+    const c = faceCol(L, mix(L.hairColor, '#000000', 0.08));
+    const m = toon(c, { side: THREE.DoubleSide });
+    part(head, beardGeo(), m, { outline: OUT_THIN });
+    // a mustache joining it at the corners of the mouth
+    for (const s of [-1, 1]) {
+      const p = onFace(s * 0.065, -0.088, 0.018);
+      part(head, sphere(0.058, 12, 8), toon(c), { p: p.toArray(), s: [1.5, 0.55, 0.6], r: [0, 0, s * 0.42], outline: null });
+    }
+    // a few darker tufts for texture
+    const dark = toon(tint(c, 0.75));
+    for (const [x, y] of [[-0.1, -0.24], [0.08, -0.27], [-0.02, -0.31], [0.16, -0.2], [-0.18, -0.17]]) {
+      const p = onFace(x, y, 0.05 + (Math.abs(x) < 0.12 ? 0.03 : 0));
+      part(head, sphere(0.03, 8, 6), dark, { p: p.toArray(), s: [0.6, 1.3, 0.5], outline: null, shadow: false });
+    }
   },
   face_bandaid(head) {
     const p = onFace(-0.2, -0.1, 0.012);
@@ -1911,23 +2179,25 @@ const FACES = {
     part(g, box(0.06, 0.045, 0.004), toon('#e8a878'), { p: [0, 0, 0.008], outline: null, shadow: false });
   },
   face_cyber(head, L, anim) {
-    const glow = new THREE.MeshBasicMaterial({ color: '#39e6ff', transparent: true, opacity: 0.85 });
+    const tinted = !!L.faceColor;
+    const glow = new THREE.MeshBasicMaterial({ color: faceCol(L, '#39e6ff'), transparent: true, opacity: 0.85 });
     const band = geo('cyberBand', () => new THREE.SphereGeometry(R + 0.04, 40, 6, -1.35, 2.7, Math.PI / 2 - 0.15, 0.2));
     part(head, band, toon('#1d1b2e', { side: THREE.DoubleSide }), { p: [0, EYE_Y, 0], outline: OUT_THIN });
     const strip = part(head, geo('cyberStrip', () => new THREE.SphereGeometry(R + 0.045, 40, 2, -1.2, 2.4, Math.PI / 2 - 0.06, 0.05)), glow, { p: [0, EYE_Y, 0], outline: null, shadow: false });
-    anim.push((t) => { glow.color.setHSL((0.52 + Math.sin(t * 0.8) * 0.08 + 1) % 1, 0.9, 0.6); strip.scale.x = 1 + Math.sin(t * 6) * 0.01; });
+    anim.push((t) => { if (!tinted) glow.color.setHSL((0.52 + Math.sin(t * 0.8) * 0.08 + 1) % 1, 0.9, 0.6); strip.scale.x = 1 + Math.sin(t * 6) * 0.01; });
   },
-  face_ninja(head) {
-    const m = toon('#23213a', { side: THREE.DoubleSide });
+  face_ninja(head, L) {
+    const c = faceCol(L, '#23213a');
+    const m = toon(c, { side: THREE.DoubleSide });
     // a band of cloth wrapped round the lower face: part of a sphere shell, so it hugs the cheeks and chin
     const band = geo('ninjaBand', () => new THREE.SphereGeometry(R + 0.018, 36, 16, 0, TAU, Math.PI / 2 + 0.12, 0.62));
     part(head, band, m, { outline: OUT_THIN });
-    part(head, torus(R + 0.02, 0.02, TAU, 8, 48), toon('#3a3860'), { p: [0, -0.05, 0], r: [Math.PI / 2, 0, 0], outline: null });
+    part(head, torus(R + 0.02, 0.02, TAU, 8, 48), toon(tint(c, 1.3)), { p: [0, -0.05, 0], r: [Math.PI / 2, 0, 0], outline: null });
     part(head, sphere(0.06, 12, 10), m, { p: [0, -0.07, -R - 0.03], s: [1.2, 1, 0.7] });
     for (const s of [-1, 1]) part(head, box(0.07, 0.24, 0.02), m, { p: [s * 0.06, -0.2, -R - 0.05], r: [0.3, 0, s * 0.35], outline: OUT_THIN });
   },
-  face_monocle(head) {
-    const gold = shiny('#ffc53d', { metalness: 0.8 });
+  face_monocle(head, L) {
+    const gold = shiny(faceCol(L, '#ffc53d'), { metalness: 0.8 });
     const p = onFace(EYE_X, EYE_Y, 0.035);
     part(head, torus(0.105, 0.014, TAU, 8, 28), gold, { p: p.toArray(), q: faceTo(p), outline: null });
     const pts = [p.clone().add(new THREE.Vector3(0.02, -0.1, 0)), onFace(0.24, -0.22, 0.02), new THREE.Vector3(0.22, -0.4, 0.2)];
@@ -2011,11 +2281,11 @@ const BACKS = {
   },
   back_wings(back, anim) {
     const ws = [wing(back, -1, false), wing(back, 1, false)];
-    anim.push((t) => ws.forEach((w, i) => { w.rotation.y = (i ? -1 : 1) * (0.55 + Math.sin(t * 4) * 0.25); }));
+    anim.push((t) => ws.forEach((w, i) => { w.rotation.y = (i ? 1 : -1) * (0.55 + Math.sin(t * 4) * 0.25); })); // (flapping behind you)
   },
   back_dragon(back, anim) {
     const ws = [wing(back, -1, true), wing(back, 1, true)];
-    anim.push((t) => ws.forEach((w, i) => { w.rotation.y = (i ? -1 : 1) * (0.5 + Math.sin(t * 3) * 0.3); }));
+    anim.push((t) => ws.forEach((w, i) => { w.rotation.y = (i ? 1 : -1) * (0.5 + Math.sin(t * 3) * 0.3); }));
   },
   back_quiver(back) {
     // an archer's quiver, full of fletched arrows
@@ -2082,36 +2352,90 @@ const BACKS = {
     for (const r of [0.8, -0.8]) part(back, box(0.04, 0.5, 0.01), shiny('#e8e0d0', { metalness: 0.5 }), { p: [0, 0, -0.2], r: [0, 0, r], outline: null });
   },
   back_guitar(back, anim, state, L) {
-    // an electric guitar slung over the shoulder
+    // an electric guitar slung across the back: a glossy double-cutaway body with a sunburst edge, white
+    // pickguard, chrome pickups and bridge, a long fretted neck and a headstock with tuning pegs
     const c = backCol(L, '#e0463c');
     const g = new THREE.Group();
-    g.position.set(0.02, -0.05, -0.17);
-    g.rotation.z = -0.7;
+    g.position.set(0.02, -0.02, -0.19);
+    g.rotation.z = -0.75;
+    g.scale.setScalar(1.25);
     back.add(g);
-    part(g, sphere(0.16, 16, 12), shiny(c, { roughness: 0.3 }), { p: [0, -0.18, 0], s: [1.1, 1, 0.3] });
-    part(g, sphere(0.12, 16, 12), shiny(c, { roughness: 0.3 }), { p: [0, 0.0, 0], s: [0.9, 0.8, 0.3] });
-    part(g, box(0.05, 0.5, 0.03), toon('#3a2a1a'), { p: [0, 0.35, 0] });
-    part(g, box(0.08, 0.1, 0.03), toon('#1d1b2e'), { p: [0, 0.62, 0] });
-    part(g, box(0.1, 0.12, 0.01), toon('#f4f0ff'), { p: [0.02, -0.12, -0.05], outline: null });
-    part(back, box(0.04, 0.62, 0.015), toon('#1d1b2e'), { p: [0, 0.05, 0.03], r: [0, 0, -0.8], outline: null });
+    const bodyGeo = geo('guitarBody', () => {
+      const sh = new THREE.Shape();
+      sh.moveTo(0, -0.27);
+      sh.bezierCurveTo(0.2, -0.27, 0.22, -0.08, 0.15, -0.02);
+      sh.bezierCurveTo(0.12, 0.02, 0.17, 0.08, 0.15, 0.15); // the treble horn
+      sh.bezierCurveTo(0.13, 0.2, 0.07, 0.17, 0.05, 0.1);
+      sh.lineTo(-0.05, 0.1);
+      sh.bezierCurveTo(-0.08, 0.2, -0.17, 0.19, -0.16, 0.1); // the bass horn
+      sh.bezierCurveTo(-0.15, 0.04, -0.12, 0.0, -0.16, -0.05);
+      sh.bezierCurveTo(-0.22, -0.12, -0.2, -0.27, 0, -0.27);
+      const geom = new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 3, curveSegments: 16 });
+      geom.translate(0, 0, -0.025);
+      return geom;
+    });
+    part(g, bodyGeo, shiny(c, { roughness: 0.18, metalness: 0.1 }), { outline: OUT_THIN });
+    // a darker burst showing round the edge, and the white pickguard
+    part(g, bodyGeo, shiny(tint(c, 0.45), { roughness: 0.2, metalness: 0.1 }), { p: [0, 0, 0.006], s: [1.05, 1.05, 1], outline: null });
+    const guard = geo('guitarGuard', () => {
+      const sh = new THREE.Shape();
+      sh.moveTo(-0.06, 0.09); sh.lineTo(0.04, 0.09); sh.bezierCurveTo(0.1, -0.02, 0.14, -0.1, 0.06, -0.17); sh.bezierCurveTo(0.0, -0.2, -0.1, -0.16, -0.12, -0.06); sh.lineTo(-0.06, 0.09);
+      return new THREE.ShapeGeometry(sh, 10);
+    });
+    part(g, guard, toon('#f6f2ea'), { p: [0, 0, -0.04], r: [0, Math.PI, 0], outline: null });
+    const chrome = shiny('#e8ecf5', { metalness: 0.9, roughness: 0.2 });
+    for (const y of [0.04, -0.04, -0.12]) part(g, box(0.075, 0.022, 0.012), toon('#1d1b2e'), { p: [0, y, -0.045], outline: null });
+    part(g, box(0.09, 0.03, 0.016), chrome, { p: [0, -0.19, -0.045], outline: null }); // bridge
+    for (let k = 0; k < 3; k++) part(g, cyl(0.014, 0.014, 0.014, 10), chrome, { p: [0.09 - k * 0.015, -0.12 - k * 0.04, -0.045], r: [Math.PI / 2, 0, 0], outline: null }); // knobs
+    // the neck with frets and dots, out to the headstock
+    part(g, box(0.05, 0.5, 0.025), toon('#7a4a26'), { p: [0, 0.34, -0.012], outline: OUT_THIN });
+    part(g, box(0.046, 0.5, 0.006), toon('#3a2414'), { p: [0, 0.34, -0.027], outline: null });
+    for (let k = 0; k < 9; k++) part(g, box(0.048, 0.004, 0.008), chrome, { p: [0, 0.13 + k * 0.05, -0.03], outline: null });
+    for (const y of [0.23, 0.33, 0.43]) part(g, circle(0.006), basic('#f6f2ea'), { p: [0, y + 0.025, -0.0315], r: [0, Math.PI, 0], outline: null, shadow: false });
+    const headstock = part(g, box(0.08, 0.14, 0.022), shiny(tint(c, 0.8), { roughness: 0.25 }), { p: [0.012, 0.66, -0.012], r: [0, 0, -0.12], outline: OUT_THIN });
+    for (let k = 0; k < 6; k++) part(headstock, cyl(0.008, 0.008, 0.03, 6), chrome, { p: [0.05, -0.05 + k * 0.022, 0], r: [0, 0, Math.PI / 2], outline: null });
+    // strings
+    for (let k = 0; k < 4; k++) part(g, box(0.0025, 0.86, 0.0025), basic('#dfe4ee'), { p: [-0.015 + k * 0.01, 0.2, -0.036], outline: null, shadow: false });
+    // a woven strap across the chest
+    part(back, box(0.05, 0.72, 0.015), toon('#1d1b2e'), { p: [0, 0.05, 0.035], r: [0, 0, -0.85], outline: null });
+    part(back, box(0.016, 0.72, 0.017), toon(tint(c, 1.3)), { p: [0, 0.05, 0.036], r: [0, 0, -0.85], outline: null });
   },
   back_butterfly(back, anim, state, L) {
-    // big stained-glass butterfly wings that flutter
+    // big stained-glass butterfly wings out from the shoulder blades, flapping behind you
     const c = backCol(L, '#b77bff');
-    const mat = new THREE.MeshToonMaterial({ color: c, transparent: true, opacity: 0.85, side: THREE.DoubleSide, emissive: c, emissiveIntensity: 0.25 });
-    const edge = toon('#1d1b2e', { side: THREE.DoubleSide });
+    const wingTex = geo(`bflyTex${c}`, () => canvasTexture(128, 128, (ctx) => {
+      const g = ctx.createRadialGradient(10, 64, 4, 10, 64, 130);
+      g.addColorStop(0, '#ffffff'); g.addColorStop(0.25, c); g.addColorStop(0.85, tint(c, 0.6)); g.addColorStop(1, '#1d1b2e');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+      ctx.strokeStyle = 'rgba(29,27,46,.75)'; ctx.lineWidth = 3;
+      for (const a of [-0.9, -0.4, 0.1, 0.6, 1.0]) { ctx.beginPath(); ctx.moveTo(4, 64); ctx.lineTo(4 + Math.cos(a) * 140, 64 + Math.sin(a) * 140); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      for (const [x, y, r] of [[96, 34, 8], [104, 92, 6], [80, 108, 5], [88, 20, 4]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+    }));
+    const mat = new THREE.MeshToonMaterial({ map: wingTex, transparent: true, opacity: 0.92, side: THREE.DoubleSide, emissive: c, emissiveIntensity: 0.2, depthWrite: false });
+    const shape = (upper) => geo(`bflyWing${upper}`, () => {
+      const sh = new THREE.Shape();
+      if (upper) { sh.moveTo(0, 0); sh.bezierCurveTo(0.12, 0.36, 0.48, 0.5, 0.56, 0.3); sh.bezierCurveTo(0.6, 0.12, 0.38, 0.0, 0, 0); }
+      else { sh.moveTo(0, 0); sh.bezierCurveTo(0.34, -0.04, 0.46, -0.24, 0.32, -0.38); sh.bezierCurveTo(0.2, -0.46, 0.04, -0.3, 0, 0); }
+      const geom = new THREE.ShapeGeometry(sh, 16);
+      const uv = geom.attributes.uv, p = geom.attributes.position;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, p.getX(i) / 0.6, 0.5 + p.getY(i) / 1.0);
+      return geom;
+    });
     const ws = [-1, 1].map((sx) => {
       const w = new THREE.Group();
-      w.position.set(sx * 0.06, 0.12, -0.14);
+      w.position.set(sx * 0.05, 0.1, -0.12);
       back.add(w);
-      for (const [y, r, sy] of [[0.12, 0.3, 1.1], [-0.2, 0.2, 1]]) {
-        part(w, geo(`bflyRing${r}`, () => new THREE.RingGeometry(r * 0.94, r * 1.06, 24)), edge, { p: [sx * r * 0.95, y, 0.002], s: [1, sy, 1], outline: null });
-        part(w, circle(r), mat, { p: [sx * r * 0.95, y, 0], s: [1, sy, 1], outline: null });
-        part(w, circle(r * 0.35), basic('#ffffff'), { p: [sx * r * 1.1, y + 0.03, 0.005], outline: null, shadow: false });
+      for (const upper of [true, false]) {
+        const m = part(w, shape(upper), mat, { s: [sx, 1, 1], outline: null, shadow: false });
+        m.renderOrder = 2;
       }
       return w;
     });
-    anim.push((t, dt, moving) => ws.forEach((w, i) => { w.rotation.y = (i ? -1 : 1) * (0.35 + Math.abs(Math.sin(t * (moving ? 12 : 3))) * 0.55); }));
+    // the body of the butterfly, between the wings
+    part(back, capsule(0.03, 0.22), toon('#2b2340'), { p: [0, 0.08, -0.12], outline: OUT_THIN });
+    // flapping: each wing swings backwards from the spine (never forwards into you)
+    anim.push((t, dt, moving) => ws.forEach((w, i) => { w.rotation.y = (i ? 1 : -1) * (0.25 + Math.abs(Math.sin(t * (moving ? 11 : 2.6))) * 0.75); }));
   },
   back_mech(back, anim) {
     // a chunky mech booster pack with glowing thrust rings
@@ -2129,6 +2453,260 @@ const BACKS = {
       ring.scale.setScalar(1 + Math.sin(t * 10 + i) * 0.1);
       beam.scale.y = (moving ? 1.4 : 0.5) + Math.sin(t * 25 + i) * 0.15;
     }));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// things to hold (in the hand's frame once the forearm is held out: +y is up out of the fist, +z is
+// forward, and the grip is at the origin)
+// ---------------------------------------------------------------------------
+
+const handCol = (L, def) => L.handColor || def;
+/** Sprites that each fade on their own (each gets its own material). */
+const ownSprites = (g, tex, color, opacity, n, scale) => Array.from({ length: n }, () => {
+  const sp = new THREE.Sprite(additive(tex, color, opacity));
+  sp.scale.setScalar(scale);
+  g.add(sp);
+  return sp;
+});
+const textCache = new Map();
+/** A little sign texture with big bold text. */
+function signText(text, bg, fg, { w = 128, h = 128, size = 44, round = 0 } = {}) {
+  const key = `${text}${bg}${fg}${w}${h}${size}${round}`;
+  if (!textCache.has(key)) textCache.set(key, canvasTexture(w, h, (ctx) => {
+    ctx.fillStyle = bg;
+    if (round) { ctx.beginPath(); ctx.roundRect(0, 0, w, h, round); ctx.fill(); } else ctx.fillRect(0, 0, w, h);
+    ctx.font = `900 ${size}px Rubik, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = fg;
+    ctx.fillText(text, w / 2, h / 2 + 2);
+  }));
+  return textCache.get(key);
+}
+
+const HANDS = {
+  hand_lightsaber(g, L, anim) {
+    const col = handCol(L, '#39e6ff');
+    const metal = shiny('#c8ced8', { metalness: 0.85, roughness: 0.25 }), black = toon('#1d1b2e');
+    part(g, cyl(0.028, 0.028, 0.24, 14), metal, { p: [0, 0.02, 0], outline: OUT_THIN });
+    for (let k = 0; k < 4; k++) part(g, cyl(0.031, 0.031, 0.022, 14), black, { p: [0, -0.07 + k * 0.04, 0], outline: null });
+    part(g, cyl(0.035, 0.03, 0.05, 14), metal, { p: [0, 0.16, 0], outline: OUT_THIN }); // the emitter
+    part(g, box(0.012, 0.03, 0.012), basic('#ff3b4f'), { p: [0.03, 0.06, 0], outline: null, shadow: false }); // the switch
+    // the blade: a white-hot core in a glow of colour
+    const blade = new THREE.Group();
+    blade.position.y = 0.19;
+    g.add(blade);
+    part(blade, cyl(0.016, 0.02, 1.0, 10), basic('#ffffff'), { p: [0, 0.5, 0], outline: null, shadow: false });
+    const glow = part(blade, cyl(0.036, 0.04, 1.04, 12), basic(col, { transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.5, 0], outline: null, shadow: false });
+    for (let k = 0; k < 4; k++) {
+      const sp = new THREE.Sprite(additive(glowTexture, new THREE.Color(col).getHex(), 0.35));
+      sp.scale.set(0.24, 0.34, 1);
+      sp.position.y = 0.12 + k * 0.26;
+      blade.add(sp);
+    }
+    anim.push((t) => { glow.scale.x = glow.scale.z = 1 + Math.sin(t * 40) * 0.06 + Math.sin(t * 17) * 0.04; });
+  },
+  hand_sword(g) {
+    const steel = shiny('#dfe4ee', { metalness: 0.85, roughness: 0.22 }), gold = shiny('#ffc53d', { metalness: 0.7, roughness: 0.3 });
+    part(g, cyl(0.024, 0.026, 0.18, 10), toon('#5a2a1a'), { p: [0, 0, 0], outline: OUT_THIN });
+    part(g, sphere(0.04, 12, 10), gold, { p: [0, -0.11, 0], outline: OUT_THIN }); // pommel
+    part(g, box(0.26, 0.04, 0.05), gold, { p: [0, 0.1, 0], outline: OUT_THIN }); // crossguard
+    for (const s of [-1, 1]) part(g, sphere(0.03, 10, 8), gold, { p: [s * 0.13, 0.1, 0], outline: null });
+    part(g, box(0.07, 0.72, 0.016), steel, { p: [0, 0.48, 0], outline: OUT_THIN });
+    part(g, box(0.014, 0.64, 0.02), shiny('#b8c0d0', { metalness: 0.9 }), { p: [0, 0.46, 0], outline: null }); // the fuller
+    part(g, cone(0.035, 0.1, 4), steel, { p: [0, 0.89, 0], r: [0, Math.PI / 4, 0], s: [1, 1, 0.23], outline: null });
+  },
+  hand_wand(g, L, anim) {
+    const col = handCol(L, '#ffd84d');
+    part(g, cyl(0.012, 0.02, 0.4, 8), toon('#3a2414'), { p: [0, 0.14, 0], outline: OUT_THIN });
+    part(g, cyl(0.022, 0.022, 0.08, 8), toon('#c9955a'), { p: [0, -0.02, 0], outline: null });
+    const star = part(g, geo('wandStar', () => new THREE.ExtrudeGeometry(starShape(0.08), { depth: 0.025, bevelEnabled: false }).translate(0, 0, -0.0125)), shiny(col, { emissive: col, emissiveIntensity: 0.35 }), { p: [0, 0.4, 0], outline: OUT_THIN });
+    const sp = new THREE.Sprite(additive(glowTexture, new THREE.Color(col).getHex(), 0.7));
+    sp.scale.setScalar(0.32);
+    star.add(sp);
+    const sparks = sprites(g, additive(starTexture, 0xffffff, 0.9), 4, 0.06);
+    anim.push((t) => {
+      star.rotation.y = t * 2.5;
+      sparks.forEach((s, i) => { const a = t * 2 + i * 1.6; s.position.set(Math.cos(a) * 0.12, 0.4 + Math.sin(a * 1.3) * 0.1, Math.sin(a) * 0.12); });
+    });
+  },
+  hand_hairdryer(g, L, anim) {
+    const col = handCol(L, '#ff8fc7'), m = shiny(col, { roughness: 0.3, metalness: 0.1 });
+    part(g, capsule(0.04, 0.14), m, { p: [0, 0.02, -0.02], outline: OUT_THIN }); // handle
+    part(g, cyl(0.07, 0.065, 0.24, 18), m, { p: [0, 0.14, 0.06], r: [Math.PI / 2, 0, 0], outline: OUT_THIN }); // barrel
+    part(g, cyl(0.05, 0.065, 0.06, 18), toon('#2b2f4a'), { p: [0, 0.14, 0.2], r: [Math.PI / 2, 0, 0], outline: OUT_THIN }); // nozzle
+    part(g, cyl(0.06, 0.06, 0.02, 18), toon('#2b2f4a'), { p: [0, 0.14, -0.065], r: [Math.PI / 2, 0, 0], outline: null }); // back vent
+    part(g, box(0.02, 0.03, 0.03), toon('#ffffff'), { p: [0, 0.06, 0.02], outline: null }); // the switch
+    part(g, cyl(0.008, 0.008, 0.3, 5), toon('#2b2f4a'), { p: [0, -0.2, -0.02], outline: null }); // the cord
+    const puff = ownSprites(g, puffTexture, 0xffffff, 0.35, 3, 0.08);
+    anim.push((t) => puff.forEach((s, i) => { const k = (t * 2 + i / 3) % 1; s.position.set(0, 0.14, 0.24 + k * 0.3); s.scale.setScalar(0.06 + k * 0.12); s.material.opacity = 0.35 * (1 - k); }));
+  },
+  hand_stopsign(g) {
+    part(g, cyl(0.016, 0.016, 1.0, 8), shiny('#b8c0d0', { metalness: 0.7 }), { p: [0, 0.38, 0], outline: OUT_THIN });
+    const sign = new THREE.Group();
+    sign.position.set(0, 0.95, 0.02);
+    g.add(sign);
+    part(sign, geo('stopOct', () => new THREE.CylinderGeometry(0.21, 0.21, 0.02, 8)), toon('#f4f4f4'), { r: [Math.PI / 2, Math.PI / 8, 0], outline: OUT_THIN });
+    const face = new THREE.MeshBasicMaterial({ map: signText('STOP', '#d62828', '#ffffff', { size: 40 }) });
+    part(sign, geo('stopFace', () => new THREE.CircleGeometry(0.19, 8).rotateZ(Math.PI / 8)), face, { p: [0, 0, 0.012], outline: null, shadow: false });
+    part(sign, geo('stopFace', () => new THREE.CircleGeometry(0.19, 8).rotateZ(Math.PI / 8)), toon('#b8c0d0'), { p: [0, 0, -0.012], r: [0, Math.PI, 0], outline: null });
+  },
+  hand_balloon(g, L, anim) {
+    const col = handCol(L, '#ff5d73');
+    const string = part(g, cyl(0.004, 0.004, 0.75, 4), basic('#f4f0ff'), { p: [0, 0.37, 0], outline: null, shadow: false });
+    const b = new THREE.Group();
+    b.position.y = 0.78;
+    g.add(b);
+    part(b, sphere(0.16, 20, 16), shiny(col, { roughness: 0.15, metalness: 0.05 }), { p: [0, 0.16, 0], s: [1, 1.18, 1], outline: OUT_THIN });
+    part(b, cone(0.03, 0.04, 8), shiny(col, { roughness: 0.15, metalness: 0.05 }), { p: [0, -0.02, 0], outline: null });
+    part(b, sphere(0.04, 8, 6), basic('#ffffff', { transparent: true, opacity: 0.55 }), { p: [-0.06, 0.24, 0.12], s: [0.6, 1, 0.4], outline: null, shadow: false });
+    anim.push((t) => { b.rotation.z = Math.sin(t * 1.6) * 0.12; b.rotation.x = Math.sin(t * 1.3) * 0.08; string.rotation.z = b.rotation.z * 0.5; });
+  },
+  hand_umbrella(g, L) {
+    const col = handCol(L, '#39c6ff');
+    part(g, cyl(0.013, 0.013, 1.2, 8), toon('#2b2f4a'), { p: [0, 0.5, 0], outline: OUT_THIN });
+    part(g, torus(0.05, 0.014, Math.PI, 6, 12), toon('#6b4226'), { p: [0.05, -0.1, 0], r: [0, 0, Math.PI], outline: null }); // the J handle
+    // the canopy: eight panels in two shades, with points round the edge
+    const canopy = geo('umbrellaCanopy', () => new THREE.ConeGeometry(0.6, 0.26, 8, 1, true));
+    part(g, canopy, toon(col, { side: THREE.DoubleSide }), { p: [0, 1.0, 0], outline: OUT_THIN });
+    part(g, geo('umbrellaStripe', () => new THREE.ConeGeometry(0.602, 0.262, 8, 1, true, 0, Math.PI / 4)), toon('#ffffff', { side: THREE.DoubleSide }), { p: [0, 1.0, 0], outline: null });
+    part(g, geo('umbrellaStripe', () => new THREE.ConeGeometry(0.602, 0.262, 8, 1, true, 0, Math.PI / 4)), toon('#ffffff', { side: THREE.DoubleSide }), { p: [0, 1.0, 0], r: [0, Math.PI, 0], outline: null });
+    part(g, sphere(0.025, 8, 6), toon('#2b2f4a'), { p: [0, 1.14, 0], outline: null });
+  },
+  hand_icecream(g, L) {
+    const col = handCol(L, '#ff9fc8');
+    const waffle = geo('waffleTex', () => canvasTexture(64, 64, (c) => {
+      c.fillStyle = '#d9a25a'; c.fillRect(0, 0, 64, 64); c.strokeStyle = '#a8743f'; c.lineWidth = 3;
+      for (let i = -64; i < 128; i += 12) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i + 64, 64); c.stroke(); c.beginPath(); c.moveTo(i, 64); c.lineTo(i + 64, 0); c.stroke(); }
+    }));
+    part(g, cone(0.065, 0.2, 14), new THREE.MeshToonMaterial({ map: waffle }), { p: [0, 0.04, 0], r: [Math.PI, 0, 0], outline: OUT_THIN });
+    part(g, sphere(0.075, 14, 12), toon('#fff4e0'), { p: [0, 0.17, 0], outline: OUT_THIN });
+    part(g, sphere(0.07, 14, 12), toon(col), { p: [0, 0.27, 0], outline: OUT_THIN });
+    part(g, sphere(0.022, 8, 6), shiny('#e0263c'), { p: [0, 0.35, 0], outline: null });
+    for (let k = 0; k < 6; k++) part(g, box(0.012, 0.004, 0.004), toon(['#ff5d73', '#ffd84d', '#6ee7a0', '#39c6ff'][k % 4]), { p: [Math.cos(k) * 0.05, 0.3, Math.sin(k) * 0.05], r: [0, k, 0.6], outline: null, shadow: false });
+  },
+  hand_bouquet(g, L) {
+    const col = handCol(L, '#ff8fc7');
+    part(g, cone(0.11, 0.3, 12), toon(col, { side: THREE.DoubleSide }), { p: [0, 0.06, 0], r: [Math.PI, 0, 0], outline: OUT_THIN }); // wrapping paper
+    part(g, torus(0.05, 0.012, TAU, 6, 14), toon('#ffffff'), { p: [0, 0.02, 0], r: [Math.PI / 2, 0, 0], outline: null }); // ribbon
+    const cols = ['#ff5d73', '#ffffff', '#ffd84d', '#ff9fe0', '#e84393'];
+    for (let k = 0; k < 7; k++) {
+      const a = k * 2.4, r = k ? 0.06 : 0;
+      const f = new THREE.Group();
+      f.position.set(Math.cos(a) * r, 0.24 + (k ? 0 : 0.03), Math.sin(a) * r);
+      f.rotation.set(Math.sin(a) * 0.4, 0, Math.cos(a) * 0.4);
+      g.add(f);
+      flower(f, `bq${k % 5}`, f, cols[k % 5], 0.04);
+    }
+    for (let k = 0; k < 5; k++) part(g, sphere(0.04, 8, 6), toon('#4caf50'), { p: [Math.cos(k * 1.3) * 0.09, 0.2, Math.sin(k * 1.3) * 0.09], s: [0.5, 1.2, 0.3], r: [0, k * 1.3, 0.5], outline: null });
+  },
+  hand_boba(g, L) {
+    const col = handCol(L, '#e8c9a0');
+    part(g, cyl(0.065, 0.055, 0.2, 16), new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: 0.35, roughness: 0.1 }), { p: [0, 0.08, 0], outline: OUT_THIN });
+    part(g, cyl(0.06, 0.051, 0.17, 16), toon(col), { p: [0, 0.065, 0], outline: null });
+    for (let k = 0; k < 8; k++) part(g, sphere(0.014, 6, 5), toon('#2a1a12'), { p: [Math.cos(k * 2.3) * 0.03, -0.005 + (k % 2) * 0.02, Math.sin(k * 2.3) * 0.03], outline: null, shadow: false });
+    part(g, sphere(0.066, 16, 8), new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: 0.4 }), { p: [0, 0.18, 0], s: [1, 0.35, 1], outline: null });
+    part(g, cyl(0.012, 0.012, 0.3, 8), toon('#ff5d73'), { p: [0.015, 0.25, 0], r: [0, 0, -0.15], outline: null });
+  },
+  hand_coffee(g, L) {
+    const col = handCol(L, '#f6f2ea');
+    part(g, cyl(0.06, 0.048, 0.18, 16), toon(col), { p: [0, 0.07, 0], outline: OUT_THIN });
+    part(g, cyl(0.058, 0.053, 0.07, 16), toon('#a8743f'), { p: [0, 0.07, 0], outline: null }); // the sleeve
+    part(g, cyl(0.064, 0.064, 0.025, 16), toon('#2b2f4a'), { p: [0, 0.17, 0], outline: OUT_THIN }); // lid
+    part(g, cyl(0.03, 0.04, 0.02, 12), toon('#2b2f4a'), { p: [0, 0.19, 0], outline: null });
+    const steam = sprites(g, additive(puffTexture, 0xffffff, 0.25), 2, 0.07);
+    steam.forEach((s, i) => s.position.set(0, 0.26 + i * 0.07, 0));
+  },
+  hand_phone(g, L) {
+    const col = handCol(L, '#2b2f4a');
+    part(g, box(0.1, 0.19, 0.016), shiny(col, { roughness: 0.25, metalness: 0.2 }), { p: [0, 0.07, 0], outline: OUT_THIN });
+    const screen = canvasTexture(64, 128, (c) => {
+      const gr = c.createLinearGradient(0, 0, 64, 128); gr.addColorStop(0, '#7c6bff'); gr.addColorStop(1, '#ff6fb5');
+      c.fillStyle = gr; c.fillRect(0, 0, 64, 128);
+      c.fillStyle = 'rgba(255,255,255,.85)'; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { c.beginPath(); c.roundRect(6 + i * 14, 20 + j * 16, 10, 10, 3); c.fill(); }
+    });
+    part(g, geo('phoneScreen', () => new THREE.PlaneGeometry(0.088, 0.17)), new THREE.MeshBasicMaterial({ map: screen }), { p: [0, 0.07, -0.009], r: [0, Math.PI, 0], outline: null, shadow: false });
+  },
+  hand_torch(g, L, anim) {
+    part(g, cyl(0.022, 0.03, 0.42, 8), toon('#6b4226'), { p: [0, 0.12, 0], outline: OUT_THIN });
+    part(g, cyl(0.04, 0.034, 0.08, 10), toon('#c9b27a'), { p: [0, 0.32, 0], outline: OUT_THIN }); // the wrapped head
+    const flame = ownSprites(g, flameTexture, 0xffa53a, 0.95, 3, 0.2);
+    const core = new THREE.Sprite(additive(glowTexture, 0xffd27a, 0.7));
+    core.scale.setScalar(0.35);
+    core.position.y = 0.42;
+    g.add(core);
+    anim.push((t) => flame.forEach((s, i) => { const k = (t * 2.2 + i / 3) % 1; s.position.set(Math.sin(t * 9 + i) * 0.015, 0.4 + k * 0.14, 0); s.scale.set(0.16 * (1 - k * 0.6), 0.24 * (1 - k * 0.4), 1); s.material.opacity = 0.95 * (1 - k); }));
+  },
+  hand_lollipop(g, L) {
+    const col = handCol(L, '#ff5d73');
+    part(g, cyl(0.01, 0.01, 0.4, 6), toon('#ffffff'), { p: [0, 0.14, 0], outline: OUT_THIN });
+    const swirl = geo(`swirl${col}`, () => canvasTexture(128, 128, (c) => {
+      c.fillStyle = '#ffffff'; c.fillRect(0, 0, 128, 128);
+      c.strokeStyle = col; c.lineWidth = 12; c.beginPath();
+      for (let a = 0; a < TAU * 4; a += 0.1) { const r = a * 2.2; c.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); }
+      c.stroke();
+    }));
+    part(g, cyl(0.13, 0.13, 0.04, 28), new THREE.MeshToonMaterial({ map: swirl }), { p: [0, 0.44, 0], r: [Math.PI / 2, 0, 0], outline: OUT_THIN });
+  },
+  hand_foamfinger(g, L) {
+    const col = handCol(L, '#ffd84d');
+    const m = toon(col);
+    part(g, box(0.16, 0.18, 0.08), m, { p: [0, 0.1, 0.02], outline: OUT_THIN }); // the fist
+    part(g, capsule(0.035, 0.16), m, { p: [-0.04, 0.3, 0.03], outline: OUT_THIN }); // the pointing finger
+    part(g, capsule(0.03, 0.06), m, { p: [0.09, 0.12, 0.05], r: [0, 0, -0.9], outline: OUT_THIN }); // thumb
+    const num = new THREE.MeshBasicMaterial({ map: signText('#1', col, '#1d1b2e', { size: 64 }) });
+    part(g, geo('foamNum', () => new THREE.PlaneGeometry(0.15, 0.15)), num, { p: [0, 0.1, 0.062], outline: null, shadow: false });
+  },
+  hand_mic(g, L) {
+    part(g, cyl(0.022, 0.016, 0.2, 10), toon(handCol(L, '#1d1b2e')), { p: [0, 0.02, 0], outline: OUT_THIN });
+    part(g, cyl(0.03, 0.024, 0.03, 12), shiny('#c0c6d4', { metalness: 0.8 }), { p: [0, 0.13, 0], outline: null });
+    part(g, sphere(0.05, 14, 12), new THREE.MeshToonMaterial({ map: dotsMaterial('#9aa2b4').map, color: '#c8ced8' }), { p: [0, 0.18, 0], outline: OUT_THIN });
+  },
+  hand_pan(g) {
+    part(g, cyl(0.02, 0.022, 0.24, 8), toon('#2b2f4a'), { p: [0, 0.02, 0], outline: OUT_THIN }); // the handle
+    const pan = new THREE.Group();
+    pan.position.set(0, 0.26, 0.0);
+    pan.rotation.x = -Math.PI / 2 + 0.25; // (held out flat, tipped a little towards you)
+    g.add(pan);
+    part(pan, cyl(0.17, 0.15, 0.05, 24), shiny('#2b2f3a', { metalness: 0.5, roughness: 0.35 }), { p: [0, 0.19, 0], outline: OUT_THIN });
+    part(pan, cyl(0.1, 0.1, 0.01, 18), toon('#fbfbf6'), { p: [0, 0.22, 0.03], outline: null }); // an egg
+    part(pan, sphere(0.04, 12, 8), toon('#ffc53d'), { p: [0.01, 0.225, 0.04], s: [1, 0.5, 1], outline: null });
+  },
+  hand_baguette(g) {
+    const bread = toon('#d9a25a');
+    const b = part(g, capsule(0.045, 0.62), bread, { p: [0, 0.22, 0.03], r: [0.2, 0, 0], outline: OUT_THIN });
+    for (let k = 0; k < 4; k++) part(b, box(0.05, 0.012, 0.03), toon('#f1d9a8'), { p: [0, -0.2 + k * 0.13, 0.038], r: [0, 0, 0.5], outline: null, shadow: false });
+  },
+  hand_sparkler(g, L, anim) {
+    part(g, cyl(0.006, 0.006, 0.5, 4), toon('#8d96a8'), { p: [0, 0.2, 0], outline: null });
+    part(g, cyl(0.012, 0.012, 0.18, 6), toon('#4a4f66'), { p: [0, 0.36, 0], outline: null });
+    const sparks = ownSprites(g, starTexture, 0xffe9a8, 1, 8, 0.08);
+    const core = new THREE.Sprite(additive(glowTexture, 0xfff2b0, 0.9));
+    core.scale.setScalar(0.22);
+    core.position.y = 0.45;
+    g.add(core);
+    anim.push((t) => sparks.forEach((s, i) => {
+      const k = (t * 3 + i / 8) % 1, a = i * 2.39 + Math.floor(t * 3 + i / 8) * 1.7;
+      s.position.set(Math.cos(a) * k * 0.2, 0.45 + Math.sin(a * 1.3) * k * 0.16, Math.sin(a) * k * 0.2);
+      s.material.opacity = 1 - k;
+    }));
+  },
+  hand_teddy(g, L) {
+    const col = handCol(L, '#b5784a'), m = toon(col), light = toon(tint(col, 1.35));
+    const bear = new THREE.Group();
+    bear.position.set(0, 0.02, 0.06);
+    bear.rotation.x = -0.25;
+    g.add(bear);
+    part(bear, sphere(0.09, 14, 12), m, { p: [0, 0.12, 0], s: [1, 1.1, 0.9], outline: OUT_THIN });
+    part(bear, sphere(0.04, 10, 8), light, { p: [0, 0.11, 0.07], s: [1, 1.1, 0.5], outline: null }); // tummy
+    part(bear, sphere(0.075, 14, 12), m, { p: [0, 0.26, 0], outline: OUT_THIN });
+    part(bear, sphere(0.03, 10, 8), light, { p: [0, 0.245, 0.065], s: [1.1, 0.8, 0.7], outline: null }); // snout
+    part(bear, sphere(0.012, 6, 5), basic('#1d1b2e'), { p: [0, 0.255, 0.087], outline: null, shadow: false });
+    for (const s of [-1, 1]) {
+      part(bear, sphere(0.028, 8, 6), m, { p: [s * 0.055, 0.32, -0.005], outline: OUT_THIN }); // ears
+      part(bear, sphere(0.01, 6, 5), basic('#1d1b2e'), { p: [s * 0.028, 0.28, 0.066], outline: null, shadow: false }); // eyes
+      part(bear, sphere(0.035, 8, 6), m, { p: [s * 0.04, 0.03, 0.02], s: [1, 1.2, 1], outline: OUT_THIN }); // feet
+      part(bear, sphere(0.03, 8, 6), m, { p: [s * 0.09, 0.15, 0.02], s: [1, 1.4, 1], outline: OUT_THIN }); // arms
+    }
+    part(bear, sphere(0.025, 8, 6), toon('#ff5d73'), { p: [0, 0.2, 0.06], s: [1.6, 0.8, 0.6], outline: null }); // a bow tie
   },
 };
 
@@ -2577,6 +3155,7 @@ export class Character {
     const m = buildMount(this.L?.mount);
     if (!m) return false;
     this.mount = m;
+    m.ridden = true; // (the reins go to your hands)
     this.riding = true;
     this.root.add(m.group);
     m.onStep = () => this.onStep?.('hoof');
@@ -2589,6 +3168,8 @@ export class Character {
     this.propKind = kind;
     this.propColor = color;
     this.bow = null;
+    // (a game's prop takes the place of what you're holding in that hand)
+    this.rig?.handItems?.forEach((g, i) => { if (g) g.visible = !(kind && i === (kind === 'bow' ? 1 : 0)); });
     // a right-handed archer holds the bow in the left hand; everything else goes in the right
     if (this.prop) this.prop.parent?.remove(this.prop);
     const hand = this.rig?.elbows[kind === 'bow' ? 1 : 0];
@@ -2649,8 +3230,16 @@ export class Character {
     while (this.root.children.length) this.root.remove(this.root.children[0]);
   }
 
-  build(L) {
-    this.L = L;
+  build(look) {
+    this.L = look;
+    let L = look;
+    // a full outfit is worn instead of your top and bottoms (shoes and socks stay yours)
+    const O = OUTFITS[L.outfit];
+    if (O) {
+      const col = L.outfitColor || O.color;
+      const acc = L.outfitAccent || O.accent || '#ffffff';
+      L = { ...L, top: O.top, topColor: col, topTint: col, topAccent: acc, bottom: O.bottom, bottomColor: O.pants ?? col, bottomAccent: O.pantsAccent ?? acc };
+    }
     const top = TOPS[L.top] ?? TOPS.top_tee;
     const bottom = BOTTOMS[L.bottom] ?? BOTTOMS.bottom_pants;
     const anim = [];
@@ -2659,10 +3248,13 @@ export class Character {
     // fixed-look tops (suits, armour…) keep their own colour unless you recolour them
     const topColor = top.color ? (L.topTint || top.color) : L.topColor;
     const accent = L.topAccent || top.accent || '#ffffff';
+    const topPattern = top.vest && top.vest !== 'plain' ? top.vest : top.pattern;
     const topMat = top.metal ? shiny(topColor, { metalness: 0.75, roughness: 0.3 })
-      : top.leather ? shiny(topColor, { metalness: 0.15, roughness: 0.42 })
-        : top.pattern ? patternMaterial(top.pattern, hex(topColor), hex(accent)) : toon(topColor);
-    const pants = bottom.leather ? shiny(L.bottomColor, { metalness: 0.15, roughness: 0.4 }) : toon(L.bottomColor);
+      : top.leather || top.shiny ? shiny(topColor, { metalness: 0.15, roughness: 0.42 })
+        : topPattern ? patternMaterial(topPattern, hex(topColor), hex(accent)) : toon(topColor);
+    const shirtMat = top.shirt ? toon(top.shirt) : null;
+    const pants = bottom.leather ? shiny(L.bottomColor, { metalness: 0.15, roughness: 0.4 })
+      : bottom.pattern ? patternMaterial(bottom.pattern, hex(L.bottomColor), hex(L.bottomAccent || (bottom.pattern === 'plaid' ? '#1d1b2e' : '#ffffff'))) : toon(L.bottomColor);
     const shoe = toon(L.shoeColor);
 
     // body shape: legs and torso stretch with height; build widens the torso and limbs
@@ -2681,35 +3273,59 @@ export class Character {
     // shin, stockings the whole leg (a skirt's default is crew socks)
     const socks = L.socks && L.socks !== 'socks_none' ? L.socks : L.socks === 'socks_none' ? null : bottom.socks ? 'socks_crew' : null;
     const sockMat = toon(L.sockColor || '#f5f5f5');
+    const trousers = bottom.legs === 'pants' || bottom.legs === 'capri';
     const upperMat = bottom.legs === 'skin' ? (socks === 'socks_stockings' ? sockMat : skin) : pants;
     const lowerMat = bottom.legs === 'pants' ? pants : (socks === 'socks_stockings' || socks === 'socks_high' ? sockMat : skin);
+    const hemMat = toon(tint(L.bottomColor, 0.82)), creaseMat = toon(tint(L.bottomColor, 1.25));
     const knees = [];
+    const fy = 0.26 * (1 - kl); // shoes keep their size and stay on the ground at any leg length
     const legs = [-1, 1].map((s) => {
       const pivot = new THREE.Group();
       pivot.position.set(s * 0.12 * B.w, hipY, 0);
-      part(pivot, capsule(0.1, 0.1), upperMat, { p: [0, -0.1 * kl, 0], s: [kb * (bottom.baggy ?? 1), kl, kb * (bottom.baggy ?? 1)] });
-      if (bottom.legs === 'shorts') part(pivot, cyl(0.115 * kb, 0.12 * kb, 0.06, 14), toon(tint(L.bottomColor, 0.85)), { p: [0, -0.19 * kl, 0], outline: null });
-      if (bottom.pockets) part(pivot, box(0.05, 0.12, 0.14), toon(tint(L.bottomColor, 0.82)), { p: [s * 0.1 * kb, -0.1 * kl, 0], outline: OUT_THIN });
       const bw = kb * (bottom.baggy ?? 1);
-      if (bottom.seams) part(pivot, box(0.008, 0.2 * kl, 0.012), toon(tint(L.bottomColor, 1.35)), { p: [s * 0.1 * bw, -0.1 * kl, 0], outline: null, shadow: false });
-      if (bottom.stripe) part(pivot, box(0.012, (bottom.legs === 'shorts' ? 0.12 : 0.2) * kl, 0.03), toon('#ffffff'), { p: [s * 0.1 * bw, -0.1 * kl, 0], outline: null, shadow: false });
+      part(pivot, capsule(trousers ? 0.104 : 0.1, 0.1), upperMat, { p: [0, -0.1 * kl, 0], s: [bw, kl, bw] });
+      if (bottom.legs === 'shorts') part(pivot, cyl(0.115 * bw, 0.12 * bw, 0.06, 14), hemMat, { p: [0, -0.19 * kl, 0], outline: null });
+      if (bottom.pockets) part(pivot, box(0.05, 0.12, 0.14), toon(tint(L.bottomColor, 0.82)), { p: [s * 0.1 * bw, -0.1 * kl, 0], outline: OUT_THIN });
+      if (bottom.seams) part(pivot, box(0.008, 0.2 * kl, 0.012), creaseMat, { p: [s * 0.1 * bw, -0.1 * kl, 0], outline: null, shadow: false });
+      if (bottom.crease) part(pivot, box(0.006, 0.2 * kl, 0.01), creaseMat, { p: [0, -0.1 * kl, 0.102 * bw], outline: null, shadow: false });
+      if (bottom.satin) part(pivot, box(0.016, 0.21 * kl, 0.03), shiny('#2a2833', { roughness: 0.15 }), { p: [s * 0.102 * bw, -0.1 * kl, 0], outline: null, shadow: false });
+      if (bottom.stripe) part(pivot, box(0.012, (bottom.legs === 'shorts' ? 0.12 : 0.2) * kl, 0.03), toon(L.bottomAccent || '#ffffff'), { p: [s * 0.1 * bw, -0.1 * kl, 0], outline: null, shadow: false });
       if (bottom.ripped) part(pivot, circle(0.03), skin, { p: [s * 0.02, -0.14 * kl, 0.098 * bw], s: [1.4, 0.7, 1], outline: null, shadow: false });
+      if (bottom.puffy) for (const y of [-0.06, -0.15]) part(pivot, torus(0.1 * bw, 0.024, TAU, 8, 18), pants, { p: [0, y * kl, 0], r: [Math.PI / 2, 0, 0], outline: null });
       const knee = new THREE.Group();
       knee.position.y = -0.2 * kl;
-      part(knee, capsule(0.09, 0.08), lowerMat, { p: [0, -0.08 * kl, 0], s: [kb * (bottom.baggy ?? 1), kl, kb * (bottom.baggy ?? 1)] });
+      if (trousers) {
+        // straight trouser legs (not sausages): a rounded knee, then a cylinder down to a hem over the shoe
+        const legMat = bottom.legs === 'capri' ? (socks === 'socks_high' || socks === 'socks_stockings' ? sockMat : skin) : pants;
+        part(knee, sphere(0.094, 16, 12), pants, { s: [bw, 1, bw] });
+        part(knee, capsule(0.088, 0.08), legMat, { p: [0, -0.08 * kl, 0], s: [kb, kl, kb] });
+        const len = bottom.legs === 'capri' ? 0.1 : 0.17;
+        if (!bottom.flare) part(knee, cyl(0.095, 0.093, len, 18), pants, { p: [0, -len / 2 * kl, 0], s: [bw, kl, bw] });
+        if (!bottom.cuffs && !bottom.jogger && !bottom.flare) part(knee, torus(0.093 * bw, 0.011, TAU, 6, 20), hemMat, { p: [0, -len * kl, 0], r: [Math.PI / 2, 0, 0], outline: null });
+        if (bottom.legs === 'capri') part(knee, torus(0.094 * bw, 0.014, TAU, 6, 20), hemMat, { p: [0, -len * kl, 0], r: [Math.PI / 2, 0, 0], outline: null });
+        if (bottom.crease) part(knee, box(0.006, len * kl, 0.01), creaseMat, { p: [0, -len / 2 * kl, 0.095 * bw], outline: null, shadow: false });
+        if (bottom.satin) part(knee, box(0.016, len * kl, 0.03), shiny('#2a2833', { roughness: 0.15 }), { p: [s * 0.094 * bw, -len / 2 * kl, 0], outline: null, shadow: false });
+        if (bottom.puffy) part(knee, torus(0.096 * bw, 0.024, TAU, 8, 18), pants, { p: [0, -0.08 * kl, 0], r: [Math.PI / 2, 0, 0], outline: null });
+      } else {
+        part(knee, capsule(0.09, 0.08), lowerMat, { p: [0, -0.08 * kl, 0], s: [bw, kl, bw] });
+        // long shorts come down over the knee
+        if (bottom.long) {
+          part(knee, cyl(0.106 * bw, 0.108 * bw, 0.07, 14), pants, { p: [0, -0.005, 0], outline: OUT_THIN });
+          part(knee, torus(0.107 * bw, 0.011, TAU, 6, 18), hemMat, { p: [0, -0.04, 0], r: [Math.PI / 2, 0, 0], outline: null });
+        }
+      }
       if (bottom.cuffs) part(knee, cyl(0.1 * kb, 0.105 * kb, 0.06, 14), toon(tint(L.bottomColor, 1.25)), { p: [0, -0.14 * kl, 0], outline: OUT_THIN });
-      if (bottom.seams && !bottom.flare) part(knee, box(0.008, 0.14 * kl, 0.012), toon(tint(L.bottomColor, 1.35)), { p: [s * 0.088 * kb, -0.06 * kl, 0], outline: null, shadow: false });
-      if (bottom.stripe && bottom.legs !== 'shorts') part(knee, box(0.012, 0.14 * kl, 0.03), toon('#ffffff'), { p: [s * 0.088 * kb, -0.06 * kl, 0], outline: null, shadow: false });
-      if (bottom.jogger) part(knee, cyl(0.082 * kb, 0.082 * kb, 0.06, 14), toon(tint(L.bottomColor, 0.8)), { p: [0, -0.15 * kl, 0], outline: OUT_THIN });
-      if (bottom.flare) part(knee, cyl(0.085 * kb, 0.15 * kb, 0.16 * kl, 18, true), toon(L.bottomColor, { side: THREE.DoubleSide }), { p: [0, -0.1 * kl, 0.005], outline: OUT_THIN });
+      if (bottom.seams && !bottom.flare) part(knee, box(0.008, 0.14 * kl, 0.012), creaseMat, { p: [s * 0.094 * bw, -0.07 * kl, 0], outline: null, shadow: false });
+      if (bottom.stripe && bottom.legs !== 'shorts') part(knee, box(0.012, 0.14 * kl, 0.03), toon(L.bottomAccent || '#ffffff'), { p: [s * 0.094 * bw, -0.07 * kl, 0], outline: null, shadow: false });
+      if (bottom.jogger) part(knee, cyl(0.084 * kb, 0.084 * kb, 0.06, 14), toon(tint(L.bottomColor, 0.8)), { p: [0, -0.15 * kl, 0], outline: OUT_THIN });
+      if (bottom.flare) part(knee, cyl(0.092 * bw, 0.15 * bw, 0.17 * kl, 18, true), toon(L.bottomColor, { side: THREE.DoubleSide }), { p: [0, -0.085 * kl, 0.005], outline: OUT_THIN });
       if (bottom.ripped) {
-        part(knee, circle(0.04), skin, { p: [0, 0.0, 0.09 * kb], s: [1.5, 0.8, 1], outline: null, shadow: false });
-        for (const dy of [0.03, -0.03]) part(knee, box(0.08, 0.006, 0.004), toon('#f4f0ff'), { p: [0, dy, 0.092 * kb], outline: null, shadow: false });
+        part(knee, circle(0.04), skin, { p: [0, 0.0, 0.096 * kb], s: [1.5, 0.8, 1], outline: null, shadow: false });
+        for (const dy of [0.03, -0.03]) part(knee, box(0.08, 0.006, 0.004), toon('#f4f0ff'), { p: [0, dy, 0.098 * kb], outline: null, shadow: false });
       }
       if (bottom.legs !== 'pants' && socks === 'socks_crew') part(knee, cyl(0.093 * kb, 0.093 * kb, 0.1, 14), sockMat, { p: [0, -0.13 * kl, 0], outline: null });
       if (bottom.legs !== 'pants' && socks === 'socks_low') part(knee, cyl(0.093 * kb, 0.095 * kb, 0.045, 14), sockMat, { p: [0, -0.165 * kl, 0], outline: null });
       if (bottom.legs !== 'pants' && socks === 'socks_high') part(knee, torus(0.088 * kb, 0.012, TAU, 6, 16), toon(tint(L.sockColor || '#f5f5f5', 0.85)), { p: [0, 0.0, 0], r: [Math.PI / 2, 0, 0], outline: null });
-      const fy = 0.26 * (1 - kl); // shoes keep their size and stay on the ground at any leg length
       this.buildShoe(knee, L, shoe, sole, skin, fy);
       pivot.add(knee);
       knees.push(knee);
@@ -2722,37 +3338,93 @@ export class Character {
       const skirt = new THREE.Group();
       skirt.position.y = up(0.52);
       body.add(skirt);
-      const skirtMat = k.plaid ? patternMaterial('plaid', hex(L.bottomColor), '#1d1b2e') : toon(L.bottomColor, { side: THREE.DoubleSide });
-      if (k.plaid) skirtMat.side = THREE.DoubleSide;
-      // tucked up under the shirt at the waist, snug over the hips, then flaring out to the hem
-      const prof = geo(`skirtProf${k.len},${k.flare}`, () => new THREE.LatheGeometry([
-        new THREE.Vector2(k.flare - 0.012, -k.len - 0.01), new THREE.Vector2(k.flare, -k.len), new THREE.Vector2(0.262 + (k.flare - 0.262) * 0.45, -k.len * 0.55),
-        new THREE.Vector2(0.262, -0.06), new THREE.Vector2(0.252, 0.03), new THREE.Vector2(0.235, 0.14),
-      ], 32));
+      // long skirts reach (almost) the floor, whatever your height
+      const len = k.len === 'floor' ? up(0.52) - 0.025 : k.len === 'ankle' ? up(0.52) - 0.1 : k.len === 'midi' ? (up(0.52) - 0.1) * 0.72 : k.len;
+      const skirtMat = k.pattern ? patternMaterial(k.pattern, hex(L.bottomColor), hex(L.bottomAccent || (k.pattern === 'plaid' ? '#1d1b2e' : '#ffffff'))).clone()
+        : k.shiny ? shiny(L.bottomColor, { roughness: 0.25, metalness: 0.1, side: THREE.DoubleSide }) : toon(L.bottomColor, { side: THREE.DoubleSide });
+      skirtMat.side = THREE.DoubleSide;
+      // tucked up under the shirt at the waist, snug over the hips, then flaring out to the hem; pleats
+      // ripple the hem in and out
+      const prof = geo(`skirtProf${len},${k.flare},${k.pleats ?? 0}`, () => {
+        const g = new THREE.LatheGeometry([
+          new THREE.Vector2(k.flare - 0.012, -len - 0.01), new THREE.Vector2(k.flare, -len), new THREE.Vector2(0.262 + (k.flare - 0.262) * 0.45, -len * 0.55),
+          new THREE.Vector2(0.262, -0.06), new THREE.Vector2(0.252, 0.03), new THREE.Vector2(0.235, 0.14),
+        ], k.pleats ? k.pleats * 4 : 32);
+        if (k.pleats) {
+          const p = g.attributes.position;
+          for (let i = 0; i < p.count; i++) {
+            const x = p.getX(i), z = p.getZ(i), y = p.getY(i), a = Math.atan2(z, x);
+            const depth = Math.max(0, Math.min(1, -y / len)) * 0.07; // (flat at the waist, deepest at the hem)
+            const kk = 1 + depth * Math.abs(Math.sin(a * k.pleats / 2));
+            p.setX(i, x * kk); p.setZ(i, z * kk);
+          }
+          g.computeVertexNormals();
+        }
+        return g;
+      });
       part(skirt, prof, skirtMat, { s: [B.w, 1, 0.82 * B.d], outline: OUT_THIN });
       part(skirt, torus(0.252, 0.02, TAU, 6, 32), toon(tint(L.bottomColor, 0.8)), { p: [0, 0.03, 0], r: [Math.PI / 2, 0, 0], s: [B.w, 0.82 * B.d, 1], outline: null });
-      if (k.frill) part(skirt, cyl(k.flare * B.w * 0.96, k.flare * B.w * 1.2, 0.08, 28, true), toon(tint(L.bottomColor, 1.35), { side: THREE.DoubleSide }), { p: [0, -k.len + 0.06, 0], s: [1, 1, 0.85 * B.d], outline: null });
-      anim.push((t, dt, moving) => { skirt.rotation.x = moving ? Math.sin(t * 9) * 0.04 : 0; });
+      if (k.frill) part(skirt, cyl(k.flare * B.w * 0.96, k.flare * B.w * 1.2, 0.08, 28, true), toon(tint(L.bottomColor, 1.35), { side: THREE.DoubleSide }), { p: [0, -len + 0.06, 0], s: [1, 1, 0.85 * B.d], outline: null });
+      if (k.tulle) part(skirt, cyl(0.27 * B.w, k.flare * B.w * 1.08, len * 0.9, 32, true), basic(L.bottomAccent || '#ffffff', { transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }), { p: [0, -len * 0.5, 0], s: [1, 1, 0.85 * B.d], outline: null, shadow: false });
+      if (k.tiers) for (const t of [0.4, 0.72]) part(skirt, torus(0.262 + (k.flare - 0.262) * (t * 1.1), 0.02, TAU, 6, 40), toon(tint(L.bottomColor, 1.2)), { p: [0, -len * t, 0], r: [Math.PI / 2, 0, 0], s: [B.w, 0.82 * B.d, 1], outline: null });
+      if (k.sparkle) {
+        // a glittery layer just over the skirt
+        const glitter = patternMaterial('sparkle', hex(L.bottomColor), '#ffffff').clone();
+        Object.assign(glitter, { transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+        part(skirt, prof, glitter, { s: [B.w * 1.004, 1.001, 0.82 * B.d * 1.004], outline: null, shadow: false });
+      }
+      if (k.hem) part(skirt, torus(k.flare - 0.004, 0.016, TAU, 6, 40), toon(L.bottomAccent || '#ffffff'), { p: [0, -len + 0.025, 0], r: [Math.PI / 2, 0, 0], s: [B.w, 0.82 * B.d, 1], outline: null });
+      if (k.belt) part(skirt, torus(0.258, 0.03, TAU, 6, 32), toon(L.bottomAccent || tint(L.bottomColor, 0.7)), { p: [0, 0.07, 0], r: [Math.PI / 2, 0, 0], s: [B.w, 0.82 * B.d, 1], outline: null });
+      if (k.seams) for (const sx of [-1, 1]) part(skirt, box(0.008, len * 0.9, 0.01), creaseMat, { p: [sx * 0.2 * B.w, -len * 0.45, 0.2 * B.d], r: [0.2, 0, 0], outline: null, shadow: false });
+      if (k.wrap) part(skirt, box(0.035, len, 0.012), toon(L.bottomAccent || '#ffc53d'), { p: [0.06, -len / 2, 0.26 * B.d + (k.flare - 0.26) * 0.4], r: [0.25, 0, -0.08], outline: null, shadow: false });
+      const sway = k.len === 'floor' || k.len === 'ankle' ? 0.025 : 0.04;
+      anim.push((t, dt, moving) => { skirt.rotation.x = moving ? Math.sin(t * 9) * sway : 0; });
     }
 
     const torso = new THREE.Group();
     torso.position.y = up(0.83);
     torso.scale.set(B.w, H.torso, B.d);
     body.add(torso);
+    const fitted = (y0, y1, mat, lift = 0.012) => part(torso, bodiceGeo(y0, y1, lift), doubleSided(mat), { s: [1.02, 1, 0.8], outline: OUT_THIN });
     if (top.robe) {
       part(torso, cyl(0.26, 0.42, 0.98, 28), topMat, { p: [0, -0.14, 0], s: [1, 1, 0.85] });
       part(torso, torus(0.42, 0.035, TAU, 8, 40), shiny(accent), { p: [0, -0.62, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.85, 1], outline: null });
       part(torso, box(0.06, 0.95, 0.02), shiny(accent), { p: [0, -0.14, 0.3], r: [-0.14, 0, 0], outline: null });
       part(torso, torus(0.21, 0.08, TAU, 10, 28), toon('#f4f0ff'), { p: [0, 0.33, 0], r: [Math.PI / 2, 0, 0] });
+    } else if (top.bodice) {
+      // bare shoulders: skin, with the top fitted over it from its hem up to its neckline
+      part(torso, capsule(0.25, 0.2), skin, { s: [1.02, 1, 0.8] });
+      const [y0, y1] = top.bodice;
+      fitted(y0, y1, topMat);
+      const edge = toon(tint(topColor, top.sparkle ? 1.2 : 0.85));
+      part(torso, torus(torsoR(y1) + 0.012, 0.012, TAU, 6, 36), edge, { p: [0, y1, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.8, 1], outline: null });
+      if (y0 > -0.3) part(torso, torus(torsoR(y0) + 0.012, 0.012, TAU, 6, 36), edge, { p: [0, y0, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.8, 1], outline: null });
+      if (top.straps) for (const sx of [-1, 1]) part(torso, strapGeo(sx * 0.13, y1 - 0.01, top.straps), topPattern ? toon(topColor) : topMat, { outline: null });
+      if (top.halter) for (const sx of [-1, 1]) {
+        // two straps from the neckline up round the back of the neck
+        const a = new THREE.Vector3(sx * 0.09, y1, torsoR(y1) * 0.8 + 0.01), b = new THREE.Vector3(sx * 0.07, 0.38, 0.06), c2 = new THREE.Vector3(sx * 0.02, 0.42, -0.08);
+        taper(torso, [a, b, c2], 0.018, 0.016, toon(topColor));
+      }
+    } else if (top.shirt) {
+      // a collared shirt with a vest (or blazer) over it, open in a V at the front
+      part(torso, capsule(0.25, 0.2), shirtMat, { s: [1.02, 1, 0.8] });
+      fitted(-0.35, 0.27, topMat, 0.016);
     } else {
       part(torso, capsule(0.25, 0.2), topMat, { s: [1.02, 1, 0.8] });
     }
+    if (top.kimono && !O) {
+      // the kimono carries on below the obi, down over the hips to mid-thigh
+      const hemGeo = geo('kimonoHem', () => new THREE.LatheGeometry([new THREE.Vector2(0.3, -0.62), new THREE.Vector2(0.285, -0.4), new THREE.Vector2(0.262, -0.2), new THREE.Vector2(0.255, -0.05)], 32));
+      part(torso, hemGeo, doubleSided(topMat), { s: [1.02, 1, 0.82], outline: OUT_THIN });
+      part(torso, torus(0.3, 0.014, TAU, 6, 32), toon(accent), { p: [0, -0.62, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.82, 1], outline: null });
+    }
     this.decorateTop(torso, L, top, topColor, accent);
-    if (bottom.overalls) {
+    if (bottom.overalls || top.bib) {
       // a bib over the shirt with two straps and brass buttons
-      const bib = toon(L.bottomColor), brass = shiny('#ffc53d', { metalness: 0.6 });
+      const bibCol = top.bib ? topColor : L.bottomColor;
+      const bib = top.bib ? topMat : toon(L.bottomColor), brass = shiny('#ffc53d', { metalness: 0.6 });
       part(torso, box(0.26, 0.24, 0.03), bib, { p: [0, -0.06, 0.205], outline: OUT_THIN });
-      part(torso, box(0.1, 0.06, 0.015), toon(tint(L.bottomColor, 0.82)), { p: [0, -0.04, 0.224], outline: null });
+      part(torso, box(0.1, 0.06, 0.015), toon(tint(bibCol, 0.82)), { p: [0, -0.04, 0.224], outline: null });
       for (const sx of [-1, 1]) {
         part(torso, box(0.045, 0.3, 0.02), bib, { p: [sx * 0.1, 0.16, 0.13], r: [-0.55, 0, 0], outline: null });
         part(torso, box(0.045, 0.34, 0.02), bib, { p: [sx * 0.1, 0.1, -0.19], r: [0.3, 0, 0], outline: null });
@@ -2763,7 +3435,10 @@ export class Character {
     part(body, cyl(0.09, 0.1, 0.16), skin, { p: [0, up(1.2), 0], s: [0.9 + B.w * 0.1, 1, 0.9 + B.w * 0.1], outline: null });
 
     // arms: shoulder -> elbow -> hand
-    const armMat = top.sleeve === 'long' ? (top.armAccent ? toon(accent) : topMat) : skin;
+    const LONG = new Set(['long', 'puffLong', 'kimono']), SHORT = new Set(['short', 'puff', 'flutter']);
+    const sleeveMat = top.shirt && !top.blazer ? shirtMat : top.armAccent ? toon(accent) : topMat;
+    const armMat = LONG.has(top.sleeve) ? sleeveMat : skin;
+    const cuffMat = toon(tint(top.shirt && !top.blazer ? top.shirt : topColor, top.metal ? 0.8 : 0.85));
     const elbows = [];
     const arms = [-1, 1].map((s) => {
       const pivot = new THREE.Group();
@@ -2771,7 +3446,14 @@ export class Character {
       pivot.rotation.z = s * 0.1;
       pivot.scale.setScalar(kb);
       part(pivot, capsule(0.08, 0.07), armMat, { p: [0, -0.09, 0] });
-      if (top.sleeve === 'short') part(pivot, capsule(0.1, 0.06), topMat, { p: [0, -0.05, 0] });
+      if (SHORT.has(top.sleeve)) part(pivot, capsule(0.1, 0.06), topMat, { p: [0, -0.05, 0] });
+      if (top.sleeve === 'puff' || top.sleeve === 'puffLong') part(pivot, sphere(0.125, 16, 12), topMat, { p: [0, -0.04, 0], s: [1, 0.85, 1], outline: OUT_THIN });
+      if (top.sleeve === 'flutter') part(pivot, cyl(0.1, 0.15, 0.1, 18, true), toon(topColor, { side: THREE.DoubleSide }), { p: [0, -0.08, 0], outline: OUT_THIN });
+      if (top.sleeve === 'off') {
+        // off the shoulder: a puffy band round the top of the arm
+        part(pivot, torus(0.09, 0.035, TAU, 8, 18), topMat, { p: [0, -0.06, 0], r: [Math.PI / 2, 0, 0], outline: OUT_THIN });
+        part(pivot, capsule(0.095, 0.03), topMat, { p: [0, -0.09, 0] });
+      }
       if (top.metal) part(pivot, dome(0.15), topMat, { p: [0, 0.01, 0], s: [1, 0.8, 1] });
       if (top.sleeve === 'short') part(pivot, torus(0.1, 0.014, TAU, 6, 18), toon(top.accent && L.top !== 'top_hawaiian' ? accent : tint(topColor, 0.85)), { p: [0, -0.1, 0], r: [Math.PI / 2, 0, 0], outline: null });
       if (top.armStripe) part(pivot, capsule(0.083, 0.07), toon(accent), { p: [0, -0.09, 0], s: [0.35, 1, 1.02], r: [0, 0, 0], outline: null });
@@ -2779,8 +3461,13 @@ export class Character {
       const elbow = new THREE.Group();
       elbow.position.y = -0.19;
       part(elbow, capsule(0.075, 0.06), armMat, { p: [0, -0.08, 0] });
-      if (top.kimono) part(elbow, cyl(0.08, 0.125, 0.18, 18, true), toon(topColor, { side: THREE.DoubleSide }), { p: [0, -0.09, -0.01], outline: OUT_THIN });
-      else if (top.sleeve === 'long') part(elbow, torus(0.07, 0.025, TAU, 6, 16), toon(top.armAccent || L.top === 'top_sweater' || L.top === 'top_puffer' ? tint(topColor, 0.85) : tint(topColor, top.metal ? 0.8 : 0.85)), { p: [0, -0.15, 0], r: [Math.PI / 2, 0, 0], outline: null });
+      if (top.sleeve === 'kimono') {
+        // wide kimono sleeves hanging down under the arm, open at the wrist
+        part(elbow, cyl(0.085, 0.13, 0.17, 18, true), doubleSided(topMat), { p: [0, -0.08, -0.01], outline: OUT_THIN });
+        part(elbow, box(0.03, 0.26, 0.22), topMat, { p: [0, -0.06, -0.1], outline: OUT_THIN });
+        part(elbow, torus(0.13, 0.012, TAU, 6, 18), toon(accent), { p: [0, -0.165, -0.01], r: [Math.PI / 2, 0, 0], outline: null });
+      } else if (LONG.has(top.sleeve)) part(elbow, torus(0.07, 0.025, TAU, 6, 16), cuffMat, { p: [0, -0.15, 0], r: [Math.PI / 2, 0, 0], outline: null });
+      if (top.sleeve === 'puffLong') part(elbow, torus(0.07, 0.03, TAU, 6, 16), toon(accent), { p: [0, -0.15, 0], r: [Math.PI / 2, 0, 0], outline: null });
       part(elbow, sphere(0.088, 16, 12), skin, { p: [0, -0.19, 0.005], s: [0.95, 1.05, 1] });
       part(elbow, sphere(0.04, 8, 6), skin, { p: [s * -0.06, -0.16, 0.04], outline: null, shadow: false }); // thumb
       pivot.add(elbow);
@@ -2789,27 +3476,46 @@ export class Character {
       return pivot;
     });
 
+    // things held in the hands (the right hand, then the left)
+    const handItems = [];
+    [['hand', 0], ['hand2', 1]].forEach(([key, i]) => {
+      const id = L[key];
+      if (!HANDS[id]) return;
+      const g = new THREE.Group();
+      g.position.set(0, -0.2, 0.02);
+      g.rotation.x = Math.PI / 2; // (its +y points up out of the fist once the forearm is held out)
+      HANDS[id](g, { ...L, handColor: L[`${key}Color`] }, anim, i ? 1 : -1);
+      elbows[i].add(g);
+      handItems[i] = g;
+    });
+
     const head = new THREE.Group();
     head.position.y = up(1.52);
     body.add(head);
     part(head, sphere(R, 36, 28), skin);
     for (const s of [-1, 1]) part(head, sphere(0.085, 14, 10), toon(tint(L.skin, 0.93)), { p: [s * 0.41, -0.02, -0.02], s: [0.6, 1, 0.9], outline: OUT_THIN });
 
+    // you can wear up to three hats / hair accessories and three face items at once ([look key, item])
+    const hats = ['hat', 'hat2', 'hat3'].map((k) => [k, L[k]]).filter(([, id]) => id && id !== 'hat_none' && HATS[id]);
+    const faces = ['face', 'face2', 'face3'].map((k) => [k, L[k]]).filter(([, id]) => id && id !== 'face_none' && FACES[id]);
+    const hasHat = (id) => hats.some(([, h]) => h === id), hasFace = (id) => faces.some(([, f]) => f === id);
+    const covering = hats.some(([, h]) => COVERING_HATS.has(h));
+
     // a big round head (Animal Crossing proportions) with a little button nose
     head.scale.setScalar(1.1);
     head.position.y += 0.03;
-    if (L.face !== 'face_ninja' && L.face !== 'face_clownnose') {
+    if (!hasFace('face_ninja') && !hasFace('face_clownnose') && !hasFace('face_bandana')) {
       const np = onFace(0, -0.075, 0.008);
       part(head, sphere(0.032, 12, 10), toon(tint(L.skin, 0.88)), { p: np.toArray(), q: faceTo(np), s: [1.2, 0.9, 0.8], outline: null });
     }
-    const hideEyes = L.face === 'face_sunglasses' || L.hat === 'hat_helmet';
+    const hideEyes = hasFace('face_sunglasses') || hasHat('hat_helmet');
     const eyes = hideEyes ? [] : this.buildEyes(head, L);
-    for (const s of [-1, 1]) {
+    if (!hasFace('face_bandana') && !hasFace('face_ninja')) for (const s of [-1, 1]) {
       const p = onFace(s * 0.25, -0.09, 0.004);
       part(head, circle(0.065), basic('#ff7b9c', { transparent: true, opacity: 0.45, depthWrite: false }), { p: p.toArray(), q: faceTo(p), outline: null, shadow: false });
     }
     let mouth = null, mouthOpen = null;
-    if (L.face !== 'face_ninja') {
+    if (!hasFace('face_ninja') && !hasFace('face_bandana')) {
       const p = onFace(0, -0.13, 0.002);
       const q = faceTo(p).multiply(new THREE.Quaternion().setFromAxisAngle(Z, Math.PI));
       mouth = part(head, torus(0.055, 0.014, Math.PI, 6, 16), basic('#6b2f2f'), { p: p.toArray(), q, outline: null, shadow: false });
@@ -2820,26 +3526,29 @@ export class Character {
     }
 
     const hairMat = toon(L.hairColor);
-    AC_LIFT = COVERING_HATS.has(L.hat) || L.hat === 'hat_durag' || L.hat === 'hat_cap' ? 0.03 : 0.085;
-    const hair = COVERING_HATS.has(L.hat) && TALL_HAIR.has(L.hair) ? 'hair_short' : L.hair;
+    AC_LIFT = covering || hasHat('hat_durag') || hasHat('hat_cap') ? 0.03 : 0.085;
+    const hair = covering && TALL_HAIR.has(L.hair) ? 'hair_short' : L.hair;
     const hairGroup = new THREE.Group();
     head.add(hairGroup);
     (HAIR[hair] ?? HAIR.hair_short)(hairGroup, hairMat, L, anim);
     // hair is solid all the way through: seen from underneath (or inside a lock) it shows its own
     // colour, never the dark outline shell behind it
     hairGroup.traverse((o) => { if (o.isMesh && !o.userData.outline && o.material.side === THREE.FrontSide) o.material = doubleSided(o.material); });
-    FACES[L.face]?.(head, L, anim);
-    // hats sit over the puffier hair, so they're a size up (held from the head's centre)
-    const hatGroup = new THREE.Group();
-    hatGroup.scale.setScalar(L.hat === 'hat_none' || L.hat === 'hat_headphones' ? 1 : COVERING_HATS.has(L.hat) ? 1.04 : 1.12);
-    hatGroup.position.y = L.hat === 'hat_halo' || L.hat === 'hat_horns' ? 0 : 0.012;
-    head.add(hatGroup);
-    HATS[L.hat]?.(hatGroup, L, anim);
-    // big curly hair: hats and accessories ride on top of the curls instead of sinking into them
-    const vol = COVERING_HATS.has(L.hat) || L.hat === 'hat_halo' ? 1 : HAIR_VOLUME[hair] ?? 1;
-    if (vol > 1) for (const o of hatGroup.children) { if (o.position.length() > 0.15) o.position.multiplyScalar(vol); else o.scale.multiplyScalar(vol); }
+    // each face item in its own colour (face -> faceColor, face2 -> face2Color…)
+    for (const [k, id] of faces) FACES[id](head, { ...L, faceColor: L[`${k}Color`] }, anim);
+    for (const [k, id] of hats) {
+      // hats sit over the puffier hair, so they're a size up (held from the head's centre)
+      const hatGroup = new THREE.Group();
+      hatGroup.scale.setScalar(id === 'hat_headphones' ? 1 : COVERING_HATS.has(id) ? 1.04 : 1.12);
+      hatGroup.position.y = id === 'hat_halo' || id === 'hat_horns' ? 0 : 0.012;
+      head.add(hatGroup);
+      HATS[id](hatGroup, { ...L, hatColor: L[`${k}Color`] }, anim);
+      // big curly hair: hats and accessories ride on top of the curls instead of sinking into them
+      const vol = COVERING_HATS.has(id) || id === 'hat_halo' ? 1 : HAIR_VOLUME[hair] ?? 1;
+      if (vol > 1) for (const o of hatGroup.children) { if (o.position.length() > 0.15) o.position.multiplyScalar(vol); else o.scale.multiplyScalar(vol); }
+    }
     // hats that sit low on the forehead would have the fringe poking through them
-    if (FRINGE_HIDING_HATS.has(L.hat)) head.traverse((o) => { if (o.userData.fringe) o.visible = false; });
+    if (hats.some(([, h]) => FRINGE_HIDING_HATS.has(h))) head.traverse((o) => { if (o.userData.fringe) o.visible = false; });
     head.traverse((o) => { if (o.userData.spin) anim.push((t) => { o.rotation.y = t * 2; }); });
 
     const back = new THREE.Group();
@@ -2903,7 +3612,7 @@ export class Character {
       });
     }
 
-    this.rig = { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim, hipY, torsoY: H.torso, pet: pet?.group ?? null };
+    this.rig = { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim, hipY, torsoY: H.torso, pet: pet?.group ?? null, handItems, kl, fy };
     this.state = state;
   }
 
@@ -3000,10 +3709,8 @@ export class Character {
     };
     switch (L.top) {
       case 'top_tee':
-      case 'top_tank':
         part(torso, circle(0.08), toon(L.skin), { p: front(0, 0.27, 0.004), r: [-0.5, 0, 0], outline: null, shadow: false });
         ring(-0.16, dark, 0.012);
-        if (L.top === 'top_tank') for (const sx of [-1, 1]) part(torso, box(0.06, 0.12, 0.44), toon(color), { p: [sx * 0.14, 0.32, 0], outline: null });
         break;
       case 'top_hoodie':
         part(torso, torus(0.2, 0.08, TAU, 10, 28), toon(tint(color, 0.85)), { p: [0, 0.3, -0.1], r: [Math.PI / 2 - 0.5, 0, 0] });
@@ -3094,12 +3801,6 @@ export class Character {
         buttons(toon('#e8dcc0'), [0.1, 0.0, -0.1], 0.02);
         for (const sx of [-1, 1]) part(torso, box(0.08, 0.07, 0.012), patternMaterial('plaid', hex(color), hex(accent)), { p: front(sx * 0.12, 0.12, 0.014), r: [0, sx * 0.45, 0], outline: OUT_THIN });
         break;
-      case 'top_kimono':
-        for (const sx of [-1, 1]) part(torso, box(0.05, 0.36, 0.02), acc, { p: front(sx * 0.05, 0.1, 0.018), r: [0, 0, -sx * 0.45], outline: null });
-        vneck(toon(L.skin), 0.1, 0.24);
-        ring(-0.06, acc, 0.06);
-        part(torso, box(0.12, 0.08, 0.04), toon(tint(accent, 0.8)), { p: front(0, -0.06, 0.05), outline: OUT_THIN });
-        break;
       case 'top_denim':
         collar(toon(tint(color, 0.85)));
         vneck(white, 0.1, 0.25);
@@ -3110,6 +3811,223 @@ export class Character {
         buttons(shiny('#c0c6d4', { metalness: 0.7 }), [0.14, 0.04, -0.06]);
         part(torso, box(0.006, 0.44, 0.012), acc, { p: front(0.03, 0.0, 0.014), outline: null, shadow: false });
         ring(-0.16, toon(tint(color, 0.85)), 0.022);
+        break;
+      // ---- the newer tops (and the outfits' tops) ----
+      case 'top_tank':
+      case 'dress_sleeveless':
+        if (L.top === 'dress_sleeveless') { part(torso, circle(0.085), toon(L.skin), { p: front(0, 0.27, 0.004), r: [-0.5, 0, 0], outline: null, shadow: false }); ring(0.3, dark, 0.012); }
+        break;
+      case 'top_oxford':
+        collar(toon(tint(color, 0.92)));
+        vneck(toon(L.skin), 0.06, 0.29);
+        part(torso, box(0.04, 0.5, 0.012), toon(tint(color, 0.93)), { p: front(0, 0.03, 0.008), outline: null, shadow: false });
+        buttons(acc, [0.2, 0.1, 0.0, -0.1]);
+        part(torso, box(0.08, 0.08, 0.012), toon(tint(color, 0.9)), { p: front(-0.12, 0.12, 0.014), r: [0, -0.45, 0], outline: OUT_THIN });
+        ring(-0.16, dark, 0.012);
+        break;
+      case 'top_crop':
+        part(torso, circle(0.08), toon(L.skin), { p: front(0, 0.27, 0.016), r: [-0.5, 0, 0], outline: null, shadow: false });
+        break;
+      case 'top_cami':
+      case 'dress_slip':
+        // a little lace scallop along the neckline
+        for (let i = 0; i < 9; i++) part(torso, sphere(0.014, 6, 5), toon(tint(color, 1.45)), { p: around(-0.8 + i * 0.2, 0.15, 0.012), outline: null, shadow: false });
+        break;
+      case 'top_ribbed':
+        ring(0.3, toon(tint(color, 0.85)), 0.026);
+        ring(-0.16, toon(tint(color, 0.85)), 0.02);
+        break;
+      case 'top_cardigan':
+        // open down the front over a tee, buttoned edges and two pockets
+        vneck(acc, 0.17, 0.12);
+        for (const sx of [-1, 1]) {
+          part(torso, box(0.03, 0.42, 0.014), toon(tint(color, 0.88)), { p: front(sx * 0.06, 0.0, 0.016), r: [0, 0, -sx * 0.12], outline: null });
+          buttons(toon(tint(color, 0.6)), [0.0, -0.1], sx * 0.075);
+          part(torso, box(0.09, 0.08, 0.012), toon(tint(color, 0.9)), { p: front(sx * 0.13, -0.08, 0.014), r: [0, sx * 0.5, 0], outline: OUT_THIN });
+        }
+        ring(-0.17, toon(tint(color, 0.85)), 0.026);
+        break;
+      case 'top_babydoll': {
+        // a square neckline, a ribbon under the bust and a floaty, flared hem
+        part(torso, box(0.18, 0.08, 0.01), toon(L.skin), { p: front(0, 0.27, 0.006), r: [-0.45, 0, 0], outline: null, shadow: false });
+        ring(0.06, acc, 0.022);
+        part(torso, sphere(0.03, 8, 6), acc, { p: front(0, 0.06, 0.03), s: [1.6, 0.8, 0.6], outline: null });
+        const peplum = geo('babydollHem', () => new THREE.LatheGeometry([new THREE.Vector2(0.255, 0.04), new THREE.Vector2(0.27, -0.12), new THREE.Vector2(0.31, -0.3), new THREE.Vector2(0.3, -0.32)], 32));
+        part(torso, peplum, toon(color, { side: THREE.DoubleSide }), { s: [1.02, 1, 0.82], outline: OUT_THIN });
+        break;
+      }
+      case 'top_ruffle':
+        for (const [y, r] of [[0.27, 0.19], [0.02, 0.27]]) {
+          const g = geo(`ruffle${r}`, () => { const t = new THREE.TorusGeometry(r, 0.03, 6, 48); const p = t.attributes.position; for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getY(i), p.getX(i)); p.setZ(i, p.getZ(i) + Math.sin(a * 12) * 0.018); } t.computeVertexNormals(); return t; });
+          part(torso, g, toon(tint(color, 1.15)), { p: [0, y, 0], r: [Math.PI / 2, 0, 0], s: [1.04, 0.82, 1], outline: null });
+        }
+        part(torso, circle(0.06), toon(L.skin), { p: front(0, 0.29, 0.006), r: [-0.5, 0, 0], outline: null, shadow: false });
+        break;
+      case 'top_blouse':
+        // a rounded collar with a big bow at the throat, and buttons down the front
+        for (const sx of [-1, 1]) part(torso, sphere(0.07, 12, 8), toon(tint(color, 1.25)), { p: [sx * 0.06, 0.3, 0.15], s: [1.1, 0.35, 0.8], r: [-0.6, 0, sx * 0.3], outline: OUT_THIN });
+        for (const sx of [-1, 1]) part(torso, sphere(0.05, 10, 8), acc, { p: front(sx * 0.05, 0.25, 0.04), s: [1.3, 0.8, 0.5], r: [0, 0, sx * 0.4], outline: OUT_THIN });
+        part(torso, sphere(0.025, 8, 6), acc, { p: front(0, 0.25, 0.05), outline: null });
+        for (const sx of [-1, 1]) part(torso, box(0.025, 0.12, 0.01), acc, { p: front(sx * 0.03, 0.17, 0.045), r: [0, 0, sx * 0.25], outline: null });
+        buttons(toon(tint(color, 1.3)), [0.1, 0.0, -0.1]);
+        break;
+      case 'top_offshoulder':
+      case 'dress_off': {
+        // a wide ruffled band across the chest and round over the tops of the arms
+        const band = geo('offBand', () => { const t = new THREE.TorusGeometry(0.31, 0.045, 8, 48); const p = t.attributes.position; for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getY(i), p.getX(i)); p.setZ(i, p.getZ(i) + Math.sin(a * 10) * 0.012); } t.computeVertexNormals(); return t; });
+        part(torso, band, toon(tint(color, L.top === 'dress_off' ? 1.1 : 1.08)), { p: [0, 0.12, 0], r: [Math.PI / 2, 0, 0], s: [1.15, 0.78, 1], outline: OUT_THIN });
+        break;
+      }
+      case 'top_sailor':
+        // the big square sailor collar (striped edge), and a neckerchief knotted in front
+        part(torso, box(0.4, 0.22, 0.02), acc, { p: [0, 0.22, -0.22], r: [0.35, 0, 0], outline: OUT_THIN });
+        part(torso, box(0.36, 0.012, 0.022), white, { p: [0, 0.16, -0.235], r: [0.35, 0, 0], outline: null });
+        lapels(acc, 0.06);
+        vneck(toon(L.skin), 0.11, 0.24);
+        part(torso, sphere(0.04, 10, 8), toon('#e0463c'), { p: front(0, 0.1, 0.04), s: [1.4, 0.9, 0.6], outline: OUT_THIN });
+        for (const sx of [-1, 1]) part(torso, box(0.035, 0.12, 0.01), toon('#e0463c'), { p: front(sx * 0.025, 0.03, 0.042), r: [0, 0, sx * 0.3], outline: null });
+        ring(-0.16, dark, 0.014);
+        break;
+      case 'top_sweatervest':
+      case 'top_vest_plaid':
+      case 'top_vest_brown': {
+        // the shirt shows in a V at the front, its collar folded over the vest
+        vneck(white, 0.16, 0.16);
+        collar(white);
+        const edge = toon(tint(color, L.top === 'top_sweatervest' ? 0.8 : 0.7));
+        for (const sx of [-1, 1]) part(torso, box(0.022, 0.24, 0.016), edge, { p: front(sx * 0.055, 0.15, 0.02), r: [-0.2, 0, -sx * 0.35], outline: null });
+        if (L.top === 'top_sweatervest') ring(-0.16, toon(tint(color, 0.8)), 0.026);
+        else {
+          buttons(L.top === 'top_vest_brown' ? shiny(accent, { metalness: 0.6 }) : toon(tint(color, 0.6)), [0.02, -0.07, -0.16]);
+          for (const sx of [-1, 1]) part(torso, box(0.08, 0.012, 0.012), edge, { p: front(sx * 0.13, -0.06, 0.016), r: [0, sx * 0.5, 0], outline: null });
+        }
+        if (L.top === 'top_vest_brown') {
+          // a pocket watch chain across the front
+          const pts = [new THREE.Vector3(...front(0.02, -0.07, 0.03)), new THREE.Vector3(...front(0.08, -0.11, 0.03)), new THREE.Vector3(...front(0.14, -0.07, 0.025))];
+          taper(torso, pts, 0.006, 0.006, shiny(accent, { metalness: 0.8 }));
+        }
+        break;
+      }
+      case 'top_corset':
+        // criss-cross lacing down the front, boning lines and a bow at the top
+        for (let i = 0; i < 5; i++) for (const sx of [-1, 1]) part(torso, box(0.075, 0.008, 0.008), acc, { p: front(0, 0.1 - i * 0.07, 0.018), r: [0, 0, sx * 0.55], outline: null, shadow: false });
+        for (const x of [-0.14, -0.08, 0.08, 0.14]) part(torso, box(0.006, 0.36, 0.008), toon(tint(color, 0.75)), { p: front(x, -0.08, 0.014), r: [0, x * 3, 0], outline: null, shadow: false });
+        part(torso, sphere(0.03, 8, 6), acc, { p: front(0, 0.15, 0.03), s: [1.6, 0.8, 0.6], outline: null });
+        break;
+      case 'dress_strap':
+        ring(0.02, toon(tint(color, 0.85)), 0.012);
+        break;
+      case 'dress_short':
+        part(torso, circle(0.1), toon(L.skin), { p: front(0, 0.27, 0.004), r: [-0.5, 0, 0], outline: null, shadow: false });
+        ring(0.32, dark, 0.012);
+        break;
+      case 'dress_sweetheart':
+      case 'dress_bridal':
+        // the sweetheart neckline: two soft curves at the top
+        for (const sx of [-1, 1]) part(torso, sphere(0.06, 12, 8), toon(tint(color, L.top === 'dress_bridal' ? 0.98 : 1)), { p: front(sx * 0.06, 0.13, -0.025), s: [1.2, 0.7, 0.55], outline: OUT_THIN });
+        if (L.top === 'dress_bridal') for (let i = 0; i < 18; i++) part(torso, sphere(0.008, 5, 4), basic('#ffffff'), { p: around(-1 + (i % 6) * 0.4, 0.06 - Math.floor(i / 6) * 0.12, 0.016), outline: null, shadow: false });
+        break;
+      case 'dress_puff':
+        part(torso, box(0.2, 0.09, 0.01), toon(L.skin), { p: front(0, 0.27, 0.006), r: [-0.45, 0, 0], outline: null, shadow: false });
+        part(torso, box(0.21, 0.016, 0.015), acc, { p: front(0, 0.225, 0.012), r: [-0.3, 0, 0], outline: null });
+        ring(-0.05, acc, 0.03);
+        part(torso, sphere(0.04, 10, 8), acc, { p: front(0, -0.05, 0.05), s: [1.6, 0.9, 0.6], outline: null });
+        break;
+      case 'dress_polo':
+      case 'cheer_top':
+        if (L.top === 'dress_polo') {
+          collar(toon(tint(color, 0.92)));
+          part(torso, box(0.05, 0.12, 0.012), toon(tint(color, 0.92)), { p: front(0, 0.21, 0.012), outline: null, shadow: false });
+          buttons(acc, [0.24, 0.18]);
+          ring(-0.04, acc, 0.016);
+        } else {
+          // a chevron stripe across the chest and a big letter
+          for (const sx of [-1, 1]) part(torso, box(0.24, 0.035, 0.012), acc, { p: front(sx * 0.09, 0.1, 0.012), r: [0, sx * 0.35, sx * 0.45], outline: null, shadow: false });
+          part(torso, geo('cheerPatch', () => new THREE.PlaneGeometry(0.1, 0.1)), new THREE.MeshBasicMaterial({ map: letterTexture(accent, hex(color)), transparent: true }), { p: front(0, -0.05, 0.02), outline: null, shadow: false });
+          part(torso, circle(0.07), toon(L.skin), { p: front(0, 0.29, 0.004), r: [-0.5, 0, 0], s: [1, 1.3, 1], outline: null, shadow: false });
+        }
+        break;
+      case 'dress_pinafore':
+        part(torso, circle(0.08), toon(L.skin), { p: front(0, 0.27, 0.004), r: [-0.5, 0, 0], outline: null, shadow: false });
+        break;
+      case 'suit3':
+        vneck(white, 0.14, 0.2);
+        // the waistcoat inside the jacket
+        vneck(toon(tint(color, 0.75)), 0.1, 0.06);
+        lapels(dark);
+        part(torso, box(0.05, 0.2, 0.02), acc, { p: front(0, 0.09, 0.025), outline: null });
+        part(torso, box(0.06, 0.045, 0.03), toon(tint(accent, 0.8)), { p: front(0, 0.2, 0.028), outline: null });
+        buttons(shiny('#c9a227', { metalness: 0.7 }), [-0.02, -0.09], 0);
+        part(torso, box(0.06, 0.03, 0.01), white, { p: front(-0.14, 0.12, 0.012), r: [0, -0.5, 0], outline: null });
+        break;
+      case 'track_jacket':
+        part(torso, box(0.012, 0.5, 0.015), shiny('#c0c6d4', { metalness: 0.6 }), { p: front(0, 0.02, 0.014), outline: null, shadow: false });
+        ring(0.33, toon(tint(color, 0.85)), 0.035);
+        for (const sx of [-1, 1]) part(torso, box(0.02, 0.4, 0.015), acc, { p: front(sx * 0.12, 0.02, 0.012), r: [0, sx * 0.45, 0], outline: null, shadow: false });
+        ring(-0.16, toon(tint(color, 0.85)), 0.024);
+        break;
+      case 'jump_top':
+        collar(toon(tint(color, 0.88)));
+        part(torso, box(0.012, 0.4, 0.015), shiny('#c0c6d4', { metalness: 0.6 }), { p: front(0, 0.05, 0.014), outline: null, shadow: false });
+        ring(-0.12, acc, 0.028);
+        part(torso, box(0.06, 0.05, 0.03), shiny('#c0c6d4', { metalness: 0.7 }), { p: front(0, -0.12, 0.04), outline: null });
+        for (const sx of [-1, 1]) part(torso, box(0.08, 0.08, 0.012), toon(tint(color, 0.88)), { p: front(sx * 0.12, 0.12, 0.014), r: [0, sx * 0.45, 0], outline: OUT_THIN });
+        break;
+      case 'pj_top':
+        collar(toon(tint(color, 0.9)));
+        part(torso, box(0.035, 0.48, 0.012), acc, { p: front(0.02, 0.03, 0.01), outline: null, shadow: false });
+        buttons(acc, [0.16, 0.06, -0.04, -0.13], -0.02);
+        part(torso, box(0.08, 0.08, 0.012), toon(tint(color, 1.1)), { p: front(-0.12, 0.12, 0.014), r: [0, -0.45, 0], outline: OUT_THIN });
+        break;
+      case 'scrub_top':
+        vneck(toon(L.skin), 0.12, 0.23);
+        part(torso, box(0.09, 0.09, 0.012), toon(tint(color, 0.9)), { p: front(-0.12, 0.1, 0.014), r: [0, -0.45, 0], outline: OUT_THIN });
+        part(torso, box(0.012, 0.06, 0.01), toon('#ffffff'), { p: front(-0.13, 0.14, 0.022), r: [0, -0.45, 0], outline: null }); // a pen
+        ring(-0.16, dark, 0.012);
+        break;
+      case 'chef_jacket':
+        // double-breasted: two rows of buttons, a stand collar and the overlap
+        ring(0.32, toon(tint(color, 0.92)), 0.035);
+        part(torso, box(0.012, 0.44, 0.012), toon(tint(color, 0.85)), { p: front(0.06, 0.04, 0.01), r: [0, 0, 0.08], outline: null, shadow: false });
+        for (const x of [-0.08, 0.1]) buttons(acc, [0.17, 0.06, -0.05, -0.15], x);
+        break;
+      case 'gi_top':
+      case 'top_kimono': {
+        // the crossed collar (left over right) down to the belt / obi
+        const gi = L.top === 'gi_top';
+        const band = gi ? toon(tint(color, 0.9)) : acc;
+        for (const [sx, z] of [[1, 0.018], [-1, 0.024]]) part(torso, box(gi ? 0.06 : 0.055, 0.42, 0.02), band, { p: front(sx * 0.055, 0.08, z), r: [0, 0, -sx * 0.5], outline: OUT_THIN });
+        vneck(toon(L.skin), 0.11, 0.25);
+        if (gi) {
+          ring(-0.12, acc, 0.035);
+          part(torso, sphere(0.035, 8, 6), acc, { p: front(0, -0.12, 0.05), s: [1.3, 0.8, 0.6], outline: null });
+          for (const sx of [-1, 1]) part(torso, box(0.035, 0.16, 0.012), acc, { p: front(sx * 0.03, -0.2, 0.05), r: [0, 0, sx * 0.2], outline: null });
+        } else {
+          // the obi: a wide sash with a cord, tied in a big bow at the back
+          ring(-0.1, acc, 0.07);
+          ring(-0.1, toon(tint(accent, 0.6)), 0.012);
+          part(torso, box(0.22, 0.12, 0.08), acc, { p: [0, -0.06, -0.24], outline: OUT_THIN });
+          for (const sx of [-1, 1]) part(torso, box(0.16, 0.14, 0.04), toon(tint(accent, 0.85)), { p: [sx * 0.14, -0.04, -0.27], r: [0, 0, sx * 0.35], outline: OUT_THIN });
+        }
+        break;
+      }
+      case 'astro_top':
+        for (const y of [0.18, -0.02]) ring(y, toon(tint(color, 0.92)), 0.04);
+        ring(0.33, shiny('#c0c6d4', { metalness: 0.7 }), 0.05);
+        part(torso, box(0.2, 0.13, 0.05), toon('#d8dce6'), { p: front(0, 0.06, 0.03), outline: OUT_THIN });
+        ['#e0463c', '#ffd84d', accent].forEach((c, i) => part(torso, sphere(0.018, 8, 6), basic(c), { p: front(-0.05 + i * 0.05, 0.08, 0.06), outline: null, shadow: false }));
+        part(torso, box(0.12, 0.02, 0.01), basic(accent), { p: front(0, 0.03, 0.058), outline: null, shadow: false });
+        part(torso, box(0.08, 0.05, 0.01), toon('#3b5bdb'), { p: front(-0.15, 0.17, 0.012), r: [0, -0.55, 0], outline: null });
+        break;
+      case 'school_top':
+        // a blazer over the shirt: lapels, a badge, buttons and a bow at the collar
+        vneck(white, 0.16, 0.16);
+        collar(white);
+        lapels(toon(tint(color, 0.8)), 0.07);
+        part(torso, sphere(0.04, 10, 8), acc, { p: front(0, 0.25, 0.04), s: [1.5, 0.8, 0.6], outline: OUT_THIN });
+        for (const sx of [-1, 1]) part(torso, box(0.04, 0.09, 0.01), acc, { p: front(sx * 0.03, 0.2, 0.04), r: [0, 0, sx * 0.3], outline: null });
+        part(torso, circle(0.035), shiny('#c9a227', { metalness: 0.6 }), { p: front(-0.13, 0.12, 0.016), r: [0, -0.5, 0], outline: null, shadow: false });
+        buttons(shiny('#c9a227', { metalness: 0.6 }), [-0.04, -0.13], 0.03);
         break;
       case 'top_polo':
         collar(toon(tint(color, 0.9)));
@@ -3123,9 +4041,12 @@ export class Character {
   /** One shoe, on the lower leg (the knee group). fy keeps it on the ground at any leg length. */
   buildShoe(knee, L, shoe, sole, skin, fy) {
     const style = L.shoes || 'shoes_sneakers';
-    const dark = toon(tint(L.shoeColor, 0.55));
-    const foot = (mat, s = [0.95, 0.6, 1.4]) => part(knee, sphere(0.12, 18, 12), mat, { p: [0, -0.2 + fy, 0.045], s });
+    const dark = toon(tint(L.shoeColor, 0.55)), light = toon(tint(L.shoeColor, 1.3));
+    const gloss = shiny(L.shoeColor, { metalness: 0.15, roughness: 0.25 });
+    const G = -0.26 + fy; // the ground, in the knee's frame
+    const foot = (mat, s = [0.95, 0.6, 1.4], y = -0.2, rx = 0) => part(knee, sphere(0.12, 18, 12), mat, { p: [0, y + fy, 0.045], s, r: [rx, 0, 0] });
     const soleUnder = (mat, h = 0.22) => part(knee, sphere(0.12, 18, 8), mat, { p: [0, -0.235 + fy, 0.045], s: [0.98, h, 1.42], outline: null });
+    const toes = (y = -0.205) => { for (let i = 0; i < 4; i++) part(knee, sphere(0.022 - i * 0.002, 8, 6), skin, { p: [-0.05 + i * 0.033, y + fy, 0.2 - Math.abs(i - 1.5) * 0.012], outline: null, shadow: false }); };
     switch (style) {
       case 'shoes_hightops':
         foot(shoe); soleUnder(sole);
@@ -3140,25 +4061,74 @@ export class Character {
         part(knee, torus(0.104, 0.016, TAU, 6, 18), dark, { p: [0, 0.0 + fy, 0.005], r: [Math.PI / 2, 0, 0], outline: null });
         part(knee, box(0.12, 0.012, 0.01), dark, { p: [0, -0.2 + fy, 0.14], outline: null, shadow: false });
         break;
+      case 'shoes_rainboots':
+        // tall glossy wellies with a chunky sole and a band at the top
+        foot(gloss, [1, 0.62, 1.42]); soleUnder(dark, 0.32);
+        part(knee, cyl(0.108, 0.112, 0.27, 18), gloss, { p: [0, -0.065 + fy, 0.005], outline: OUT_THIN });
+        part(knee, torus(0.108, 0.018, TAU, 6, 20), light, { p: [0, 0.07 + fy, 0.005], r: [Math.PI / 2, 0, 0], outline: null });
+        part(knee, box(0.2, 0.025, 0.3), dark, { p: [0, G + 0.012, 0.05], outline: null, shadow: false });
+        break;
       case 'shoes_dress':
-        foot(shiny(L.shoeColor, { metalness: 0.2, roughness: 0.25 }), [0.85, 0.5, 1.5]);
+        foot(gloss, [0.85, 0.5, 1.5]);
         part(knee, sphere(0.12, 18, 8), dark, { p: [0, -0.24 + fy, 0.045], s: [0.87, 0.14, 1.5], outline: null });
         part(knee, box(0.05, 0.01, 0.03), dark, { p: [0, -0.16 + fy, 0.1], outline: null, shadow: false });
         break;
+      case 'shoes_loafers':
+        // low, glossy, with a moc-toe seam and a penny strap across the top
+        foot(gloss, [0.88, 0.5, 1.48]);
+        part(knee, sphere(0.12, 18, 8), dark, { p: [0, -0.242 + fy, 0.045], s: [0.9, 0.16, 1.5], outline: null });
+        part(knee, torus(0.055, 0.007, Math.PI, 6, 14), dark, { p: [0, -0.163 + fy, 0.13], r: [-Math.PI / 2 + 0.25, 0, 0], outline: null, shadow: false });
+        part(knee, box(0.15, 0.016, 0.03), dark, { p: [0, -0.158 + fy, 0.05], r: [0.2, 0, 0], outline: null });
+        part(knee, box(0.03, 0.012, 0.016), shiny('#c9a227', { metalness: 0.7 }), { p: [0, -0.153 + fy, 0.06], r: [0.2, 0, 0], outline: null, shadow: false });
+        part(knee, box(0.1, 0.03, 0.06), dark, { p: [0, G + 0.015, -0.05], outline: null, shadow: false }); // heel
+        break;
+      case 'shoes_heels': {
+        // pointed pumps: the heel up on a slim stiletto, the toe down, the top of the foot showing
+        const pump = foot(gloss, [0.82, 0.5, 1.52], -0.175, 0.22);
+        part(knee, sphere(0.06, 12, 8), skin, { p: [0, -0.15 + fy, 0.03], s: [1.2, 0.45, 1.2], outline: null, shadow: false });
+        part(knee, cyl(0.012, 0.022, 0.09, 10), gloss, { p: [0, G + 0.045, -0.06], outline: OUT_THIN });
+        part(knee, box(0.05, 0.012, 0.05), dark, { p: [0, G + 0.006, -0.06], outline: null, shadow: false });
+        pump.castShadow = true;
+        break;
+      }
+      case 'shoes_flats': {
+        // ballet flats: a soft low shoe with the top of the foot showing and a little bow at the toe
+        foot(skin, [0.85, 0.5, 1.35]);
+        part(knee, sphere(0.122, 18, 10), shoe, { p: [0, -0.215 + fy, 0.05], s: [0.9, 0.35, 1.42], outline: OUT_THIN });
+        part(knee, sphere(0.122, 18, 10), shoe, { p: [0, -0.205 + fy, 0.11], s: [0.86, 0.42, 0.9], outline: null });
+        for (const s of [-1, 1]) part(knee, sphere(0.018, 8, 6), light, { p: [s * 0.02, -0.165 + fy, 0.17], s: [1.3, 0.8, 0.6], outline: null, shadow: false });
+        part(knee, sphere(0.01, 6, 5), light, { p: [0, -0.165 + fy, 0.172], outline: null, shadow: false });
+        break;
+      }
+      case 'shoes_maryjanes':
+        // round-toed and shiny, with a strap over the top fastened with a button
+        foot(gloss, [0.92, 0.6, 1.36]);
+        part(knee, sphere(0.12, 18, 8), dark, { p: [0, -0.24 + fy, 0.045], s: [0.94, 0.16, 1.38], outline: null });
+        part(knee, torus(0.085, 0.012, Math.PI, 6, 16), gloss, { p: [0, -0.18 + fy, 0.02], r: [0, Math.PI / 2, 0], outline: OUT_THIN });
+        part(knee, sphere(0.012, 6, 5), shiny('#ffd84d', { metalness: 0.6 }), { p: [0.085, -0.17 + fy, 0.02], outline: null, shadow: false });
+        break;
       case 'shoes_platform':
-        foot(shoe); part(knee, cyl(0.115, 0.12, 0.08, 18), sole, { p: [0, -0.225 + fy, 0.045], s: [1, 1, 1.4], outline: OUT_THIN });
-        part(knee, sphere(0.05, 10, 8), sole, { p: [0, -0.17 + fy, 0.17], s: [1.4, 0.6, 0.5], outline: null, shadow: false });
+        // chunky platform trainers: a tall two-tone sole that the whole shoe sits up on
+        foot(shoe, [0.95, 0.6, 1.4], -0.16);
+        part(knee, cyl(0.118, 0.122, 0.09, 20), sole, { p: [0, G + 0.045, 0.045], s: [1, 1, 1.42], outline: OUT_THIN });
+        part(knee, cyl(0.123, 0.123, 0.022, 20), toon(tint(L.shoeColor, 0.75)), { p: [0, G + 0.05, 0.045], s: [1, 1, 1.42], outline: null });
+        part(knee, sphere(0.05, 10, 8), sole, { p: [0, -0.13 + fy, 0.17], s: [1.4, 0.6, 0.5], outline: null, shadow: false });
+        for (let i = 0; i < 3; i++) part(knee, box(0.06, 0.008, 0.01), light, { p: [0, -0.13 + fy + i * 0.025, 0.11 - i * 0.02], outline: null, shadow: false });
         break;
       case 'shoes_sandals':
         foot(skin, [0.85, 0.5, 1.35]);
+        toes();
         part(knee, sphere(0.12, 18, 8), dark, { p: [0, -0.24 + fy, 0.045], s: [0.92, 0.14, 1.45], outline: null });
         for (const z of [0.0, 0.1]) part(knee, box(0.2, 0.025, 0.035), shoe, { p: [0, -0.2 + fy + (z ? 0 : 0.02), 0.045 + z], outline: OUT_THIN });
         part(knee, torus(0.08, 0.012, TAU, 6, 16), shoe, { p: [0, -0.15 + fy, 0], r: [Math.PI / 2, 0, 0], outline: null });
         break;
       case 'shoes_slides':
-        foot(skin, [0.85, 0.5, 1.35]);
-        part(knee, sphere(0.12, 18, 8), sole, { p: [0, -0.238 + fy, 0.045], s: [0.95, 0.2, 1.45], outline: null });
-        part(knee, box(0.2, 0.05, 0.1), shoe, { p: [0, -0.2 + fy, 0.08], outline: OUT_THIN });
+        // pool slides: a thick moulded footbed and one wide padded strap over the top, with a stripe
+        foot(skin, [0.85, 0.48, 1.32]);
+        toes(-0.2);
+        part(knee, cyl(0.112, 0.115, 0.04, 20), sole, { p: [0, G + 0.02, 0.045], s: [0.98, 1, 1.45], outline: OUT_THIN });
+        part(knee, geo('slideStrap', () => new THREE.CylinderGeometry(0.115, 0.115, 0.12, 20, 1, true, -Math.PI / 2, Math.PI)), toon(L.shoeColor, { side: THREE.DoubleSide }), { p: [0, G + 0.04, 0.06], r: [-Math.PI / 2, 0, 0], s: [0.95, 1, 0.75], outline: OUT_THIN });
+        part(knee, box(0.16, 0.02, 0.012), sole, { p: [0, G + 0.122, 0.07], r: [0, 0, 0], outline: null, shadow: false });
         break;
       default: // sneakers
         foot(shoe); soleUnder(sole);
@@ -3187,6 +4157,13 @@ export class Character {
    */
   update(dt, time, moving = false, speed = 1) {
     const { body, torso, head, legs, knees, arms, elbows, eyes, mouth, mouthOpen, anim } = this.rig;
+    // how fast we're really going over the ground (so hooves, wheels and pedals keep pace with it)
+    if (dt > 0) {
+      this.root.getWorldPosition(_gs);
+      const v = this.lastPos ? Math.min(40, _gs.distanceTo(this.lastPos) / dt) : 0;
+      this.groundSpeed = (this.groundSpeed ?? 0) + ((moving ? v : 0) - (this.groundSpeed ?? 0)) * Math.min(1, dt * 8);
+      (this.lastPos ??= new THREE.Vector3()).copy(_gs);
+    }
     const posed = this.pose === 'walk';
     const walking = moving || posed;
     const goal = walking ? 1 : 0;
@@ -3234,6 +4211,11 @@ export class Character {
     arms[1].rotation.z = 0.1 + 0.06 * w + Math.sin(time * 1.6) * 0.03 * iw;
     elbows[0].rotation.set(-(0.18 * iw + (0.35 + run * 0.9 + Math.max(0, s) * 0.35) * w), 0, 0);
     elbows[1].rotation.set(-(0.18 * iw + (0.35 + run * 0.9 + Math.max(0, -s) * 0.35) * w), 0, 0);
+    this.rig.handItems?.forEach((g, i) => {
+      if (!g?.visible) return;
+      arms[i].rotation.x = arms[i].rotation.x * 0.35 - 0.22;
+      elbows[i].rotation.x = -1.2 - run * 0.15;
+    });
 
     // keep the planted foot on the ground as the legs spread, plus a little bounce
     const drop = this.rig.hipY * (1 - Math.cos(Math.abs(s) * legA));
@@ -3444,7 +4426,7 @@ export class Character {
   poseRide(dt, time, moving, speed) {
     const { body, head, legs, knees, arms, elbows, hipY } = this.rig;
     const m = this.mount;
-    m.tick(time, dt, moving, speed);
+    m.tick(time, dt, moving, speed, moving ? this.groundSpeed ?? null : 0);
     const S = m.seatY;
     legs.forEach((l) => l.rotation.set(0, 0, 0));
     body.rotation.set(0, 0, 0);
@@ -3460,16 +4442,25 @@ export class Character {
       body.position.set(0, S - hipY + bounce * 1.3, -0.04);
       body.rotation.x = 0.06 + go * 0.22;
       head.rotation.x = -body.rotation.x * 0.7;
-    } else if (m.stance === 'pedal') {
-      // pedalling: the feet go round with the pedals, standing up out of the saddle a bit when you go fast
-      const p = m.pedal, stand = Math.max(0, speed - 1.2) * go;
-      legs.forEach((l, i) => { const a = p + i * Math.PI; l.rotation.x = -1.0 + Math.sin(a) * 0.4 + stand * 0.3; l.rotation.z = (i ? -1 : 1) * 0.08; });
-      knees.forEach((k, i) => { const a = p + i * Math.PI; k.rotation.x = 1.15 + Math.cos(a) * 0.45 - stand * 0.3; });
-      arms.forEach((a, i) => { a.rotation.x = -1.15 - stand * 0.2; a.rotation.z = (i ? -1 : 1) * 0.25; });
-      elbows.forEach((e) => { e.rotation.set(-0.35, 0, 0); });
-      body.position.set(0, S - hipY + stand * 0.12, -0.06);
-      body.rotation.set(0.3 + go * 0.12 + stand * 0.1, 0, Math.sin(p) * 0.05 * stand);
-      head.rotation.x = -body.rotation.x * 0.8;
+    } else if (m.stance === 'pedal' && m.pedalAt) {
+      // pedalling: the saddle is set to your leg length, your feet stay on the pedals all the way round
+      // and your hands on the grips, leaning in a little more as you speed up
+      const { kl, fy } = this.rig;
+      const thigh = 0.2 * kl, shin = 0.215 - fy;
+      const hip = m.fit(thigh + shin);
+      const lean = 0.32 + go * 0.12;
+      body.rotation.set(lean, 0, 0);
+      // put the hips over the saddle (the body turns about the feet, so allow for the lean)
+      body.position.set(0, hip - hipY * Math.cos(lean), -0.1 - hipY * Math.sin(lean));
+      head.rotation.x = -lean * 0.85;
+      this.root.updateMatrixWorld(true);
+      const mg = m.group;
+      [-1, 1].forEach((side, i) => {
+        body.worldToLocal(mg.localToWorld(m.pedalAt(side, _v1).add(_v2.set(0, 0.03, 0))));
+        ikLeg(legs[i], knees[i], _v1, thigh, shin);
+        body.worldToLocal(mg.localToWorld(m.gripAt(side, _v3)));
+        ikArm(arms[i], elbows[i], _v3, _v6.set(side * 0.6, -0.4, -0.3));
+      });
     } else if (m.stance === 'scoot') {
       // one foot on the deck, the other pushing off the ground in long kicks
       const kick = go * Math.sin(time * 6);

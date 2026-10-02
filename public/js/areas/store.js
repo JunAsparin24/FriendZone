@@ -224,7 +224,7 @@ export function styleShopArea(stage) {
   browse(-W / 2 + 1.8, 0.5, 2.6, null, 'bottom');
   const shoes = shoeWall(g, W / 2 - 0.45, -2.5, -Math.PI / 2);
   solids.push({ x: W / 2 - 0.5, z: -2.5, w: 0.9, d: 5.2 });
-  browse(W / 2 - 1.8, -2.5, 2.8, shoes, 'body', 'browse shoes');
+  browse(W / 2 - 1.8, -2.5, 2.8, shoes, 'shoes', 'browse shoes');
 
   // ---- the floor: round racks, rolling racks, display tables, a hat stand ----
   for (const [x, z, k] of [[-6.5, -4.5, 0], [0, -4.8, 3], [6.5, -4.5, 5]]) {
@@ -235,7 +235,7 @@ export function styleShopArea(stage) {
   for (const [x, z, ry] of [[-8, 1.5, 0.2], [8.5, 1.8, -0.25]]) {
     clothesRack(g, x, z, ry, ['#ff5d73', '#ffd84d', '#39c6ff', '#b77bff', '#f4f4f4']);
     solids.push({ x, z, w: 2.6, d: 1.2 });
-    browse(x, z, 2.6, null, 'top');
+    browse(x, z, 2.6, null, x > 0 ? 'outfit' : 'top', x > 0 ? 'browse the outfits' : 'browse the clothes');
   }
   for (const [x, z] of [[-3.2, 0.8], [3.2, 0.8]]) {
     const t = displayTable(g, x, z, TEES);

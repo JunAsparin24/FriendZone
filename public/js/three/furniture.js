@@ -4,6 +4,7 @@
 // per-frame animations into `A.anim` (return true to finish) and return { use } for clicks.
 import * as THREE from 'three';
 import { TAU, toon, basic, shiny, outlineMaterial, canvasTexture, additive, glowTexture, flameTexture } from './materials.js';
+import { CATALOG } from '../catalog.js';
 
 const OUT = outlineMaterial(0.018);
 const cache = new Map();
@@ -1420,8 +1421,9 @@ const mossRugTex = canvasTexture(256, 256, (ctx) => {
 
 // ---- walls for building rooms inside your house (the house papers them with its wallpaper) ----
 Object.assign(FURNITURE, {
-  room_wall(g) { roomWall(g, 2); },
-  room_wall_short(g) { roomWall(g, 1); },
+  // plain walls are dragged out to any length (len, in tiles)
+  room_wall(g, A, { len = 2 } = {}) { roomWall(g, len); },
+  room_wall_short(g, A, { len = 1 } = {}) { roomWall(g, len); },
   room_doorway(g) { roomWall(g, 2, true); },
   // doorways with a door in them: they swing (or slide) open when someone walks up, and shut behind them
   room_door(g, A) { return roomDoor(g, A, 'wood'); },
@@ -1473,12 +1475,14 @@ function roomDoor(g, A, style) {
   });
   return {};
 }
-const ROOM_H = 3.2, ROOM_T = 0.22; // (the house's wall height, in tiles; how thick these walls are)
-function papered(w, h) {
-  return geo(`paper${w},${h}`, () => {
+const ROOM_H = 3.2, ROOM_T = 0.25; // (the house's wall height, in tiles; how thick these walls are: their whole footprint, so they meet flush)
+/** A papered face: the wallpaper repeats every 2 tiles across, and is pinned to the floor going up
+ *  (y0: how high its bottom edge is), so it lines up with the room's own walls. */
+function papered(w, h, y0 = 0) {
+  return geo(`paper${w},${h},${y0}`, () => {
     const pg = new THREE.PlaneGeometry(w, h);
     const uv = pg.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 2, uv.getY(i) * h / 2);
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 2, (y0 + uv.getY(i) * h) / 2);
     return pg;
   });
 }
@@ -1487,9 +1491,9 @@ function roomWall(g, w, door = false) {
   // one solid stretch of wall from x0 to x1, y0 to y1, papered on both faces
   const piece = (x0, x1, y0, y1) => {
     const pw = x1 - x0, ph = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    add(g, box(pw, ph, ROOM_T - 0.02), core, { p: [cx, cy, 0] });
+    add(g, box(pw, ph, ROOM_T - 0.004), core, { p: [cx, cy, 0] });
     for (const s of [-1, 1]) {
-      const m = add(g, papered(pw, ph), paper, { p: [cx, cy, s * ROOM_T / 2], r: [0, s > 0 ? 0 : Math.PI, 0], outline: false });
+      const m = add(g, papered(pw, ph, y0), paper, { p: [cx, cy, s * (ROOM_T / 2 - 0.001)], r: [0, s > 0 ? 0 : Math.PI, 0], outline: false });
       m.userData.wallpaper = true;
       if (y0 === 0) add(g, box(pw, 0.16, 0.05), trim, { p: [cx, 0.08, s * (ROOM_T / 2 + 0.02)], outline: false });
     }
@@ -1660,7 +1664,7 @@ const OWN_DROP = new Set(['hanging_plant', 'hanging_plant_short', 'hanging_plant
 
 /** Build a piece of furniture. Returns { group, use, anim }. `drop`: how far below the ceiling a
  *  hanging thing has been let down (it stays tied to the ceiling). */
-export function buildFurniture(id, { drop = 0 } = {}) {
+export function buildFurniture(id, { drop = 0, len = 0 } = {}) {
   const group = new THREE.Group();
   const A = { anim: [] };
   let target = group;
@@ -1670,7 +1674,7 @@ export function buildFurniture(id, { drop = 0 } = {}) {
     group.add(target);
     add(group, cyl(0.012, 0.012, drop, 5), toon('#3a3f5a'), { p: [0, -drop / 2, 0], outline: false });
   }
-  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : undefined) ?? {};
+  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len } : undefined) ?? {};
   return { group, use: res.use ?? null, anim: A.anim, A };
 }
 
@@ -1680,9 +1684,9 @@ export function buildFurniture(id, { drop = 0 } = {}) {
 
 const surfaceCache = new Map();
 
-function surface(id, draw) {
+function surface(id, draw, h = 256) {
   if (!surfaceCache.has(id)) {
-    const tex = canvasTexture(256, 256, draw);
+    const tex = canvasTexture(256, h, draw);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     surfaceCache.set(id, tex);
   }
@@ -1925,13 +1929,7 @@ const WALL_DRAW = {
     ctx.fillStyle = '#2a4d34'; ctx.fillRect(0, 0, 256, 256);
     for (let x = 0; x < 256; x += 32) { ctx.fillStyle = '#335c40'; ctx.fillRect(x, 0, 14, 256); ctx.fillStyle = 'rgba(255,220,140,.25)'; ctx.fillRect(x + 15, 0, 2, 256); }
   },
-  wall_wainscot(ctx) {
-    // dark green above, wood panelling below with a chair rail
-    ctx.fillStyle = '#244a33'; ctx.fillRect(0, 0, 256, 256);
-    ctx.fillStyle = '#5a3a24'; ctx.fillRect(0, 150, 256, 106);
-    for (let x = 6; x < 256; x += 64) { ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 3; ctx.strokeRect(x, 166, 52, 76); ctx.strokeStyle = 'rgba(255,220,180,.12)'; ctx.strokeRect(x + 3, 169, 46, 70); }
-    ctx.fillStyle = '#6e4a2e'; ctx.fillRect(0, 142, 256, 12); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, 154, 256, 3);
-  },
+  wall_wainscot(ctx) { wainscot(ctx, '#2f5a3c', '#5a3a24'); },
   wall_mocha(ctx) { plainWall(ctx, '#7a5a44'); },
   wall_walnut(ctx) {
     ctx.fillStyle = '#4a2f1d'; ctx.fillRect(0, 0, 256, 256);
@@ -1985,26 +1983,23 @@ const WALL_DRAW = {
     for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) heartAt(ctx, c * 51 + (r % 2) * 25 + 12, r * 51 + 26, 9, (r + c) % 3 ? '#ff9fc8' : '#ff7ab6');
   },
   wall_sakura(ctx) {
-    const g = ctx.createLinearGradient(0, 0, 0, 256);
-    g.addColorStop(0, '#ffe6f0');
-    g.addColorStop(1, '#fff6fa');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 256, 256);
-    ctx.strokeStyle = '#8b5a4a';
-    ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.moveTo(0, 60); ctx.bezierCurveTo(80, 40, 140, 90, 256, 50); ctx.stroke();
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(120, 68); ctx.bezierCurveTo(150, 110, 170, 130, 190, 170); ctx.stroke();
-    for (let i = 0; i < 26; i++) {
-      const x = (i * 71) % 256, y = 30 + ((i * 53) % 190);
-      for (let k = 0; k < 5; k++) {
-        const a = (k / 5) * TAU;
-        ctx.fillStyle = i % 3 ? '#ffb3d0' : '#ff8fc0';
-        ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * 5, y + Math.sin(a) * 5, 4.5, 3, a, 0, TAU); ctx.fill();
-      }
-      ctx.fillStyle = '#ffe28a';
-      ctx.beginPath(); ctx.arc(x, y, 2, 0, TAU); ctx.fill();
-    }
+    // one tall mural: a blossoming branch reaching across the top, petals drifting down to the floor
+    const H = ctx.canvas.height;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#ffe3ef'); g.addColorStop(1, '#fff8fb');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, H);
+    ctx.strokeStyle = '#7a4a3c'; ctx.lineCap = 'round';
+    ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(-10, 40); ctx.bezierCurveTo(70, 20, 150, 80, 266, 36); ctx.stroke();
+    ctx.lineWidth = 4;
+    for (const [x0, y0, x1, y1] of [[60, 34, 95, 110], [150, 58, 190, 130], [210, 50, 240, 92], [110, 52, 120, 82]]) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo((x0 + x1) / 2 + 12, (y0 + y1) / 2, x1, y1); ctx.stroke(); }
+    const rnd = prng(12);
+    const blossom = (x, y, r) => {
+      for (let k = 0; k < 5; k++) { const a = (k / 5) * TAU + r; ctx.fillStyle = k % 2 ? '#ffb3d0' : '#ffc6dc'; ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * 5, y + Math.sin(a) * 5, 5, 3.4, a, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#ff8fb8'; ctx.beginPath(); ctx.arc(x, y, 2.2, 0, TAU); ctx.fill();
+    };
+    for (let i = 0; i < 46; i++) { const x = rnd() * 256, y = 18 + rnd() * 120 * (0.4 + 0.6 * Math.abs(Math.sin(x / 50))); blossom(x, y, rnd() * TAU); }
+    // a few petals drifting down, thinning out towards the floor
+    for (let i = 0; i < 22; i++) { const y = 150 + Math.pow(rnd(), 1.6) * (H - 170); ctx.fillStyle = 'rgba(255,160,200,.7)'; ctx.beginPath(); ctx.ellipse(rnd() * 256, y, 3.5, 2, rnd() * TAU, 0, TAU); ctx.fill(); }
   },
   wall_navy(ctx) { plainWall(ctx, '#2a3566'); },
   wall_sage(ctx) { plainWall(ctx, '#b9d3b0'); },
@@ -2036,25 +2031,43 @@ const WALL_DRAW = {
     for (let i = 0; i < 40; i++) ctx.fillRect((i * 67) % 256, (i * 29) % 256, 8, 8);
   },
   wall_jungle(ctx) {
-    ctx.fillStyle = '#e6f5de';
-    ctx.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 14; i++) {
-      const x = (i * 71) % 256, y = (i * 113) % 256, a = i * 0.9;
+    // one tall mural: big tropical leaves growing up from the floor and hanging in from the top
+    const H = ctx.canvas.height;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#effae6'); g.addColorStop(1, '#dff2d4');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, H);
+    const leaf = (x, y, len, a, col) => {
       ctx.save(); ctx.translate(x, y); ctx.rotate(a);
-      ctx.fillStyle = i % 2 ? '#3f9a4a' : '#56c262';
-      ctx.beginPath(); ctx.ellipse(0, 0, 30, 12, 0, 0, TAU); ctx.fill();
-      ctx.strokeStyle = '#2f7f3a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-28, 0); ctx.lineTo(28, 0); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(len * 0.5, -len * 0.32, len, 0); ctx.quadraticCurveTo(len * 0.5, len * 0.32, 0, 0); ctx.fill();
+      ctx.strokeStyle = 'rgba(20,70,30,.55)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len * 0.95, 0); ctx.stroke();
+      ctx.lineWidth = 1;
+      for (let k = 1; k < 6; k++) { const t = (k / 6) * len; ctx.beginPath(); ctx.moveTo(t, 0); ctx.lineTo(t + len * 0.08, -len * 0.14); ctx.moveTo(t, 0); ctx.lineTo(t + len * 0.08, len * 0.14); ctx.stroke(); }
       ctx.restore();
-    }
+    };
+    const cols = ['#2f8a40', '#3f9a4a', '#56b25e', '#277a38'];
+    // from the floor
+    for (let i = 0; i < 9; i++) leaf(i * 30 + 10, H + 6, 120 + (i % 3) * 40, -Math.PI / 2 + (i % 2 ? 0.45 : -0.45) + Math.sin(i) * 0.2, cols[i % 4]);
+    // hanging in from the top
+    for (let i = 0; i < 6; i++) leaf(i * 46 + 20, -6, 80 + (i % 2) * 30, Math.PI / 2 + (i % 2 ? 0.5 : -0.5), cols[(i + 1) % 4]);
   },
   wall_forest(ctx) {
-    const g = ctx.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#d8f0d0'); g.addColorStop(1, '#a8d898');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
-    for (const [x, h, c] of [[20, 170, '#5f9e5a'], [70, 210, '#3f8a4a'], [125, 150, '#6fae5a'], [175, 200, '#4f9a4a'], [225, 180, '#3f7a42']]) {
-      ctx.fillStyle = '#7a5a34'; ctx.fillRect(x - 4, 256 - 40, 8, 40);
+    // one tall mural: a sky, rolling hills, and a row of pines standing on the floor
+    const H = ctx.canvas.height;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#cdeeff'); g.addColorStop(0.55, '#e8f6e4'); g.addColorStop(1, '#bfe2ad');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, H);
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    for (const [x, y, r] of [[50, 60, 16], [68, 54, 20], [88, 62, 14], [190, 90, 14], [206, 84, 18]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = '#a8d898';
+    ctx.beginPath(); ctx.moveTo(0, H * 0.62);
+    for (let x = 0; x <= 256; x += 8) ctx.lineTo(x, H * 0.62 - Math.sin((x / 256) * TAU) * 18);
+    ctx.lineTo(256, H); ctx.lineTo(0, H); ctx.fill();
+    const pine = (x, h, c) => {
+      ctx.fillStyle = '#6e4a2a'; ctx.fillRect(x - 4, H - 30, 8, 30);
       ctx.fillStyle = c;
-      for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(x, 256 - h + k * 40); ctx.lineTo(x + 30 - k * 3, 256 - 40 - (2 - k) * 30); ctx.lineTo(x - 30 + k * 3, 256 - 40 - (2 - k) * 30); ctx.fill(); }
-    }
+      for (let k = 0; k < 4; k++) { const top = H - 30 - h + k * (h / 4.5), w = 16 + k * 9; ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + w, top + h / 3); ctx.lineTo(x - w, top + h / 3); ctx.fill(); }
+    };
+    [[22, 190, '#4f9a4a'], [74, 240, '#3f8a4a'], [128, 170, '#5fae55'], [180, 230, '#3f7a42'], [232, 200, '#4f9a4a']].forEach(([x, h, c]) => pine(x, h, c));
   },
   wall_bamboo(ctx) {
     ctx.fillStyle = '#e8f0c8'; ctx.fillRect(0, 0, 256, 256);
@@ -2084,12 +2097,17 @@ const WALL_DRAW = {
     }
   },
   wall_greenhouse(ctx) {
-    ctx.fillStyle = '#cfefe0'; ctx.fillRect(0, 0, 256, 256);
-    ctx.fillStyle = 'rgba(255,255,255,.4)'; for (let i = 0; i < 4; i++) ctx.fillRect(i * 64 + 6, 6, 18, 116);
-    ctx.fillStyle = '#5fae55'; for (let i = 0; i < 26; i++) { ctx.beginPath(); ctx.ellipse((i * 53) % 256, 200 + (i % 5) * 10, 18, 7, i, 0, TAU); ctx.fill(); }
+    // tall glass panes in white frames, with a bed of plants along the bottom
+    const H = ctx.canvas.height;
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#d8f2ff'); g.addColorStop(1, '#d6f0e2');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, H);
+    ctx.fillStyle = 'rgba(255,255,255,.4)'; for (let i = 0; i < 4; i++) ctx.fillRect(i * 64 + 8, 10, 14, H * 0.55);
+    const rnd = prng(31);
+    for (let i = 0; i < 40; i++) { ctx.fillStyle = ['#3f9a4a', '#5fae55', '#7fbf4a'][i % 3]; ctx.beginPath(); ctx.ellipse(rnd() * 256, H - 18 - rnd() * 60, 18, 7, rnd() * TAU, 0, TAU); ctx.fill(); }
+    for (let i = 0; i < 8; i++) { ctx.fillStyle = ['#ff8fb8', '#ffd84d', '#ffffff'][i % 3]; ctx.beginPath(); ctx.arc(rnd() * 256, H - 30 - rnd() * 50, 4, 0, TAU); ctx.fill(); }
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6;
-    for (let x = 0; x <= 256; x += 64) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke(); }
-    for (let y = 0; y <= 256; y += 128) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke(); }
+    for (let x = 0; x <= 256; x += 64) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (const y of [0, H * 0.4, H * 0.75]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke(); }
   },
   wall_tile_subway(ctx) { subwayTiles(ctx, '#fbfbfd', '#c9cfd8'); },
   wall_tile_mint(ctx) { subwayTiles(ctx, '#c9f0e2', '#ffffff'); },
@@ -2110,11 +2128,83 @@ const WALL_DRAW = {
   },
 };
 
+/** A colour made lighter (k > 0) or darker (k < 0). */
+function shade(c, k) {
+  const col = new THREE.Color(c);
+  return `#${(k >= 0 ? col.lerp(new THREE.Color('#ffffff'), k) : col.multiplyScalar(1 + k)).getHexString()}`;
+}
+/** Wood panelling along the bottom (about a third of the wall), paint above it, and a chair rail. */
+function wainscot(ctx, upper, panel = '#5a3a24') {
+  const H = ctx.canvas.height, top = Math.round(H * 0.7);
+  plainWall(ctx, upper);
+  ctx.fillStyle = panel; ctx.fillRect(0, top, 256, H - top);
+  for (let x = 6; x < 256; x += 64) {
+    ctx.strokeStyle = 'rgba(0,0,0,.32)'; ctx.lineWidth = 3; ctx.strokeRect(x, top + 16, 52, H - top - 34);
+    ctx.strokeStyle = 'rgba(255,230,190,.14)'; ctx.lineWidth = 2; ctx.strokeRect(x + 4, top + 20, 44, H - top - 42);
+  }
+  ctx.fillStyle = shade(panel, 0.12); ctx.fillRect(0, top - 8, 256, 12);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(0, top + 4, 256, 3);
+}
+/** One colour up top and another below a white rail. */
+function twoTone(ctx, upper, lower) {
+  const H = ctx.canvas.height, mid = Math.round(H * 0.62);
+  plainWall(ctx, upper);
+  ctx.fillStyle = lower; ctx.fillRect(0, mid, 256, H - mid);
+  ctx.fillStyle = '#fbf8f2'; ctx.fillRect(0, mid - 6, 256, 9);
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(0, mid + 3, 256, 2);
+}
+function stripes(ctx, a, b, n = 8) {
+  for (let i = 0; i < n; i++) { ctx.fillStyle = i % 2 ? b : a; ctx.fillRect(i * (256 / n), 0, 256 / n, 256); }
+}
+function woodPanels(ctx, c) {
+  ctx.fillStyle = c; ctx.fillRect(0, 0, 256, 256);
+  for (let x = 0; x < 256; x += 32) {
+    ctx.fillStyle = (x / 32) % 2 ? shade(c, 0.05) : shade(c, -0.07); ctx.fillRect(x, 0, 30, 256);
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x + 30, 0, 2, 256);
+  }
+}
+function planks(ctx, c) {
+  for (let row = 0; row < 8; row++) {
+    const y = row * 32;
+    ctx.fillStyle = row % 2 ? shade(c, -0.06) : shade(c, 0.04); ctx.fillRect(0, y, 256, 30);
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(0, y + 30, 256, 2); ctx.fillRect(((row * 97) % 200) + 20, y, 2, 30);
+    ctx.fillStyle = 'rgba(0,0,0,.07)';
+    for (let k = 0; k < 5; k++) ctx.fillRect((row * 53 + k * 47) % 256, y + 8 + (k % 3) * 6, 26, 2);
+  }
+}
+/** Floors, wallpapers and ceilings that are just a style and a colour (or two) in cosmetics.json. */
+const DECO = Object.fromEntries([...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings].map((d) => [d.id, d]));
+function decoDraw(d, kind) {
+  if (!d?.color) return null;
+  const c = d.color, c2 = d.color2;
+  const styles = {
+    wall: {
+      wainscot: (x) => wainscot(x, c, c2 ?? '#5a3a24'), twotone: (x) => twoTone(x, c, c2 ?? '#ffffff'),
+      stripes: (x) => stripes(x, c, c2 ?? '#ffffff'), subway: (x) => subwayTiles(x, c, c2 ?? '#ffffff'), panels: (x) => woodPanels(x, c),
+    },
+    floor: {
+      carpet: (x) => carpet(x, c, 'rgba(255,255,255,.08)', 'rgba(0,0,0,.08)'), planks: (x) => planks(x, c),
+      tiles: (x) => squareTiles(x, 4, [c, shade(c, 0.06)], c2 ?? shade(c, -0.25), 3),
+      paint: (x) => { x.fillStyle = c; x.fillRect(0, 0, 256, 256); x.fillStyle = 'rgba(255,255,255,.05)'; for (let i = 0; i < 6; i++) x.fillRect(i * 48, 0, 20, 256); },
+    },
+    ceiling: {
+      beams: (x) => { plainWall(x, c); for (let k = 0; k < 256; k += 64) { x.fillStyle = c2 ?? '#6e4424'; x.fillRect(k, 0, 18, 256); x.fillStyle = 'rgba(0,0,0,.2)'; x.fillRect(k + 14, 0, 4, 256); } },
+    },
+  };
+  return styles[kind]?.[d.style] ?? ((x) => plainWall(x, c));
+}
+const TALL_STYLES = new Set(['wainscot', 'twotone']);
+const TALL_WALLS = new Set(['wall_wainscot', 'wall_sakura', 'wall_jungle', 'wall_forest', 'wall_greenhouse']);
+/** Wallpapers drawn as one picture from the floor to the ceiling (they repeat sideways, never upwards). */
+export const wallIsTall = (id) => TALL_WALLS.has(id) || TALL_STYLES.has(DECO[id]?.style);
+const WALL_TALL_PX = 410; // (256 px per 2 tiles across, so 410 for the 3.2 tiles up)
+
 function plainWall(ctx, color) {
+  const H = ctx.canvas.height; // (full-height wallpapers are taller than 256)
   ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillRect(0, 0, 256, H);
   ctx.fillStyle = 'rgba(0,0,0,.035)';
-  for (let x = 0; x < 256; x += 32) ctx.fillRect(x, 0, 2, 256);
+  for (let x = 0; x < 256; x += 32) ctx.fillRect(x, 0, 2, H);
 }
 
 const CEIL_DRAW = {
@@ -2172,9 +2262,9 @@ const CEIL_DRAW = {
     }
   },
 };
-export const ceilingTexture = (id) => surface(id, CEIL_DRAW[id] ?? CEIL_DRAW.ceil_plain);
-export const floorTexture = (id) => surface(id, FLOOR_DRAW[id] ?? FLOOR_DRAW.floor_wood);
-export const wallTexture = (id) => surface(id, WALL_DRAW[id] ?? WALL_DRAW.wall_cream);
+export const ceilingTexture = (id) => surface(id, CEIL_DRAW[id] ?? decoDraw(DECO[id], 'ceiling') ?? CEIL_DRAW.ceil_plain);
+export const floorTexture = (id) => surface(id, FLOOR_DRAW[id] ?? decoDraw(DECO[id], 'floor') ?? FLOOR_DRAW.floor_wood);
+export const wallTexture = (id) => surface(id, WALL_DRAW[id] ?? decoDraw(DECO[id], 'wall') ?? WALL_DRAW.wall_cream, wallIsTall(id) ? WALL_TALL_PX : 256);
 
 /** n x n tiles with grout lines; `mosaic`: colours scattered, `checker`: alternating. */
 /** A little seeded random number generator (0..1), so patterns look scattered but never change. */
@@ -2201,9 +2291,10 @@ function subwayTiles(ctx, col, grout) {
 function carpet(ctx, base, light, dark) {
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, 256, 256);
+  const rnd = prng(7); // (scattered, so the pile doesn't line up into stripes)
   for (let i = 0; i < 2600; i++) {
     ctx.fillStyle = i % 2 ? light : dark;
-    ctx.fillRect((i * 37) % 256, (i * 91) % 256, 2, 2);
+    ctx.fillRect(rnd() * 256, rnd() * 256, 2, 2);
   }
 }
 
@@ -2218,7 +2309,8 @@ function heartAt(ctx, x, y, s, color) {
 
 /** A data-URL image of a floor or wallpaper, for the style picker and shop. */
 export function surfaceImage(id) {
-  const tex = FLOOR_DRAW[id] ? floorTexture(id) : CEIL_DRAW[id] ? ceilingTexture(id) : wallTexture(id);
+  const kind = FLOOR_DRAW[id] || CATALOG.floors.some((d) => d.id === id) ? 'floor' : CEIL_DRAW[id] || CATALOG.ceilings.some((d) => d.id === id) ? 'ceiling' : 'wall';
+  const tex = kind === 'floor' ? floorTexture(id) : kind === 'ceiling' ? ceilingTexture(id) : wallTexture(id);
   const img = tex.image;
   return img?.toDataURL ? img.toDataURL() : '';
 }

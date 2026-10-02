@@ -8,7 +8,7 @@ import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
-import { buildFurniture, floorTexture, wallTexture, ceilingTexture, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
+import { buildFurniture, floorTexture, wallTexture, ceilingTexture, wallIsTall, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
 import { buildDoor, doorImage } from '../three/doors.js';
 import { iconSvg } from '../icons.js';
@@ -30,16 +30,18 @@ function setDims([w, d] = [14, 14]) {
   NX = w; NZ = d;
   DOOR = { x0: NX / 2 - 1, x1: NX / 2 + 1, h: 2.2 };
 }
-/** A plane whose texture repeats every 2 tiles, however big it is (so walls of any length match). */
-function tiledPlane(w, h) {
+/** A plane whose texture repeats every 2 tiles, however big it is (so walls of any length match).
+ *  y0: how high its bottom edge is, so wallpaper stays pinned to the floor (above the door too). */
+function tiledPlane(w, h, y0 = 0) {
   const g = new THREE.PlaneGeometry(w, h);
   const uv = g.attributes.uv;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 2, uv.getY(i) * h / 2);
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 2, (y0 + uv.getY(i) * h) / 2);
   return g;
 }
 const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 const kindOf = (id) => FURN[id]?.kind ?? 'floor';
-const owned = (id) => me().furni?.[id] ?? 0;
+// free things (plain walls) never run out: you can put up as many as the limit
+const owned = (id) => (FURN[id]?.free ? FURN[id].max ?? 99 : me().furni?.[id] ?? 0);
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
 const MIN_SIZE = 6; // (HOUSE_MIN on the server)
 /** The biggest room you can have, from the house upgrades you own: [width, depth]. */
@@ -80,7 +82,7 @@ function cellsOf(it) {
     for (let i = 0; i < f.w * SNAP; i++) for (let j = r0; j < r1; j++) out.push(`wall:${it.r % 4}:${start + i}:${j}`);
     return out;
   }
-  const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
+  const [w, d] = footprint(it);
   const x0 = Math.round(it.x * SNAP), y0 = Math.round(it.y * SNAP);
   const out = [];
   for (let i = 0; i < w * SNAP; i++) for (let j = 0; j < d * SNAP; j++) out.push(`${kind}:${x0 + i}:${y0 + j}`);
@@ -94,10 +96,13 @@ function fits(it) {
     if (it.r % 4 === 2 && start < DOOR.x1 && start + f.w > DOOR.x0 && heightOf(it) - wallH(it.id) / 2 < DOOR.h - 0.01) return false; // not over the door
     return start >= 0 && start + f.w <= (it.r % 2 === 0 ? NX : NZ);
   }
-  const [w, d] = it.r % 2 ? [f.d, f.w] : [f.w, f.d];
+  const [w, d] = footprint(it);
   return it.x >= 0 && it.y >= 0 && it.x + w <= NX && it.y + d <= NZ;
 }
-const footprint = (it) => { const f = FURN[it.id]; return it.r % 2 ? [f.d, f.w] : [f.w, f.d]; };
+/** Plain room walls are dragged out to any length (it.l, in tiles); everything else is its own size. */
+const isDragWall = (id) => !!FURN[id]?.drag;
+const lenOf = (it) => (isDragWall(it.id) ? it.l ?? FURN[it.id].w : FURN[it.id].w);
+const footprint = (it) => { const f = FURN[it.id], w = lenOf(it); return it.r % 2 ? [f.d, w] : [w, f.d]; };
 
 // ---------------------------------------------------------------------------
 // the room: floor, four walls (a doorway in the front one) and a garden outside
@@ -124,7 +129,7 @@ function buildRoom() {
   const wallGridMat = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.4 });
   const wall = (w, h, x, y, z, ry, skirting = true) => {
     const grp = new THREE.Group();
-    const face = new THREE.Mesh(tiledPlane(w, h), wallMat);
+    const face = new THREE.Mesh(tiledPlane(w, h, y - h / 2), wallMat);
     face.receiveShadow = true;
     const shell = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.25), outside);
     shell.position.z = -0.14;
@@ -273,7 +278,10 @@ export function house(stage) {
   let buyThenUse = null;   // put this up as soon as the purchase goes through
   let entries = [];           // built items: { group, use, A, it, bounce, inter }
   const mine = () => viewKey === S.me;
-  const payload = () => ({ floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14], items: home.items.map(({ id, x, y, r, h }) => (h == null ? { id, x, y, r } : { id, x, y, r, h })) });
+  const payload = () => ({
+    floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
+    items: home.items.map(({ id, x, y, r, h, l }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }) })),
+  });
 
   // ---- building the furniture ------------------------------------------------------
 
@@ -298,7 +306,7 @@ export function house(stage) {
     stage.interactables = stage.interactables.filter((i) => !i.house);
     solids.length = 0;
     entries = home.items.map((it, index) => {
-      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' ? heightOf(it) : 0 });
+      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' ? heightOf(it) : 0, len: isDragWall(it.id) ? lenOf(it) : 0 });
       built.group.userData.index = index;
       placeGroup(built.group, it);
       built.group.visible = !(placing && placing.from === index);
@@ -353,7 +361,8 @@ export function house(stage) {
     room.floorMat.map.repeat.set(1, 1);
     room.floorMat.needsUpdate = true;
     const wt = wallTexture(wall);
-    wt.repeat.set(1, 1);
+    // full-height wallpapers (murals, wainscoting) span floor to ceiling once instead of repeating up the wall
+    wt.repeat.set(1, wallIsTall(wall) ? 2 / WALL_H : 1);
     room.wallMat.map = room.wallFade.map = wt;
     room.wallMat.needsUpdate = room.wallFade.needsUpdate = true;
     const ct = ceilingTexture(preview.ceiling ?? home.ceiling ?? 'ceil_plain');
@@ -491,8 +500,9 @@ export function house(stage) {
     if (ghost) room.group.remove(ghost);
     ghost = null;
     if (!placing) { room.marker.visible = false; return; }
-    ghost = buildFurniture(placing.id, { drop: kindOf(placing.id) === 'ceiling' ? heightOf(placing) : 0 }).group;
+    ghost = buildFurniture(placing.id, { drop: kindOf(placing.id) === 'ceiling' ? heightOf(placing) : 0, len: isDragWall(placing.id) ? lenOf(placing) : 0 }).group;
     ghost.userData.drop = heightOf(placing);
+    ghost.userData.len = lenOf(placing);
     ghost.traverse((o) => {
       if (o.isMesh) {
         if (o.userData.outline) o.visible = false;
@@ -510,11 +520,11 @@ export function house(stage) {
       room.marker.visible = false;
       return;
     }
-    const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r, h: placing.h };
+    const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r, h: placing.h, l: placing.l };
     if (kindOf(placing.id) === 'ceiling' && ghost.userData.drop !== heightOf(placing)) { buildGhost(); return updateGhost(); }
-    const taken = new Set();
-    home.items.forEach((o, i) => { if (i !== placing.from) cellsOf(o).forEach((c) => taken.add(c)); });
-    placing.valid = fits(it) && !cellsOf(it).some((c) => taken.has(c)) && !blocksDoor(it);
+    if (isDragWall(placing.id) && ghost.userData.len !== lenOf(placing)) { buildGhost(); return updateGhost(); }
+    const taken = takenCells(placing.from);
+    placing.valid = !placing.tooShort && fits(it) && !cellsOf(it).some((c) => taken.has(c)) && !blocksDoor(it);
     const mat = placing.valid ? ghostOk : ghostBad;
     ghost.traverse((o) => { if (o.isMesh && !o.userData.outline) o.material = mat; });
     ghost.visible = true;
@@ -560,6 +570,7 @@ export function house(stage) {
       else { placing.x = 0; placing.y = Math.max(0, Math.min(NZ - f.w, snap(local.z - f.w / 2))); }
       return;
     }
+    if (isDragWall(placing.id) && placing.from < 0) { aimWall(); return; }
     const p = stage.pointerOnPlane(0);
     if (!p) { placing.x = -1; return; }
     const [w, d] = footprint(placing);
@@ -567,8 +578,51 @@ export function house(stage) {
     placing.y = Math.max(0, Math.min(NZ - d, snap(p.z / T - d / 2)));
   }
 
+  /** The quarter-tile grid point under the pointer (in tiles), or null off the floor. */
+  function floorPoint() {
+    const p = stage.pointerOnPlane(0);
+    if (!p) return null;
+    return { x: Math.max(0, Math.min(NX, snap(p.x / T))), y: Math.max(0, Math.min(NZ, snap(p.z / T))) };
+  }
+  /** Every occupied cell, leaving out one item (the one being moved). */
+  function takenCells(skip = -1) {
+    const taken = new Set();
+    home.items.forEach((o, i) => { if (i !== skip) cellsOf(o).forEach((c) => taken.add(c)); });
+    return taken;
+  }
+
+  /**
+   * Drawing a wall: from the grid point you started on to the one under the pointer, straight along
+   * whichever way you've dragged further. A wall covers the quarter-tile "post" at each end, unless
+   * another wall already does (so corners and T-joins come out flush, with no gaps and no overlaps).
+   */
+  function aimWall() {
+    const c = floorPoint();
+    if (!c) { placing.x = -1; return; }
+    const s = placing.start ?? c;
+    const q = 1 / SNAP;
+    const horiz = Math.abs(c.x - s.x) >= Math.abs(c.y - s.y);
+    const taken = takenCells(-1);
+    const postTaken = (gx, gy) => taken.has(`floor:${Math.round(gx * SNAP)}:${Math.round(gy * SNAP)}`);
+    if (horiz) {
+      const y = Math.min(s.y, NZ - q), lo = Math.min(s.x, c.x), hi = Math.max(s.x, c.x);
+      let a = lo, b = Math.min(NX, hi + q);
+      if (placing.start && postTaken(lo, y)) a = lo + q;
+      if (placing.start && hi < NX && postTaken(hi, y)) b = hi;
+      Object.assign(placing, { r: 0, x: a, y, l: Math.max(q, b - a), tooShort: b - a < q - 1e-6 });
+    } else {
+      const x = Math.min(s.x, NX - q), lo = Math.min(s.y, c.y), hi = Math.max(s.y, c.y);
+      let a = lo, b = Math.min(NZ, hi + q);
+      if (placing.start && postTaken(x, lo)) a = lo + q;
+      if (placing.start && hi < NZ && postTaken(x, hi)) b = hi;
+      Object.assign(placing, { r: 1, x, y: a, l: Math.max(q, b - a), tooShort: b - a < q - 1e-6 });
+    }
+    placing.end = c;
+  }
+
   function startPlacing(id, from = -1) {
     placing = { id, r: from >= 0 ? home.items[from].r : 0, from, x: -1, y: -1, valid: false, h: from >= 0 ? heightOf(home.items[from]) : kindOf(id) === 'ceiling' ? 0.4 : WALL_Y };
+    if (isDragWall(id)) Object.assign(placing, { l: from >= 0 ? lenOf(home.items[from]) : 1 / SNAP, start: null, armed: false });
     if (kindOf(id) === 'wall' && from < 0) placing.r = 0;
     selected = -1;
     buildGhost();
@@ -578,6 +632,7 @@ export function house(stage) {
   }
 
   function stopPlacing() {
+    if (placing?.pressed) orbit.fixed = placing.wasFixed;
     if (placing?.from >= 0 && entries[placing.from]) entries[placing.from].group.visible = true;
     placing = null;
     buildGhost();
@@ -588,6 +643,7 @@ export function house(stage) {
     if (!placing?.valid) { sfx('error'); return; }
     const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r };
     if (kindOf(placing.id) !== 'floor' && kindOf(placing.id) !== 'rug') it.h = placing.h;
+    if (isDragWall(placing.id)) it.l = placing.l;
     if (placing.from >= 0) home.items[placing.from] = it;
     else home.items.push(it);
     selected = placing.from >= 0 ? placing.from : home.items.length - 1;
@@ -597,8 +653,35 @@ export function house(stage) {
     if (entries[selected]) entries[selected].bounce = 0;
   }
 
+  /** Put up the wall being drawn, then carry straight on: clicking chains the next wall from where this
+   *  one ended; dragging starts afresh with the next press. */
+  function placeWall(chain) {
+    if (!placing?.valid) { sfx('error'); return; }
+    const { id, end } = placing;
+    if (placedCount(id) >= owned(id)) { toast(`That's the most walls a house can have (${owned(id)}).`, 'error'); stopPlacing(); return; }
+    home.items.push({ id, x: placing.x, y: placing.y, r: placing.r, l: placing.l });
+    commit('place');
+    entries[entries.length - 1].bounce = 0;
+    Object.assign(placing, { start: chain ? end : null, armed: chain, x: -1, valid: false });
+    aimPlacement();
+    updateGhost();
+    renderAll();
+  }
+
+  /** Esc / right-click while drawing walls: let go of the wall in progress, then stop altogether. */
+  function cancelWall() {
+    if (placing && isDragWall(placing.id) && placing.from < 0 && placing.start) {
+      if (placing.pressed) orbit.fixed = placing.wasFixed;
+      Object.assign(placing, { start: null, armed: false, pressed: false });
+      aimPlacement(); updateGhost(); renderAll();
+      return;
+    }
+    stopPlacing();
+  }
+
   function rotate() {
     if (placing) {
+      if (isDragWall(placing.id) && placing.from < 0) return; // (drawn walls go whichever way you drag)
       if (kindOf(placing.id) !== 'wall') { placing.r = (placing.r + 1) % 4; sfx('rotate'); updateGhost(); }
       return;
     }
@@ -631,6 +714,17 @@ export function house(stage) {
     const taken = new Set();
     home.items.forEach((o, i) => { if (i !== selected) cellsOf(o).forEach((c) => taken.add(c)); });
     if (!fits(next) || cellsOf(next).some((c) => taken.has(c))) { sfx('error'); toast('Something is in the way.', 'error'); return; }
+    home.items[selected] = next;
+    commit('rotate');
+  }
+
+  /** Make the selected wall a quarter tile longer or shorter (from its far end). */
+  function resizeWall(dir) {
+    if (selected < 0) return;
+    const it = home.items[selected];
+    if (!isDragWall(it.id)) return;
+    const next = { ...it, l: Math.max(1 / SNAP, lenOf(it) + dir / SNAP) };
+    if (next.l === lenOf(it) || !fits(next) || cellsOf(next).some((c) => takenCells(selected).has(c)) || blocksDoor(next)) { sfx('error'); return; }
     home.items[selected] = next;
     commit('rotate');
   }
@@ -681,6 +775,30 @@ export function house(stage) {
   stage.onPointer = (type, e, d) => {
     if (!edit) { walkPointer?.(type, e, d); return; }
     if (!home || !mine()) return;
+    // drawing a wall: press where it starts and drag to where it ends (or click the start, then the end).
+    // The camera holds still while you drag.
+    if (placing && isDragWall(placing.id) && placing.from < 0) {
+      if (type === 'down' && e.button === 0) {
+        const pt = floorPoint();
+        if (!pt) return;
+        if (!placing.start) { placing.start = pt; placing.armed = false; renderAll(); }
+        placing.pressed = true;
+        placing.wasFixed = orbit.fixed;
+        orbit.fixed = true;
+        aimPlacement(); updateGhost();
+        return;
+      }
+      if (type === 'up' && placing.pressed) {
+        placing.pressed = false;
+        orbit.fixed = placing.wasFixed;
+        aimPlacement(); updateGhost();
+        if (d?.moved) placeWall(false);
+        else if (placing.armed) placeWall(true);
+        else placing.armed = true;
+        return;
+      }
+      if (type === 'up' && d && !d.moved && d.button === 2) { cancelWall(); return; }
+    }
     if (type === 'move' && placing) { aimPlacement(); updateGhost(); }
     if (type !== 'up' || !d || d.moved) return;
     if (d.button === 2) { rotate(); return; }
@@ -707,7 +825,7 @@ export function house(stage) {
   const onEscape = (e) => {
     if (e.key !== 'Escape' || !(placing || selected >= 0 || sideOpen)) return;
     e.stopPropagation();
-    if (placing) stopPlacing();
+    if (placing) cancelWall();
     else if (selected >= 0) { selected = -1; renderSelection(); renderAll(); }
     else { sideOpen = false; if (edit) setEdit(false); renderAll(); }
   };
@@ -718,8 +836,12 @@ export function house(stage) {
   function renderAll() {
     renderHeader();
     side.classList.toggle('hidden', !sideOpen);
+    side.classList.toggle('wide', sideOpen && tab !== 'visit');
     if (sideOpen) { renderTabs(); renderPanel(); }
     hint.innerHTML = !home ? 'Knocking on the door…'
+      : placing && isDragWall(placing.id) && placing.from < 0 ? (placing.start
+        ? `Drag (or move and click) to where the wall ends · walls join up flush at corners · <kbd>Esc</kbd> to let go`
+        : `Press on the floor where the wall starts and drag it out to any length (or click the start, then the end) · <kbd>Esc</kbd> when you're done`)
       : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point anywhere on a wall, as high or low as you like' : kindOf(placing.id) === 'ceiling' ? ' · it hangs above the green square · <kbd>[</kbd> <kbd>]</kbd> lower / raise it' : ''}`
         : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
           : 'Walk around with <kbd>WASD</kbd> · <kbd>E</kbd> uses furniture (sit on chairs!) · head to the front door to leave';
@@ -774,17 +896,19 @@ export function house(stage) {
 
   function renderItems() {
     const sel = selected >= 0 ? home?.items[selected] : null;
-    const ownedList = CATALOG.furniture.filter((f) => owned(f.id) > 0);
+    // free walls come first (they never run out); retired pieces only show while one is still up
+    const ownedList = CATALOG.furniture.filter((f) => owned(f.id) > 0 && !(f.retired && !placedCount(f.id))).sort((a, b) => !!b.free - !!a.free);
     panel.innerHTML = `
       ${sel ? `<div class="sel-box"><span class="sel-em">${furniImg(sel.id)}</span><b>${esc(FURN[sel.id].name)}</b>
         <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''}>⟳ Rotate</button>
         ${kindOf(sel.id) === 'wall' || kindOf(sel.id) === 'ceiling' ? '<button class="btn small" data-act="up" title="[ ]">▲ Up</button><button class="btn small" data-act="down" title="[ ]">▼ Down</button>' : ''}
+        ${isDragWall(sel.id) ? `<button class="btn small" data-act="shorter">− Shorter</button><button class="btn small" data-act="longer">＋ Longer</button><span class="muted small">${lenOf(sel)} tiles</span>` : ''}
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div></div>` : ''}
       <p class="muted small">Pick something to place it:</p>
       <div class="furni-grid">${ownedList.map((f) => {
         const left = owned(f.id) - placedCount(f.id);
         return `<button class="furni ${left ? '' : 'used'}" data-place="${f.id}" ${left ? '' : 'disabled'} title="${esc(f.name)}">
-          <span class="fem">${furniImg(f.id)}</span><span class="fname">${esc(f.name)}</span><span class="fcount">${left}/${owned(f.id)} left</span></button>`;
+          <span class="fem">${furniImg(f.id)}</span><span class="fname">${esc(f.name)}</span><span class="fcount">${f.free ? (f.drag ? 'Free · drag to draw' : 'Free') : `${left}/${owned(f.id)} left`}</span></button>`;
       }).join('')}</div>
       ${ownedList.length ? '' : '<p class="muted">Nothing yet! Buy furniture in the Shop, or win trophies around the zone.</p>'}`;
   }
@@ -803,58 +927,93 @@ export function house(stage) {
       ${emoji}<span class="fname">${esc(item.name)}</span><span class="fcount">${!deco && have ? `own ${have} · ` : ''}${foot}</span></button>`;
   }
 
+  // The shop and the style picker are split into pages (a strip of buttons along the top). Furniture is
+  // shelved by matching set; floors, wallpapers and ceilings by kind (solid colours, wood, tiles…).
+  const SHOP_PAGES = [['furniture', '🛋️ Furniture'], ['rooms', '🧱 Walls & doors'], ['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floors'], ['ceiling', '☁️ Ceilings'], ['door', '🚪 Front doors'], ['earn', '🏆 Earn']];
+  const STYLE_PAGES = [['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floor'], ['ceiling', '☁️ Ceiling'], ['door', '🚪 Front door'], ['size', '🏠 Room size']];
+  const SET_LABEL = {
+    Classics: '🛋️ Classics', Sweetheart: '💗 Sweetheart set', Rustic: '🪵 Rustic set', Modern: '🤍 Modern set', Nature: '🌿 Nature set',
+    Plants: '🪴 Plants', Bathroom: '🛁 Bathroom', Gamer: '🎮 Gamer set', Lights: '💡 Lights & ceiling', 'Wall decor': '🖼️ Wall decor', Rooms: '🧱 Walls & doorways',
+  };
+  const DECO_LISTS = { floor: CATALOG.floors, wall: CATALOG.walls, ceiling: CATALOG.ceilings, door: CATALOG.doors };
+  let shopPage = 'furniture', stylePage = 'wall';
+  const shelfId = (g) => `shelf-${String(g).replace(/\W+/g, '')}`;
+  /** Items grouped into labelled shelves, in the order the groups first appear. */
+  function shelves(list, groupOf, tile, label = (g) => esc(g), grid = 'furni-grid') {
+    const groups = [...new Set(list.map(groupOf))];
+    return groups.map((g) => `<div class="wd-label shelf-label" id="${shelfId(g)}">${label(g)}</div>
+      <div class="${grid}">${list.filter((x) => groupOf(x) === g).map(tile).join('')}</div>`).join('');
+  }
+  const pageStrip = (pages, cur, attr) => `<div class="shop-pages">${pages.map(([id, label]) => `<button class="${cur === id ? 'on' : ''}" data-${attr}="${id}">${label}</button>`).join('')}</div>`;
+  /** Little buttons that jump down to each shelf on the page. */
+  const jumpStrip = (groups, label = (g) => esc(g)) => (groups.length > 1
+    ? `<div class="shelf-jump">${groups.map((g) => `<button data-jump="${shelfId(g)}">${label(g)}</button>`).join('')}</div>` : '');
+
   function renderShop() {
-    const furn = CATALOG.furniture.filter((f) => f.price && !f.retired);
-    const earn = CATALOG.furniture.filter((f) => !f.price);
-    // matching sets get their own shelf
-    const sets = [...new Set(furn.map((f) => f.set).filter(Boolean))];
-    const SET_LABEL = { Nature: '🌿 Nature set', Rooms: '🧱 Build rooms (walls &amp; doorways)', Rustic: '🪵 Rustic set', Modern: '🤍 Modern set', Bathroom: '🛁 Bathroom', Plants: '🪴 Plants', Gamer: '🎮 Gamer set' };
-    panel.innerHTML = `
-      <p class="muted small">You have <b>${fmt(me().coins)}</b> 🪙</p>
-      <div class="wd-label">Furniture</div><div class="furni-grid">${furn.filter((f) => !f.set).map((f) => shopTile(f, 'furni')).join('')}</div>
-      ${sets.map((s) => `<div class="wd-label">${SET_LABEL[s] ?? esc(s)}</div><div class="furni-grid">${furn.filter((f) => f.set === s).map((f) => shopTile(f, 'furni')).join('')}</div>`).join('')}
-      <div class="wd-label">Floors</div><div class="furni-grid">${CATALOG.floors.filter((d) => !d.free).map((d) => shopTile(d, 'floor')).join('')}</div>
-      <div class="wd-label">Wallpaper</div><div class="furni-grid">${CATALOG.walls.filter((d) => !d.free).map((d) => shopTile(d, 'wall')).join('')}</div>
-      <div class="wd-label">Ceilings</div><div class="furni-grid">${CATALOG.ceilings.filter((d) => !d.free).map((d) => shopTile(d, 'ceiling')).join('')}</div>
-      <div class="wd-label">Doors</div><div class="furni-grid">${CATALOG.doors.filter((d) => !d.free).map((d) => shopTile(d, 'door')).join('')}</div>
-      <div class="wd-label">Earn these around the zone</div><div class="furni-grid">${earn.map((f) => shopTile(f, 'furni')).join('')}</div>`;
+    const setOf = (f) => f.set ?? 'Classics';
+    let body = '';
+    if (shopPage === 'furniture' || shopPage === 'rooms') {
+      const list = CATALOG.furniture.filter((f) => (f.price || f.free) && !f.retired && (shopPage === 'rooms') === (f.set === 'Rooms'));
+      const label = (g) => SET_LABEL[g] ?? esc(g);
+      body = (shopPage === 'rooms' ? '<p class="muted small">Plain walls are <b>free</b>: pick 🧱 Room Wall in 🛋️ Items and drag it across the floor to any length. Put doorways and doors in the gaps.</p>' : '')
+        + jumpStrip([...new Set(list.map(setOf))], label) + shelves(list, setOf, (f) => shopTile(f, 'furni'), label);
+    } else if (shopPage === 'earn') {
+      body = `<p class="muted small">Trophies and prizes you win around the zone.</p><div class="furni-grid">${CATALOG.furniture.filter((f) => !f.price && !f.free && !f.retired).map((f) => shopTile(f, 'furni')).join('')}</div>`;
+    } else {
+      const list = DECO_LISTS[shopPage].filter((d) => !d.free);
+      const groupOf = (d) => d.group ?? 'More';
+      body = '<p class="muted small">Tap one to try it on in your house before you buy it.</p>' + jumpStrip([...new Set(list.map(groupOf))]) + shelves(list, groupOf, (d) => shopTile(d, shopPage));
+    }
+    panel.innerHTML = `${pageStrip(SHOP_PAGES, shopPage, 'shop-page')}<p class="muted small">You have <b>${fmt(me().coins)}</b> 🪙</p>${previewBar()}${body}`;
   }
 
-  function renderStyle() {
-    const pick = (list, field) => list.map((d) => `
-      <button class="style-opt ${home?.[field] === d.id && !preview[field] ? 'on' : ''} ${isTrying(d.id) ? 'previewing' : ''} ${ownsDeco(d) ? '' : 'locked'}" data-style="${field}:${d.id}" title="${esc(d.name)}">
-        <span class="style-sw" style="${decoBg(d.id)}"></span><span>${esc(d.name)}</span>
-        <small>${ownsDeco(d) ? (home?.[field] === d.id ? '✓ Using' : '') : isTrying(d.id) ? '👀 Trying on' : `🪙 ${fmt(d.price)}`}</small></button>`).join('');
+  /** "Trying on …" bars for anything you're previewing, with buy and put-back buttons. */
+  function previewBar() {
     const all = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings, ...CATALOG.doors];
-    const bar = Object.entries(preview).map(([field, id]) => {
+    return Object.entries(preview).map(([field, id]) => {
       const pd = all.find((x) => x.id === id);
       return pd ? `<div class="preview-bar"><span>👀 Trying on <b>${esc(pd.name)}</b> ${field === 'floor' ? 'floor' : field === 'ceiling' ? 'ceiling' : field === 'door' ? 'door' : 'wallpaper'}</span>
         <button class="btn primary small" data-preview-buy="${field}">Buy · 🪙 ${fmt(pd.price)}</button><button class="btn ghost small" data-preview-stop="${field}">Put back</button></div>` : '';
     }).join('');
-    // room size: any width and depth up to the biggest house upgrade you own
-    const [mw, md] = maxSize(), [sw, sd] = home?.size ?? [14, 14];
-    const stepper = (axis, v, max) => `<span class="size-step"><button class="btn small" data-size="${axis}:-1" ${v <= MIN_SIZE ? 'disabled' : ''}>−</button><b>${v}</b><button class="btn small" data-size="${axis}:1" ${v >= max ? 'disabled' : ''}>+</button></span>`;
-    const sizeTiles = CATALOG.houseSizes.filter((z) => !z.free).map((z) => {
-      const have = owned(z.id) > 0;
-      return `<button class="furni ${have ? 'locked' : ''} ${confirmBuy === z.id ? 'confirm' : ''}" ${have ? '' : `data-buy="${z.id}"`}>
-        <span class="fem size-em">🏠<small>${z.w}×${z.d}</small></span><span class="fname">${esc(z.name)}</span>
-        <span class="fcount">${have ? 'Owned ✓' : confirmBuy === z.id ? `Buy for ${fmt(z.price)}?` : `🪙 ${fmt(z.price)}`}</span></button>`;
-    }).join('');
-    panel.innerHTML = `${bar}<div class="wd-label">Room size</div>
-      <div class="size-pick"><span>Width ${stepper('w', sw, mw)}</span><span>Depth ${stepper('d', sd, md)}</span></div>
-      <p class="muted small">Your house can be up to <b>${mw} × ${md}</b> tiles. Bigger houses:</p>
-      <div class="furni-grid">${sizeTiles}</div>
-      <p class="muted small">Split it into rooms with 🧱 walls and doorways from the Shop.</p>
-      <div class="wd-label">Floor</div><div class="style-grid">${pick(CATALOG.floors, 'floor')}</div>
-      <div class="wd-label">Wallpaper</div><div class="style-grid">${pick(CATALOG.walls, 'wall')}</div>
-      <div class="wd-label">Ceiling</div><div class="style-grid">${pick(CATALOG.ceilings, 'ceiling')}</div>
-      <div class="wd-label">Front door</div><div class="style-grid">${pick(CATALOG.doors, 'door')}</div>`;
+  }
+
+  function renderStyle() {
+    const opt = (field) => (d) => `
+      <button class="style-opt ${home?.[field] === d.id && !preview[field] ? 'on' : ''} ${isTrying(d.id) ? 'previewing' : ''} ${ownsDeco(d) ? '' : 'locked'}" data-style="${field}:${d.id}" title="${esc(d.name)}">
+        <span class="style-sw" style="${decoBg(d.id)}"></span><span>${esc(d.name)}</span>
+        <small>${ownsDeco(d) ? (home?.[field] === d.id ? '✓ Using' : 'Owned') : isTrying(d.id) ? '👀 Trying on' : `🪙 ${fmt(d.price)}`}</small></button>`;
+    let body;
+    if (stylePage === 'size') {
+      // room size: any width and depth up to the biggest house upgrade you own
+      const [mw, md] = maxSize(), [sw, sd] = home?.size ?? [14, 14];
+      const stepper = (axis, v, max) => `<span class="size-step"><button class="btn small" data-size="${axis}:-1" ${v <= MIN_SIZE ? 'disabled' : ''}>−</button><b>${v}</b><button class="btn small" data-size="${axis}:1" ${v >= max ? 'disabled' : ''}>+</button></span>`;
+      const sizeTiles = CATALOG.houseSizes.filter((z) => !z.free).map((z) => {
+        const have = owned(z.id) > 0;
+        return `<button class="furni ${have ? 'locked' : ''} ${confirmBuy === z.id ? 'confirm' : ''}" ${have ? '' : `data-buy="${z.id}"`}>
+          <span class="fem size-em">🏠<small>${z.w}×${z.d}</small></span><span class="fname">${esc(z.name)}</span>
+          <span class="fcount">${have ? 'Owned ✓' : confirmBuy === z.id ? `Buy for ${fmt(z.price)}?` : `🪙 ${fmt(z.price)}`}</span></button>`;
+      }).join('');
+      body = `<div class="size-pick"><span>Width ${stepper('w', sw, mw)}</span><span>Depth ${stepper('d', sd, md)}</span></div>
+        <p class="muted small">Your house can be up to <b>${mw} × ${md}</b> tiles. Bigger houses:</p>
+        <div class="furni-grid">${sizeTiles}</div>
+        <p class="muted small">Split it into rooms with free 🧱 walls (in 🛋️ Items) and doorways from the Shop.</p>`;
+    } else {
+      // the ones you own first, then the rest by kind (tap one you don't own to try it on)
+      const list = DECO_LISTS[stylePage];
+      const groupOf = (d) => (ownsDeco(d) ? '✓ Yours' : d.group ?? 'More');
+      const sorted = [...list.filter(ownsDeco), ...list.filter((d) => !ownsDeco(d))];
+      body = jumpStrip([...new Set(sorted.map(groupOf))]) + shelves(sorted, groupOf, opt(stylePage), (g) => esc(g), 'style-grid');
+    }
+    panel.innerHTML = `${pageStrip(STYLE_PAGES, stylePage, 'style-page')}${previewBar()}${body}`;
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size]');
+    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump]');
     if (!t) return;
     const ds = t.dataset;
+    if (ds.shopPage) { shopPage = ds.shopPage; confirmBuy = null; renderPanel(); panel.scrollTop = 0; return; }
+    if (ds.stylePage) { stylePage = ds.stylePage; confirmBuy = null; renderPanel(); panel.scrollTop = 0; return; }
+    if (ds.jump) { panel.querySelector(`#${ds.jump}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (ds.size) { resize(ds.size); return; }
     if (ds.previewBuy != null) {
       const id = preview[ds.previewBuy];
@@ -888,6 +1047,8 @@ export function house(stage) {
       if (ds.act === 'up') nudgeHeight(1);
       if (ds.act === 'down') nudgeHeight(-1);
       if (ds.act === 'store') storeSelected();
+      if (ds.act === 'longer') resizeWall(1);
+      if (ds.act === 'shorter') resizeWall(-1);
       if (ds.act === 'move' && selected >= 0) startPlacing(home.items[selected].id, selected);
     } else if (ds.place) {
       if (!edit) setEdit(true);
@@ -933,7 +1094,6 @@ export function house(stage) {
 
   function setEdit(on) {
     edit = on && mine();
-    if (stage.camRoom) stage.camRoom.off = edit; // decorating gets the bird's-eye view over the walls
     if (!edit && trying()) setPreview(null);
     room.grid.visible = edit;
     room.wallGrids.forEach((l) => { l.visible = edit; });
@@ -1094,15 +1254,9 @@ export function house(stage) {
         orbit.height = WALL_H * T * 0.3;
         orbit.pitch = -0.55;
         orbit.yaw += dt * 0.25;
-      } else {
-        // decorating: pull the camera up for an overview of the whole room
-        if (orbit.fps) { orbit.fps = false; orbit.height = baseHeight; orbit.pitch = 0.95; }
-        orbit.target.copy(center);
-        const far = 19 * Math.max(1, Math.max(NX, NZ) / 10);
-        orbit.dist += (far - orbit.dist) * Math.min(1, dt * 4);
-        orbit.pitch += (0.95 - orbit.pitch) * Math.min(1, dt * 4);
-      }
-    } else if (orbit.dist > 15) orbit.dist += (11 - orbit.dist) * Math.min(1, dt * 3);
+      } else if (orbit.fps) { orbit.fps = false; orbit.height = baseHeight; }
+      // (otherwise decorating keeps your usual camera: you stay in the room, walking about as normal)
+    }
     // doors open for whoever walks up to them (swinging away from them) and shut behind them
     const walkers = [walker.me, ...stage.people.values()];
     for (const e of entries) {
@@ -1127,8 +1281,6 @@ export function house(stage) {
     // hide the walls between the camera and the room
     const c = stage.camera.position;
     if (!edit && orbit.fps) { orbit.fps = false; orbit.height = baseHeight; }
-    room.ceiling.visible = !edit || !!preview.ceiling;
-    room.roof.visible = !edit;
     room.walls.front.grp.visible = c.z < WZ() - 0.2;
     room.walls.back.grp.visible = c.z > 0.2;
     room.walls.left.grp.visible = c.x > 0.2;

@@ -306,7 +306,7 @@ HOUSE_WALL_H = 3.2  # wall height, tiles
 HOUSE_WALL_Y = 1.75  # default height of a wall decoration's middle
 HOUSE_DOOR_H = 2.2  # the front door's height (things can hang on the wall above it)
 HOUSE_MAX_DROP = 2.4  # how far below the ceiling a hanging thing can go
-HOUSE_MAX_ITEMS = 80
+HOUSE_MAX_ITEMS = 120
 
 # Cosmetics and fish are shared with the client through one catalog file.
 CATALOG = json.loads((PUBLIC / "cosmetics.json").read_text("utf-8"))
@@ -365,7 +365,13 @@ CEILINGS = {f["id"]: f for f in CATALOG["ceilings"]}
 DOORS = {f["id"]: f for f in CATALOG["doors"]}
 HOUSE_SIZES = {f["id"]: f for f in CATALOG["houseSizes"]}  # room size upgrades
 HOUSE_MIN = 6  # the smallest a room can be made (tiles)
-LOOK_SLOTS = ("hair", "top", "bottom", "hat", "face", "back", "aura", "pet", "mount")
+LOOK_SLOTS = ("hair", "top", "bottom", "outfit", "hat", "face", "back", "hand", "aura", "pet", "mount")
+# extra accessory slots: up to three hats/hair accessories and three face items at once, and a thing in
+# each hand (each one holds an item from its base slot)
+EXTRA_SLOTS = {"hat2": "hat", "hat3": "hat", "face2": "face", "face3": "face", "hand2": "hand"}
+# optional recolours: a top's own colour + trim, hair ties, and each accessory slot's colour
+LOOK_TINTS = ("hatColor", "hat2Color", "hat3Color", "faceColor", "face2Color", "face3Color", "backColor", "handColor", "hand2Color",
+              "topTint", "topAccent", "outfitColor", "outfitAccent", "hairTie", "auraColor")
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
                "shoeColor": "clothColors", "eyeColor": "eyeColors", "sockColor": "clothColors"}
 LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds", "shoes": "shoeStyles", "socks": "sockStyles"}
@@ -378,7 +384,8 @@ def vehicle_of(p):
     return {"type": v.get("type", "kart"), "color": v.get("color", p["color"]), "accent": v.get("accent", "#23263f")}
 
 
-LOOK_EXTRAS = {"pet": "pet_none", "mount": "mount_none", "bottom": "bottom_pants", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
+LOOK_EXTRAS = {"pet": "pet_none", "mount": "mount_none", "bottom": "bottom_pants", "outfit": "outfit_none", "hand": "hand_none", "hand2": "hand_none",
+               "hat2": "hat_none", "hat3": "hat_none", "face2": "face_none", "face3": "face_none", "shoeColor": "#23263f", "eyeColor": "#1d1b2e", "eyes": "eyes_round",
                "shoes": "shoes_sneakers", "socks": "socks_none", "sockColor": "#f5f5f5",
                "height": "height_medium", "build": "build_regular"}
 STAT_KEYS = ("wins", "elims", "raceWins", "arenaWins", "fish", "koi", "archeryBest", "jackpots", "bossKills", "houseLikes",
@@ -774,7 +781,8 @@ def clean_house(p, data):
         # positions snap to quarter tiles; overlaps are checked on that finer grid
         x, y, r = snap_q(it.get("x", -1)), snap_q(it.get("y", -1)), int(it.get("r", 0)) % 4
         used[f["id"]] = used.get(f["id"], 0) + 1
-        if used[f["id"]] > p["furni"].get(f["id"], 0):
+        # free things (plain walls) don't need buying, they just have a limit
+        if used[f["id"]] > (f.get("max", 99) if f.get("free") else p["furni"].get(f["id"], 0)):
             raise GameError(f"You don't have another {f['name']}.")
         kind = f.get("kind", "floor")
         h = None
@@ -798,7 +806,12 @@ def clean_house(p, data):
                 h = snap_q(it.get("h", 0))
                 if not (0 <= h <= HOUSE_MAX_DROP):
                     raise GameError("That can't hang that low.")
-            w, d = (f["w"], f["d"]) if r % 2 == 0 else (f["d"], f["w"])
+            length = f["w"]
+            if f.get("drag"):  # plain walls are drawn out to any length (in quarter tiles)
+                length = snap_q(it.get("l", f["w"]))
+                if not (0.25 <= length <= max(W, D)):
+                    raise GameError("That wall is the wrong length.")
+            w, d = (length, f["d"]) if r % 2 == 0 else (f["d"], length)
             if x < 0 or y < 0 or x + w > W or y + d > D:
                 raise GameError("That doesn't fit in the room.")
             x0, y0 = round(x * HOUSE_SNAP), round(y * HOUSE_SNAP)
@@ -806,7 +819,7 @@ def clean_house(p, data):
         if cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {})})
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {})})
     return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items}
 
 
@@ -1203,7 +1216,7 @@ class Game:
             if look.get(field) not in {o["id"] for o in CATALOG[options]}:
                 raise GameError("Unknown body option.")
             new[field] = look[field]
-        for field in ("hatColor", "backColor", "topTint", "topAccent", "hairTie", "auraColor"):  # optional recolours (hat, back item, top + its trim, the OG aura)
+        for field in LOOK_TINTS:
             col = look.get(field) or ""
             if col and col not in CATALOG["clothColors"]:
                 raise GameError("Unknown color.")
@@ -1216,6 +1229,18 @@ class Game:
             if not owns(c.player, item["id"]):
                 raise GameError(f"You haven't unlocked the {item['name']} yet.")
             new[slot] = item["id"]
+        for slot, base in EXTRA_SLOTS.items():
+            item = ITEMS.get(look.get(slot) or f"{base}_none")
+            if not item or item["slot"] != base:
+                raise GameError("Unknown item.")
+            if not owns(c.player, item["id"]):
+                raise GameError(f"You haven't unlocked the {item['name']} yet.")
+            new[slot] = item["id"]
+        # the same accessory can't be worn twice over
+        for base in ("hat", "face", "hand"):
+            worn = [new[k] for k in [base, *[k for k, b in EXTRA_SLOTS.items() if b == base]] if not new[k].endswith("_none")]
+            if len(worn) != len(set(worn)):
+                raise GameError("You're already wearing that.")
         c.player.update(look=new, lookSet=True, color=new["topColor"])
         self.store.mark()
         self.push_player(c.room, c.key)
@@ -3572,8 +3597,9 @@ class Game:
                 giver["owned"].remove(i)
                 taker["owned"].append(i)
                 slot = ITEMS[i]["slot"]
-                if giver["look"].get(slot) == i:
-                    giver["look"][slot] = TRADE_FALLBACK.get(slot, f"{slot}_none")
+                for k in [slot, *[k for k, b in EXTRA_SLOTS.items() if b == slot]]:
+                    if giver["look"].get(k) == i:
+                        giver["look"][k] = TRADE_FALLBACK.get(slot, f"{slot}_none")
             for fid, n in offer["furni"].items():
                 giver["furni"][fid] -= n
                 taker["furni"][fid] = taker["furni"].get(fid, 0) + n

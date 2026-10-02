@@ -304,10 +304,8 @@ $('#playBtn').onclick = () => {
   sfx('enter');
   show('world');
   world.start();
-  // you were in Coral Cove last time: back you go
-  let town = null;
-  try { town = localStorage.getItem('fz.town'); } catch { /* private mode */ }
-  if (town === 'cove' && S.admin) setTimeout(() => openActivity('portal'), 300);
+  // you always start in the first town (never straight back into Coral Cove)
+  try { localStorage.removeItem('fz.town'); } catch { /* private mode */ }
 };
 window.addEventListener('fz:lobby', () => $('#backLobby').click());
 

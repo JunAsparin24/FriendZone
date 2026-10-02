@@ -25,6 +25,7 @@ const BALL = {
   volleyball: { r: 0.23, bounce: 0.45, roll: 3, color: '#fff4d6', hold: false, verb: 'Hit', icon: '🏐' },
 };
 const RIM_Y = 3.3, RIM_R = 0.42;
+const SLOT_COLORS = ['#ff5d73', '#39c6ff']; // home, away
 
 // ---- textures -------------------------------------------------------------------------------------
 function courtTex(kind, w, d) {
@@ -264,6 +265,17 @@ export class Balls {
     this.balls = new Map();
     this.matches = {}; // court -> the server's match state
     for (const ct of COURTS) this.make(`${ct.id}-0`, ct, 0);
+    // the slots: glowing circles along the near sideline of each basketball court, three a side. Step
+    // into one to join that team; walk off to leave
+    this.slots = [];
+    for (const ct of COURTS) if (ct.kind === 'basket') for (const side of [0, 1]) for (let k = 0; k < 3; k++) {
+      const x = ct.x + (side ? 1 : -1) * (3 + k * 1.7), z = ct.z + ct.d / 2 + 1.1;
+      const col = SLOT_COLORS[side];
+      const disc = add(this.root, new THREE.CircleGeometry(0.55, 28), basic(col, { transparent: true, opacity: 0.35, depthWrite: false }).clone(), { p: [x, 0.11, z], r: [-Math.PI / 2, 0, 0], cast: false });
+      const ring = add(this.root, new THREE.RingGeometry(0.6, 0.72, 32), basic('#ffffff', { transparent: true, opacity: 0.8, depthWrite: false }).clone(), { p: [x, 0.115, z], r: [-Math.PI / 2, 0, 0], cast: false });
+      this.slots.push({ ct, side, slot: k, x, z, disc, ring });
+    }
+    this.slotSent = 0;
   }
 
   make(id, ct, k) {
@@ -302,12 +314,51 @@ export class Balls {
     const prev = this.matches[m.court];
     this.matches[m.court] = { ...m, at: performance.now() };
     // a new game: the ball goes to centre court (whoever's first on the list puts it there for everyone)
+    const b = this.balls.get(`${m.court}-0`);
+    const first = Object.keys(m.teams).sort()[0];
     if (m.state === 'countdown' && prev?.state !== 'countdown') {
-      const b = this.balls.get(`${m.court}-0`);
       b.p.copy(this.home(b.ct)); b.v.set(0, 0, 0); b.held = null; b.inbound = null; b.reset = 0;
-      const first = Object.keys(m.teams).sort()[0];
       if (first === S.me) this.send(b, true);
+      // everyone to their spot: the slot-1 players face off at centre court for the jump ball
+      const side = m.teams[S.me];
+      if (side != null) {
+        const ct = b.ct, s = side ? 1 : -1, k = m.slots?.[S.me] ?? 0;
+        const spots = ct.kind === 'basket' ? [[0.9, 0], [4.5, -3.5], [4.5, 3.5]] : [[2, 0], [8, -8], [8, 8], [16, -5], [16, 5]];
+        const [ox, oz] = spots[k] ?? spots[spots.length - 1];
+        const x = ct.x + s * ox, z = ct.z + oz;
+        this.onTeleport?.(x, z, Math.atan2(ct.x - x, ct.z - z));
+      }
     }
+    if (m.state === 'live' && prev?.state === 'countdown' && b.kind === 'basketball') {
+      // the jump ball: tossed straight up at centre court; jump (Space) at the top to tip it to your side
+      b.p.set(b.ct.x, 1.7, b.ct.z); b.v.set(0, 8.5, 0); b.held = null; b.tipoff = true;
+      if (first === S.me) this.send(b, true);
+      this.onEvent?.('🏀 Jump ball! Jump at the top to tip it!');
+    }
+  }
+  /** Frozen in place while a game you're in counts down to the tip-off. */
+  frozen() { const ct = this.myCourt(); return !!ct && this.matches[ct.id]?.state === 'countdown'; }
+
+  /** Z / X / C with the ball: crossover, behind the back, spin. A quick burst, the ball changes hands,
+   *  and for a moment nobody can steal it. */
+  dribble(me, kind) {
+    const b = this.mine();
+    if (!b || b.kind !== 'basketball' || this.meter || (this.move && this.move.t > 0) || performance.now() < (this.moveCd ?? 0)) return false;
+    const fx = Math.sin(me.heading), fz = Math.cos(me.heading), rx = Math.cos(me.heading), rz = -Math.sin(me.heading);
+    b.hand = -(b.hand ?? 1);
+    const side = b.hand; // (the way the ball's going)
+    const dirs = { cross: [rx * side * 0.9 + fx * 0.45, rz * side * 0.9 + fz * 0.45], behind: [rx * side * 0.7 - fx * 0.3, rz * side * 0.7 - fz * 0.3], spin: [fx * 0.8 + rx * side * 0.5, fz * 0.8 + rz * side * 0.5] };
+    const [dx, dz] = dirs[kind];
+    const len = Math.hypot(dx, dz);
+    this.move = { kind, t: kind === 'spin' ? 0.45 : 0.28, dur: kind === 'spin' ? 0.45 : 0.28, dx: dx / len, dz: dz / len };
+    this.moveCd = performance.now() + 700;
+    b.dm = true;
+    this.send(b, true);
+    b.dm = false;
+    me.char.emote('bump');
+    sfx('whoosh', { vol: 0.35 });
+    this.onEvent?.({ cross: '↔️ Crossover!', behind: '🔁 Behind the back!', spin: '🌀 Spin move!' }[kind]);
+    return true;
   }
 
   /** Server state for a ball (from whoever's playing it). */
@@ -316,6 +367,7 @@ export class Balls {
     if (!b) return;
     if (!m.steal && b.own === S.me && m.own !== S.me && performance.now() - b.sent < 200) return;
     b.own = m.own;
+    if (m.hand) b.hand = m.hand;
     const wasHeld = b.held;
     b.held = m.held ?? null;
     if (b.held) b.inbound = null;
@@ -337,7 +389,7 @@ export class Balls {
     if (!force && now - b.sent < 80) return;
     b.sent = now;
     b.own = S.me;
-    net.send('ball', { id: b.id, x: b.p.x, y: b.p.y, z: b.p.z, vx: b.v.x, vy: b.v.y, vz: b.v.z, held: b.held });
+    net.send('ball', { id: b.id, x: b.p.x, y: b.p.y, z: b.p.z, vx: b.v.x, vy: b.v.y, vz: b.v.z, held: b.held, hand: b.hand ?? 1, ...(b.dm ? { dm: 1 } : {}) });
   }
 
   /** The ball you're holding (if any). */
@@ -399,6 +451,24 @@ export class Balls {
     }
     this.send(b, true);
     return true;
+  }
+
+  /** Step into a slot to join that side; walk well away from yours (before the game) to leave. */
+  updateSlots(me) {
+    const now = performance.now();
+    for (const sl of this.slots) {
+      const m = this.matches[sl.ct.id];
+      const who = m && Object.entries(m.slots ?? {}).find(([k, v]) => v === sl.slot && m.teams?.[k] === sl.side)?.[0];
+      sl.disc.material.opacity = who ? 0.9 : 0.35 + Math.sin(now / 300 + sl.slot) * 0.08;
+      sl.ring.material.color.set(who ? '#ffd84d' : '#ffffff'); // (taken: a gold ring)
+      sl.ring.visible = !this.live(sl.ct);
+      sl.disc.visible = !this.live(sl.ct);
+      if (this.live(sl.ct) || now - this.slotSent < 600) continue;
+      const d = Math.hypot(me.x - sl.x, me.z - sl.z);
+      const mineHere = m?.teams?.[S.me] === sl.side && m?.slots?.[S.me] === sl.slot;
+      if (d < 0.6 && !who && !mineHere) { net.send('court_join', { court: sl.ct.id, side: sl.side, slot: sl.slot }); this.slotSent = now; sfx('pop', { vol: 0.5 }); }
+      if (mineHere && d > 5) { net.send('court_leave', {}); this.slotSent = now; }
+    }
   }
 
   /** The shot meter: where the green window is (narrower when someone's guarding you or you're far out). */
@@ -478,6 +548,7 @@ export class Balls {
 
   update(dt, me, people, jumping) {
     const now = performance.now();
+    this.updateSlots(me);
     // the shot meter fills while F is held; hold it too long and the shot goes up anyway (late)
     if (this.meter) {
       this.meter.t += dt;
@@ -503,7 +574,8 @@ export class Balls {
         const hx = Math.sin(h.heading), hz = Math.cos(h.heading);
         const throwIn = b.kind === 'soccer';
         const dribble = b.kind === 'basketball' && h.moving ? Math.abs(Math.sin(now / 150)) : null;
-        b.p.set(h.x + hx * (throwIn ? 0.1 : 0.45) + (throwIn ? 0 : hz * 0.3), h.y + (throwIn ? 2.1 : dribble != null ? 0.25 + dribble * 0.9 : 1.1), h.z + hz * (throwIn ? 0.1 : 0.45) - (throwIn ? 0 : hx * 0.3));
+        const hand = (b.hand ?? 1) * 0.3;
+        b.p.set(h.x + hx * (throwIn ? 0.1 : 0.45) + (throwIn ? 0 : hz * hand), h.y + (throwIn ? 2.1 : dribble != null ? 0.25 + dribble * 0.9 : 1.1), h.z + hz * (throwIn ? 0.1 : 0.45) - (throwIn ? 0 : hx * hand));
         if (dribble != null && dribble < 0.08 && !b.bounced) { b.bounced = true; if (b.held === S.me) sfx('bounce', { vol: 0.35 }); }
         if (dribble != null && dribble > 0.3) b.bounced = false;
         b.mesh.position.copy(b.p);
@@ -559,6 +631,18 @@ export class Balls {
               this.score(b, 0, pts);
               this.onEvent?.(pts === 3 ? '🏀 THREE POINTER! +3' : '🏀 Bucket! +2');
             }
+          }
+        }
+        // the jump ball: jump at the top of the toss to tip it towards your side of the court
+        if (b.tipoff) {
+          if (b.held || b.p.y < 0.6) b.tipoff = false;
+          else if (jumping && b.p.y > 2.3 && Math.hypot(b.p.x - me.x, b.p.z - me.z) < 1.4 && this.teamOf(ct, S.me) != null) {
+            const s = this.teamOf(ct, S.me) ? 1 : -1;
+            b.v.set(s * 4.5, 1.5, (Math.random() - 0.5) * 2);
+            b.tipoff = false; b.lastBy = S.me;
+            this.send(b, true);
+            sfx('bounce');
+            this.onEvent?.('👆 You won the tip!');
           }
         }
         // block: jump into a rival's shot on its way up

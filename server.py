@@ -656,6 +656,7 @@ ADMIN_HELP = [
     "/furni <name|me> <furniture id|all> [count] — give furniture, floors or wallpaper",
     "/items [search] — list item ids",
     "/score <name|me> <game> <value> — set a high score / leaderboard stat (/score me list for the games)",
+    "/cove <name|all> [off] — let someone into Coral Cove whenever they like (or take it away)",
     "/tp <name> — teleport yourself to someone (in town, or into the shop/area they're in)",
     "/bring <name> — teleport someone to you",
     "/kick <name> — send someone back to the home screen",
@@ -993,7 +994,7 @@ def house_view(p):
 def public(p, client):
     return {
         "key": p.get("key", p["name"].lower()), "name": p["name"], "color": p["color"],
-        "coins": p["coins"], "tickets": p.get("tickets", 0), "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
+        "coins": p["coins"], "tickets": p.get("tickets", 0), "cove": bool(p.get("cove")), "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
         "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "fishbag": p.get("fishbag", []), "rods": p["rods"], "rod": p["rod"],
         "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"])},
         "dailyAt": p.get("lastDaily", 0) + DAILY_SECS,
@@ -1630,7 +1631,7 @@ class Game:
 
     def on_scene(self, c, m):
         scene = m.get("scene")
-        if scene == "beach" and not COVE_OPEN and not c.admin and not getattr(c, "cove_pass", False):
+        if scene == "beach" and not COVE_OPEN and not c.admin and not getattr(c, "cove_pass", False) and not c.player.get("cove"):
             return self.sys(c, "🚧 Coral Cove is coming soon!")
         if scene in SCENES:
             self.set_scene(c, scene)
@@ -1732,13 +1733,17 @@ class Game:
             st = {k: round(num(m[k], -300, 300), 3) for k in ("x", "y", "z", "vx", "vy", "vz")}
         except (KeyError, TypeError, ValueError):
             return
-        st.update(id=bid, own=c.key, held=m.get("held") if isinstance(m.get("held"), str) else None)
+        st.update(id=bid, own=c.key, held=m.get("held") if isinstance(m.get("held"), str) else None, hand=-1 if m.get("hand") == -1 else 1)
         cur = c.room.balls.get(bid)
+        if m.get("dm"):
+            st["dmAt"] = time.time()  # (a dribble move: no stealing it for a moment)
+        elif cur and cur.get("dmAt"):
+            st["dmAt"] = cur["dmAt"]
         # just stolen: the old holder's last few updates (still saying they've got it) don't count
         if cur and cur.get("lock") and time.time() - cur["lock"][1] < 1.0 and c.key != cur["lock"][0]:
             return
         c.room.balls[bid] = st
-        c.room.broadcast({"t": "ball", **st}, scene="beach", exclude=c)
+        c.room.broadcast({"t": "ball", **{k: v for k, v in st.items() if k != "dmAt"}}, scene="beach", exclude=c)
 
     # ---- Coral Park pickup games: steals, blocks, and matches you ready up for -------------------
 
@@ -1759,13 +1764,14 @@ class Game:
             if c.key not in t or holder not in t or t[c.key] == t[holder]:
                 return  # (no stealing from your own team, or from outside the game)
         # never a sure thing: best right up close, a long shot at arm's length
-        if random.random() < STEAL_CHANCE * (1.35 - math.hypot(h.ax - c.ax, h.az - c.az) / 2.4):
+        dribbling = time.time() - b.get("dmAt", 0) < 0.7
+        if not dribbling and random.random() < STEAL_CHANCE * (1.35 - math.hypot(h.ax - c.ax, h.az - c.az) / 2.4):
             b.update(held=c.key, own=c.key, vx=0, vy=0, vz=0, lock=(c.key, time.time()))
-            room.broadcast({"t": "ball", **{k: v for k, v in b.items() if k != "lock"}, "steal": True}, scene="beach")
+            room.broadcast({"t": "ball", **{k: v for k, v in b.items() if k not in ("lock", "dmAt")}, "steal": True}, scene="beach")
             room.broadcast({"t": "ball_event", "kind": "steal", "by": c.key, "from": holder, "id": bid}, scene="beach")
             self.reward(c, xp=2)
         else:
-            room.broadcast({"t": "ball_event", "kind": "reach", "by": c.key, "from": holder, "id": bid}, scene="beach")
+            room.broadcast({"t": "ball_event", "kind": "reach", "by": c.key, "from": holder, "id": bid, "ankles": dribbling}, scene="beach")
 
     def on_ball_event(self, c, m):
         """Blocks, tackles and throw-ins: the player's game works out the ball's new path and sends it
@@ -1782,13 +1788,15 @@ class Game:
         mt = room.matches[court]
         return {"t": "court_match", "court": court, "state": mt["state"], "teams": mt["teams"], "ready": sorted(mt["ready"]),
                 "s": mt["s"], "left": round(max(0.0, mt["ends"] - time.monotonic()), 1), "to": MATCH_COURTS[court]["to"],
-                "winner": mt.get("winner")}
+                "winner": mt.get("winner"), "slots": mt.get("slots", {})}
 
     def court_of(self, c, m):
         court = str(m.get("court", ""))
         if c.scene != "beach" or court not in MATCH_COURTS:
             raise GameError("That's not a court.")
-        return c.room.matches.setdefault(court, {"state": "lobby", "teams": {}, "ready": set(), "s": [0, 0], "ends": 0.0, "id": 0}), court
+        mt = c.room.matches.setdefault(court, {"state": "lobby", "teams": {}, "ready": set(), "s": [0, 0], "ends": 0.0, "id": 0})
+        mt.setdefault("slots", {})
+        return mt, court
 
     def on_court_join(self, c, m):
         mt, court = self.court_of(c, m)
@@ -1800,7 +1808,16 @@ class Game:
         for other in list(c.room.matches):  # (one game at a time)
             if other != court:
                 self.court_drop(c.room, other, c.key)
+        # your slot on that side: the one you stepped into, or the first free one
+        taken = {mt["slots"].get(k) for k, v in mt["teams"].items() if v == side and k != c.key}
+        want = m.get("slot")
+        slot = int(want) if isinstance(want, int) and 0 <= want < MATCH_COURTS[court]["max"] and want not in taken else None
+        if slot is None:
+            if isinstance(want, int):
+                raise GameError("Someone's already in that spot.")
+            slot = next(i for i in range(MATCH_COURTS[court]["max"]) if i not in taken)
         mt["teams"][c.key] = side
+        mt["slots"][c.key] = slot
         mt["ready"].discard(c.key)
         c.room.broadcast(self.match_view(c.room, court), scene="beach")
 
@@ -1813,6 +1830,7 @@ class Game:
         if not mt or key not in mt["teams"]:
             return
         mt["teams"].pop(key, None)
+        mt.get("slots", {}).pop(key, None)
         mt["ready"].discard(key)
         if mt["state"] in ("countdown", "live") and len(set(mt["teams"].values())) < 2:
             self.match_end(room, court, mt["id"], forfeit=True)
@@ -2196,6 +2214,19 @@ class Game:
             mover.ws.send({"t": "tp", "scene": dest.scene, "ax": round((dest.ax or 0) + 0.9, 2), "az": round(dest.az or 0, 2)})
         else:
             raise GameError(f"{dest.player['name']} is busy ({dest.scene or 'in the lobby'}). Teleporting works in town and in the shops and areas.")
+
+    def admin_cove(self, c, args):
+        off = bool(args) and args[-1].lower() in ("off", "remove", "revoke", "no")
+        names = args[:-1] if off else args
+        keys = self._adm_targets(c, " ".join(names))
+        for k in keys:
+            c.room.zone["players"][k]["cove"] = not off
+            self.push_player(c.room, k)
+            cl = c.room.clients.get(k)
+            if cl and k != c.key:
+                self.sys(cl, "🏝️ Coral Cove is closed to you again." if off else "🌴 An admin gave you access to Coral Cove! Walk through the portal in town.", "ok")
+        self.store.mark()
+        self.sys(c, f"{'Took Coral Cove away from' if off else 'Gave Coral Cove to'} {self.names(c, keys)}.", "ok")
 
     def admin_tp(self, c, args):
         target = self._one_online(c, args, "teleport to")

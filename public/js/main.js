@@ -518,7 +518,7 @@ function renderChat() {
 function showPrompt(spot) {
   const el = $('#hudPrompt');
   el.classList.toggle('hidden', !spot);
-  if (spot?.id === 'portal' && !S.admin) el.innerHTML = '🚧 Coral Cove is coming soon!';
+  if (spot?.id === 'portal' && !S.admin && !me()?.cove) el.innerHTML = '🚧 Coral Cove is coming soon!';
   else if (spot) el.innerHTML = `${actionHint()} ${spot.verb ?? 'enter'} <span class="prompt-ico">${iconSvg(spot.id) || spot.emoji}</span> ${esc(spot.name)}`;
   el.onclick = spot ? (spot.action ?? (() => openActivity(spot.id))) : null;
 }
@@ -528,7 +528,7 @@ export function openActivity(id) {
   if (!activity || modal || area) return;
   if (world.riding && id !== 'wardrobe') world.toggleRide(false); // (hop off to go inside)
   // Coral Cove is still being built: only admins can go through the portal for now
-  if (id === 'portal' && !S.admin) { sfx('error'); toast('🚧 Coral Cove is coming soon!'); return; }
+  if (id === 'portal' && !S.admin && !me()?.cove) { sfx('error'); toast('🚧 Coral Cove is coming soon!'); return; }
   if (activity.world) world.startActivity(activity.world);
   else if (activity.area) openArea(activity);
   else openModal(activity);

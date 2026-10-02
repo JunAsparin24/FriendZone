@@ -592,23 +592,28 @@ export function beachArea(stage) {
   let mode = 'walk'; // walk | boat | fish | ride | golf
   let boardedAt = 0; // (the E that gets you on mustn't also get you straight off)
   let jumpUntil = 0;
-  const walker = stage.walker({
+  const walkerOpts = {
     spawn: { x: rnd(-2, 2), z: spots.portal.spawn }, speed: 6,
     bounds: { minX: X0, maxX: X1, minZ: Z0, maxZ: Z1 },
     solids,
     orbit: { yaw: 0, pitch: 0.42, dist: 12, maxDist: 34 },
     ceiling: 200,
     speedOf: () => (inSea(walker.me.x, walker.me.z) && walker.me.z - shoreZ(walker.me.x) > 3 ? 3.6 : 6),
-    frozen: () => mode !== 'walk',
+    frozen: () => mode !== 'walk' || balls.frozen(),
     blockedAt: (x, z) => {
       if (z > SWIM_MAX) return true;
       // railings: you can't step up or down more than a stair (onto the pier by the ramp or the steps)
       if (Math.abs(floorAt(x, z) - floorAt(walker.me.x, walker.me.z)) > 0.55) return true;
-      // in a match you stay on the field (and its out-of-bounds strip)
+      // in a match you stay on the field (and its out-of-bounds strip): if you're somehow outside it,
+      // you can always walk back towards it, just never further out
       const ct = balls.myCourt();
-      return !!ct && (Math.abs(x - ct.x) > ct.w / 2 + ct.margin || Math.abs(z - ct.z) > ct.d / 2 + ct.margin);
+      if (!ct) return false;
+      const outBy = (px, pz) => Math.max(0, Math.abs(px - ct.x) - ct.w / 2 - ct.margin, Math.abs(pz - ct.z) - ct.d / 2 - ct.margin);
+      const now = outBy(x, z);
+      return now > 0 && now >= outBy(walker.me.x, walker.me.z);
     },
-  });
+  };
+  const walker = stage.walker(walkerOpts);
   const me3 = walker.me;
   me3.heading = 0;
   const orbit = stage.orbit;
@@ -644,7 +649,7 @@ export function beachArea(stage) {
     <div class="hud-panel beach-ctx hidden"></div>
     <div class="hud-panel court-panel hidden"></div>
     <div class="hud-panel golf-panel hidden"></div>
-    <p class="hud-panel arena-help">Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski (<kbd>WASD</kbd>) · Fish off the end of the pier or from a boat · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park: pick a side and ready up for a game. hold <kbd>F</kbd> and let go in the green to shoot (kicks and throws in too), <kbd>C</kbd> steals, <kbd>Space</kbd>/<kbd>B</kbd> jumps to block · Golf at Coral Links: <kbd>A</kbd>/<kbd>D</kbd> aim, hold <kbd>F</kbd> to swing · The portal goes back to The Town</p>`);
+    <p class="hud-panel arena-help">Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski (<kbd>WASD</kbd>) · Fish off the end of the pier or from a boat · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park: pick a side and ready up for a game. step into a coloured circle by a court to join, hold <kbd>F</kbd> and let go in the green to shoot, <kbd>Z</kbd>/<kbd>X</kbd>/<kbd>C</kbd> dribble moves (<kbd>C</kbd> steals on defence), <kbd>Space</kbd>/<kbd>B</kbd> jumps to block and wins the tip · Golf at Coral Links: <kbd>A</kbd>/<kbd>D</kbd> aim, hold <kbd>F</kbd> to swing · The portal goes back to The Town</p>`);
   const $h = (sel) => stage.hud.querySelector(sel);
   const ctxEl = $h('.beach-ctx'), courtEl = $h('.court-panel'), golfEl = $h('.golf-panel'), clockEl = $h('.cove-clock'), mapEl = $h('.cove-map');
   if (touch.enabled) setTouchButtons([{ icon: '✋', label: 'Action', key: 'f', code: 'KeyF', big: true }, { icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }]);
@@ -834,12 +839,30 @@ export function beachArea(stage) {
     if (k === 'f' && !e.repeat) action();
     if (k === ' ' && !e.repeat && mode === 'walk' && !fishing && performance.now() > jumpUntil) { me3.char.jump(); jumpUntil = performance.now() + 550; sfx('jump', { vol: 0.4 }); }
     if (k === 'e' && !e.repeat && performance.now() - boardedAt > 400) { if (mode === 'boat') leaveBoat(); else if (mode === 'ride') endRide(); else if (mode === 'golf') golfStop(); }
-    if (k === 'c' && !e.repeat && mode === 'walk') balls.steal(me3);
+    // Z X C with the ball: crossover, behind the back, spin (C without it: steal)
+    if (['z', 'x', 'c'].includes(k) && !e.repeat && mode === 'walk') {
+      const moved = balls.dribble(me3, { z: 'cross', x: 'behind', c: 'spin' }[k]);
+      if (!moved && k === 'c' && !balls.mine()) balls.steal(me3);
+    }
     if (k === 'b' && !e.repeat && mode === 'walk' && performance.now() > jumpUntil) { me3.char.jump(); jumpUntil = performance.now() + 550; sfx('jump', { vol: 0.4 }); } // (block)
   }, (e) => {
     const k = e.key.toLowerCase();
     if (mode === 'golf' && (k === 'f' || k === ' ')) golf.release();
     if (k === 'f' && balls.meter) balls.release(me3, stage.people);
+  });
+  // tip-off: everyone in the game jumps to their spot on the court
+  balls.onTeleport = (x, z, heading) => { me3.x = x; me3.z = z; me3.heading = heading; sfx('whistle'); };
+  // dribble moves: a quick burst (and a full turn for the spin) that still stops at walls and the field edge
+  const walkerBlocked = (x, z) => x < X0 || x > X1 || z < Z0 || z > Z1 || walkerOpts.blockedAt(x, z)
+    || solids.some((sd) => (sd.r != null ? Math.hypot(x - sd.x, z - sd.z) < sd.r + 0.4 : Math.abs(x - sd.x) < sd.w / 2 + 0.4 && Math.abs(z - sd.z) < sd.d / 2 + 0.4));
+  // dribble moves: a quick burst (and a full turn for the spin)
+  stage.onFrame((dt) => {
+    const mv = balls.move;
+    if (!mv || mv.t <= 0) return;
+    mv.t -= dt;
+    const sp = 7.5 * dt, nx = me3.x + mv.dx * sp, nz = me3.z + mv.dz * sp;
+    if (!walkerBlocked(nx, nz)) { me3.x = nx; me3.z = nz; }
+    if (mv.kind === 'spin') me3.heading += (Math.PI * 2 * dt) / mv.dur;
   });
   // the basketball shot meter: a bar that fills while you hold F, with a green window to let go in
   const meterEl = document.createElement('div');

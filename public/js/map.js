@@ -610,37 +610,32 @@ export function renderGround(scale = 0.55) {
     for (const p of PATHS) for (const q of p.pts) { const dd = Math.hypot(q.x - d.x, q.y - d.y); if (dd < bd) { bd = dd; best = q; } }
     return { s, d, dx, dy, to: bd < 400 ? best : null };
   });
-  const street = (draw) => {
-    for (const [width, color] of [[70, 'rgba(70,120,55,.35)'], [60, 'rgba(120,90,50,.4)'], [54, '#9a8a74'], [48, '#c8b89a']]) { ctx.strokeStyle = color; draw(width); }
-  };
-  street((width) => {
+  // every layer is drawn for the streets, the links and the door aprons together (darkest and widest
+  // first), so they all merge into one paved surface with no seams where they meet
+  const apronW = (l) => Math.max(l.s.w, l.s.h) * 0.55 + 40;
+  for (const [width, color] of [[70, 'rgba(70,120,55,.3)'], [60, 'rgba(120,95,60,.35)'], [54, '#a8987c'], [48, '#c8b89a']]) {
+    ctx.strokeStyle = ctx.fillStyle = color;
     for (const p of PATHS) {
       ctx.lineWidth = width * p.w;
       ctx.beginPath();
       p.pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
       ctx.stroke();
     }
+    const grow = (width - 48) / 2;
     for (const l of links) {
-      if (!l.to) continue;
-      ctx.lineWidth = width * 0.8;
-      ctx.beginPath(); ctx.moveTo(l.d.x, l.d.y); ctx.lineTo(l.to.x, l.to.y); ctx.stroke();
+      if (l.to) { ctx.lineWidth = 34 + grow * 2; ctx.beginPath(); ctx.moveTo(l.d.x, l.d.y); ctx.lineTo(l.to.x, l.to.y); ctx.stroke(); }
+      // the apron: a rounded patch across the front of the building, from its wall out past the door
+      const w = apronW(l);
+      ctx.save();
+      ctx.translate(l.d.x, l.d.y);
+      ctx.rotate(Math.atan2(l.dy, l.dx) - Math.PI / 2);
+      ctx.beginPath(); ctx.roundRect(-w / 2 - grow, -26 - grow, w + grow * 2, 74 + grow * 2, 30 + grow); ctx.fill();
+      ctx.restore();
     }
-  });
-  // the aprons: a wide rounded patch of paving across the front of each building
-  for (const l of links) {
-    const w = Math.max(l.s.w, l.s.h) * 0.6 + 40;
-    ctx.save();
-    ctx.translate(l.d.x, l.d.y);
-    ctx.rotate(Math.atan2(l.dy, l.dx) - Math.PI / 2);
-    for (const [grow, color] of [[16, 'rgba(70,120,55,.35)'], [8, '#9a8a74'], [0, '#c8b89a']]) {
-      ctx.fillStyle = color;
-      ctx.beginPath(); ctx.roundRect(-w / 2 - grow, -18 - grow, w + grow * 2, 78 + grow * 2, 26); ctx.fill();
-    }
-    ctx.restore();
   }
   // cobbles over all of it: little rounded stones in a few shades
   const cobble = (x, y) => {
-    ctx.fillStyle = ['#d8c8a8', '#bfae8e', '#e2d4b6', '#b3a284'][Math.floor(rnd() * 4)];
+    ctx.fillStyle = ['#d2c3a4', '#c0b092', '#dccfb2', '#b8a88a'][Math.floor(rnd() * 4)];
     ctx.beginPath(); ctx.roundRect(x - 4, y - 3, 7 + rnd() * 3, 5 + rnd() * 2, 2.5); ctx.fill();
   };
   for (const p of PATHS) {
@@ -654,8 +649,8 @@ export function renderGround(scale = 0.55) {
     }
   }
   for (const l of links) {
-    const w = Math.max(l.s.w, l.s.h) * 0.6 + 40, ang = Math.atan2(l.dy, l.dx) - Math.PI / 2, ca = Math.cos(ang), sa = Math.sin(ang);
-    for (let u = -w / 2 + 6; u < w / 2 - 4; u += 9) for (let v = -14; v < 56; v += 9) cobble(l.d.x + u * ca - v * sa, l.d.y + u * sa + v * ca);
+    const w = apronW(l), ang = Math.atan2(l.dy, l.dx) - Math.PI / 2, ca = Math.cos(ang), sa = Math.sin(ang);
+    for (let u = -w / 2 + 8; u < w / 2 - 6; u += 9) for (let v = -20; v < 42; v += 9) cobble(l.d.x + u * ca - v * sa, l.d.y + u * sa + v * ca);
     if (l.to) {
       const len = Math.hypot(l.to.x - l.d.x, l.to.y - l.d.y) || 1, nx = -(l.to.y - l.d.y) / len, ny = (l.to.x - l.d.x) / len;
       for (let t = 0; t < len; t += 9) for (let o = -16; o <= 16; o += 9) cobble(l.d.x + ((l.to.x - l.d.x) * t) / len + nx * o, l.d.y + ((l.to.y - l.d.y) * t) / len + ny * o);

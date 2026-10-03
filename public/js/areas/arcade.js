@@ -235,9 +235,9 @@ export function arcadeArea(stage) {
   const play = (make, { free = false } = {}) => {
     if (mode) return;
     saved = { orbit: stage.orbit, inter: stage.interactables, free };
+    stage.interactables = []; // (no "press E to play" prompts while you're playing something)
     if (!free) {
       stage.orbit = null; // (we steer the camera ourselves)
-      stage.interactables = [];
       stage.person(S.me).visible = false;
     }
     playHud.classList.remove('hidden');
@@ -247,10 +247,10 @@ export function arcadeArea(stage) {
     if (!mode) return;
     mode.stop();
     mode = null;
+    stage.interactables = saved.inter;
     if (!saved.free) {
       stage.orbit = saved.orbit;
       stage.orbit.cur = null;
-      stage.interactables = saved.inter;
       stage.person(S.me).visible = true;
     }
     playHud.classList.add('hidden');
@@ -271,7 +271,7 @@ export function arcadeArea(stage) {
   for (const [x, col] of [[10, '#ff4fd8'], [12.6, '#39c6ff']]) {
     const M = clawMachine(g, x, 7, col, anim);
     solids.push({ x, z: 7, w: 1.9, d: 1.9 });
-    stage.interactable({ x, z: 8.7, r: 1.3, label: 'play the claw machine (🪙 25)', icon: 'arcade', use: () => play((ui) => clawGame(M, ui), { free: true }) });
+    stage.interactable({ x, z: 8.7, r: 1.3, label: 'play the claw machine (🪙 25)', icon: 'arcade', use: () => (mode?.primary ? mode.primary() : play((ui) => clawGame(M, ui), { free: true })) });
   }
   // the prize counter: a glass counter, shelves of prizes behind, and the attendant
   counter(g, -11, 6.5, 6, '#7c4dff');

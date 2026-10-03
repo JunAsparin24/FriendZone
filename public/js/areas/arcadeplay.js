@@ -211,7 +211,7 @@ export function clawGame(M, ui) {
     if ((me()?.coins ?? 0) < CLAW_COST) { msg.innerHTML = `<span class="lose">You need 🪙 ${CLAW_COST} to play.</span>`; sfx('error'); return; }
     Object.assign(st, { phase: 'aim', timer: 20, result: null });
     M.playing = true; M.hx = 0; M.hz = 0; M.hy = 2.3; M.setOpen(1);
-    msg.textContent = 'Steer with the buttons (or I J K L), then DROP (Enter)!';
+    msg.textContent = 'Steer with the buttons (or I J K L), then press E to DROP!';
     sfx('coin');
     renderPad();
   };
@@ -230,13 +230,16 @@ export function clawGame(M, ui) {
   });
   const finish = (text, cls) => { msg.innerHTML = `<span class="${cls}">${text}</span>`; st.phase = 'ready'; M.playing = false; renderPad(); };
   renderPad();
+  start(); // (walking up and pressing E gets you straight to steering; you pay when the claw drops)
   return {
+    /** E at the machine: play again, or drop the claw. */
+    primary() { if (st.phase === 'aim') drop(); else if (st.phase === 'ready') start(); },
     key(e, down) {
       const k = e.key.toLowerCase();
       // (you can still walk about with WASD, so the claw has its own keys)
       const map = { j: 'l', l: 'r', i: 'f', k: 'b' };
       if (map[k]) hold(map[k], down);
-      if (down && !e.repeat && k === 'enter') { if (st.phase === 'aim') drop(); else if (st.phase === 'ready') start(); }
+      if (down && !e.repeat && (k === 'enter' || k === 'e')) this.primary(); // (E plays again / drops)
       if (down && k === 'escape') ui.done();
     },
     free: true, // (played standing at the machine: you can walk about, and walking off ends it)
@@ -249,7 +252,7 @@ export function clawGame(M, ui) {
         M.hx = THREE.MathUtils.clamp(M.hx + st.dir.x * 0.6 * dt, -0.68, 0.68);
         M.hz = THREE.MathUtils.clamp(M.hz + st.dir.z * 0.6 * dt, -0.68, 0.68);
         if ((st.timer -= dt) <= 0) drop();
-        msg.textContent = `Move the claw, then DROP! ⏱ ${Math.ceil(st.timer)}`;
+        msg.textContent = `Steer (I J K L or the arrows here), then E to DROP! ⏱ ${Math.ceil(st.timer)}`;
       } else if (st.phase === 'drop') {
         const bottom = (T ? T.y : 1.08) + 0.22;
         M.hy = Math.max(bottom, M.hy - 0.9 * dt);

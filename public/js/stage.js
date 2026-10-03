@@ -461,8 +461,8 @@ class Stage {
   // ---- interactables ("Press E to …") -----------------------------------------------
 
   /** Something you can walk up to and use. obj (optional) is clickable. */
-  interactable({ x, z, r = 2, label, icon = null, use, obj = null }) {
-    const it = { x, z, r, label, icon, use, obj };
+  interactable({ x, z, r = 2, label, icon = null, use, obj = null, when = null }) {
+    const it = { x, z, r, label, icon, use, obj, when }; // (when: only offered while it returns true)
     this.interactables.push(it);
     if (obj) obj.traverse((o) => { o.userData.interact = it; });
     return it;
@@ -475,7 +475,7 @@ class Stage {
       let best = Infinity;
       for (const it of this.interactables) {
         const d = Math.hypot(me.x - it.x, me.z - it.z);
-        if (d < it.r && d < best) { best = d; near = it; }
+        if (d < it.r && d < best && (!it.when || it.when())) { best = d; near = it; }
       }
     }
     if (near !== this.near) {
@@ -494,7 +494,7 @@ class Stage {
     if (!objs.length) return false;
     const hit = this.pick(objs)[0];
     const it = hit?.object.userData.interact;
-    if (!it) return false;
+    if (!it || (it.when && !it.when())) return false;
     const me = this.people.get(S.me);
     if (me && Math.hypot(me.x - it.x, me.z - it.z) < it.r + 3) it.use();
     return true;

@@ -777,6 +777,8 @@ export function beachArea(stage) {
   const snack = (name) => () => { me3.char.emote('heart'); sfx('coin', { vol: 0.5 }); stage.banner(`😋 You grabbed something tasty from <b>${esc(name)}</b>.`, 1800); };
   stage.interactable({ x: spots.tiki.x, z: spots.tiki.z, r: 3.5, label: 'order a coconut drink', use: snack('the Tiki Bar') });
   stage.interactable({ x: spots.ice.x, z: spots.ice.z, r: 3.5, label: 'get an ice cream', use: snack('the ice cream stand') });
+  // the basketball queue circles: stand on one and press E (or click it) to take that spot
+  for (const sl of balls.slots) stage.interactable({ x: sl.x, z: sl.z, r: 0.9, obj: sl.disc, label: `queue for ${sl.side ? 'Away' : 'Home'} (spot ${sl.slot + 1})`, when: () => balls.slotOpen(sl), use: () => balls.joinSlot(sl) });
   HOLES.forEach((h, i) => stage.interactable({ x: h.tee[0], z: h.tee[1], r: 3, label: `play hole ${i + 1} (par ${h.par})`, use: () => golfStart(i) }));
   for (const sp of pierSpots) {
     const use = {
@@ -985,7 +987,7 @@ export function beachArea(stage) {
   // the ℹ️ tips change with what you're doing: a game at Coral Park, golf, a boat, fishing, or just exploring
   const TIPS = {
     general: '🏝️ Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski · Fish off the end of the pier · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park has basketball, soccer and volleyball · Golf at Coral Links · The portal goes back to The Town',
-    basket: '🏀 Step into a coloured circle by the court to queue (press <b>Leave</b> to step out), then <b>Ready up</b> · Hold <b>left click</b> (or <kbd>F</kbd>) and let go in the green at the top to shoot (green = perfect, always in) · you face where the camera looks · <kbd>V</kbd> passes to a teammate · <kbd>Z</kbd> crossover, <kbd>X</kbd> behind the back, <kbd>C</kbd> spin (<kbd>C</kbd> steals on defence) · <kbd>Space</kbd>/<kbd>B</kbd> jumps to block and wins the tip · Out of bounds: pass it in (not in 1v1)',
+    basket: '🏀 Stand on a coloured circle by the court and press <b>E</b> (or click it) to queue (press <b>Leave</b> to step out), then <b>Ready up</b> · Hold <b>left click</b> (or <kbd>F</kbd>) and let go in the green at the top to shoot (green = perfect, always in) · you face where the camera looks · <kbd>V</kbd> passes to a teammate · <kbd>Z</kbd> crossover, <kbd>X</kbd> behind the back, <kbd>C</kbd> spin (<kbd>C</kbd> steals on defence) · <kbd>Space</kbd>/<kbd>B</kbd> jumps to block and wins the tip · Out of bounds: pass it in (not in 1v1)',
     soccer: '⚽ Pick a side in the panel and ready up · Run into the ball to dribble it · <kbd>F</kbd> kicks · Over the line: a throw-in for the other team (<kbd>F</kbd>)',
     volley: '🏐 <kbd>F</kbd> bumps the ball over the net · Keep it off the sand on your side',
     golf: '⛳ <kbd>A</kbd>/<kbd>D</kbd> aim · hold <kbd>F</kbd> and let go to swing (longer = harder) · <kbd>E</kbd> to stop playing',

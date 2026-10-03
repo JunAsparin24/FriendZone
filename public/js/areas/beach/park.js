@@ -305,8 +305,8 @@ export class Balls {
     this.balls = new Map();
     this.matches = {}; // court -> the server's match state
     for (const ct of COURTS) this.make(`${ct.id}-0`, ct, 0);
-    // the slots: glowing circles along the near sideline of each basketball court, three a side. Step
-    // into one to join that team; walk off to leave
+    // the slots: glowing circles along the near sideline of each basketball court, three a side. Stand
+    // on one and press E (or click it) to queue for that team; press Leave to step back out
     this.slots = [];
     for (const ct of COURTS) if (ct.kind === 'basket') for (const side of [0, 1]) for (let k = 0; k < 3; k++) {
       const x = ct.x + (side ? 1 : -1) * (3 + k * 1.7), z = ct.z + ct.d / 2 + 1.1;
@@ -553,14 +553,28 @@ export class Balls {
       sl.ring.material.color.set(who ? '#ffd84d' : '#ffffff'); // (taken: a gold ring)
       sl.ring.visible = !this.live(sl.ct);
       sl.disc.visible = !this.live(sl.ct);
-      if (this.live(sl.ct) || now - this.slotSent < 600) continue;
-      const d = Math.hypot(me.x - sl.x, me.z - sl.z);
-      const mineHere = m?.teams?.[S.me] === sl.side && m?.slots?.[S.me] === sl.slot;
-      if (d < 0.6 && !who && !mineHere) { net.send('court_join', { court: sl.ct.id, side: sl.side, slot: sl.slot }); this.slotSent = now; sfx('pop', { vol: 0.5 }); }
     }
     // queued: you stay standing in your circle, facing the court
     const q = this.queuedSlot();
     if (q) { me.x += (q.x - me.x) * 0.25; me.z += (q.z - me.z) * 0.25; me.heading = Math.PI; }
+    // left the queue (pressed Leave) before the game: step out in front of the circle, onto the court's
+    // edge, so you're not standing in it any more
+    const was = this.lastQ;
+    this.lastQ = q;
+    if (was && !q && !this.live(was.ct) && this.matches[was.ct.id]?.state !== 'countdown') { me.x = was.x; me.z = was.z - 1.8; me.heading = Math.PI; }
+  }
+  /** Is this slot free to join right now (no game on, nobody in it, not already yours)? */
+  slotOpen(sl) {
+    const m = this.matches[sl.ct.id];
+    if (this.live(sl.ct) || (m && Object.entries(m.slots ?? {}).some(([k, v]) => v === sl.slot && m.teams?.[k] === sl.side))) return false;
+    return !this.queuedSlot();
+  }
+  joinSlot(sl) {
+    const now = performance.now();
+    if (!this.slotOpen(sl) || now - this.slotSent < 600) return;
+    net.send('court_join', { court: sl.ct.id, side: sl.side, slot: sl.slot });
+    this.slotSent = now;
+    sfx('pop', { vol: 0.5 });
   }
 
   /** The shot meter: where the green window is (narrower when someone's guarding you or you're far out). */

@@ -3368,14 +3368,14 @@ function decoDraw(d, kind) {
     wall: {
       wainscot: (x) => wainscot(x, c, c2 ?? '#5a3a24'), twotone: (x) => twoTone(x, c, c2 ?? '#ffffff'),
       stripes: (x) => stripes(x, c, c2 ?? '#ffffff'), subway: (x) => subwayTiles(x, c, c2 ?? '#ffffff'), panels: (x) => woodPanels(x, c),
-      damask: (x) => damaskWall(x, c, c2 ?? shade(c, 0.12)), brick: (x) => brickWall(x, c, c2 ?? shade(c, -0.35)),
+      lined: (x) => linedWall(x, c), damask: (x) => damaskWall(x, c, c2 ?? shade(c, 0.12)), brick: (x) => brickWall(x, c, c2 ?? shade(c, -0.35)),
       linen: (x) => { plainWall(x, c); const rnd = prng(9); for (let i = 0; i < 900; i++) { x.fillStyle = i % 2 ? 'rgba(255,255,255,.035)' : 'rgba(0,0,0,.06)'; x.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 2, 1); } },
     },
     floor: {
       carpet: (x) => carpet(x, c, 'rgba(255,255,255,.08)', 'rgba(0,0,0,.08)'), planks: (x) => planks(x, c),
       tiles: (x) => squareTiles(x, 4, [c, shade(c, 0.06)], c2 ?? shade(c, -0.25), 3),
       checker: (x) => squareTiles(x, 4, [c, c2 ?? '#f4f0e8'], shade(c, -0.2), 1.5, false, true),
-      paint: (x) => { x.fillStyle = c; x.fillRect(0, 0, 256, 256); x.fillStyle = 'rgba(255,255,255,.05)'; for (let i = 0; i < 6; i++) x.fillRect(i * 48, 0, 20, 256); },
+      paint: (x) => { x.fillStyle = c; x.fillRect(0, 0, 256, 256); },
     },
     ceiling: {
       coffered: (x) => { x.fillStyle = c; x.fillRect(0, 0, 256, 256); for (let yy = 0; yy < 256; yy += 64) for (let xx = 0; xx < 256; xx += 64) { x.fillStyle = shade(c, -0.08); x.fillRect(xx + 8, yy + 8, 48, 48); x.fillStyle = shade(c, -0.14); x.fillRect(xx + 14, yy + 14, 36, 36); } },
@@ -3396,8 +3396,12 @@ const WALL_TALL_PX = 410; // (256 px per 2 tiles across, so 410 for the 3.2 tile
 function plainWall(ctx, color) {
   const H = ctx.canvas.height; // (full-height wallpapers are taller than 256)
   ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 256, H);
-  ctx.fillStyle = 'rgba(0,0,0,.035)';
+  ctx.fillRect(0, 0, 256, H); // (just the colour: the lined ones are their own style, below)
+}
+function linedWall(ctx, color) {
+  const H = ctx.canvas.height;
+  plainWall(ctx, color);
+  ctx.fillStyle = 'rgba(0,0,0,.07)';
   for (let x = 0; x < 256; x += 32) ctx.fillRect(x, 0, 2, H);
 }
 

@@ -2144,6 +2144,8 @@ class Game:
         if len(args) < 2:
             raise GameError("Like: /item me hat_crown (or /item me all). /items lists ids.")
         item_id = args[-1].lower()
+        if item_id not in ITEMS and item_id in {**FURN, **FLOORS, **WALLS, **CEILINGS, **DOORS}:
+            return self.admin_furni(c, args)  # (furniture, floors and wallpaper: /item works for those too)
         keys = self._adm_targets(c, " ".join(args[:-1]))
         # (exclusive items like the OG Tester aura are only ever given one at a time, on purpose)
         ids = [i["id"] for i in CATALOG["items"] if not i.get("exclusive")] if item_id == "all" else [item_id]

@@ -55,6 +55,8 @@ function maxSize() {
 // where you sit on things (in tiles above the floor)
 // things you can walk up to and use (anything else is just there to look at)
 const USEFUL = new Set(['switch', 'tv', 'arcade', 'jukebox', 'piano', 'swap', 'splash', 'bubbles', 'crackle', 'clock', 'domain', 'lever', 'trophy', 'slam', 'roar', 'knock']);
+const STANDS = new Set(['shower', 'shower_rain', 'shower_curtain']); // (you stand in these)
+const SOAKS = new Set(['bathtub', 'bathtub_modern', 'bathtub_gold', 'bathtub_wood', 'jacuzzi']); // (you get in and sit)
 const BEDS = new Set(['bed', 'bed_princess', 'hammock', 'bed_double', 'bed_double_tufted', 'bed_double_canopy', 'bed_double_cloud', 'bed_double_platform', 'bed_king', 'bed_king_tufted', 'bed_king_log', 'bed_king_canopy']);
 // top: the height of the cushion/mattress; front: how far its front edge is from the middle (model units)
 const SEATS = {
@@ -68,7 +70,11 @@ const SEATS = {
   bed_double: { top: 0.6, front: 0, n: 2 }, bed_double_tufted: { top: 0.6, front: 0, n: 2 }, bed_double_canopy: { top: 0.6, front: 0, n: 2 }, bed_double_cloud: { top: 0.46, front: 0, n: 2 }, bed_double_platform: { top: 0.46, front: 0, n: 2 },
   bed_king: { top: 0.6, front: 0, n: 3 }, bed_king_tufted: { top: 0.6, front: 0, n: 3 }, bed_king_log: { top: 0.6, front: 0, n: 3 }, bed_king_canopy: { top: 0.6, front: 0, n: 3 },
   rest_chair: { top: 0.525, front: 0.22 }, rest_booth: { top: 0.52, front: 0.3, n: 2 },
-  bar_stool: { top: 0.79, front: 0.1 }, bar_stool_wood: { top: 0.79, front: 0.1 }, piano_bench: { top: 0.53, front: 0.19 }, toilet: { top: 0.52, front: 0.28 },
+  bar_stool: { top: 0.79, front: 0.1 },
+  // tubs you sit down in, showers you stand in (STANDS), more toilets, the racing sim
+  bathtub: { top: 0.2, front: 0 }, bathtub_modern: { top: 0.22, front: 0 }, bathtub_gold: { top: 0.2, front: 0 }, bathtub_wood: { top: 0.26, front: 0 }, jacuzzi: { top: 0.3, front: 0, n: 2 },
+  shower: { top: 0.1, front: 0 }, shower_rain: { top: 0.06, front: 0 }, shower_curtain: { top: 0.1, front: 0 },
+  toilet_modern: { top: 0.55, front: 0.3 }, toilet_gold: { top: 0.52, front: 0.28 }, sim_rig: { top: 0.43, front: -0.2 }, bar_stool_wood: { top: 0.79, front: 0.1 }, piano_bench: { top: 0.53, front: 0.19 }, toilet: { top: 0.52, front: 0.28 },
 };
 // colour variants (the Ocean sofa…) sit, and lie, just like the piece they're a colour of
 for (const f of CATALOG.furniture) {
@@ -529,7 +535,7 @@ export function house(stage) {
       if (f.room || !(seat || f.action || USEFUL.has(f.use))) return entry; // (only things worth using: no towel racks or rocks)
       entry.inter = stage.interactable({
         x: cx * T, z: cz * T, r: Math.max(w, d) * T * 0.5 + 1.1, obj: built.group,
-        label: seat ? `${BEDS.has(it.id) ? 'lie on' : 'sit on'} the ${f.name.toLowerCase()}` : f.action === 'wardrobe' ? 'open your wardrobe' : `use the ${f.name.toLowerCase()}`,
+        label: seat ? `${STANDS.has(it.id) ? 'step into' : SOAKS.has(it.id) ? 'get in' : BEDS.has(it.id) ? 'lie on' : 'sit on'} the ${f.name.toLowerCase()}` : f.action === 'wardrobe' ? 'open your wardrobe' : `use the ${f.name.toLowerCase()}`,
         use: () => { if (!edit) useItem(entry); },
       });
       entry.inter.house = true;
@@ -698,6 +704,13 @@ export function house(stage) {
     const seat = SEATS[it.id], bed = BEDS.has(it.id);
     const heading = angleOf(it), fx = Math.sin(heading), fz = Math.cos(heading);
     p.heading = heading;
+    if (STANDS.has(it.id)) {
+      // in the shower: standing on the tray, facing out
+      p.char.setPose('idle');
+      const spot = seatSpot(it, s);
+      p.x = spot.x; p.z = spot.z; p.y = seat.top * T;
+      return { x: p.x, y: p.y, z: p.z, heading };
+    }
     p.char.setPose(bed ? 'lie' : 'sit');
     // rest on top of the cushion, not inside it: find the lowest point of the posed body (for sitting,
     // the seat of the pants; the legs hang over the front edge) and put that on the surface
@@ -772,7 +785,11 @@ export function house(stage) {
     entry.bounce = 0;
     const f = FURN[entry.it.id];
     if (seated) { standUp(); return; } // E again gets you up
-    if (SEATS[entry.it.id] != null) { sit(entry); return; }
+    if (SEATS[entry.it.id] != null) {
+      sit(entry);
+      if (STANDS.has(entry.it.id) || SOAKS.has(entry.it.id)) { entry.use?.(); if (f?.use) sfx(f.use); } // (the water comes on)
+      return;
+    }
     entry.use?.();
     if (f?.use === 'domain') domainExpansion();
     else if (f?.use) sfx(f.use);
@@ -1256,10 +1273,27 @@ export function house(stage) {
     return home ? home.items.filter((it, i) => it.id === id && !(placing && placing.from === i)).length : 0;
   }
 
+  function itemTile(f) {
+    const left = owned(f.id) - placedCount(f.id);
+    return `<button class="furni ${left ? '' : 'used'}" data-place="${f.id}" ${left ? '' : 'disabled'} title="${esc(f.name)}">
+      <span class="fem">${furniImg(f.id)}</span><span class="fname">${esc(f.name)}</span><span class="fcount">${f.free ? (f.drag ? 'Free · drag to draw' : 'Free') : `${left}/${owned(f.id)} left`}</span></button>`;
+  }
+  /** The owned pieces matching the filters and search, shelved by set (with jump buttons). */
+  function itemGridHtml() {
+    const q = itemSearch.trim().toLowerCase();
+    const list = CATALOG.furniture.filter((f) => owned(f.id) > 0 && !(f.retired && !placedCount(f.id)) && itemMatches(f)
+      && (itemSet === 'all' || (f.set ?? 'Classics') === itemSet) && (!q || f.name.toLowerCase().includes(q) || (f.set ?? '').toLowerCase().includes(q)))
+      .sort((a, b) => !!b.free - !!a.free);
+    if (!list.length) return q ? `<p class="muted">Nothing called “${esc(itemSearch)}”.</p>` : '<p class="muted">Nothing yet! Buy furniture in the Shop, or win trophies around the zone.</p>';
+    const setOf = (f) => f.set ?? 'Classics', label = (g) => SET_LABEL[g] ?? esc(g);
+    return itemSet === 'all' && !q ? jumpStrip([...new Set(list.map(setOf))], label) + shelves(list, setOf, itemTile, label) : `<div class="furni-grid">${list.map(itemTile).join('')}</div>`;
+  }
+
   function renderItems() {
     const sel = selected >= 0 ? home?.items[selected] : null;
-    // free walls come first (they never run out); retired pieces only show while one is still up
-    const ownedList = CATALOG.furniture.filter((f) => owned(f.id) > 0 && !(f.retired && !placedCount(f.id)) && itemMatches(f)).sort((a, b) => !!b.free - !!a.free);
+    // the sets you own something from, for the quick filter chips
+    const sets = [...new Set(CATALOG.furniture.filter((f) => owned(f.id) > 0 && itemMatches(f)).map((f) => f.set ?? 'Classics'))];
+    if (itemSet !== 'all' && !sets.includes(itemSet)) itemSet = 'all';
     panel.innerHTML = `
       ${sel ? `<div class="sel-box"><span class="sel-em">${furniImg(sel.id)}</span><b>${esc(FURN[sel.id].name)}</b>
         <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''}>⟳ Rotate</button>
@@ -1268,13 +1302,12 @@ export function house(stage) {
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div>
         ${FURN[sel.id].recolor ? `<div class="wd-label">🎨 Colour</div><div class="swatches palette"><button type="button" class="swatch orig ${sel.c ? '' : 'on'}" data-recolor="" title="Original colour">↺</button>${CATALOG.clothColors.map((c) => `<button type="button" class="swatch ${sel.c === c ? 'on' : ''}" data-recolor="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}</div>` : ''}
       ${pageStrip(ITEM_FILTERS, itemFilter, 'item-filter')}
+      <input class="item-search" type="search" placeholder="🔍 Search your items…" value="${esc(itemSearch)}">
+      ${sets.length > 1 ? `<div class="shelf-jump item-sets"><button class="${itemSet === 'all' ? 'on' : ''}" data-item-set="all">Everything</button>${sets.map((g) => `<button class="${itemSet === g ? 'on' : ''}" data-item-set="${esc(g)}">${SET_LABEL[g] ?? esc(g)}</button>`).join('')}</div>` : ''}
       <p class="muted small">Pick something to place it:</p>
-      <div class="furni-grid">${ownedList.map((f) => {
-        const left = owned(f.id) - placedCount(f.id);
-        return `<button class="furni ${left ? '' : 'used'}" data-place="${f.id}" ${left ? '' : 'disabled'} title="${esc(f.name)}">
-          <span class="fem">${furniImg(f.id)}</span><span class="fname">${esc(f.name)}</span><span class="fcount">${f.free ? (f.drag ? 'Free · drag to draw' : 'Free') : `${left}/${owned(f.id)} left`}</span></button>`;
-      }).join('')}</div>
-      ${ownedList.length ? '' : '<p class="muted">Nothing yet! Buy furniture in the Shop, or win trophies around the zone.</p>'}`;
+      <div class="item-grid">${itemGridHtml()}</div>`;
+    const search = panel.querySelector('.item-search');
+    search.oninput = () => { itemSearch = search.value; panel.querySelector('.item-grid').innerHTML = itemGridHtml(); }; // (only the grid: typing keeps focus)
   }
 
   function shopTile(item, kind) {
@@ -1306,13 +1339,14 @@ export function house(stage) {
     Plushies: '🧸 Claw machine plushies', Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🤍 White kitchen', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
   };
   const DECO_LISTS = { floor: CATALOG.floors, wall: CATALOG.walls, ceiling: CATALOG.ceilings, door: CATALOG.doors };
-  let shopPage = 'furniture', stylePage = 'wall', itemFilter = 'all';
+  let shopPage = 'furniture', stylePage = 'wall', itemFilter = 'all', itemSet = 'all', itemSearch = '';
   const shelfId = (g) => `shelf-${String(g).replace(/\W+/g, '')}`;
   /** Items grouped into labelled shelves, in the order the groups first appear. */
   function shelves(list, groupOf, tile, label = (g) => esc(g), grid = 'furni-grid') {
     const groups = [...new Set(list.map(groupOf))];
     return groups.map((g) => `<div class="wd-label shelf-label" id="${shelfId(g)}">${label(g)}</div>
-      <div class="${grid}">${list.filter((x) => groupOf(x) === g).map(tile).join('')}</div>`).join('');
+      <div class="${grid}">${list.filter((x) => groupOf(x) === g).map(tile).join('')}</div>`).join('')
+      + (groups.length > 1 ? '<div class="shelf-end"></div>' : ''); // (room below, so even the last shelf can jump to the top)
   }
   const pageStrip = (pages, cur, attr) => `<div class="shop-pages">${pages.map(([id, label]) => `<button class="${cur === id ? 'on' : ''}" data-${attr}="${id}">${label}</button>`).join('')}</div>`;
   /** Little buttons that jump down to each shelf on the page. */
@@ -1394,11 +1428,12 @@ export function house(stage) {
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor],[data-trim],[data-item-filter]');
+    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor],[data-trim],[data-item-filter],[data-item-set]');
     if (!t) return;
     const ds = t.dataset;
     if (ds.trim) { if (home.trim !== ds.trim) { home.trim = ds.trim; commit('paint'); } return; }
     if (ds.itemFilter) { itemFilter = ds.itemFilter; renderPanel(); panel.scrollTop = 0; return; }
+    if (ds.itemSet) { itemSet = ds.itemSet; renderPanel(); panel.scrollTop = 0; return; }
     if (ds.recolor != null && selected >= 0) {
       const it = { ...home.items[selected] };
       if (ds.recolor) it.c = ds.recolor; else delete it.c;
@@ -1415,7 +1450,16 @@ export function house(stage) {
     }
     if (ds.shopPage) { shopPage = ds.shopPage; confirmBuy = null; renderPanel(); panel.scrollTop = 0; return; }
     if (ds.stylePage) { stylePage = ds.stylePage; confirmBuy = null; brush = null; renderAll(); panel.scrollTop = 0; return; }
-    if (ds.jump) { panel.querySelector(`#${ds.jump}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (ds.jump) {
+      // scroll the shelf's label to just under the sticky tabs at the top (however many rows they wrap to)
+      const el = panel.querySelector(`#${ds.jump}`);
+      if (!el) return;
+      const sticky = panel.querySelector('.shop-pages');
+      const under = sticky && getComputedStyle(sticky).position === 'sticky' ? sticky.getBoundingClientRect().height : 0;
+      const top = panel.scrollTop + el.getBoundingClientRect().top - panel.getBoundingClientRect().top - under - 6;
+      panel.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      return;
+    }
     if (ds.size) { resize(ds.size); return; }
     if (ds.previewBuy != null) {
       const id = preview[ds.previewBuy];

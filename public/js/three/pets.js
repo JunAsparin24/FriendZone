@@ -111,9 +111,9 @@ const BUILD = {
     const tail = new THREE.Group();
     tail.position.set(0, 0.38, -0.36);
     g.add(tail);
-    const curve = new THREE.CatmullRomCurve3([[0, 0, 0], [0, 0.09, -0.12], [0, 0.15, -0.28], [0, 0.155, -0.44], [0, 0.13, -0.6], [0, 0.12, -0.72], [0, 0.16, -0.82]].map((q) => new THREE.Vector3(...q)));
-    const TS = 48, RS = 14, tube = new THREE.TubeGeometry(curve, TS, 1, RS, false);
-    const radius = (u) => 0.105 - 0.035 * u - 0.035 * u * u + Math.sin(u * Math.PI) * 0.012; // (thick, bushy, then tapering)
+    const curve = new THREE.CatmullRomCurve3([[0, 0, 0], [0, 0.09, -0.12], [0, 0.16, -0.3], [0, 0.17, -0.5], [0, 0.14, -0.7], [0, 0.11, -0.88], [0, 0.12, -1.02], [0, 0.18, -1.12]].map((q) => new THREE.Vector3(...q)));
+    const TS = 60, RS = 14, tube = new THREE.TubeGeometry(curve, TS, 1, RS, false);
+    const radius = (u) => 0.095 - 0.045 * u - 0.02 * u * u + Math.sin(u * Math.PI) * 0.01; // (bushy, tapering gradually to the tip)
     const pos = tube.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
     for (let a = 0; a <= TS; a++) {
       const u = a / TS;
@@ -121,14 +121,30 @@ const BUILD = {
       for (let b = 0; b <= RS; b++) { const k = a * (RS + 1) + b; v.fromBufferAttribute(pos, k).sub(c).multiplyScalar(radius(u)).add(c); pos.setXYZ(k, v.x, v.y, v.z); }
     }
     tube.computeVertexNormals();
+    const rest = Float32Array.from(pos.array); // (the tail at rest: it bends from this every frame)
     add(tail, tube, coat);
-    add(tail, sph(radius(1), 12, 10), coat, { p: curve.getPointAt(1).toArray() }); // (a rounded tip)
+    const tipAt = curve.getPointAt(1);
+    const tipBall = add(tail, sph(radius(1), 12, 10), coat, { p: tipAt.toArray() }); // (a rounded tip)
+    // a slow wave runs down the tail: the base barely moves, the far end swings and curls the most
+    let bendT = 0;
+    const bendTail = (t, m) => {
+      const sway = m ? 0.09 : 0.16, lift = m ? 0.05 : 0.03;
+      const off = (u) => [Math.sin(t * 1.5 - u * 2.6) * sway * u * u, Math.sin(t * 2.1 - u * 2.2 + 1) * lift * u + (m ? Math.sin(t * 10) * 0.02 * u : 0)];
+      for (let a = 0; a <= TS; a++) {
+        const [ox, oy] = off(a / TS);
+        for (let b = 0; b <= RS; b++) { const k = (a * (RS + 1) + b) * 3; pos.array[k] = rest[k] + ox; pos.array[k + 1] = rest[k + 1] + oy; pos.array[k + 2] = rest[k + 2]; }
+      }
+      pos.needsUpdate = true;
+      if (++bendT % 3 === 0) tube.computeVertexNormals();
+      const [tx, ty] = off(1);
+      tipBall.position.set(tipAt.x + tx, tipAt.y + ty, tipAt.z);
+    };
     add(tail, sph(radius(0), 14, 10), coat, { outline: false }); // (blending into the hips)
     return (t, dt, m) => {
       trot(L, t, m, 10, 0.45);
-      // the tail sways slowly from side to side, bobbing a little as it walks
-      tail.rotation.y = Math.sin(t * 1.1) * (m ? 0.12 : 0.2);
-      tail.rotation.x = Math.sin(t * 1.7) * 0.04 + (m ? Math.sin(t * 10) * 0.03 : 0);
+      // the tail swishes in a slow wave down its length (livelier at rest, steadier while walking)
+      bendTail(t, m);
+      tail.rotation.y = Math.sin(t * 0.8) * 0.06;
       head.rotation.y = Math.sin(t * 0.6) * 0.3;
       head.rotation.x = 0.15 + Math.sin(t * 0.9) * 0.05; // (snuffling along, nose down)
       locks.forEach((l, i) => { l.rotation.x = Math.sin(t * 2.2 + i) * (m ? 0.25 : 0.1); });

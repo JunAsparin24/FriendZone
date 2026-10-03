@@ -229,6 +229,57 @@ const neonOpenTex = () => (neonTexC ??= canvasTexture(256, 108, (c) => {
   c.shadowColor = '#ff3b5c'; c.shadowBlur = 18; c.lineWidth = 5; c.strokeStyle = '#ff3b5c'; c.strokeText('OPEN', 128, 58);
   c.shadowBlur = 6; c.fillStyle = '#ffe1e6'; c.fillText('OPEN', 128, 58);
 }));
+/** A tub you can get into: bubbles that drift, livelier for a while when someone climbs in. */
+function tubSoak(g, A, len, y, emoji = '🫧') {
+  const bubbles = [];
+  for (let i = 0; i < 10; i++) bubbles.push(add(g, sph(0.06 + (i % 3) * 0.025, 10, 8), toon('#ffffff'), { p: [(-0.5 + (i % 5) / 4) * len * 0.8, y + 0.03, (Math.floor(i / 5) - 0.5) * 0.25], outline: false }));
+  let boost = 0;
+  A.anim.push((t, dt) => { boost = Math.max(0, boost - dt); bubbles.forEach((b, i) => { b.position.y = y + 0.03 + Math.sin(t * (2 + boost) + i) * (0.015 + boost * 0.003); }); return false; });
+  return { use: () => { boost = 10; floatEmoji(g, A, emoji, 0.9, 4); } };
+}
+/** Water raining down from a shower head at (x, z) from height y while it's on. */
+function showerWater(g, A, x, z, y) {
+  const drops = [];
+  for (let i = 0; i < 14; i++) { const d = add(g, box(0.012, 0.12, 0.012), basic('#bfe8ff'), { outline: false, cast: false }); d.visible = false; drops.push(d); }
+  let on = 0;
+  A.anim.push((t, dt) => {
+    on = Math.max(0, on - dt);
+    drops.forEach((d, i) => { d.visible = on > 0; const p = (t * 2.2 + i / 14) % 1; d.position.set(x + Math.sin(i * 2.4) * 0.12, y - 0.1 - p * (y - 0.2), z + Math.cos(i * 1.7) * 0.12); });
+    return false;
+  });
+  return { use: () => { on = 12; floatEmoji(g, A, '🚿', 2.2, 1); } };
+}
+/** A wall toilet-roll holder with a roll on it. */
+function tpHolder(g, metal, wood = false, paper = '#ffffff') {
+  add(g, wood ? box(0.3, 0.08, 0.04) : cyl(0.04, 0.04, 0.02, 14), metal, { p: [0, 0.04, 0.02], r: wood ? null : [Math.PI / 2, 0, 0] });
+  add(g, box(0.02, 0.02, 0.12), metal, { p: [-0.12, 0, 0.07], outline: false });
+  add(g, cyl(0.012, 0.012, 0.26, 8), metal, { p: [0, 0, 0.13], r: [0, 0, Math.PI / 2], outline: false });
+  add(g, cyl(0.075, 0.075, 0.2, 18), toon(paper), { p: [0, 0, 0.13], r: [0, 0, Math.PI / 2] });
+  add(g, cyl(0.025, 0.025, 0.202, 10), toon('#c9a77a'), { p: [0, 0, 0.13], r: [0, 0, Math.PI / 2], outline: false });
+  add(g, box(0.2, 0.18, 0.004), toon(paper), { p: [0, -0.09, 0.205], outline: false }); // (the sheet hanging down)
+}
+/** RGB parts that cycle through the rainbow together (offset a little each). */
+function rgbCycle(A, mats, speed = 0.2) {
+  A.anim.push((t) => { mats.forEach((m, i) => m.color.setHSL(((t * speed + i * 0.08) % 1), 0.9, 0.6)); return false; });
+}
+let curtainTexC = null;
+const curtainTex = () => (curtainTexC ??= canvasTexture(64, 64, (c) => { for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? '#ffffff' : '#7fc8ff'; c.fillRect(i * 8, 0, 8, 64); } }));
+const neonTxtC = {};
+const neonTextTex = (txt, col) => (neonTxtC[txt] ??= canvasTexture(256, 128, (c) => {
+  c.clearRect(0, 0, 256, 128);
+  c.font = 'bold 84px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.shadowColor = col; c.shadowBlur = 20; c.lineWidth = 6; c.strokeStyle = col; c.strokeText(txt, 128, 68);
+  c.shadowBlur = 6; c.fillStyle = '#ffffff'; c.fillText(txt, 128, 68);
+}));
+let neonPadC = null;
+const neonControllerTex = () => (neonPadC ??= canvasTexture(256, 160, (c) => {
+  c.clearRect(0, 0, 256, 160);
+  c.shadowColor = '#39e6ff'; c.shadowBlur = 18; c.lineWidth = 7; c.strokeStyle = '#39e6ff';
+  c.beginPath(); c.moveTo(70, 40); c.lineTo(186, 40); c.quadraticCurveTo(236, 40, 230, 100); c.quadraticCurveTo(226, 140, 196, 130); c.lineTo(170, 105); c.lineTo(86, 105); c.lineTo(60, 130); c.quadraticCurveTo(30, 140, 26, 100); c.quadraticCurveTo(20, 40, 70, 40); c.stroke();
+  c.strokeStyle = '#ff4fd8'; c.shadowColor = '#ff4fd8';
+  c.beginPath(); c.moveTo(66, 72); c.lineTo(98, 72); c.moveTo(82, 56); c.lineTo(82, 88); c.stroke();
+  for (const [x, y] of [[172, 62], [190, 76], [154, 76], [172, 90]]) { c.beginPath(); c.arc(x, y, 6, 0, TAU); c.stroke(); }
+}));
 function pedestal(g) {
   add(g, box(0.62, 0.5, 0.62), toon('#e8e2f4'), { p: [0, 0.25, 0] });
   add(g, box(0.7, 0.08, 0.7), toon('#c9c1dc'), { p: [0, 0.54, 0] });
@@ -1184,9 +1235,207 @@ export const FURNITURE = {
       drops.forEach((d, i) => { d.visible = on > 0; const p = (t * 2.2 + i / 10) % 1; d.position.set(Math.sin(i * 2.4) * 0.1, 1.85 - p * 1.7, -0.05 + Math.cos(i * 1.7) * 0.1); });
       return false;
     });
-    return { use: () => { on = 4; floatEmoji(g, A, '🚿', 2.2, 1); } };
+    return { use: () => { on = 12; floatEmoji(g, A, '🚿', 2.2, 1); } };
+  },
+  bathtub_modern(g, A) {
+    // a built-in rectangular tub: white sides, a chrome mixer tap, full of water
+    const white = toon('#fbfbfd'), chrome = shiny('#c0c6d4', { metalness: 0.6 });
+    add(g, box(1.9, 0.5, 0.86), white, { p: [0, 0.25, 0] });
+    add(g, box(1.7, 0.02, 0.66), new THREE.MeshStandardMaterial({ color: '#8fd8ff', transparent: true, opacity: 0.85, roughness: 0.1 }), { p: [0, 0.45, 0], outline: false, cast: false });
+    add(g, box(1.94, 0.04, 0.9), toon('#e8e8ee'), { p: [0, 0.51, 0] });
+    add(g, cyl(0.025, 0.025, 0.22, 8), chrome, { p: [-0.82, 0.62, -0.3], outline: false });
+    add(g, box(0.03, 0.03, 0.16), chrome, { p: [-0.82, 0.72, -0.23], outline: false });
+    return tubSoak(g, A, 1.6, 0.5);
+  },
+  bathtub_gold(g, A) {
+    // a golden clawfoot tub on lion feet
+    const gold = shiny('#d4af37', { metalness: 0.7, roughness: 0.25 });
+    add(g, geo('tub', () => new THREE.LatheGeometry([[0.0, 0], [0.3, 0.02], [0.36, 0.2], [0.4, 0.5], [0.42, 0.52], [0.36, 0.52], [0.33, 0.24], [0.0, 0.2]].map(([x, y]) => new THREE.Vector2(x, y)), 32)), gold, { p: [0, 0.12, 0], s: [2.15, 1, 1] });
+    add(g, cyl(0.34, 0.34, 0.02, 32), new THREE.MeshStandardMaterial({ color: '#ffe3f0', transparent: true, opacity: 0.85, roughness: 0.2 }), { p: [0, 0.56, 0], s: [2.15, 1, 1], outline: false, cast: false });
+    for (const x of [-0.7, 0.7]) for (const z of [-0.26, 0.26]) add(g, cone(0.07, 0.14, 8), gold, { p: [x, 0.07, z], r: [Math.PI, 0, 0], outline: false });
+    add(g, cyl(0.025, 0.025, 0.3, 8), gold, { p: [-0.82, 0.72, 0], outline: false });
+    for (let i = 0; i < 6; i++) add(g, sph(0.05, 8, 6), toon('#ff5d8f'), { p: [-0.5 + i * 0.2, 0.58, Math.sin(i * 2) * 0.15], s: [1, 0.3, 1], outline: false }); // (rose petals)
+    return tubSoak(g, A, 1.5, 0.56);
+  },
+  bathtub_wood(g, A) {
+    // a deep round Japanese soaking tub of wooden staves with metal hoops
+    const wood = toon('#c9955a');
+    for (let i = 0; i < 18; i++) { const a = (i / 18) * TAU; add(g, box(0.16, 0.75, 0.05), i % 2 ? wood : toon('#b98548'), { p: [Math.cos(a) * 0.4, 0.375, Math.sin(a) * 0.4], r: [0, -a + Math.PI / 2, 0], outline: false }); }
+    for (const y of [0.15, 0.6]) add(g, new THREE.TorusGeometry(0.42, 0.018, 6, 32), shiny('#3a3f55'), { p: [0, y, 0], r: [Math.PI / 2, 0, 0], outline: false });
+    add(g, cyl(0.38, 0.38, 0.02, 28), new THREE.MeshStandardMaterial({ color: '#9fe0e8', transparent: true, opacity: 0.85, roughness: 0.1 }), { p: [0, 0.66, 0], outline: false, cast: false });
+    add(g, cyl(0.4, 0.4, 0.04, 28), toon('#8b5a2b'), { p: [0, 0.02, 0] });
+    return tubSoak(g, A, 0.5, 0.66, '♨️');
+  },
+  jacuzzi(g, A) {
+    // a big octagonal hot tub: teal water that bubbles, a wooden surround with steps
+    const wood = toon('#8b5a2b');
+    add(g, cyl(0.98, 0.98, 0.62, 8, true), toon('#8b5a2b', { side: THREE.DoubleSide }), { p: [0, 0.31, 0] });
+    add(g, new THREE.RingGeometry(0.82, 1.0, 8, 1, Math.PI / 8), toon('#6e4424', { side: THREE.DoubleSide }), { p: [0, 0.625, 0], r: [-Math.PI / 2, 0, 0] }); // (the rim: open in the middle)
+    add(g, cyl(0.82, 0.82, 0.02, 8), toon('#e8f4f8'), { p: [0, 0.2, 0], outline: false }); // (the tub floor)
+    add(g, cyl(0.82, 0.82, 0.02, 8), new THREE.MeshStandardMaterial({ color: '#3fd8d0', transparent: true, opacity: 0.85, roughness: 0.1, emissive: '#0a5a5a', emissiveIntensity: 0.4 }), { p: [0, 0.6, 0], outline: false, cast: false });
+    add(g, box(0.7, 0.2, 0.3), wood, { p: [0, 0.1, 0.98] });
+    const fizz = [];
+    for (let i = 0; i < 22; i++) fizz.push(add(g, sph(0.03 + (i % 3) * 0.015, 8, 6), basic('#ffffff', { transparent: true, opacity: 0.8 }), { outline: false, cast: false }));
+    const light = new THREE.PointLight(0x3fd8d0, 0.8, 3, 1.8);
+    light.position.set(0, 0.8, 0); g.add(light);
+    let boost = 0;
+    A.anim.push((t, dt) => {
+      boost = Math.max(0, boost - dt);
+      fizz.forEach((b, i) => { const a = i * 2.4 + t * 0.3, r = 0.15 + (i % 5) * 0.13; b.position.set(Math.cos(a) * r, 0.62 + Math.abs(Math.sin(t * (3 + boost * 3) + i)) * (0.03 + boost * 0.02), Math.sin(a) * r); });
+      return false;
+    });
+    return { use: () => { boost = 12; floatEmoji(g, A, '🫧', 1.0, 5); } };
+  },
+  shower_rain(g, A) {
+    // an open walk-in shower: a black-framed glass panel, slate tiles and a big square rain head
+    const black = toon('#1d1b22');
+    add(g, box(0.94, 0.06, 0.94), toon('#3a3f48'), { p: [0, 0.03, 0] });
+    add(g, box(0.92, 2.1, 0.04), new THREE.MeshToonMaterial({ map: floorTexture('floor_tl_black_tiles') }), { p: [0, 1.1, -0.45] });
+    add(g, box(0.03, 2.0, 0.9), new THREE.MeshStandardMaterial({ color: '#cfefff', transparent: true, opacity: 0.25, roughness: 0.05, depthWrite: false }), { p: [0.45, 1.05, 0], outline: false, cast: false });
+    for (const [y, h] of [[0.06, 0.03], [2.05, 0.03]]) add(g, box(0.05, h, 0.92), black, { p: [0.45, y, 0], outline: false });
+    add(g, box(0.05, 2.0, 0.04), black, { p: [0.45, 1.05, 0.44], outline: false });
+    add(g, cyl(0.015, 0.015, 0.35, 8), black, { p: [0, 2.04, -0.28], r: [Math.PI / 2, 0, 0], outline: false });
+    add(g, box(0.34, 0.03, 0.34), black, { p: [0, 2.02, -0.08] });
+    add(g, box(0.12, 0.2, 0.04), toon('#2a2d36'), { p: [-0.2, 1.4, -0.41], outline: false }); // (a niche of bottles)
+    return showerWater(g, A, 0, -0.08, 2.0);
+  },
+  shower_curtain(g, A) {
+    // a tiled shower stall with a curved rod and a striped curtain
+    add(g, box(0.94, 0.1, 0.94), toon('#e6eef5'), { p: [0, 0.05, 0] });
+    for (const [x, z, ry] of [[0, -0.45, 0], [-0.45, 0, Math.PI / 2], [0.45, 0, Math.PI / 2]]) add(g, box(0.92, 2.1, 0.04), new THREE.MeshToonMaterial({ map: floorTexture('floor_tile_mint') }), { p: [x, 1.1, z], r: [0, ry, 0] });
+    add(g, cyl(0.012, 0.012, 0.92, 8), shiny('#c0c6d4', { metalness: 0.6 }), { p: [0, 2.0, 0.44], r: [0, 0, Math.PI / 2], outline: false });
+    const curtain = new THREE.MeshToonMaterial({ map: curtainTex(), side: THREE.DoubleSide });
+    add(g, new THREE.PlaneGeometry(0.4, 1.8, 6, 1).translate(0, -0.9, 0), curtain, { p: [-0.25, 2.0, 0.44], outline: false });
+    add(g, cyl(0.02, 0.02, 0.36, 8), shiny('#c0c6d4', { metalness: 0.6 }), { p: [0, 1.95, -0.25], r: [Math.PI / 2, 0, 0], outline: false });
+    add(g, cyl(0.1, 0.08, 0.04, 14), shiny('#c0c6d4', { metalness: 0.6 }), { p: [0, 1.92, -0.06], outline: false });
+    return showerWater(g, A, 0, -0.06, 1.88);
+  },
+  toilet_modern(g, A) {
+    // a sleek wall-hung toilet with a black seat and a flush plate
+    const white = toon('#fbfbfd');
+    add(g, box(0.5, 0.9, 0.16), white, { p: [0, 0.75, -0.38] });
+    add(g, box(0.16, 0.1, 0.02), toon('#2a2d36'), { p: [0, 0.95, -0.295], outline: false });
+    add(g, geo('mbowl', () => new THREE.CylinderGeometry(0.22, 0.16, 0.24, 24)), white, { p: [0, 0.4, -0.1], s: [0.9, 1, 1.25] });
+    add(g, geo('seatRing', () => new THREE.TorusGeometry(0.2, 0.045, 8, 24)), toon('#1d1b22'), { p: [0, 0.53, -0.1], r: [Math.PI / 2, 0, 0], s: [0.85, 1.15, 1] });
+    add(g, cyl(0.15, 0.15, 0.02, 20), basic('#7fc8ff'), { p: [0, 0.5, -0.1], s: [0.8, 1, 1.1], outline: false, cast: false });
+    return { use: () => floatEmoji(g, A, '💧', 1.0, 3) };
+  },
+  toilet_gold(g, A) {
+    // the golden throne: a gold toilet with a red velvet lid and a little crown on the tank
+    const gold = shiny('#d4af37', { metalness: 0.7, roughness: 0.25 });
+    add(g, cyl(0.17, 0.15, 0.36, 20), gold, { p: [0, 0.18, -0.04], s: [1, 1, 1.2] });
+    add(g, geo('bowl', () => new THREE.CylinderGeometry(0.26, 0.19, 0.16, 24)), gold, { p: [0, 0.42, -0.02], s: [0.85, 1, 1.15] });
+    add(g, geo('seatRing', () => new THREE.TorusGeometry(0.2, 0.045, 8, 24)), toon('#a3262e'), { p: [0, 0.505, -0.02], r: [Math.PI / 2, 0, 0], s: [0.85, 1.15, 1] });
+    add(g, box(0.48, 0.5, 0.2), gold, { p: [0, 0.68, -0.3] });
+    for (let i = 0; i < 5; i++) add(g, cone(0.03, 0.08, 6), gold, { p: [-0.16 + i * 0.08, 1.0, -0.3], outline: false });
+    add(g, sph(0.03, 8, 6), toon('#e0283a'), { p: [0, 0.8, -0.19], outline: false });
+    return { use: () => floatEmoji(g, A, '👑', 1.2, 2) };
+  },
+  tp_chrome(g) { tpHolder(g, shiny('#c0c6d4', { metalness: 0.6 })); },
+  tp_gold(g) { tpHolder(g, shiny('#d4af37', { metalness: 0.7 })); },
+  tp_black(g) { tpHolder(g, toon('#1d1b22')); },
+  tp_wood(g) { tpHolder(g, toon('#a8723f'), true); },
+  tp_pink(g) { tpHolder(g, toon('#ff8fc7'), false, '#ffe3f0'); },
+  tp_stack(g) {
+    // a little pyramid of spare rolls on the floor
+    const roll = toon('#ffffff');
+    for (const [x, y, z] of [[-0.12, 0.08, 0], [0.12, 0.08, 0], [0, 0.08, 0.2], [0, 0.24, 0.07]]) {
+      add(g, cyl(0.08, 0.08, 0.15, 16), roll, { p: [x, y, z] });
+      add(g, cyl(0.025, 0.025, 0.152, 10), toon('#c9a77a'), { p: [x, y, z], outline: false });
+    }
+  },
+  bath_vanity(g, A) {
+    // a double vanity: a wood cabinet, a stone top with two basins and taps
+    add(g, box(1.8, 0.8, 0.55), toon('#5a3a24'), { p: [0, 0.4, -0.15] });
+    for (const x of [-0.45, 0.45]) { add(g, box(0.8, 0.6, 0.02), toon('#6e4a30'), { p: [x, 0.38, 0.13], outline: false }); add(g, box(0.12, 0.02, 0.02), shiny('#d4af37'), { p: [x, 0.62, 0.15], outline: false }); }
+    add(g, box(1.86, 0.05, 0.6), toon('#ece8e2'), { p: [0, 0.82, -0.15] });
+    for (const x of [-0.45, 0.45]) {
+      add(g, cyl(0.17, 0.13, 0.08, 20), toon('#ffffff'), { p: [x, 0.88, -0.12] });
+      add(g, cyl(0.13, 0.13, 0.01, 16), basic('#cfefff'), { p: [x, 0.92, -0.12], outline: false, cast: false });
+      add(g, cyl(0.015, 0.015, 0.18, 8), shiny('#c0c6d4', { metalness: 0.6 }), { p: [x, 0.94, -0.36], outline: false });
+      add(g, box(0.025, 0.025, 0.1), shiny('#c0c6d4', { metalness: 0.6 }), { p: [x, 1.02, -0.32], outline: false });
+    }
+    return { use: () => floatEmoji(g, A, '💧', 1.2, 3) };
   },
 
+  // ---- more of the gamer set ----
+  gaming_pc(g, A) {
+    // a glass-sided tower with RGB fans and a glowing strip that cycle through the rainbow
+    add(g, box(0.36, 0.8, 0.7), toon('#141218'), { p: [0, 0.42, 0] });
+    add(g, box(0.02, 0.7, 0.6), new THREE.MeshStandardMaterial({ color: '#4a4a66', transparent: true, opacity: 0.35, roughness: 0.05 }), { p: [0.185, 0.43, 0], outline: false, cast: false });
+    const glows = [];
+    for (const [y, z] of [[0.62, -0.15], [0.62, 0.15], [0.3, 0]]) {
+      const m = basic('#ff4fd8');
+      add(g, new THREE.TorusGeometry(0.1, 0.018, 6, 20), m, { p: [0.17, y, z], r: [0, Math.PI / 2, 0], outline: false, cast: false });
+      glows.push(m);
+    }
+    const strip = basic('#39e6ff'); glows.push(strip);
+    add(g, box(0.02, 0.02, 0.6), strip, { p: [0.18, 0.79, 0], outline: false, cast: false });
+    add(g, box(0.2, 0.3, 0.3), toon('#2a2d36'), { p: [0.05, 0.42, -0.05], outline: false }); // (the graphics card / board)
+    add(g, cyl(0.02, 0.02, 0.01, 10), basic('#6ee7a0'), { p: [0, 0.8, 0.355], r: [Math.PI / 2, 0, 0], outline: false });
+    for (const [x, z] of [[-0.14, -0.3], [0.14, -0.3], [-0.14, 0.3], [0.14, 0.3]]) add(g, box(0.06, 0.03, 0.06), toon('#2a2d36'), { p: [x, 0.015, z], outline: false });
+    rgbCycle(A, glows, 0.25);
+  },
+  rgb_hex_panels(g, A) {
+    // a cluster of hexagon light panels on the wall, a slow rainbow wave washing across them
+    const cells = [[0, 0], [1, 0], [2, 0], [3, 0], [0.5, 1], [1.5, 1], [2.5, 1], [1, 2], [2, 2], [3, 2], [-0.5, 1], [3.5, 1]];
+    const hex = geo('hexPanel', () => new THREE.CylinderGeometry(0.15, 0.15, 0.03, 6));
+    const mats = [];
+    for (const [cx, cy] of cells) {
+      const m = basic('#39e6ff'); mats.push({ m, cx });
+      add(g, hex, m, { p: [(cx - 1.5) * 0.27, (cy - 1) * 0.235, 0.02], r: [Math.PI / 2, 0, Math.PI / 6], outline: false, cast: false });
+    }
+    const light = new THREE.PointLight(0x9a6bff, 0.7, 3, 1.8); light.position.set(0, 0, 0.4); g.add(light);
+    const c = new THREE.Color();
+    A.anim.push((t) => { mats.forEach(({ m, cx }) => m.color.setHSL(((t * 0.06 + cx * 0.07) % 1 + 1) % 1, 0.85, 0.6)); light.color.setHSL((t * 0.06) % 1, 0.8, 0.6); return false; });
+    void c;
+  },
+  rgb_strip(g, A) {
+    // an LED strip along the wall, a rainbow chasing along it
+    const n = 24, segs = [];
+    for (let i = 0; i < n; i++) { const m = basic('#ff4fd8'); segs.push(m); add(g, box(1.9 / n - 0.004, 0.03, 0.02), m, { p: [-0.95 + (i + 0.5) * (1.9 / n), 0, 0.01], outline: false, cast: false }); }
+    A.anim.push((t) => { segs.forEach((m, i) => m.color.setHSL(((t * 0.3 - i / n) % 1 + 1) % 1, 0.9, 0.6)); return false; });
+  },
+  rgb_light_bars(g, A) {
+    // a pair of standing RGB light bars
+    const mats = [];
+    for (const x of [-0.3, 0.3]) {
+      add(g, cyl(0.08, 0.1, 0.03, 16), toon('#141218'), { p: [x, 0.015, 0] });
+      const m = basic('#39e6ff'); mats.push(m);
+      add(g, cyl(0.03, 0.03, 0.9, 10), m, { p: [x, 0.48, 0], outline: false, cast: false });
+    }
+    const light = new THREE.PointLight(0x39e6ff, 0.6, 3, 1.8); light.position.set(0, 0.6, 0.2); g.add(light);
+    A.anim.push((t) => { mats.forEach((m, i) => m.color.setHSL(((t * 0.12 + i * 0.5) % 1), 0.9, 0.6)); light.color.setHSL((t * 0.12) % 1, 0.9, 0.6); return false; });
+  },
+  neon_gg(g, A) {
+    add(g, box(0.8, 0.44, 0.02), toon('#141218'), { p: [0, 0, 0.01] });
+    const m = new THREE.MeshBasicMaterial({ map: neonTextTex('GG', '#b77bff'), transparent: true });
+    add(g, plane(0.76, 0.4), m, { p: [0, 0, 0.025], outline: false, cast: false });
+    A.anim.push((t) => { m.opacity = 0.85 + Math.sin(t * 3) * 0.15; return false; });
+  },
+  neon_controller(g, A) {
+    const m = new THREE.MeshBasicMaterial({ map: neonControllerTex(), transparent: true });
+    add(g, plane(0.9, 0.55), m, { p: [0, 0, 0.02], outline: false, cast: false });
+    A.anim.push((t) => { m.opacity = Math.floor(t * 2.5) % 19 === 0 ? 0.5 : 1; return false; });
+  },
+  gamer_fridge(g) {
+    // a mini fridge with a glass door full of energy drinks, lit from inside
+    add(g, box(0.5, 0.75, 0.5), toon('#141218'), { p: [0, 0.375, -0.05] });
+    add(g, box(0.44, 0.66, 0.02), new THREE.MeshStandardMaterial({ color: '#b8f0ff', transparent: true, opacity: 0.3, emissive: '#39e6ff', emissiveIntensity: 0.3 }), { p: [0, 0.39, 0.21], outline: false, cast: false });
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) add(g, cyl(0.03, 0.03, 0.14, 10), toon(['#6ee7a0', '#ff4fd8', '#ffd84d', '#39e6ff'][(r + c) % 4]), { p: [-0.15 + c * 0.1, 0.16 + r * 0.21, 0.1], outline: false });
+    add(g, box(0.03, 0.3, 0.03), toon('#3a3d46'), { p: [0.2, 0.45, 0.23], outline: false });
+  },
+  sim_rig(g) {
+    // a racing simulator: a bucket seat on a frame, a wheel on a stand and pedals
+    const frame = toon('#2a2d36');
+    add(g, box(0.6, 0.08, 1.7), frame, { p: [0, 0.04, 0] });
+    add(g, box(0.5, 0.1, 0.5), toon('#e0283a'), { p: [0, 0.38, -0.45] });
+    add(g, box(0.5, 0.7, 0.12), toon('#e0283a'), { p: [0, 0.75, -0.72], r: [-0.25, 0, 0] });
+    add(g, box(0.1, 0.3, 0.1), frame, { p: [0, 0.2, -0.45], outline: false });
+    add(g, box(0.08, 0.7, 0.08), frame, { p: [0, 0.4, 0.45], r: [0.3, 0, 0] });
+    add(g, new THREE.TorusGeometry(0.16, 0.025, 8, 24), toon('#141218'), { p: [0, 0.78, 0.36], r: [0.4, 0, 0] });
+    add(g, box(0.4, 0.05, 0.12), frame, { p: [0, 0.1, 0.7], r: [0.4, 0, 0] });
+  },
   // ---- plants ----
   plant_monstera(g) {
     pot(g, 0.22, 0.38, '#f1ece4');

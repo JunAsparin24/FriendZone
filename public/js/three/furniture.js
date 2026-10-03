@@ -198,6 +198,37 @@ function carcass(g, w, h, d, z, mat, backMat) {
   add(g, box(w, 0.06, d), mat, { p: [0, 0.03, z] });
 }
 
+/** A square bistro table with a checked cloth, a candle and salt & pepper (with `food`, room for a dish). */
+let clothTexC = null;
+function restTable(g, food = false) {
+  clothTexC ??= canvasTexture(64, 64, (c) => { for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { c.fillStyle = (x + y) % 2 ? '#ffffff' : '#c8323a'; c.fillRect(x * 8, y * 8, 8, 8); } });
+  add(g, box(0.86, 0.04, 0.86), toon('#3a2216'), { p: [0, 0.76, 0] });
+  add(g, box(0.92, 0.012, 0.92), new THREE.MeshToonMaterial({ map: clothTexC }), { p: [0, 0.786, 0], outline: false });
+  add(g, cyl(0.04, 0.05, 0.72, 10), toon('#1d1b2e'), { p: [0, 0.38, 0] });
+  add(g, box(0.5, 0.04, 0.5), toon('#1d1b2e'), { p: [0, 0.02, 0] });
+  const cx = food ? 0.3 : 0, cz = food ? 0.28 : 0;
+  add(g, cyl(0.03, 0.035, 0.08, 12), new THREE.MeshToonMaterial({ color: '#ffd27a', transparent: true, opacity: 0.6 }), { p: [cx, 0.83, cz], outline: false });
+  add(g, cyl(0.004, 0.004, 0.03, 6), toon('#1d1b2e'), { p: [cx, 0.88, cz], outline: false });
+  for (const [x, c] of [[-0.06, '#ffffff'], [0.06, '#3a3550']]) add(g, cyl(0.016, 0.02, 0.06, 10), toon(c), { p: [(food ? -0.3 : 0.2) + x, 0.82, food ? 0.3 : 0.2], outline: false });
+}
+let menuTexC = null;
+const menuTex = () => (menuTexC ??= canvasTexture(256, 192, (c) => {
+  c.fillStyle = '#1f2a22'; c.fillRect(0, 0, 256, 192);
+  c.fillStyle = 'rgba(255,255,255,.05)'; for (let i = 0; i < 40; i++) c.fillRect((i * 53) % 256, (i * 37) % 192, 30, 2);
+  c.fillStyle = '#ffffff'; c.textAlign = 'center'; c.font = 'bold 30px "Luckiest Guy", Rubik, sans-serif'; c.fillText('MENU', 128, 36);
+  c.font = '17px Rubik, sans-serif'; c.textAlign = 'left';
+  [['Pizza', '12'], ['Pasta', '10'], ['Burger', '9'], ['Sushi', '14'], ['Cake', '6']].forEach(([n, p], i) => {
+    c.fillStyle = ['#ffd27a', '#ffffff'][i % 2]; c.fillText(n, 28, 70 + i * 24); c.textAlign = 'right'; c.fillText(`${p}🪙`, 228, 70 + i * 24); c.textAlign = 'left';
+    c.fillStyle = 'rgba(255,255,255,.3)'; c.fillRect(90, 66 + i * 24, 100, 1);
+  });
+}));
+let neonTexC = null;
+const neonOpenTex = () => (neonTexC ??= canvasTexture(256, 108, (c) => {
+  c.clearRect(0, 0, 256, 108);
+  c.font = 'bold 64px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.shadowColor = '#ff3b5c'; c.shadowBlur = 18; c.lineWidth = 5; c.strokeStyle = '#ff3b5c'; c.strokeText('OPEN', 128, 58);
+  c.shadowBlur = 6; c.fillStyle = '#ffe1e6'; c.fillText('OPEN', 128, 58);
+}));
 function pedestal(g) {
   add(g, box(0.62, 0.5, 0.62), toon('#e8e2f4'), { p: [0, 0.25, 0] });
   add(g, box(0.7, 0.08, 0.7), toon('#c9c1dc'), { p: [0, 0.54, 0] });
@@ -609,6 +640,136 @@ export const FURNITURE = {
       add(g, cyl(0.01, 0.01, 0.4, 5), toon('#3fa34d'), { p: [Math.cos(a) * r * 0.5, 0.45, Math.sin(a) * r * 0.5], r: [Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3], outline: false });
       add(g, sph(0.08, 10, 8), toon(cols[i % cols.length]), { p: [Math.cos(a) * r, 0.65 + (i % 2) * 0.05, Math.sin(a) * r] });
     }
+  },
+  // ---- the restaurant set ----
+  rest_chair(g) {
+    // a bentwood bistro chair: dark wood, a round red cushion and a hooped back
+    const wood = toon('#3a2216');
+    add(g, cyl(0.24, 0.24, 0.05, 24), wood, { p: [0, 0.46, 0] });
+    add(g, cyl(0.21, 0.21, 0.05, 24), toon('#9e2a2a'), { p: [0, 0.5, 0], outline: false });
+    for (const [x, z] of [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]]) add(g, cyl(0.022, 0.018, 0.46, 8), wood, { p: [x, 0.23, z], r: [z * 0.25, 0, -x * 0.25], outline: false });
+    add(g, new THREE.TorusGeometry(0.2, 0.022, 8, 24, Math.PI), wood, { p: [0, 0.72, -0.2] });
+    for (const x of [-0.2, 0.2]) add(g, cyl(0.022, 0.022, 0.26, 8), wood, { p: [x, 0.6, -0.2], outline: false });
+    add(g, box(0.36, 0.03, 0.03), wood, { p: [0, 0.66, -0.2], outline: false });
+  },
+  rest_booth(g) {
+    // a diner booth: a long padded bench with a tall tufted back, on a wood plinth
+    const red = toon('#a3262e'), dark = toon('#2e1a12');
+    add(g, box(1.9, 0.38, 0.6), dark, { p: [0, 0.19, 0] });
+    add(g, box(1.86, 0.14, 0.6), red, { p: [0, 0.45, 0.02] });
+    add(g, box(1.9, 0.9, 0.18), dark, { p: [0, 0.75, -0.3] });
+    for (let i = 0; i < 4; i++) add(g, box(0.43, 0.62, 0.1), red, { p: [-0.69 + i * 0.46, 0.86, -0.18] });
+    for (let i = 0; i < 4; i++) for (const y of [0.72, 1.0]) add(g, sph(0.02, 6, 4), toon('#5e1016'), { p: [-0.69 + i * 0.46, y, -0.125], outline: false });
+    add(g, box(1.94, 0.06, 0.26), dark, { p: [0, 1.22, -0.3] });
+  },
+  rest_table(g) { restTable(g); },
+  rest_pizza_table(g) {
+    restTable(g, true);
+    add(g, cyl(0.24, 0.24, 0.02, 24), toon('#c98a52'), { p: [0, 0.81, 0] });
+    add(g, cyl(0.2, 0.2, 0.025, 24), toon('#e8a24a'), { p: [0, 0.83, 0], outline: false });
+    add(g, cyl(0.18, 0.18, 0.012, 24), toon('#d8402a'), { p: [0, 0.846, 0], outline: false });
+    for (let i = 0; i < 9; i++) { const a = i * 2.4, r = 0.05 + (i % 3) * 0.045; add(g, cyl(0.024, 0.024, 0.01, 10), toon(i % 3 ? '#b02a2a' : '#fff3c4'), { p: [Math.cos(a) * r, 0.856, Math.sin(a) * r], outline: false }); }
+    for (let i = 0; i < 4; i++) add(g, box(0.36, 0.004, 0.004), toon('#7a3a16'), { p: [0, 0.855, 0], r: [0, (i / 4) * Math.PI, 0], outline: false });
+  },
+  rest_burger_table(g) {
+    restTable(g, true);
+    add(g, cyl(0.17, 0.15, 0.02, 24), toon('#ffffff'), { p: [0, 0.81, 0] });
+    const y0 = 0.83;
+    [['#d9913a', 0.03, 0.09], ['#3a7a2a', 0.012, 0.095], ['#5a2e1a', 0.035, 0.085], ['#ffd23a', 0.01, 0.09], ['#d82a2a', 0.012, 0.08]].reduce((y, [c, h, r]) => { add(g, cyl(r, r, h, 20), toon(c), { p: [-0.04, y + h / 2, 0], outline: false }); return y + h; }, y0);
+    add(g, sph(0.09, 16, 10, ), toon('#e6a24a'), { p: [-0.04, 0.93, 0], s: [1, 0.55, 1] });
+    for (let i = 0; i < 6; i++) add(g, box(0.014, 0.014, 0.09), toon('#ffcf4a'), { p: [0.09 + (i % 3) * 0.02, 0.84, -0.04 + Math.floor(i / 3) * 0.05], r: [0, i * 0.5, 0.2], outline: false });
+    add(g, cyl(0.035, 0.03, 0.12, 12), toon('#e0463c'), { p: [0.24, 0.85, -0.18] });
+  },
+  rest_sushi_table(g) {
+    restTable(g, true);
+    add(g, box(0.42, 0.04, 0.18), toon('#c98a52'), { p: [0, 0.82, 0] });
+    for (let i = 0; i < 6; i++) {
+      add(g, cyl(0.03, 0.03, 0.04, 14), toon('#1d2a1a'), { p: [-0.15 + i * 0.06, 0.86, -0.03], outline: false });
+      add(g, cyl(0.022, 0.022, 0.042, 14), toon('#ffffff'), { p: [-0.15 + i * 0.06, 0.861, -0.03], outline: false });
+      add(g, cyl(0.012, 0.012, 0.044, 10), toon(i % 2 ? '#ff7a4a' : '#d83a4a'), { p: [-0.15 + i * 0.06, 0.862, -0.03], outline: false });
+      if (i < 4) add(g, box(0.05, 0.025, 0.03), toon('#ffffff'), { p: [-0.11 + i * 0.07, 0.855, 0.05], outline: false }), add(g, box(0.055, 0.012, 0.035), toon('#ff8a5a'), { p: [-0.11 + i * 0.07, 0.874, 0.05], outline: false });
+    }
+    for (const x of [0.25, 0.27]) add(g, box(0.008, 0.008, 0.26), toon('#2a1a12'), { p: [x, 0.815, 0], outline: false });
+  },
+  rest_pasta_table(g) {
+    restTable(g, true);
+    add(g, cyl(0.15, 0.1, 0.06, 24), toon('#ffffff'), { p: [0, 0.83, 0] });
+    add(g, sph(0.11, 16, 10), toon('#f2cf6a'), { p: [0, 0.85, 0], s: [1, 0.35, 1], outline: false });
+    add(g, sph(0.06, 12, 8), toon('#c8341f'), { p: [0, 0.88, 0], s: [1, 0.45, 1], outline: false });
+    for (let i = 0; i < 3; i++) add(g, sph(0.022, 8, 6), toon('#6a2e1a'), { p: [Math.cos(i * 2.1) * 0.05, 0.9, Math.sin(i * 2.1) * 0.05], outline: false });
+    add(g, cyl(0.004, 0.004, 0.12, 6), toon('#e8eef4'), { p: [0.27, 0.86, -0.15], outline: false });
+    add(g, cyl(0.04, 0.012, 0.07, 14, true), new THREE.MeshToonMaterial({ color: '#dff4ff', transparent: true, opacity: 0.5 }), { p: [0.27, 0.95, -0.15], outline: false });
+    add(g, cyl(0.032, 0.012, 0.04, 14), toon('#6e1422'), { p: [0.27, 0.94, -0.15], outline: false });
+  },
+  rest_pizza_oven(g, A) {
+    // a wood-fired brick oven: a dome on a stone base, a glowing mouth and a chimney
+    add(g, box(0.94, 0.7, 0.9), toon('#8a8478'), { p: [0, 0.35, -0.03] });
+    add(g, box(0.98, 0.06, 0.94), toon('#5e5850'), { p: [0, 0.72, -0.03] });
+    add(g, new THREE.SphereGeometry(0.44, 24, 12, 0, TAU, 0, Math.PI / 2), toon('#b5563a'), { p: [0, 0.74, -0.05] });
+    add(g, new THREE.TorusGeometry(0.17, 0.05, 8, 18, Math.PI), toon('#8a3a26'), { p: [0, 0.75, 0.37] });
+    add(g, new THREE.CircleGeometry(0.16, 18, 0, Math.PI), basic('#1a0703'), { p: [0, 0.75, 0.375], outline: false });
+    add(g, cyl(0.07, 0.08, 0.5, 10), toon('#6e6a62'), { p: [0.1, 1.35, -0.2] });
+    const glow = add(g, new THREE.CircleGeometry(0.12, 16, 0, Math.PI), basic('#ff8a2a', { transparent: true, opacity: 0.9 }), { p: [0, 0.75, 0.38], outline: false });
+    const light = new THREE.PointLight(0xff8a3a, 1.4, 3.5, 1.8);
+    light.position.set(0, 0.85, 0.6);
+    g.add(light);
+    A.anim.push((t) => { glow.material.opacity = 0.7 + Math.sin(t * 11) * 0.15 + Math.sin(t * 5.3) * 0.1; light.intensity = 1.2 + Math.sin(t * 9) * 0.3; return false; });
+  },
+  rest_stove(g, A) {
+    // a chef's range: steel cabinet, six burners with a pan and a steaming pot
+    const steel = shiny('#c8ccd4', { metalness: 0.6, roughness: 0.3 });
+    add(g, box(0.92, 0.86, 0.78), steel, { p: [0, 0.43, -0.05] });
+    add(g, box(0.86, 0.36, 0.02), toon('#2a2d36'), { p: [0, 0.35, 0.35], outline: false });
+    add(g, box(0.8, 0.03, 0.03), steel, { p: [0, 0.6, 0.37], outline: false });
+    for (let i = 0; i < 5; i++) add(g, cyl(0.025, 0.025, 0.03, 10), toon('#1d1b2e'), { p: [-0.32 + i * 0.16, 0.76, 0.35], r: [Math.PI / 2, 0, 0], outline: false });
+    for (const [x, z] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.1], [0.25, 0.1]]) add(g, cyl(0.1, 0.1, 0.02, 16), toon('#2a2d36'), { p: [x, 0.87, z], outline: false });
+    add(g, cyl(0.13, 0.12, 0.05, 20), toon('#2a2d36'), { p: [-0.25, 0.9, 0.1] });
+    add(g, box(0.25, 0.02, 0.03), toon('#2a2d36'), { p: [-0.25, 0.92, 0.32], outline: false });
+    add(g, cyl(0.12, 0.12, 0.2, 20), steel, { p: [0.25, 0.98, -0.25] });
+    add(g, box(0.9, 0.5, 0.06), steel, { p: [0, 1.12, -0.43] });
+    const steam = [0, 1, 2].map(() => { const s = new THREE.Sprite(additive(glowTexture, 0xffffff, 0.25)); g.add(s); return s; });
+    A.anim.push((t) => { steam.forEach((s, i) => { const p = (t * 0.5 + i / 3) % 1; s.position.set(0.25 + Math.sin(t * 2 + i) * 0.04, 1.1 + p * 0.5, -0.25); s.scale.setScalar(0.15 + p * 0.2); s.material.opacity = 0.3 * (1 - p); }); return false; });
+  },
+  rest_dessert_case(g) {
+    // a glass dessert display: three shelves of cakes, tarts and donuts
+    add(g, box(0.92, 0.5, 0.7), toon('#3a2216'), { p: [0, 0.25, 0] });
+    add(g, box(0.9, 0.9, 0.66), new THREE.MeshToonMaterial({ color: '#dff4ff', transparent: true, opacity: 0.25 }), { p: [0, 0.95, 0], outline: false, cast: false });
+    add(g, box(0.96, 0.05, 0.72), toon('#3a2216'), { p: [0, 1.42, 0] });
+    for (const y of [0.52, 0.86, 1.18]) add(g, box(0.86, 0.02, 0.62), toon('#ffffff'), { p: [0, y, 0], outline: false });
+    const cols = ['#ffb3d9', '#7a4a2a', '#fff3c4', '#ff6f8a', '#b77bff', '#ffd23a'];
+    for (let i = 0; i < 3; i++) {
+      add(g, cyl(0.09, 0.09, 0.1, 16), toon(cols[i]), { p: [-0.27 + i * 0.27, 0.58, 0.05] });
+      add(g, sph(0.025, 8, 6), toon('#e0283a'), { p: [-0.27 + i * 0.27, 0.65, 0.05], outline: false });
+      add(g, new THREE.TorusGeometry(0.05, 0.025, 8, 14), toon(cols[i + 3]), { p: [-0.27 + i * 0.27, 0.9, 0.05], r: [Math.PI / 2, 0, 0], outline: false });
+      add(g, cyl(0.07, 0.06, 0.04, 14), toon('#e8a24a'), { p: [-0.27 + i * 0.27, 1.21, 0.05], outline: false });
+      add(g, cyl(0.06, 0.06, 0.01, 14), toon(cols[(i + 1) % 6]), { p: [-0.27 + i * 0.27, 1.235, 0.05], outline: false });
+    }
+  },
+  rest_host_stand(g) {
+    // the host's podium: a menu on top and a little lamp
+    add(g, box(0.6, 1.05, 0.42), toon('#3a2216'), { p: [0, 0.52, 0] });
+    add(g, box(0.66, 0.05, 0.5), toon('#d4af37'), { p: [0, 1.06, 0] });
+    add(g, box(0.28, 0.02, 0.36), toon('#6e1422'), { p: [-0.1, 1.1, 0.02], r: [0, 0.2, 0], outline: false });
+    add(g, cyl(0.015, 0.015, 0.22, 8), toon('#d4af37'), { p: [0.2, 1.2, -0.1], outline: false });
+    const shade = toon('#ffe9b0', { side: THREE.DoubleSide }).clone(); shade.emissive = new THREE.Color('#ffcf6b'); shade.emissiveIntensity = 0.7;
+    add(g, cyl(0.04, 0.08, 0.08, 14, true), shade, { p: [0.2, 1.32, -0.1] });
+  },
+  rest_wine_rack(g) {
+    add(g, box(0.9, 1.9, 0.4), toon('#2e1a12'), { p: [0, 0.95, -0.25] });
+    for (let r = 0; r < 6; r++) for (let c = 0; c < 4; c++) {
+      add(g, cyl(0.04, 0.04, 0.32, 10), toon((r + c) % 3 ? '#1f3a22' : '#5e1020'), { p: [-0.3 + c * 0.2, 0.3 + r * 0.28, -0.13], r: [Math.PI / 2, 0, 0], outline: false });
+      add(g, cyl(0.02, 0.02, 0.04, 8), toon('#d4af37'), { p: [-0.3 + c * 0.2, 0.3 + r * 0.28, 0.04], r: [Math.PI / 2, 0, 0], outline: false });
+    }
+  },
+  rest_menu_board(g) {
+    add(g, box(0.9, 0.7, 0.04), toon('#3a2216'), { p: [0, 0, 0.02] });
+    add(g, plane(0.8, 0.6), new THREE.MeshBasicMaterial({ map: menuTex() }), { p: [0, 0, 0.042], outline: false, cast: false });
+  },
+  rest_neon_open(g, A) {
+    add(g, box(0.86, 0.4, 0.03), toon('#141220'), { p: [0, 0, 0.015] });
+    const m = new THREE.MeshBasicMaterial({ map: neonOpenTex(), transparent: true });
+    add(g, plane(0.8, 0.34), m, { p: [0, 0, 0.032], outline: false, cast: false });
+    A.anim.push((t) => { m.opacity = Math.floor(t * 3) % 17 === 0 ? 0.4 : 1; return false; });
   },
   cake(g) {
     add(g, cyl(0.36, 0.36, 0.04, 28), toon('#ffffff'), { p: [0, 0.62, 0] });
@@ -2933,7 +3094,7 @@ const FLOOR_DRAW = {
 };
 
 const WALL_DRAW = {
-  wall_forest_green(ctx) { plainWall(ctx, '#2f5a3c'); },
+  wall_forest_green(ctx) { plainWall(ctx, '#1b3a27'); },
   wall_olive(ctx) { plainWall(ctx, '#6b7a3a'); },
   wall_hunter(ctx) {
     ctx.fillStyle = '#2a4d34'; ctx.fillRect(0, 0, 256, 256);
@@ -3166,6 +3327,22 @@ function twoTone(ctx, upper, lower) {
 function stripes(ctx, a, b, n = 8) {
   for (let i = 0; i < n; i++) { ctx.fillStyle = i % 2 ? b : a; ctx.fillRect(i * (256 / n), 0, 256 / n, 256); }
 }
+function damaskWall(ctx, c, motif) {
+  plainWall(ctx, c);
+  for (let y = 0; y < 256; y += 64) for (let x = (y / 64) % 2 ? 32 : 0; x < 288; x += 64) {
+    ctx.fillStyle = motif;
+    ctx.beginPath(); ctx.moveTo(x, y + 6); ctx.quadraticCurveTo(x + 24, y + 32, x, y + 58); ctx.quadraticCurveTo(x - 24, y + 32, x, y + 6); ctx.fill();
+    ctx.fillStyle = shade(motif, 0.12); ctx.beginPath(); ctx.arc(x, y + 32, 6, 0, TAU); ctx.fill();
+    for (const s of [-1, 1]) { ctx.fillStyle = motif; ctx.beginPath(); ctx.ellipse(x + s * 14, y + 20, 7, 3, s * 0.7, 0, TAU); ctx.fill(); }
+  }
+}
+function brickWall(ctx, c, mortar) {
+  ctx.fillStyle = mortar; ctx.fillRect(0, 0, 256, 256);
+  const rnd = prng(31);
+  for (let row = 0; row < 16; row++) for (let x = (row % 2) * -32; x < 256; x += 64) {
+    ctx.fillStyle = shade(c, (rnd() - 0.5) * 0.18); ctx.fillRect(x + 2, row * 16 + 2, 60, 12);
+  }
+}
 function woodPanels(ctx, c) {
   ctx.fillStyle = c; ctx.fillRect(0, 0, 256, 256);
   for (let x = 0; x < 256; x += 32) {
@@ -3191,10 +3368,13 @@ function decoDraw(d, kind) {
     wall: {
       wainscot: (x) => wainscot(x, c, c2 ?? '#5a3a24'), twotone: (x) => twoTone(x, c, c2 ?? '#ffffff'),
       stripes: (x) => stripes(x, c, c2 ?? '#ffffff'), subway: (x) => subwayTiles(x, c, c2 ?? '#ffffff'), panels: (x) => woodPanels(x, c),
+      damask: (x) => damaskWall(x, c, c2 ?? shade(c, 0.12)), brick: (x) => brickWall(x, c, c2 ?? shade(c, -0.35)),
+      linen: (x) => { plainWall(x, c); const rnd = prng(9); for (let i = 0; i < 900; i++) { x.fillStyle = i % 2 ? 'rgba(255,255,255,.035)' : 'rgba(0,0,0,.06)'; x.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 2, 1); } },
     },
     floor: {
       carpet: (x) => carpet(x, c, 'rgba(255,255,255,.08)', 'rgba(0,0,0,.08)'), planks: (x) => planks(x, c),
       tiles: (x) => squareTiles(x, 4, [c, shade(c, 0.06)], c2 ?? shade(c, -0.25), 3),
+      checker: (x) => squareTiles(x, 4, [c, c2 ?? '#f4f0e8'], shade(c, -0.2), 1.5, false, true),
       paint: (x) => { x.fillStyle = c; x.fillRect(0, 0, 256, 256); x.fillStyle = 'rgba(255,255,255,.05)'; for (let i = 0; i < 6; i++) x.fillRect(i * 48, 0, 20, 256); },
     },
     ceiling: {

@@ -1918,6 +1918,15 @@ const HATS = {
       taper(head, pts, 0.08, 0.012, toon('#f4ecd8'));
     }
   },
+  hat_chef(head, L) {
+    // a tall pleated chef's toque: a band round the head and a puffy top
+    const white = toon(hatCol(L, '#ffffff'));
+    part(head, cyl(0.33, 0.33, 0.16, 32), white, { p: [0, 0.38, 0] });
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; part(head, cyl(0.07, 0.07, 0.36, 10), white, { p: [Math.sin(a) * 0.27, 0.62, Math.cos(a) * 0.27], outline: null }); }
+    part(head, cyl(0.3, 0.3, 0.36, 28), white, { p: [0, 0.62, 0], outline: null });
+    for (let i = 0; i < 5; i++) { const a = (i / 5) * TAU; part(head, sphere(0.2, 16, 12), white, { p: [Math.sin(a) * 0.17, 0.86, Math.cos(a) * 0.17] }); }
+    part(head, sphere(0.22, 16, 12), white, { p: [0, 0.9, 0] });
+  },
   hat_tophat(head, L) {
     const tc = hatCol(L, '#1d1b2e');
     part(head, cyl(0.44, 0.44, 0.035, 36), toon(tc), { p: [0, 0.32, 0] });

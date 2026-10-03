@@ -54,6 +54,45 @@ const trot = (list, t, moving, speed = 14, amp = 0.6) => list.forEach((l, i) => 
 });
 
 const BUILD = {
+  pet_binturong(g) {
+    // a binturong (bearcat): shaggy black fur frosted grey, a long bushy tail curled at the tip, a grey
+    // face with long white whiskers, amber eyes and little white-rimmed ears with tufts
+    const fur = toon('#1e1d22'), frost = toon('#4a4850'), face0 = toon('#6c6a70'), white = basic('#f2f2f2');
+    add(g, sph(0.22), fur, { p: [0, 0.3, -0.04], s: [1, 0.85, 1.5] });
+    for (let i = 0; i < 9; i++) { const a = i * 0.7; add(g, cone(0.05, 0.12, 5), frost, { p: [Math.cos(a) * 0.12, 0.44 + (i % 3) * 0.02, -0.25 + i * 0.05], r: [-1.2, a, 0], outline: false }); }
+    const L = legs(g, fur, 0.12, 0.17, 0.2, 0.15, 0.06);
+    const head = add(g, sph(0.17), fur, { p: [0, 0.44, 0.24] });
+    add(head, sph(0.12), face0, { p: [0, -0.03, 0.07], s: [1, 0.9, 1] });
+    add(head, sph(0.06, 12, 10), face0, { p: [0, -0.06, 0.15], s: [1, 0.8, 1.2] });
+    add(head, sph(0.03, 10, 8), toon('#121014'), { p: [0, -0.04, 0.22], outline: false });
+    for (const s of [-1, 1]) {
+      add(head, sph(0.05, 10, 8), fur, { p: [s * 0.12, 0.12, -0.02], s: [1, 1, 0.5] });
+      add(head, new THREE.TorusGeometry(0.045, 0.012, 6, 12), white, { p: [s * 0.12, 0.12, 0.005], outline: false });
+      add(head, cone(0.025, 0.08, 5), fur, { p: [s * 0.13, 0.19, -0.02], outline: false });
+      add(head, sph(0.012, 6, 4), white, { p: [s * 0.06, 0.06, 0.13], outline: false }); // (pale brows)
+      for (let k = 0; k < 3; k++) add(head, cyl(0.002, 0.002, 0.2, 4), white, { p: [s * 0.1, -0.06 + k * 0.012, 0.16], r: [0, 0, s * (1.45 - k * 0.12)], outline: false });
+    }
+    face(head, 0.17, { spread: 0.3, y: 0.22, size: 0.16, color: '#c47a2a', blush: null, mouth: false });
+    // the tail: long and thick, tapering and curling up at the tip
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.28, -0.34);
+    g.add(tail);
+    const segs = [];
+    let parent = tail;
+    for (let i = 0; i < 7; i++) {
+      const s = new THREE.Group();
+      s.position.set(0, 0, i ? -0.09 : 0);
+      parent.add(s);
+      add(s, sph(0.075 - i * 0.004, 10, 8), i % 2 ? fur : frost, { p: [0, 0, -0.045], s: [1, 1, 1.3] });
+      segs.push(s);
+      parent = s;
+    }
+    return (t, dt, m) => {
+      trot(L, t, m, 12, 0.5);
+      segs.forEach((s, i) => { s.rotation.x = (i > 3 ? 0.35 : -0.08) + Math.sin(t * 2 + i * 0.6) * 0.06; s.rotation.y = Math.sin(t * 1.6 - i * 0.5) * 0.12; });
+      head.rotation.y = Math.sin(t * 0.7) * 0.25;
+    };
+  },
   pet_ghost(g) {
     // a little arcade ghost: a dome with a wavy skirt, big eyes looking where it's going
     const body = toon('#ff5d8f'), white = basic('#ffffff'), blue = basic('#2a4bd7');

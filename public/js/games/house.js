@@ -67,6 +67,7 @@ const SEATS = {
   sofa_green: { top: 0.53, front: 0.41, n: 2 }, armchair_green: { top: 0.53, front: 0.41 }, hammock: { top: 0.62, front: 0 },
   bed_double: { top: 0.6, front: 0, n: 2 }, bed_double_tufted: { top: 0.6, front: 0, n: 2 }, bed_double_canopy: { top: 0.6, front: 0, n: 2 }, bed_double_cloud: { top: 0.46, front: 0, n: 2 }, bed_double_platform: { top: 0.46, front: 0, n: 2 },
   bed_king: { top: 0.6, front: 0, n: 3 }, bed_king_tufted: { top: 0.6, front: 0, n: 3 }, bed_king_log: { top: 0.6, front: 0, n: 3 }, bed_king_canopy: { top: 0.6, front: 0, n: 3 },
+  rest_chair: { top: 0.525, front: 0.22 }, rest_booth: { top: 0.52, front: 0.3, n: 2 },
   bar_stool: { top: 0.79, front: 0.1 }, bar_stool_wood: { top: 0.79, front: 0.1 }, piano_bench: { top: 0.53, front: 0.19 }, toilet: { top: 0.52, front: 0.28 },
 };
 // colour variants (the Ocean sofa…) sit, and lie, just like the piece they're a colour of

@@ -62,7 +62,7 @@ const BUILD = {
     const g = new THREE.Group();
     g.scale.setScalar(1.35);
     g0.add(g);
-    const fur = toon('#17161b'), coat = fur, face0 = toon('#252429'), white = basic('#f0f0f0'); // (plain fur: almost all black, the face just a touch lighter)
+    const fur = toon('#1d1c22'), coat = fur, face0 = toon('#2b2a30'), white = basic('#f0f0f0'); // (plain fur: almost all black, the face just a touch lighter)
     // the body: shoulders and hips humped, the back arched between them
     // one smooth, slightly arched body (shoulders and hips blended in), in plain black fur
     add(g, sph(0.19, 24, 16), coat, { p: [0, 0.31, -0.03], s: [1, 0.98, 2.0] });
@@ -106,29 +106,29 @@ const BUILD = {
       // long white whiskers fanning out from the snout
       for (let k = 0; k < 4; k++) add(head, cyl(0.0018, 0.0018, 0.26, 3), white, { p: [s * 0.13, -0.04 - k * 0.012, 0.12 - k * 0.01], r: [0, s * 0.35, s * (1.35 - k * 0.12)], outline: false });
     }
-    // the tail: thick and bushy, as long as the body, lying back behind with the tip curling up
+    // the tail: one smooth, thick tube tapering to the tip, rising from the hips in an arc, then sweeping
+    // back and out with the end lifting a little (a binturong's heavy, bushy tail)
     const tail = new THREE.Group();
-    tail.position.set(0, 0.36, -0.38);
+    tail.position.set(0, 0.38, -0.36);
     g.add(tail);
-    const segs = [];
-    let parent = tail;
-    for (let i = 0; i < 16; i++) {
-      const sg = new THREE.Group();
-      sg.position.set(0, 0, i ? -0.05 : 0);
-      parent.add(sg);
-      const r = 0.12 - i * 0.0045;
-      add(sg, sph(r, 12, 10), coat, { p: [0, 0, -0.04], s: [1, 1, 1.15] }); // (solid black: no stripes)
-
-      segs.push(sg);
-      parent = sg;
+    const curve = new THREE.CatmullRomCurve3([[0, 0, 0], [0, 0.09, -0.12], [0, 0.15, -0.28], [0, 0.155, -0.44], [0, 0.13, -0.6], [0, 0.12, -0.72], [0, 0.16, -0.82]].map((q) => new THREE.Vector3(...q)));
+    const TS = 48, RS = 14, tube = new THREE.TubeGeometry(curve, TS, 1, RS, false);
+    const radius = (u) => 0.105 - 0.035 * u - 0.035 * u * u + Math.sin(u * Math.PI) * 0.012; // (thick, bushy, then tapering)
+    const pos = tube.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
+    for (let a = 0; a <= TS; a++) {
+      const u = a / TS;
+      curve.getPointAt(u, c);
+      for (let b = 0; b <= RS; b++) { const k = a * (RS + 1) + b; v.fromBufferAttribute(pos, k).sub(c).multiplyScalar(radius(u)).add(c); pos.setXYZ(k, v.x, v.y, v.z); }
     }
+    tube.computeVertexNormals();
+    add(tail, tube, coat);
+    add(tail, sph(radius(1), 12, 10), coat, { p: curve.getPointAt(1).toArray() }); // (a rounded tip)
+    add(tail, sph(radius(0), 14, 10), coat, { outline: false }); // (blending into the hips)
     return (t, dt, m) => {
       trot(L, t, m, 10, 0.45);
-      // the tail droops down behind and curls forward at the tip, swaying slowly
-      segs.forEach((sg, i) => {
-        sg.rotation.x = (i === 0 ? -0.5 : i < 9 ? 0.035 : 0.3) + Math.sin(t * 1.6 + i * 0.5) * 0.025; // (back and low, the tip curling up)
-        sg.rotation.y = Math.sin(t * 1.2 - i * 0.45) * (m ? 0.05 : 0.1);
-      });
+      // the tail sways slowly from side to side, bobbing a little as it walks
+      tail.rotation.y = Math.sin(t * 1.1) * (m ? 0.12 : 0.2);
+      tail.rotation.x = Math.sin(t * 1.7) * 0.04 + (m ? Math.sin(t * 10) * 0.03 : 0);
       head.rotation.y = Math.sin(t * 0.6) * 0.3;
       head.rotation.x = 0.15 + Math.sin(t * 0.9) * 0.05; // (snuffling along, nose down)
       locks.forEach((l, i) => { l.rotation.x = Math.sin(t * 2.2 + i) * (m ? 0.25 : 0.1); });

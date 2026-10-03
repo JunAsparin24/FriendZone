@@ -1,7 +1,7 @@
 // Pets: little chibi animals that trot along next to their owner. Every pet is built from primitives
 // with big heads, shiny eyes and rosy cheeks. build(id) returns { group, tick(t, dt, moving) }.
 import * as THREE from 'three';
-import { toon, basic, outlineMaterial, additive, glowTexture, flameTexture, TAU } from './materials.js';
+import { toon, basic, outlineMaterial, additive, glowTexture, flameTexture, canvasTexture, TAU } from './materials.js';
 
 const OUT = outlineMaterial(0.018);
 
@@ -53,8 +53,20 @@ const trot = (list, t, moving, speed = 14, amp = 0.6) => list.forEach((l, i) => 
   l.position.y = (l.userData.y0 ?? l.position.y) + (moving ? Math.max(0, s) * 0.035 : 0);
 });
 
+let furTexB = null;
 const BUILD = {
   pet_binturong(g0) {
+    // shaggy grizzled fur: black with fine pale hair streaks, thicker frosting towards the top
+    furTexB ??= canvasTexture(256, 128, (c) => {
+      c.fillStyle = '#17161b'; c.fillRect(0, 0, 256, 128);
+      let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 1400; i++) {
+        const x = rnd() * 256, y = rnd() * 128, top = 1 - y / 128; // (v runs top to bottom on a sphere)
+        if (rnd() > 0.25 + top * 0.6) continue;
+        c.strokeStyle = `rgba(${150 + rnd() * 60},${150 + rnd() * 60},${160 + rnd() * 60},${0.18 + rnd() * 0.3})`;
+        c.lineWidth = 0.8; c.beginPath(); c.moveTo(x, y); c.lineTo(x + (rnd() - 0.5) * 3, y + 4 + rnd() * 5); c.stroke();
+      }
+    });
     // a binturong (bearcat), a bit bigger than most pets: a long, low, arched body of shaggy black fur
     // frosted grey, a small head held low with a tapered snout, small amber eyes, little rounded ears with
     // long black tufts, a spray of long white whiskers, and a thick tail as long as its body that hangs
@@ -62,25 +74,23 @@ const BUILD = {
     const g = new THREE.Group();
     g.scale.setScalar(1.35);
     g0.add(g);
-    const fur = toon('#17161b'), frost = toon('#45434a'), grey = toon('#2c2b31'), face0 = toon('#3a3940'), white = basic('#f0f0f0');
+    const fur = toon('#17161b'), coat = new THREE.MeshToonMaterial({ map: furTexB, gradientMap: toon('#fff').gradientMap }), grey = toon('#2c2b31'), face0 = toon('#3a3940'), white = basic('#f0f0f0');
     // the body: shoulders and hips humped, the back arched between them
-    add(g, sph(0.19), fur, { p: [0, 0.3, -0.02], s: [1, 0.95, 2.0] });
-    add(g, sph(0.17), fur, { p: [0, 0.36, 0.14], s: [1.05, 1, 1] }); // shoulders
-    add(g, sph(0.17), fur, { p: [0, 0.37, -0.2], s: [1.05, 1, 1.1] }); // hips
-    // grizzled fur: grey-tipped tufts over the back, shoulders and forelegs
-    for (let i = 0; i < 26; i++) {
-      const a = i * 2.39, z = -0.3 + (i / 25) * 0.52, side = Math.cos(a) * 0.16;
-      add(g, sph(0.05, 8, 6), i % 4 ? grey : frost, { p: [side, 0.38 + (0.17 - Math.abs(side)) * 0.9, z], s: [1, 0.35, 1.6], r: [0, 0, -side * 3], outline: false });
-    }
+    // one smooth, slightly arched body (shoulders and hips blended in), all in the grizzled coat
+    add(g, sph(0.19, 24, 16), coat, { p: [0, 0.31, -0.03], s: [1, 0.98, 2.0] });
+    add(g, sph(0.165, 24, 16), coat, { p: [0, 0.35, 0.13], s: [1.04, 1, 1.05], outline: false }); // shoulders
+    add(g, sph(0.165, 24, 16), coat, { p: [0, 0.355, -0.19], s: [1.04, 1, 1.15], outline: false }); // hips
+    // a ragged fringe of shaggy hair hanging along the belly line
+    for (let i = 0; i < 12; i++) for (const sd of [-1, 1]) add(g, cone(0.03, 0.09, 4), fur, { p: [sd * 0.17, 0.2, -0.3 + i * 0.05], r: [Math.PI, 0, sd * 0.25], outline: false });
     const L = legs(g, fur, 0.11, 0.17, 0.22, 0.19, 0.06);
     for (const l of L) for (let k = -1; k <= 1; k++) add(l, cone(0.012, 0.05, 4), toon('#2a2420'), { p: [k * 0.025, -0.2, 0.06], r: [1.4, 0, 0], outline: false }); // claws
-    L.slice(2).forEach((l) => add(l, sph(0.065, 8, 6), frost, { p: [0, -0.06, 0.02], s: [1, 1.4, 1], outline: false })); // frosted forelegs
+    L.slice(2).forEach((l) => add(l, sph(0.065, 8, 6), coat, { p: [0, -0.06, 0.02], s: [1, 1.4, 1], outline: false })); // frosted forelegs
     // the head: small, held low and forward, the snout tapering to a black nose
     const head = new THREE.Group();
     head.position.set(0, 0.34, 0.36);
     g.add(head);
     add(head, sph(0.14), face0, { s: [1.15, 0.95, 1.05] });
-    for (let i = 0; i < 8; i++) { const a = i * 2.2; add(head, sph(0.035, 8, 6), frost, { p: [Math.cos(a) * 0.1, 0.08 + Math.abs(Math.sin(a)) * 0.03, -0.03 + (i % 4) * 0.02], s: [1, 0.35, 1.4], outline: false }); }
+    
     add(head, cone(0.075, 0.16, 12), face0, { p: [0, -0.03, 0.15], r: [Math.PI / 2, 0, 0] });
     add(head, sph(0.03, 10, 8), toon('#0c0b0e'), { p: [0, -0.03, 0.23], s: [1.2, 0.9, 1] });
     for (const s of [-1, 1]) {
@@ -107,8 +117,8 @@ const BUILD = {
       sg.position.set(0, 0, i ? -0.05 : 0);
       parent.add(sg);
       const r = 0.1 - i * 0.004;
-      add(sg, sph(r, 10, 8), fur, { p: [0, 0, -0.04], s: [1, 1, 1.15] }); // (solid black: no stripes)
-      if (i < 4) add(sg, sph(0.05, 8, 6), grey, { p: [0, r * 0.75, -0.04], s: [1, 0.35, 1.5], outline: false });
+      add(sg, sph(r, 12, 10), coat, { p: [0, 0, -0.04], s: [1, 1, 1.15] }); // (solid black: no stripes)
+
       segs.push(sg);
       parent = sg;
     }

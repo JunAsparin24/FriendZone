@@ -884,13 +884,19 @@ export class Balls {
             b.v.x = (b.v.x + (dx / dh) * 2) * 0.6; b.v.z = (b.v.z + (dz / dh) * 2) * 0.6; b.v.y *= 0.5;
             if (Math.hypot(b.p.x - me.x, b.p.z - me.z) < 30) sfx('bonk', { vol: 0.3 });
           }
-          if (prevY >= RIM_Y && b.p.y < RIM_Y && dh < RIM_R - def.r * 0.3) {
+          // in a game a team's own hoop is shut to them: the ball pops back out off the rim
+          const shooterTeam = b.lastBy != null && this.live(ct) ? this.teamOf(ct, b.lastBy) : null;
+          if (prevY >= RIM_Y && b.p.y < RIM_Y && dh < RIM_R && shooterTeam != null && h !== this.attackHoop(ct, shooterTeam)) {
+            b.p.y = RIM_Y + def.r;
+            b.v.set((dh > 0.01 ? dx / dh : 1) * 2.5, Math.max(2.5, Math.abs(b.v.y) * 0.5), (dh > 0.01 ? dz / dh : 0) * 2.5);
+            if (Math.hypot(b.p.x - me.x, b.p.z - me.z) < 30) sfx('bonk', { vol: 0.3 });
+          } else if (prevY >= RIM_Y && b.p.y < RIM_Y && dh < RIM_R - def.r * 0.3) {
             h.swish = 1;
             if (Math.hypot(b.p.x - me.x, b.p.z - me.z) < 40) sfx('swish');
             if (mine && b.lastBy === S.me) {
               const team = this.teamOf(ct, S.me), inGame = this.live(ct) && team != null;
               const pts = b.shot?.ft ? 1 : b.shot?.three ? 3 : 2;
-              if (inGame && h !== this.attackHoop(ct, team)) this.onEvent?.('Wrong hoop! That one doesn\'t count');
+              if (inGame && h !== this.attackHoop(ct, team)) { /* (can't happen: your own hoop is shut to you) */ }
               else if (inGame && b.shot?.noCount) { this.onEvent?.('↩️ No basket: take it back past the arc first!'); this.afterMake(b, h); }
               else {
                 this.score(b, 0, pts);

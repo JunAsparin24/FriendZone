@@ -80,12 +80,11 @@ const BUILD = {
     add(g, sph(0.19, 24, 16), coat, { p: [0, 0.31, -0.03], s: [1, 0.98, 2.0] });
     add(g, sph(0.165, 24, 16), coat, { p: [0, 0.35, 0.13], s: [1.04, 1, 1.05], outline: false }); // shoulders
     add(g, sph(0.165, 24, 16), coat, { p: [0, 0.355, -0.19], s: [1.04, 1, 1.15], outline: false }); // hips
-    // a ragged fringe of shaggy hair hanging along the belly line
-    for (let i = 0; i < 12; i++) for (const sd of [-1, 1]) add(g, cone(0.03, 0.09, 4), fur, { p: [sd * 0.17, 0.2, -0.3 + i * 0.05], r: [Math.PI, 0, sd * 0.25], outline: false });
     const L = legs(g, fur, 0.11, 0.17, 0.22, 0.19, 0.06);
     for (const l of L) for (let k = -1; k <= 1; k++) add(l, cone(0.012, 0.05, 4), toon('#2a2420'), { p: [k * 0.025, -0.2, 0.06], r: [1.4, 0, 0], outline: false }); // claws
     L.slice(2).forEach((l) => add(l, sph(0.065, 8, 6), coat, { p: [0, -0.06, 0.02], s: [1, 1.4, 1], outline: false })); // frosted forelegs
     // the head: small, held low and forward, the snout tapering to a black nose
+    const locks = [];
     const head = new THREE.Group();
     head.position.set(0, 0.34, 0.36);
     g.add(head);
@@ -102,7 +101,20 @@ const BUILD = {
       // little rounded ears, rimmed pale, with long black tufts sweeping up and back
       add(head, sph(0.04, 10, 8), fur, { p: [s * 0.11, 0.1, -0.04], s: [1, 1, 0.55] });
       add(head, new THREE.TorusGeometry(0.036, 0.008, 6, 12), toon('#bcbac2'), { p: [s * 0.11, 0.1, -0.02], outline: false });
-      add(head, cone(0.016, 0.07, 5), fur, { p: [s * 0.1, 0.14, -0.06], r: [-0.7, 0, -s * 0.3], outline: false });
+      // the long wispy locks from behind each ear: a few strands sweeping out sideways, then drooping
+      for (let k = 0; k < 5; k++) {
+        const lock = new THREE.Group();
+        lock.position.set(s * 0.13, 0.12 - k * 0.01, -0.03 - k * 0.014);
+        lock.rotation.set(0, 0, -s * (1.2 + k * 0.07)); // (straight out to the side, a touch down)
+        head.add(lock);
+        add(lock, cyl(0.006, 0.02, 0.1, 5), fur, { p: [0, 0.05, 0], outline: false });
+        const tip = new THREE.Group();
+        tip.position.set(0, 0.1, 0);
+        tip.rotation.z = -s * (0.6 + k * 0.08); // (then drooping down at the ends)
+        lock.add(tip);
+        add(tip, cyl(0.001, 0.006, 0.11, 4), fur, { p: [0, 0.055, 0], outline: false });
+        locks.push(tip);
+      }
       // long white whiskers fanning out from the snout
       for (let k = 0; k < 4; k++) add(head, cyl(0.0018, 0.0018, 0.26, 3), white, { p: [s * 0.13, -0.04 - k * 0.012, 0.12 - k * 0.01], r: [0, s * 0.35, s * (1.35 - k * 0.12)], outline: false });
     }
@@ -131,6 +143,7 @@ const BUILD = {
       });
       head.rotation.y = Math.sin(t * 0.6) * 0.3;
       head.rotation.x = 0.15 + Math.sin(t * 0.9) * 0.05; // (snuffling along, nose down)
+      locks.forEach((l, i) => { l.rotation.x = Math.sin(t * 2.2 + i) * (m ? 0.25 : 0.1); });
     };
   },
   pet_ghost(g) {

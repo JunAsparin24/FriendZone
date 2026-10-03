@@ -2436,8 +2436,24 @@ const PLUSH = {
   plush_luffy: { kind: 'chibi', skin: '#ffd2a8', hair: '#1d1b2e', style: 'messy', outfit: '#d6283a', outfit2: '#3b6fd6', extra: ['strawhat', 'scar'] },
   plush_tanjiro: { kind: 'chibi', skin: '#ffd9c0', hair: '#7a2a2a', style: 'messy', outfit: '#1d1b2e', extra: ['checker', 'earrings', 'forehead'] },
   plush_nezuko: { kind: 'chibi', skin: '#ffe3d2', hair: '#1d1b2e', style: 'long', hair2: '#ff8a3d', outfit: '#ff9fc8', extra: ['muzzle', 'ribbon'] },
+  plush_kakashi: { kind: 'chibi', skin: '#ffe0c8', hair: '#d8dbe6', style: 'spiky', outfit: '#3f5a46', extra: ['mask', 'headband'] },
+  plush_sasuke: { kind: 'chibi', skin: '#ffe0c8', hair: '#1d1b2e', style: 'spiky', outfit: '#2b2f4a', extra: ['collar'] },
+  plush_vegeta: { kind: 'chibi', skin: '#ffd2a8', hair: '#1d1b2e', style: 'bigspiky', outfit: '#2f5bd6', outfit2: '#ffffff', extra: ['armor'] },
+  plush_zoro: { kind: 'chibi', skin: '#f2c49a', hair: '#4caf50', style: 'messy', outfit: '#ffffff', outfit2: '#2f6b4f', extra: ['earrings', 'sash'] },
+  plush_zenitsu: { kind: 'chibi', skin: '#ffe0c8', hair: '#ffd23f', style: 'messy', outfit: '#ffd23f', outfit2: '#1d1b2e', extra: ['triangles'] },
+  plush_deku: { kind: 'chibi', skin: '#ffe0c8', hair: '#2f6b4f', style: 'messy', outfit: '#3fae8a', outfit2: '#1d1b2e', extra: ['freckles'] },
+  plush_todoroki: { kind: 'chibi', skin: '#ffe0c8', hair: '#f4f6ff', style: 'split', hair2: '#d6283a', outfit: '#2f3a6b', extra: ['scarEye'] },
+  // little monsters
+  plush_pikachu: { kind: 'mon', mon: 'pika', fur: '#ffd23f', belly: '#ffe680' },
+  plush_charmander: { kind: 'mon', mon: 'char', fur: '#ff8a3d', belly: '#ffe0a0' },
+  plush_squirtle: { kind: 'mon', mon: 'squirt', fur: '#7fd0f0', belly: '#ffe8a8' },
+  plush_bulbasaur: { kind: 'mon', mon: 'bulba', fur: '#7fcfb0', belly: '#9fe0c4' },
+  plush_jigglypuff: { kind: 'mon', mon: 'jiggly', fur: '#ffb3d0', belly: '#ffb3d0' },
+  plush_eevee: { kind: 'mon', mon: 'eevee', fur: '#b7834f', belly: '#f4e3c0' },
+  plush_gengar: { kind: 'mon', mon: 'gengar', fur: '#6a4caf', belly: '#6a4caf' },
+  plush_snorlax: { kind: 'mon', mon: 'snorlax', fur: '#2f5a6b', belly: '#f4e3c0' },
 };
-const PLUSH_EMOJI = { bear: '🧸', bunny: '🐰', cat: '🐱', fox: '🦊', frog: '🐸', dino: '🦖', penguin: '🐧', duck: '🦆', octopus: '🐙', axolotl: '🦎', shark: '🦈', pig: '🐷', chibi: '✨' };
+const PLUSH_EMOJI = { mon: '⚡', bear: '🧸', bunny: '🐰', cat: '🐱', fox: '🦊', frog: '🐸', dino: '🦖', penguin: '🐧', duck: '🦆', octopus: '🐙', axolotl: '🦎', shark: '🦈', pig: '🐷', chibi: '✨' };
 const checkerTex = canvasTexture(64, 64, (c) => { for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { c.fillStyle = (x + y) % 2 ? '#1d1b2e' : '#2f8a5a'; c.fillRect(x * 16, y * 16, 16, 16); } });
 
 /** A soft toy, about half a tile across and 0.55 tall, sitting on the floor facing +z. */
@@ -2478,6 +2494,10 @@ function plushie(g, A, sp) {
     } else if (sp.style === 'messy') {
       for (let k = 0; k < 10; k++) { const a = (k / 10) * TAU; S(sph(0.06, 8, 6), hair, [Math.cos(a) * 0.13, hy + 0.1 + (k % 3) * 0.02, Math.sin(a) * 0.12 - 0.01]); }
       for (let k = -2; k <= 2; k++) S(cone(0.04, 0.09, 5), hair, [k * 0.045, hy + 0.09, 0.135], null, [2, 0, k * 0.2], false);
+    } else if (sp.style === 'split') {
+      // half and half: one colour on the right, the other on the left
+      S(geo('halfHair', () => new THREE.SphereGeometry(0.17, 16, 12, 0, Math.PI)), toon(sp.hair2), [0, hy + 0.03, -0.02], [1.06, 0.95, 1.02]);
+      for (let k = -2; k <= 2; k++) S(cone(0.035, 0.1, 5), k < 0 ? toon(sp.hair2) : hair, [k * 0.045, hy + 0.09, 0.135], null, [2, 0, k * 0.15], false);
     } else if (sp.style === 'long') {
       S(box(0.3, 0.32, 0.1), hair, [0, hy - 0.1, -0.12]);
       S(box(0.3, 0.1, 0.1), toon(sp.hair2), [0, hy - 0.29, -0.12], null, null, false); // dip-dyed ends
@@ -2494,6 +2514,12 @@ function plushie(g, A, sp) {
     if (sp.extra.includes('scar')) S(box(0.006, 0.035, 0.006), toon('#b03a48'), [-0.07, hy - 0.035, fz + 0.002], null, null, false);
     if (sp.extra.includes('forehead')) S(box(0.04, 0.02, 0.006), toon('#b03a48'), [-0.05, hy + 0.08, fz - 0.01], null, null, false);
     if (sp.extra.includes('earrings')) for (const s of [-1, 1]) S(box(0.025, 0.05, 0.005), toon('#f4efe6'), [s * 0.165, hy - 0.06, 0], null, null, false);
+    if (sp.extra.includes('mask')) S(sph(0.12, 14, 10), toon('#2b2f4a'), [0, hy - 0.06, 0.07], [1.25, 0.6, 0.9], null, false);
+    if (sp.extra.includes('armor')) { S(cyl(0.12, 0.13, 0.12, 16), toon('#ffffff'), [0, 0.2, 0], null, null, false); for (const s of [-1, 1]) S(sph(0.05, 8, 6), toon('#ffd23f'), [s * 0.11, 0.25, 0.02], [1, 0.6, 1], null, false); }
+    if (sp.extra.includes('sash')) S(box(0.26, 0.03, 0.03), toon(sp.outfit2), [0, 0.13, 0.11], null, [0, 0, 0.35], false);
+    if (sp.extra.includes('triangles')) for (let k = 0; k < 4; k++) S(cone(0.03, 0.05, 3), toon('#ffffff'), [-0.08 + k * 0.055, 0.1, 0.12], null, [Math.PI / 2, 0, 0], false);
+    if (sp.extra.includes('freckles')) for (const s of [-1, 1]) for (let k = 0; k < 3; k++) S(sph(0.006, 5, 4), toon('#8b5a2b'), [s * (0.08 + k * 0.012), hy - 0.03 + (k % 2) * 0.01, fz - 0.012], null, null, false);
+    if (sp.extra.includes('scarEye')) S(sph(0.05, 10, 8), toon('#c0563f'), [0.07, hy + 0.01, fz - 0.03], [1.2, 1, 0.3], null, false);
     if (sp.extra.includes('muzzle')) S(cyl(0.018, 0.018, 0.2, 8), toon('#7fae5a'), [0, hy - 0.055, fz + 0.01], null, [0, 0, Math.PI / 2]);
     if (sp.extra.includes('ribbon')) S(sph(0.05, 10, 8), toon('#ff8fc7'), [0.08, hy + 0.12, -0.08], [1.4, 0.7, 0.5]);
     if (sp.extra.includes('headband')) { S(cyl(0.172, 0.172, 0.04, 20, true), toon('#2f5bd6'), [0, hy + 0.06, 0], null, null, false); S(box(0.11, 0.045, 0.01), shiny('#c8ced8', { metalness: 0.6 }), [0, hy + 0.06, 0.168], null, null, false); }
@@ -2506,6 +2532,7 @@ function plushie(g, A, sp) {
     }
     return { use: () => floatEmoji(g, A, '💖', 0.7) };
   }
+  if (sp.kind === 'mon') return monPlush(g, A, P, S, sp, fur, belly, ink, white, eyes, blush);
   // animals: a round body and a round head, then each kind's features
   const tall = sp.kind === 'penguin' || sp.kind === 'duck';
   if (sp.kind !== 'octopus') {
@@ -2574,6 +2601,70 @@ function plushie(g, A, sp) {
     for (let k = -2; k <= 2; k++) S(cone(0.008, 0.016, 3), white, [k * 0.015, hy - 0.05, fz + 0.005], null, [Math.PI, 0, 0], false);
   }
   if (sp.kind !== 'octopus' && sp.kind !== 'axolotl') blush(hy - 0.035, fz - 0.02, 0.09);
+  return { use: () => floatEmoji(g, A, '💖', 0.7) };
+}
+/** The little monsters: each its own shape (ears, tails, shells, bulbs, flames). */
+function monPlush(g, A, P, S, sp, fur, belly, ink, white, eyes, blush) {
+  const m = sp.mon;
+  const red = toon('#ff4a4a');
+  if (m === 'jiggly' || m === 'gengar' || m === 'snorlax') {
+    // one big round body that's also the head
+    const r = m === 'snorlax' ? 0.24 : 0.2, cy = r;
+    S(sph(r, 20, 16), fur, [0, cy, 0], m === 'snorlax' ? [1.1, 1, 1] : null);
+    if (m === 'jiggly') {
+      S(sph(0.06, 10, 8), fur, [0.02, cy * 2 - 0.02, 0.12], [1, 1, 0.6], [0.6, 0, 0.4]); // the curl
+      for (const s of [-1, 1]) { S(cone(0.07, 0.1, 4), fur, [s * 0.15, cy * 2 - 0.02, 0], null, [0, Math.PI / 4, -s * 0.5]); S(sph(0.04, 8, 6), fur, [s * 0.18, cy - 0.02, 0.06]); S(sph(0.05, 8, 6), fur, [s * 0.08, 0.03, 0.06], [1, 0.6, 1.2]); }
+      for (const s of [-1, 1]) { S(sph(0.05, 12, 10), basic('#1d1b2e'), [s * 0.07, cy + 0.03, r * 0.9], [1, 1.1, 0.4], null, false); S(sph(0.035, 10, 8), basic('#3b9ce0'), [s * 0.07, cy + 0.02, r * 0.93], [1, 1.1, 0.4], null, false); S(sph(0.014, 6, 5), white, [s * 0.07 + 0.012, cy + 0.05, r * 0.95], null, null, false); }
+      blush(cy - 0.05, r * 0.86, 0.12);
+    } else if (m === 'gengar') {
+      for (let k = 0; k < 7; k++) { const a = Math.PI * (0.15 + (k / 6) * 0.7); S(cone(0.04, 0.1, 5), fur, [Math.cos(a) * 0.17, cy + 0.14 + Math.sin(a) * 0.02, -0.08], null, [-0.4, 0, (Math.PI / 2 - a) * 0.7]); }
+      for (const s of [-1, 1]) { S(cone(0.06, 0.12, 4), fur, [s * 0.13, cy * 2 - 0.02, 0], null, [0, Math.PI / 4, -s * 0.45]); S(sph(0.04, 8, 6), fur, [s * 0.2, cy - 0.03, 0.05]); S(sph(0.05, 8, 6), fur, [s * 0.09, 0.03, 0.06], [1, 0.6, 1.2]); }
+      for (const s of [-1, 1]) S(sph(0.038, 10, 8), red, [s * 0.07, cy + 0.06, r * 0.88], [1.2, 0.8, 0.4], [0, 0, -s * 0.4], false);
+      S(box(0.18, 0.04, 0.02), white, [0, cy - 0.04, r * 0.95], null, null, false); // the big grin
+    } else {
+      S(sph(0.18, 16, 12), belly, [0, cy - 0.02, 0.1], [1.1, 1.05, 0.6], null, false);
+      S(sph(0.12, 14, 10), fur, [0, cy * 2 + 0.03, 0], [1.1, 0.9, 1]);
+      S(sph(0.08, 12, 10), belly, [0, cy * 2 + 0.02, 0.06], [1.2, 0.9, 0.6], null, false);
+      for (const s of [-1, 1]) { S(cone(0.035, 0.06, 4), fur, [s * 0.08, cy * 2 + 0.13, 0], null, [0, Math.PI / 4, -s * 0.3]); S(sph(0.05, 8, 6), fur, [s * 0.25, cy, 0.04]); S(sph(0.07, 8, 6), belly, [s * 0.12, 0.04, 0.12], [1, 0.6, 1.3]); S(box(0.03, 0.005, 0.01), ink, [s * 0.035, cy * 2 + 0.04, 0.12], null, null, false); }
+      S(box(0.06, 0.005, 0.01), ink, [0, cy * 2 - 0.01, 0.125], null, null, false);
+    }
+    return { use: () => floatEmoji(g, A, '💖', 0.7) };
+  }
+  // the rest: a body and a head
+  S(sph(0.14, 18, 14), fur, [0, 0.15, 0], [1, 0.95, 0.95]);
+  if (m !== 'pika' && m !== 'eevee') S(sph(0.09, 14, 10), belly, [0, 0.14, 0.08], [1, 1.1, 0.5], null, false);
+  const hy = 0.36, fz = 0.14;
+  S(sph(0.14, 18, 14), fur, [0, hy, 0.01], [1.08, 0.95, 1]);
+  for (const s of [-1, 1]) { S(sph(0.045, 10, 8), fur, [s * 0.12, 0.17, 0.05], [0.9, 1.3, 0.9]); S(sph(0.05, 10, 8), fur, [s * 0.08, 0.04, 0.08], [1, 0.7, 1.3]); }
+  if (m === 'pika') {
+    for (const s of [-1, 1]) { S(cone(0.045, 0.2, 6), fur, [s * 0.09, hy + 0.17, -0.01], null, [0, 0, -s * 0.35]); S(cone(0.03, 0.07, 6), ink, [s * 0.125, hy + 0.255, -0.01], null, [0, 0, -s * 0.35], false); S(sph(0.03, 8, 6), red, [s * 0.1, hy - 0.04, fz - 0.025], [1.1, 1, 0.4], null, false); }
+    // the lightning-bolt tail
+    for (const [x, y, w, h, r] of [[0.08, 0.18, 0.05, 0.12, -0.5], [0.13, 0.28, 0.05, 0.12, 0.5], [0.16, 0.38, 0.1, 0.12, -0.3]]) S(box(w, h, 0.03), fur, [x, y, -0.14], null, [0, 0, r]);
+    for (const y of [0.18, 0.12]) S(box(0.12, 0.02, 0.01), toon('#8b5a2b'), [0, y, -0.13], null, null, false);
+  } else if (m === 'char') {
+    S(cone(0.05, 0.22, 10), fur, [0.06, 0.1, -0.17], null, [-1.4, 0, 0.3]);
+    const flame = new THREE.Sprite(additive(flameTexture, 0xff7a2a, 0.95));
+    flame.scale.set(0.12, 0.18, 1);
+    flame.position.set(0.08, 0.16, -0.27);
+    P.add(flame);
+  } else if (m === 'squirt') {
+    S(sph(0.15, 16, 12), toon('#a8723f'), [0, 0.16, -0.06], [1.05, 1, 0.75]); // the shell
+    S(sph(0.12, 14, 10), toon('#f4e3a0'), [0, 0.15, 0.06], [1, 1.1, 0.5], null, false);
+    S(geo('squirtTail', () => new THREE.TorusGeometry(0.05, 0.022, 6, 14, Math.PI * 1.5)), fur, [0, 0.06, -0.18], null, [0, Math.PI / 2, 0]);
+  } else if (m === 'bulba') {
+    S(sph(0.12, 14, 10), toon('#5fae6a'), [0, 0.28, -0.08], [1, 1.1, 1]); // the bulb
+    for (let k = 0; k < 4; k++) S(cone(0.04, 0.1, 4), toon('#3f9a4a'), [Math.cos(k * 1.6) * 0.07, 0.36, -0.08 + Math.sin(k * 1.6) * 0.07], null, [Math.sin(k * 1.6) * 0.5, 0, -Math.cos(k * 1.6) * 0.5]);
+    for (const s of [-1, 1]) S(cone(0.035, 0.06, 4), fur, [s * 0.1, hy + 0.12, 0], null, [0, Math.PI / 4, -s * 0.4]);
+    for (const [x, y] of [[-0.06, hy + 0.08], [0.07, hy + 0.05], [0.1, 0.18]]) S(sph(0.025, 8, 6), toon('#4f9a85'), [x, y, 0.12], [1, 1, 0.4], null, false);
+  } else if (m === 'eevee') {
+    for (const s of [-1, 1]) S(cone(0.06, 0.2, 4), fur, [s * 0.11, hy + 0.15, -0.01], null, [0, Math.PI / 4, -s * 0.5]);
+    S(sph(0.08, 12, 10), belly, [0, 0.27, 0.05], [1.6, 0.8, 1]); // the fluffy collar
+    S(sph(0.08, 12, 10), fur, [0.05, 0.17, -0.17], [1, 1.2, 1.3], [0.5, 0, 0.3]);
+    S(sph(0.05, 10, 8), belly, [0.07, 0.25, -0.22], null, null, false);
+  }
+  eyes(hy + 0.01, fz - 0.005, 0.06, m === 'char' || m === 'squirt' ? 0.028 : 0.024, m === 'bulba' ? '#c0283a' : '#1d1b2e');
+  if (m !== 'pika') blush(hy - 0.035, fz - 0.02, 0.09);
+  S(geo('monSmile', () => new THREE.TorusGeometry(0.025, 0.006, 6, 12, Math.PI)), ink, [0, hy - 0.035, fz], null, [0, 0, Math.PI], false);
   return { use: () => floatEmoji(g, A, '💖', 0.7) };
 }
 for (const [id, sp] of Object.entries(PLUSH)) FURNITURE[id] = (g, A) => plushie(g, A, sp);

@@ -477,7 +477,7 @@ const plan = (list) => list.map(([x, y]) => ({ x: x * K, y: y * K }));
   // ---- lamps: along the lit streets, well spaced and alternating sides; four at the square's corners
   const lamps = [];
   const lampOk = (p) => !nearPath(p, 32) && !lamps.some((l) => Math.hypot(l.x - p.x, l.y - p.y) < 320)
-    && !SPOTS.some((s) => distToRect(p, s) < 40) && creekDist(p.x, p.y) > CREEK_BANK && Math.hypot(p.x - CENTER.x, p.y - CENTER.y) > PLAZA_R + 20
+    && !SPOTS.some((s) => distToRect(p, s) < 40 || Math.hypot(p.x - doorOf(s).x, p.y - doorOf(s).y) < 170) && creekDist(p.x, p.y) > CREEK_BANK && Math.hypot(p.x - CENTER.x, p.y - CENTER.y) > PLAZA_R + 20
     && !COTTAGES.some((c) => distToRect(p, { x: c.x - 40, y: c.y - 55, w: c.w + 80, h: c.h + 110 }) < 5);
   for (let i = 0; i < 4; i++) {
     // roughly at the four corners, nudged round the edge of the square until clear of every street
@@ -600,16 +600,65 @@ export function renderGround(scale = 0.55) {
   ctx.fillStyle = 'rgba(160,220,110,.18)';
   ctx.beginPath(); ctx.roundRect(330 * K, 1180 * K, 300 * K, 580 * K, 80); ctx.fill();
 
-  // streets
+  // streets: a paved apron in front of every building, joined to the nearest street, then the streets
+  // themselves (soft grassy edges, a stone kerb, cobbles), so the paths run right up to the doors
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (const [width, color] of [[62, 'rgba(120,90,50,.35)'], [56, '#b3905a'], [48, '#d8bd88'], [36, '#e6cf9f']]) {
-    ctx.strokeStyle = color;
+  const links = SPOTS.filter((s) => s.kind !== 'pond').map((s) => {
+    const d = doorOf(s), [dx, dy] = doorDir(s);
+    let best = null, bd = Infinity;
+    for (const p of PATHS) for (const q of p.pts) { const dd = Math.hypot(q.x - d.x, q.y - d.y); if (dd < bd) { bd = dd; best = q; } }
+    return { s, d, dx, dy, to: bd < 400 ? best : null };
+  });
+  const street = (draw) => {
+    for (const [width, color] of [[70, 'rgba(70,120,55,.35)'], [60, 'rgba(120,90,50,.4)'], [54, '#9a8a74'], [48, '#c8b89a']]) { ctx.strokeStyle = color; draw(width); }
+  };
+  street((width) => {
     for (const p of PATHS) {
       ctx.lineWidth = width * p.w;
       ctx.beginPath();
       p.pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
       ctx.stroke();
+    }
+    for (const l of links) {
+      if (!l.to) continue;
+      ctx.lineWidth = width * 0.8;
+      ctx.beginPath(); ctx.moveTo(l.d.x, l.d.y); ctx.lineTo(l.to.x, l.to.y); ctx.stroke();
+    }
+  });
+  // the aprons: a wide rounded patch of paving across the front of each building
+  for (const l of links) {
+    const w = Math.max(l.s.w, l.s.h) * 0.6 + 40;
+    ctx.save();
+    ctx.translate(l.d.x, l.d.y);
+    ctx.rotate(Math.atan2(l.dy, l.dx) - Math.PI / 2);
+    for (const [grow, color] of [[16, 'rgba(70,120,55,.35)'], [8, '#9a8a74'], [0, '#c8b89a']]) {
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.roundRect(-w / 2 - grow, -18 - grow, w + grow * 2, 78 + grow * 2, 26); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // cobbles over all of it: little rounded stones in a few shades
+  const cobble = (x, y) => {
+    ctx.fillStyle = ['#d8c8a8', '#bfae8e', '#e2d4b6', '#b3a284'][Math.floor(rnd() * 4)];
+    ctx.beginPath(); ctx.roundRect(x - 4, y - 3, 7 + rnd() * 3, 5 + rnd() * 2, 2.5); ctx.fill();
+  };
+  for (const p of PATHS) {
+    const half = 22 * p.w;
+    for (let i = 1; i < p.pts.length; i++) {
+      const a = p.pts[i - 1], b = p.pts[i], len = Math.hypot(b.x - a.x, b.y - a.y) || 1, nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+      for (let t = 0; t < len; t += 9) for (let o = -half; o <= half; o += 9) {
+        const jx = (rnd() - 0.5) * 3, jy = (rnd() - 0.5) * 3;
+        cobble(a.x + ((b.x - a.x) * t) / len + nx * o + jx, a.y + ((b.y - a.y) * t) / len + ny * o + jy);
+      }
+    }
+  }
+  for (const l of links) {
+    const w = Math.max(l.s.w, l.s.h) * 0.6 + 40, ang = Math.atan2(l.dy, l.dx) - Math.PI / 2, ca = Math.cos(ang), sa = Math.sin(ang);
+    for (let u = -w / 2 + 6; u < w / 2 - 4; u += 9) for (let v = -14; v < 56; v += 9) cobble(l.d.x + u * ca - v * sa, l.d.y + u * sa + v * ca);
+    if (l.to) {
+      const len = Math.hypot(l.to.x - l.d.x, l.to.y - l.d.y) || 1, nx = -(l.to.y - l.d.y) / len, ny = (l.to.x - l.d.x) / len;
+      for (let t = 0; t < len; t += 9) for (let o = -16; o <= 16; o += 9) cobble(l.d.x + ((l.to.x - l.d.x) * t) / len + nx * o, l.d.y + ((l.to.y - l.d.y) * t) / len + ny * o);
     }
   }
   for (const p of PATHS) {

@@ -1,5 +1,5 @@
 // Casino games: slots with real spinning reels, a prize wheel, a 3D coin flip, blackjack against the
-// house dealer and the shared roulette table. Inside the casino each machine opens just its own game (options.game).
+// house dealer, the shared roulette table, Plinko, Lucky Dice and High-Low. Inside the casino each machine opens just its own game (options.game).
 import { net } from '../net.js';
 import { roulette } from './roulette.js';
 import { iconSvg } from '../icons.js';
@@ -15,7 +15,10 @@ const wheelColor = (mult, i) => (mult === 0 ? (i % 2 ? '#1a1320' : '#b3122e') : 
 const wheelInk = (mult) => (mult === 5 ? '#3a2400' : '#ffd84d');
 const rand = () => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
 
-const TITLES = { slots: 'Lucky Slots', wheel: 'Prize Wheel', coinflip: 'Coin Flip', blackjack: 'Blackjack', roulette: 'Roulette' };
+const TITLES = { slots: 'Lucky Slots', wheel: 'Prize Wheel', coinflip: 'Coin Flip', blackjack: 'Blackjack', roulette: 'Roulette', plinko: 'Plinko', dice: 'Lucky Dice', hilo: 'High-Low' };
+const PLINKO_PAYS = [9, 3, 1.4, 0.6, 0.3, 0.6, 1.4, 3, 9]; // must match server.py
+const CARD_NAMES = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const DIE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 const BJ_RESULTS = {
   blackjack: ['🃏 BLACKJACK! Pays 6 to 5', 'win'], win: ['You win!', 'win'], dealer_bust: ['Dealer busts, you win!', 'win'],
   push: ['Push: your bet comes back.', ''], lose: ['Dealer wins.', 'lose'], bust: ['Bust! Over 21.', 'lose'], dealer_bj: ['Dealer has blackjack.', 'lose'],
@@ -28,7 +31,7 @@ const cardHtml = ([rank, suit], i) => (rank === '?'
 export function casino(body, { game = null } = {}) {
   body.innerHTML = `
     <h2>${iconSvg(game === 'roulette' ? 'roulette' : 'casino')} ${game ? TITLES[game] : 'Casino'}</h2>
-    <div class="tabs ${game ? 'hidden' : ''}"><button class="on" data-tab="slots">🎰 Slots</button><button data-tab="wheel">🎡 Wheel</button><button data-tab="coinflip">🪙 Coin flip</button><button data-tab="blackjack">🃏 Blackjack</button><button data-tab="roulette">🎡 Roulette</button></div>
+    <div class="tabs ${game ? 'hidden' : ''}"><button class="on" data-tab="slots">🎰 Slots</button><button data-tab="wheel">🎡 Wheel</button><button data-tab="coinflip">🪙 Coin flip</button><button data-tab="blackjack">🃏 Blackjack</button><button data-tab="roulette">🎡 Roulette</button><button data-tab="plinko">🔻 Plinko</button><button data-tab="dice">🎲 Dice</button><button data-tab="hilo">🂠 High-Low</button></div>
     <div class="bet-row">
       <label>Bet <input type="number" min="1" value="50" class="bet"></label>
       <div class="chips"><button data-b="10">10</button><button data-b="50">50</button><button data-b="100">100</button><button data-b="half">½</button><button data-b="max">Max</button></div>
@@ -67,6 +70,21 @@ export function casino(body, { game = null } = {}) {
         <p class="muted small center">Get closer to 21 than the dealer without going over. Dealer hits soft 17, blackjack pays 6 to 5, and the house wins ties under 20.</p>
       </div>
       <div data-pane="roulette" class="hidden"></div>
+      <div data-pane="plinko" class="hidden">
+        <canvas class="plinko"></canvas>
+        <button class="btn primary wide" id="dropPlinko">Drop the ball</button>
+        <p class="muted small center">The ball bounces down through the pegs. The edge slots pay ×9!</p>
+      </div>
+      <div data-pane="dice" class="hidden">
+        <div class="dice-stage"><span class="die">⚂</span><span class="die">⚄</span></div>
+        <div class="row center"><button class="btn" data-dice="under">⬇ Under 7 (×2)</button><button class="btn" data-dice="seven">🎯 Exactly 7 (×5)</button><button class="btn" data-dice="over">⬆ Over 7 (×2)</button></div>
+        <p class="muted small center">Two dice: call the total.</p>
+      </div>
+      <div data-pane="hilo" class="hidden">
+        <div class="hilo-stage"><div class="hilo-card hilo-a">?</div><div class="hilo-card hilo-b back"></div></div>
+        <div class="row center"><button class="btn" id="hiloDeal">Deal a card</button><button class="btn hidden" data-hilo="lower">⬇ Lower</button><button class="btn hidden" data-hilo="higher">⬆ Higher</button></div>
+        <p class="muted small center">Is the next card higher or lower? The less likely the guess, the more it pays. A tie loses.</p>
+      </div>
     </div>
     <p class="result big-result"></p>
     <p class="muted center">Balance: <b class="bal"></b> 🪙</p>`;
@@ -210,6 +228,57 @@ export function casino(body, { game = null } = {}) {
   });
   $(body, '#spinWheel').onclick = () => play('wheel');
 
+  // ---- plinko: pegs in a triangle, the ball follows the path the server rolled ----
+  const plCanvas = $(body, '.plinko'), PW = 300, PH = 300, ROWS = 8;
+  const pctx = hiDpiCanvas(plCanvas, PW, PH);
+  let pball = null;
+  const pegAt = (r, k) => ({ x: PW / 2 + (k - r / 2) * 30, y: 30 + r * 28 });
+  function drawPlinko() {
+    pctx.clearRect(0, 0, PW, PH);
+    pctx.fillStyle = '#1a1030'; pctx.beginPath(); pctx.roundRect(0, 0, PW, PH, 16); pctx.fill();
+    pctx.fillStyle = '#e8e2ff';
+    for (let r = 0; r < ROWS; r++) for (let k = 0; k <= r + 1; k++) { const p = pegAt(r, k - 0.5); pctx.beginPath(); pctx.arc(p.x, p.y, 3.2, 0, TAU); pctx.fill(); }
+    PLINKO_PAYS.forEach((mult, i) => {
+      const x = PW / 2 + (i - 4) * 30;
+      pctx.fillStyle = mult >= 3 ? '#ffc53d' : mult >= 1 ? '#7a2fc0' : '#3a2a5a';
+      pctx.beginPath(); pctx.roundRect(x - 14, PH - 40, 28, 30, 6); pctx.fill();
+      pctx.fillStyle = mult >= 3 ? '#3a2400' : '#ffffff'; pctx.font = '800 11px Rubik, sans-serif'; pctx.textAlign = 'center';
+      pctx.fillText(`×${mult}`, x, PH - 21);
+    });
+    if (pball) { pctx.fillStyle = '#ff5d8f'; pctx.beginPath(); pctx.arc(pball.x, pball.y, 7, 0, TAU); pctx.fill(); pctx.strokeStyle = '#fff'; pctx.lineWidth = 2; pctx.stroke(); }
+  }
+  drawPlinko();
+  const stopPlinko = loop((dt) => {
+    if (!pball?.path) return;
+    pball.t += dt * 5.5;
+    const step = Math.floor(pball.t), f = pball.t - step;
+    if (step >= ROWS) {
+      const x = PW / 2 + (pball.slot - 4) * 30;
+      pball.x += (x - pball.x) * 0.3; pball.y = Math.min(PH - 26, pball.y + dt * 220);
+      drawPlinko();
+      if (pball.y >= PH - 26 && !pball.done) { pball.done = true; const m = pball.msg; later(() => finish(m, `×${PLINKO_PAYS[m.slot]}! ${m.payout > m.bet ? `You won ${fmt(m.payout)} 🪙!` : m.payout ? `${fmt(m.payout)} 🪙 back.` : `You lost ${fmt(m.bet)} 🪙`}`), 250); }
+      return;
+    }
+    // between pegs: from the column it's in, a little hop to the next row, left or right
+    const col = pball.path.slice(0, step).reduce((a, b) => a + b, 0);
+    const from = { x: PW / 2 + (col - step / 2) * 30, y: 12 + step * 28 }, dir = pball.path[step];
+    const to = { x: PW / 2 + (col + dir - (step + 1) / 2) * 30, y: 12 + (step + 1) * 28 };
+    pball.x = from.x + (to.x - from.x) * f;
+    pball.y = from.y + (to.y - from.y) * f - Math.sin(f * Math.PI) * 8;
+    if (step !== pball.lastStep) { pball.lastStep = step; sfx('wheeltick'); }
+    drawPlinko();
+  });
+  $(body, '#dropPlinko').onclick = () => { pball = { x: PW / 2, y: 12, t: 0 }; drawPlinko(); play('plinko'); };
+
+  // ---- dice ----
+  body.querySelectorAll('[data-dice]').forEach((b) => (b.onclick = () => play('dice', { pick: b.dataset.dice })));
+
+  // ---- high-low ----
+  const hiloA = $(body, '.hilo-a'), hiloB = $(body, '.hilo-b');
+  const cardFace = (el, n) => { el.classList.toggle('back', !n); el.textContent = n ? CARD_NAMES[n] : ''; el.classList.toggle('red', n === 1 || n > 10); };
+  $(body, '#hiloDeal').onclick = () => { if (!busy) { net.send('hilo_deal'); cardFace(hiloB, 0); sfx('pop', { vol: 0.5 }); } };
+  body.querySelectorAll('[data-hilo]').forEach((b) => (b.onclick = () => play('hilo', { pick: b.dataset.hilo })));
+
   // ---- coin ----
   body.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => play('coinflip', { pick: b.dataset.pick })));
 
@@ -222,6 +291,7 @@ export function casino(body, { game = null } = {}) {
     el.querySelectorAll('.bj-card').forEach((c, i) => c.classList.toggle('fresh', i >= shown));
   }
   function renderBj(m) {
+    bj.open = !m.done;
     const newP = m.player.length - bj.shownP, newD = m.dealer.filter((c) => c[0] !== '?').length - bj.shownD;
     renderHand(bjEl('.bj-player'), m.player, bj.shownP);
     renderHand(bjEl('.bj-dealer'), m.dealer, bj.hole && m.done ? 1 : bj.lenD); // the hole card flips over at the end
@@ -267,6 +337,27 @@ export function casino(body, { game = null } = {}) {
 
   const off = listen({
     gamble_result: (m) => {
+      if (m.game === 'plinko') { if (pball) Object.assign(pball, { path: m.path, slot: m.slot, msg: m, t: 0, done: false }); return; }
+      if (m.game === 'dice') {
+        const dice = [...body.querySelectorAll('.die')];
+        dice.forEach((d) => d.classList.add('rolling'));
+        sfx('rattle');
+        let ticks = 0;
+        const roll = setInterval(() => { dice.forEach((d) => { d.textContent = DIE[1 + Math.floor(Math.random() * 6)]; }); if (++ticks > 9) clearInterval(roll); }, 70);
+        later(() => {
+          dice.forEach((d, i) => { d.classList.remove('rolling'); d.textContent = DIE[m.dice[i]]; });
+          const total = m.dice[0] + m.dice[1];
+          finish(m, `Rolled ${total}! ${m.payout ? `You won ${fmt(m.payout)} 🪙!` : `You lost ${fmt(m.bet)} 🪙`}`);
+        }, 800);
+        return;
+      }
+      if (m.game === 'hilo') {
+        cardFace(hiloB, m.next);
+        sfx('pop', { vol: 0.5 });
+        body.querySelectorAll('[data-hilo]').forEach((b) => b.classList.add('hidden'));
+        later(() => finish(m, `${CARD_NAMES[m.next]}! ${m.payout ? `You won ${fmt(m.payout)} 🪙!` : m.next === m.first ? 'A tie: the house wins.' : `You lost ${fmt(m.bet)} 🪙`}`), 500);
+        return;
+      }
       if (m.game === 'slots') {
         const durations = m.reels.map((sym, i) => spinReel(reels[i], sym, i));
         durations.forEach((d, i) => later(() => {
@@ -305,8 +396,17 @@ export function casino(body, { game = null } = {}) {
       result.className = 'result big-result lose';
     },
     bj: renderBj,
+    hilo_card: (m) => {
+      cardFace(hiloA, m.card);
+      for (const pick of ['higher', 'lower']) {
+        const b = body.querySelector(`[data-hilo=${pick}]`);
+        b.classList.toggle('hidden', !m[pick]);
+        b.textContent = `${pick === 'higher' ? '⬆ Higher' : '⬇ Lower'} (×${m[pick]})`;
+      }
+      result.textContent = '';
+    },
     player: (m) => { if (m.p.key === me().key) showBalance(); },
   });
   showTab(game ?? 'slots');
-  return () => { timers.forEach(clearTimeout); clearInterval(reelTicks); stopWheelLoop(); off(); stopRoulette?.(); body.classList.remove('casino-roulette'); };
+  return () => { if (bj.open) net.send('bj_stand'); /* (closing the table mid-hand: you stand) */ timers.forEach(clearTimeout); clearInterval(reelTicks); stopWheelLoop(); stopPlinko(); off(); stopRoulette?.(); body.classList.remove('casino-roulette'); };
 }

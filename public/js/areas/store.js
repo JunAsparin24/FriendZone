@@ -768,7 +768,7 @@ export function petShopArea(stage) {
   for (const [y, x] of [[1.1, 0.35], [1.9, -0.3], [2.8, 0.1]]) add(tree, new THREE.CylinderGeometry(0.55, 0.55, 0.14, 16), toon('#c9b7e8'), { p: [x, y, 0], outline: true });
   add(tree, new THREE.SphereGeometry(0.1, 8, 6), toon('#ff5d73'), { p: [0.6, 0.85, 0.2] });
   solids.push({ x: -hw + 1.4, z: -0.5, r: 0.9 });
-  for (const [x, z, c] of [[1, 11, '#7c6bff'], [3, 11.6, '#39c6ff'], [-1, 11.6, '#ff8fc7']]) {
+  for (const [x, z, c] of [[10.5, 11.8, '#7c6bff'], [12.8, 12.2, '#39c6ff'], [15.1, 11.8, '#ff8fc7']]) { // (in the front corner, clear of the door)
     add(g, new THREE.TorusGeometry(0.7, 0.3, 10, 24), toon(c), { p: [x, 0.3, z], r: [Math.PI / 2, 0, 0], outline: true });
     add(g, new THREE.CylinderGeometry(0.7, 0.7, 0.15, 20), toon('#fff6e6'), { p: [x, 0.1, z] });
     solids.push({ x, z, r: 1 });

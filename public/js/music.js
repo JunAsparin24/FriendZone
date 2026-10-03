@@ -3,6 +3,7 @@
 // It goes through the music volume in ⚙️ settings (and the mute button), and fades between tracks.
 import { audio, onAudioStart } from './sfx.js';
 import { settings, onSettings } from './settings.js';
+import { SONGS, playSong, songPlaying } from './gamemusic.js';
 
 const TRACKS = await (await fetch('music/tracks.json')).json(); // [{ name, file }]
 const LOUDNESS = 1.6; // (the music volume was set for the old, quieter synthesized songs)
@@ -53,8 +54,16 @@ function stopCurrent(fade = 0.6) {
 function refresh() {
   if (!settings.musicOn || settings.muted) {
     stopCurrent(0.8);
+    playSong(null);
     return;
   }
+  // in a game with its own theme, that plays instead of the playlist
+  if (SONGS[context]) {
+    stopCurrent(1.2);
+    if (songPlaying() !== context) { playSong(context); listeners.forEach((fn) => fn(SONGS[context].name)); }
+    return;
+  }
+  if (songPlaying()) playSong(null);
   if (!cur) play(nextTrack());
 }
 
@@ -64,13 +73,17 @@ onSettings((s, changed) => {
 });
 
 export const music = {
-  get current() { return cur?.track.name ?? null; },
+  get current() { return SONGS[context] && songPlaying() ? SONGS[context].name : cur?.track.name ?? null; },
   get context() { return context; },
-  /** (fights used to switch to battle music; the playlist now just carries on) */
-  setContext(ctx) { context = ctx; },
+  /** Where you are (a game's scene, or 'main'): games with a theme play it instead of the playlist. */
+  setContext(ctx) {
+    if (ctx === context) return;
+    context = ctx;
+    refresh();
+  },
   setNight() {},
   skip() {
-    if (settings.musicOn && !settings.muted) play(nextTrack());
+    if (settings.musicOn && !settings.muted && !SONGS[context]) play(nextTrack());
   },
   /** fn(trackName) whenever a new track starts. */
   onChange(fn) {

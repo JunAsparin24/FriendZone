@@ -249,6 +249,8 @@ BAD_WORDS = ("ass", "arse", "fag", "dick", "cock", "cum", "tit", "tits", "titty"
              "crap", "piss", "sex", "sexy", "hoe", "kys", "prick", "balls", "butthole", "douche", "thot", "milf",
              "anal", "cuck", "spic", "wtf", "shat", "sht")
 ENDINGS = ("", "s", "es", "ed", "ing", "er", "ers", "y", "ies")
+# endings a rude root can take when someone splits it up with spaces ("s hitty", "f ucking")
+SPLIT_ENDINGS = ENDINGS + ("ty", "ter", "ters", "tier", "in", "head", "heads", "face", "hole", "holes", "off", "ass", "ing")
 # innocent words that happen to contain a rude root
 SAFE = ("scunthorpe", "cockpit", "cockatoo", "peacock", "hancock", "shitake", "shiitake", "penistone", "hitchcock",
         "therapist", "grape", "drape", "spicy", "spice", "shitzu", "cocktail", "classic", "document")
@@ -290,6 +292,22 @@ def is_rude(text):
             return True
         if any(w == bad + end for bad in BAD_WORDS for end in ENDINGS):
             return True
+    # a swear split by spaces anywhere ("s hit", "f uck", "shi t", "bit ch"): neighbouring pieces glued
+    # back together count, but only when the result is exactly a rude word (so "this hit" is fine)
+    words = [w for w in words if w]
+    for i in range(len(words)):
+        combo = words[i]
+        for j in range(i + 1, min(len(words), i + 4)):
+            combo += words[j]
+            if len(combo) > 16:
+                break
+            for f in _forms(combo):
+                if any(safe in f for safe in SAFE):
+                    continue
+                if any(f == root + end for root in BAD_ROOTS for end in SPLIT_ENDINGS):
+                    return True
+                if any(f == bad + end for bad in BAD_WORDS for end in ENDINGS):
+                    return True
     return False
 
 
@@ -405,6 +423,18 @@ SLOT_TRIPLE = {"🍒": 5, "🍋": 8, "🔔": 12, "⭐": 20, "💎": 40, "7️⃣
 WHEEL = [0, 1.5, 0, 0, 0.5, 0, 2, 0, 0, 1.5, 0, 0.5, 0, 0, 0, 5]  # multipliers, clockwise from the top
 # The house always wins (eventually): the casino is rigged in its favour. Rough paybacks per coin bet:
 # coin flip 80%, slots ~55%, wheel 50%, blackjack ~81%, roulette ~63%.
+# Plinko: 8 rows of pegs, 9 slots (the middle ones are likeliest)
+PLINKO_ROWS = 8
+PLINKO_PAYS = [9, 3, 1.4, 0.6, 0.3, 0.6, 1.4, 3, 9]
+DICE_SEVEN_PAYS = 5  # dice: exactly 7 pays 5x (over or under 7 pays 2x)
+
+
+def hilo_mult(card, pick):
+    """High-Low payout for a guess against `card` (1-13): fairer the less likely it is, with a small house edge."""
+    n = 13 - card if pick == "higher" else card - 1
+    return 0 if n <= 0 else max(1.05, round(0.94 * 13 / n, 2))
+
+
 COINFLIP_WIN = 0.4           # chance you call the coin right
 SLOT_PAIR_PAYS = 0.5         # a pair gives back half your bet
 SLOT_NEAR_MISS = 0.35        # a winning line that slips to a near miss at the last reel
@@ -617,6 +647,7 @@ LT_MAP = {
 # inside the Arcade a go on a cabinet costs coins and pays out tickets (spent at the prize counter);
 # Surf Rush at the beach is still free and pays coins
 ARCADE_PLAY_COST = 10
+HOCKEY_TO = 5  # air hockey: first to this many goals
 CLAW_COST = 25
 CLAW_RARITY = {"common": 1.0, "rare": 0.7, "epic": 0.45}  # rarer plushies are harder to grab
 CLAW_PLUSH_CHANCE = 0.04  # of a win: also the claw-only plushie you can hold, if you haven't got one
@@ -998,7 +1029,7 @@ def public(p, client):
         "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "fishbag": p.get("fishbag", []), "rods": p["rods"], "rod": p["rod"],
         "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"])},
         "dailyAt": p.get("lastDaily", 0) + DAILY_SECS,
-        "online": client is not None, "scene": client.scene if client else None,
+        "online": client is not None, "scene": client.scene if client else None, "dev": bool(client and client.admin),
     }
 
 
@@ -1058,6 +1089,7 @@ class Room:
         self.lt_break = 0.0     # while now < this, it's the scoreboard break
         self.lt_pick = 0.0      # while now < this, everyone picks a team (then the round starts)
         self.lt_tags = {"red": 0, "blue": 0}
+        self.hockey = {}        # air hockey table -> {"sides": {0: key, 1: key}, "s": [0, 0], "live": bool}
         self.doodle = {"id": 0, "state": "idle", "queue": [], "turn": -1, "drawer": None, "word": None, "choices": [],
                        "ends": 0.0, "dur": 0, "guessed": {}, "scores": {}, "strokes": [], "shown": set(), "ranking": []}
         self.trades = {}      # id -> a live trade between two people in the tavern
@@ -1117,7 +1149,7 @@ IN_ZONE = {
     "race_join", "race_leave", "race_start", "race_ready", "race_vehicle", "race_pos", "race_done", "race_item", "race_hit", "arena_move", "arena_shoot", "arena_hit",
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "crab_bet", "ball", "ball_steal", "ball_event", "court_join", "court_ready", "court_leave", "court_score", "golf_done", "boat", "boat_take", "boat_leave", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
-    "play_public", "lt_move", "lt_shoot", "lt_team", "arcade_score", "arcade_play", "claw_play", "ticket_shop", "ticket_buy", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
+    "play_public", "hilo_deal", "lt_move", "lt_shoot", "lt_team", "hockey_join", "hockey_leave", "hockey_mallet", "hockey_puck", "hockey_goal", "arcade_score", "arcade_play", "claw_play", "ticket_shop", "ticket_buy", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
     "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
 }
 
@@ -1657,8 +1689,12 @@ class Game:
                     self.court_drop(room, court, c.key)
         if prev == "arena" and scene != "arena":
             self.arena_leave(c)
+        if prev == "casino" and scene != "casino" and getattr(c, "bj", None) and not c.bj["done"]:
+            self.bj_finish(c)  # (walked away from the blackjack table mid-hand: you stand)
         if prev == "lasertag" and scene != "lasertag":
             self.lt_leave(c)
+        if prev == "arcade" and scene != "arcade":
+            self.hockey_drop(c)
         if prev == "race" and scene != "race":
             self.race_remove(c)
         if prev == "boss" and scene != "boss":
@@ -1683,6 +1719,9 @@ class Game:
             self.arena_join(c)
         elif scene == "lasertag":
             self.lt_join(c)
+        elif scene == "arcade":
+            for t in list(c.room.hockey):  # (the air hockey tables: who's waiting, and any game on)
+                c.ws.send(self.hockey_view(c.room, t))
         elif scene == "boss":
             self.boss_join(c)
         elif scene == "doodle":
@@ -1737,13 +1776,16 @@ class Game:
         cur = c.room.balls.get(bid)
         if m.get("dm"):
             st["dmAt"] = time.time()  # (a dribble move: no stealing it for a moment)
+            if m.get("mv") in ("cross", "behind", "spin"):
+                st["mv"] = m["mv"]
         elif cur and cur.get("dmAt"):
             st["dmAt"] = cur["dmAt"]
         # just stolen: the old holder's last few updates (still saying they've got it) don't count
         if cur and cur.get("lock") and time.time() - cur["lock"][1] < 1.0 and c.key != cur["lock"][0]:
             return
-        c.room.balls[bid] = st
         c.room.broadcast({"t": "ball", **{k: v for k, v in st.items() if k != "dmAt"}}, scene="beach", exclude=c)
+        st.pop("mv", None)  # (the move plays once: it isn't part of the ball's saved state)
+        c.room.balls[bid] = st
 
     # ---- Coral Park pickup games: steals, blocks, and matches you ready up for -------------------
 
@@ -2022,6 +2064,7 @@ class Game:
                 return self.sys(c, "Wrong password.", "error")
             c.admin = True
             c.ws.send({"t": "admin", "on": True})
+            self.push_player(c.room, c.key)  # (so a Developer Title shows up over your head)
             print(f"[admin] {c.player['name']} turned on admin mode in zone {c.room.zone['code']}", flush=True)
             return self.sys(c, "🛡️ Admin mode on! Type /help to see what you can do.", "ok")
         if cmd == "help":
@@ -2453,6 +2496,35 @@ class Game:
             else:
                 payout = 0
             result = {"reels": reels}
+        elif game == "plinko":
+            # the ball bounces left or right at each of the rows of pegs; the slot it ends up in pays
+            path = [random.random() < 0.5 for _ in range(PLINKO_ROWS)]
+            slot = sum(path)
+            payout = int(bet * PLINKO_PAYS[slot])
+            result = {"path": [1 if p else 0 for p in path], "slot": slot}
+        elif game == "dice":
+            pick = m.get("pick")
+            if pick not in ("over", "under", "seven"):
+                raise GameError("Pick over 7, under 7 or exactly 7.")
+            dice = [random.randint(1, 6), random.randint(1, 6)]
+            total = sum(dice)
+            won = (pick == "over" and total > 7) or (pick == "under" and total < 7) or (pick == "seven" and total == 7)
+            payout = bet * (DICE_SEVEN_PAYS if pick == "seven" else 2) if won else 0
+            result = {"dice": dice, "pick": pick}
+        elif game == "hilo":
+            # the card you were shown (hilo_deal), then guess if the next is higher or lower; ties lose
+            first = getattr(c, "hilo", None)
+            pick = m.get("pick")
+            if not first or pick not in ("higher", "lower"):
+                raise GameError("Deal a card first.")
+            mult = hilo_mult(first, pick)
+            if not mult:
+                raise GameError("That can't win: pick the other way.")
+            nxt = random.randint(1, 13)
+            won = nxt > first if pick == "higher" else nxt < first
+            payout = int(bet * mult) if won else 0
+            result = {"first": first, "next": nxt, "pick": pick}
+            c.hilo = None
         elif game == "wheel":
             index = random.choices(range(len(WHEEL)), weights=[WHEEL_ZERO_WEIGHT if w == 0 else 1 for w in WHEEL])[0]
             payout = int(bet * WHEEL[index])
@@ -2464,6 +2536,13 @@ class Game:
         c.ws.send({"t": "gamble_result", "game": game, "bet": bet, "payout": payout, **result})
         if payout >= bet * 10 and payout >= 500:
             self.post_feed(c.room, f"🎰 JACKPOT! {c.player['name']} won {payout:,} coins!")
+
+    def on_hilo_deal(self, c, m):
+        """High-Low: deal the face-up card (free). Your bet goes on whether the next one beats it."""
+        if not c.ready("hilo_deal", 0.4):
+            return
+        c.hilo = random.randint(1, 13)
+        c.ws.send({"t": "hilo_card", "card": c.hilo, "higher": hilo_mult(c.hilo, "higher"), "lower": hilo_mult(c.hilo, "lower")})
 
     # ---- blackjack: each player plays their own hand against the house dealer ----
 
@@ -2484,7 +2563,9 @@ class Game:
 
     def on_bj_deal(self, c, m):
         if getattr(c, "bj", None) and not c.bj["done"]:
-            raise GameError("Finish this hand first.")
+            # a hand you left unfinished (you closed the table): bring it back up so you can play it out
+            self.bj_send(c)
+            return
         bet = int(num(m.get("bet", 0), 0, MAX_BET))
         if bet < 1:
             raise GameError("Place a bet first.")
@@ -2843,12 +2924,13 @@ class Game:
         board = sorted(({"k": k, "kills": f["score"], "deaths": f["deaths"]} for k, f in room.arena.items()),
                        key=lambda e: (-e["kills"], e["deaths"]))
         room.arena_break = time.monotonic() + ARENA_BREAK
-        nxt = ARENA_MAPS[(room.arena_map + 1) % len(ARENA_MAPS)]
+        room.arena_next = random.choice([i for i in range(len(ARENA_MAPS)) if i != room.arena_map % len(ARENA_MAPS)] or [0])
+        nxt = ARENA_MAPS[room.arena_next]
         room.broadcast({"t": "arena_round", "winner": winner, "board": board, "secs": ARENA_BREAK, "next": nxt["name"]}, scene="arena")
         asyncio.get_running_loop().call_later(ARENA_BREAK, self.arena_next_round, room)
 
     def arena_next_round(self, room):
-        room.arena_map = (room.arena_map + 1) % len(ARENA_MAPS)
+        room.arena_map = getattr(room, "arena_next", (room.arena_map + 1) % len(ARENA_MAPS))  # (picked at random when the round ended)
         room.arena_items.clear()
         now = time.monotonic()
         for k in list(room.arena):
@@ -3947,6 +4029,94 @@ class Game:
         c.player["tickets"] -= entry["price"]
         self.grant(c, item, "tickets")
         self.push_player(c.room, c.key)
+
+    # ---- air hockey (two players, one at each end of a table in the Arcade) ----------------
+    # Each player pays a go when the game starts; side 0's game runs the puck and sends it, side 1 just
+    # sends its mallet. First to HOCKEY_TO goals; the winner gets more tickets.
+
+    def hockey_view(self, room, t):
+        h = room.hockey.get(t) or {"sides": {}, "s": [0, 0], "live": False}
+        return {"t": "hockey", "table": t, "sides": {str(k): v for k, v in h["sides"].items()}, "s": h["s"], "live": h["live"], "to": HOCKEY_TO}
+
+    def on_hockey_join(self, c, m):
+        if c.scene != "arcade":
+            return
+        t, side = int(num(m.get("table", 0), 0, 1)), 1 if m.get("side") == 1 else 0
+        h = c.room.hockey.setdefault(t, {"sides": {}, "s": [0, 0], "live": False})
+        if h["live"] and c.key not in h["sides"].values():
+            raise GameError("A game's on at this table. Wait for it to finish!")
+        if h["sides"].get(side) not in (None, c.key):
+            raise GameError("Someone's already at that end. Go round to the other end!")
+        if c.player["coins"] < ARCADE_PLAY_COST:
+            raise GameError(f"Air hockey costs {ARCADE_PLAY_COST} coins.")
+        if h["sides"].get(side) != c.key:
+            self.hockey_drop(c, broadcast=False)
+            h = c.room.hockey.setdefault(t, {"sides": {}, "s": [0, 0], "live": False})
+            h["sides"][side] = c.key
+        h.setdefault("ready", set()).add(c.key)  # (joining is being ready; after a game, Rematch is)
+        if len(h["sides"]) == 2 and not h["live"] and set(h["sides"].values()) <= h["ready"]:
+            # both ends filled: everyone pays a go, and it's on
+            players = [c.room.clients.get(k) for k in h["sides"].values()]
+            if all(p and p.player["coins"] >= ARCADE_PLAY_COST for p in players):
+                for p in players:
+                    self.reward(p, coins=-ARCADE_PLAY_COST)
+                h.update(live=True, s=[0, 0], ready=set())
+        c.room.broadcast(self.hockey_view(c.room, t), scene="arcade")
+
+    def hockey_drop(self, c, broadcast=True):
+        for t, h in list(c.room.hockey.items()):
+            side = next((s for s, k in h["sides"].items() if k == c.key), None)
+            if side is None:
+                continue
+            del h["sides"][side]
+            h.setdefault("ready", set()).discard(c.key)
+            if h["live"]:
+                h["live"] = False  # (someone walked off mid-game: it's over, no tickets)
+            if broadcast:
+                c.room.broadcast(self.hockey_view(c.room, t), scene="arcade")
+
+    def on_hockey_leave(self, c, m):
+        self.hockey_drop(c)
+
+    def _hockey_side(self, c, m):
+        t = int(num(m.get("table", 0), 0, 1))
+        h = c.room.hockey.get(t)
+        if not h or c.scene != "arcade":
+            return None, None, None
+        side = next((s for s, k in h["sides"].items() if k == c.key), None)
+        return t, h, side
+
+    def on_hockey_mallet(self, c, m):
+        t, h, side = self._hockey_side(c, m)
+        if side is None:
+            return
+        c.room.broadcast({"t": "hockey_m", "table": t, "side": side, "x": round(num(m.get("x", 0), -2, 2), 3), "z": round(num(m.get("z", 0), -2, 2), 3)},
+                         scene="arcade", exclude=c)
+
+    def on_hockey_puck(self, c, m):
+        t, h, side = self._hockey_side(c, m)
+        if side != 0 or not h["live"]:
+            return  # (side 0 runs the puck)
+        c.room.broadcast({"t": "hockey_p", "table": t, **{k: round(num(m.get(k, 0), -20, 20), 3) for k in ("x", "z", "vx", "vz")}}, scene="arcade", exclude=c)
+
+    def on_hockey_goal(self, c, m):
+        t, h, side = self._hockey_side(c, m)
+        if side != 0 or not h["live"] or not c.ready("hockey_goal", 0.5):
+            return
+        scorer = 1 if m.get("scorer") == 1 else 0
+        h["s"][scorer] += 1
+        if h["s"][scorer] >= HOCKEY_TO:
+            h["live"] = False
+            h["ready"] = set()  # (both press Rematch for another go)
+            for s2, key in h["sides"].items():
+                cl = c.room.clients.get(key)
+                if cl:
+                    won = s2 == scorer
+                    tickets = 40 if won else 10
+                    cl.player["tickets"] = cl.player.get("tickets", 0) + tickets
+                    self.reward(cl, xp=20 if won else 5)
+                    cl.ws.send({"t": "arcade_result", "g": "hockey", "s": h["s"][s2], "coins": 0, "tickets": tickets, "best": False, "won": won})
+        c.room.broadcast({**self.hockey_view(c.room, t), "goal": scorer}, scene="arcade")
 
     # ---- laser tag ------------------------------------------------------------------
 

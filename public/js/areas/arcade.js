@@ -232,34 +232,46 @@ export function arcadeArea(stage) {
   const playHud = document.createElement('div');
   playHud.className = 'arc-play hidden';
   stage.hud.append(playHud);
-  const play = (make) => {
+  const play = (make, { free = false } = {}) => {
     if (mode) return;
-    saved = { orbit: stage.orbit, inter: stage.interactables };
-    stage.orbit = null; // (we steer the camera ourselves)
-    stage.interactables = [];
-    stage.person(S.me).visible = false;
+    saved = { orbit: stage.orbit, inter: stage.interactables, free };
+    if (!free) {
+      stage.orbit = null; // (we steer the camera ourselves)
+      stage.interactables = [];
+      stage.person(S.me).visible = false;
+    }
     playHud.classList.remove('hidden');
-    mode = make({ hud: playHud, done: leave });
+    try { mode = make({ hud: playHud, done: leave }); } catch (e) { console.error(e); mode = { stop() {} }; leave(); }
   };
   const leave = () => {
     if (!mode) return;
     mode.stop();
     mode = null;
-    stage.orbit = saved.orbit;
-    stage.orbit.cur = null;
-    stage.interactables = saved.inter;
-    stage.person(S.me).visible = true;
+    if (!saved.free) {
+      stage.orbit = saved.orbit;
+      stage.orbit.cur = null;
+      stage.interactables = saved.inter;
+      stage.person(S.me).visible = true;
+    }
     playHud.classList.add('hidden');
     playHud.innerHTML = '';
   };
   stage.onKey = (e, down) => mode?.key?.(e, down);
-  stage.onFrame((dt, now) => mode?.update(Math.min(dt, 0.05), now / 1000, stage.camera));
+  stage.onFrame((dt, now) => {
+    if (!mode) return;
+    // a machine you play standing up (the claw): walk away from it and the game ends (unless it's mid-grab)
+    if (mode.free && mode.anchor && !mode.busy?.()) {
+      const p = stage.person(S.me);
+      if (Math.hypot(p.x - mode.anchor.x, p.z - mode.anchor.z) > 3) { leave(); return; }
+    }
+    mode.update(Math.min(dt, 0.05), now / 1000, stage.camera);
+  });
 
   // the claw machines: full of real plushies
   for (const [x, col] of [[10, '#ff4fd8'], [12.6, '#39c6ff']]) {
     const M = clawMachine(g, x, 7, col, anim);
     solids.push({ x, z: 7, w: 1.9, d: 1.9 });
-    stage.interactable({ x, z: 8.7, r: 1.3, label: 'play the claw machine (🪙 25)', icon: 'arcade', use: () => play((ui) => clawGame(M, ui)) });
+    stage.interactable({ x, z: 8.7, r: 1.3, label: 'play the claw machine (🪙 25)', icon: 'arcade', use: () => play((ui) => clawGame(M, ui), { free: true }) });
   }
   // the prize counter: a glass counter, shelves of prizes behind, and the attendant
   counter(g, -11, 6.5, 6, '#7c4dff');
@@ -285,10 +297,13 @@ export function arcadeArea(stage) {
   sign(g, 'TICKET PRIZES', { x: -11, z: 6.5, y: 4.3, w: 3.6, h: 0.8, bg: '#7c4dff' });
 
   // ---- in the middle: air hockey tables and skee-ball lanes (both playable) ----
+  const tables = [];
   for (const x of [-4, 4]) {
-    const T = hockeyTable(g, x, 0, anim);
+    const T = hockeyTable(g, x, 0, anim, x < 0 ? 0 : 1);
+    tables.push(T);
     solids.push({ x, z: 0, w: 2.1, d: 3.5 });
-    stage.interactable({ x, z: 2.4, r: 1.3, label: 'play air hockey (🪙 10)', icon: 'arcade', use: () => play((ui) => hockeyGame(T, ui, stage)) });
+    // (stand at either end: that's your side, and someone at the other end is who you play)
+    for (const [side, ez] of [[0, 2.5], [1, -2.5]]) stage.interactable({ x, z: ez, r: 1.2, label: 'play air hockey with someone (🪙 10)', icon: 'arcade', use: () => play((ui) => hockeyGame(T, ui, stage, side)) });
   }
   for (let k = 0; k < 3; k++) {
     const x = -2 + k * 2, z = -6.5;
@@ -311,9 +326,9 @@ export function arcadeArea(stage) {
   }
   anim.push((t) => spots2.forEach((l, i) => { l.intensity = 11 + Math.sin(t * 1.5 + i * 2) * 4; }));
 
-  const walker = openWalker(stage, { w: W, d: D, solids, frozen: () => !!mode });
+  const walker = openWalker(stage, { w: W, d: D, solids, frozen: () => !!mode && !mode.free });
   const off = listen({ arcade_board: () => board.draw() });
   stage.onFrame((dt, now) => { for (const fn of anim) fn(now / 1000, dt); });
   stage.banner(`<div class="big">🕹️ Arcade</div>Each go costs 🪙 coins and wins 🎟️ tickets. Spend them at the prize counter: new prizes every hour!`, 3500);
-  return () => { leave(); off(); walker.stop(); stage.scene?.remove(g); };
+  return () => { leave(); off(); tables.forEach((T) => T.off()); walker.stop(); stage.scene?.remove(g); };
 }

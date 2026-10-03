@@ -14,8 +14,8 @@ import { add, box, cyl, sph, group, plank, lamp, seeded } from './common.js';
 const G = 16; // gravity
 export const COURTS = [
   // margin: the out-of-bounds strip round the lines that players in a match can still use
-  { id: 'bb1', kind: 'basket', x: -46, z: -108, w: 36, d: 20, ball: 'basketball', margin: 2.2, match: true },
-  { id: 'bb2', kind: 'basket', x: -46, z: -78, w: 36, d: 20, ball: 'basketball', margin: 2.2, match: true },
+  { id: 'bb1', kind: 'basket', x: -46, z: -116, w: 50, d: 28, ball: 'basketball', margin: 2.2, match: true },
+  { id: 'bb2', kind: 'basket', x: -46, z: -82, w: 50, d: 28, ball: 'basketball', margin: 2.2, match: true },
   { id: 'soccer', kind: 'soccer', x: -108, z: -92, w: 56, d: 34, ball: 'soccer', margin: 4, match: true },
   { id: 'volley', kind: 'volley', x: -96, z: 30, w: 18, d: 9, ball: 'volleyball', margin: 3 },
 ];
@@ -25,6 +25,8 @@ const BALL = {
   volleyball: { r: 0.23, bounce: 0.45, roll: 3, color: '#fff4d6', hold: false, verb: 'Hit', icon: '🏐' },
 };
 const RIM_Y = 3.3, RIM_R = 0.42;
+const METER_FILL = 0.55; // seconds for the shot meter to fill
+const THREE_PT = 8.5; // how far out the three-point line is (from the hoop)
 const SLOT_COLORS = ['#ff5d73', '#39c6ff']; // home, away
 
 // ---- textures -------------------------------------------------------------------------------------
@@ -41,7 +43,7 @@ function courtTex(kind, w, d) {
       c.beginPath(); c.arc(W / 2, H / 2, 1.8 * px, 0, TAU); c.stroke();
       for (const s of [0, 1]) {
         const hx = s ? W - 1.6 * px : 1.6 * px;
-        c.beginPath(); c.arc(hx, H / 2, 6.75 * px, s ? Math.PI / 2 : -Math.PI / 2, s ? Math.PI * 1.5 : Math.PI / 2, false); c.stroke();
+        c.beginPath(); c.arc(hx, H / 2, THREE_PT * px, s ? Math.PI / 2 : -Math.PI / 2, s ? Math.PI * 1.5 : Math.PI / 2, false); c.stroke();
         c.strokeRect(s ? W - 5.8 * px : 0, H / 2 - 2.4 * px, 5.8 * px, 4.8 * px);
         c.beginPath(); c.arc(s ? W - 5.8 * px : 5.8 * px, H / 2, 1.8 * px, 0, TAU); c.stroke();
       }
@@ -156,7 +158,7 @@ export function buildPark(root, { anim, lights, solids, spots }) {
     boards[ct.id] = { tex, label, s: [0, 0] };
   }
   // light towers round the park, glowing at night
-  for (const [x, z] of [[-140, -114], [-140, -70], [-76, -114], [-76, -70], [-24, -118], [-24, -64]]) {
+  for (const [x, z] of [[-140, -114], [-140, -70], [-76, -124], [-76, -72], [-14, -124], [-14, -62]]) {
     add(g, cyl(0.2, 0.3, 12, 8), toon('#6d7488'), { p: [x, 6, z] });
     add(g, box(2.4, 1, 0.6), lights.lanternMat, { p: [x, 12.2, z], cast: false });
   }
@@ -329,21 +331,70 @@ export class Balls {
         this.onTeleport?.(x, z, Math.atan2(ct.x - x, ct.z - z));
       }
     }
-    if (m.state === 'live' && prev?.state === 'countdown' && b.kind === 'basketball') {
+    const oneOnOne = b.kind === 'basketball' && Object.keys(m.teams).length === 2 && new Set(Object.values(m.teams)).size === 2;
+    if (m.state === 'live' && prev?.state === 'countdown' && oneOnOne) {
+      // 1v1: Home starts with it
+      const home = Object.entries(m.teams).find(([, v]) => v === 0)?.[0];
+      b.held = home ?? null; b.v.set(0, 0, 0); b.tipoff = false; b.lastBy = home;
+      if (first === S.me) this.send(b, true);
+      if (home === S.me) this.onEvent?.('🏀 Your ball! (1v1: Home starts with it)');
+    } else if (m.state === 'live' && prev?.state === 'countdown' && b.kind === 'basketball') {
       // the jump ball: tossed straight up at centre court; jump (Space) at the top to tip it to your side
       b.p.set(b.ct.x, 1.7, b.ct.z); b.v.set(0, 8.5, 0); b.held = null; b.tipoff = true;
       if (first === S.me) this.send(b, true);
       this.onEvent?.('🏀 Jump ball! Jump at the top to tip it!');
     }
   }
-  /** Frozen in place while a game you're in counts down to the tip-off. */
-  frozen() { const ct = this.myCourt(); return !!ct && this.matches[ct.id]?.state === 'countdown'; }
+  /** Frozen in place while a game you're in counts down to the tip-off, while you're queued in a slot, or
+   *  while you're inbounding (pass it in first). */
+  frozen() {
+    if (this.mustPass && this.mine()?.id !== this.mustPass) this.mustPass = null;
+    const ct = this.myCourt();
+    return (!!ct && this.matches[ct.id]?.state === 'countdown') || !!this.queuedSlot() || !!this.mustPass;
+  }
+  teamSize(ct, side) { return Object.values(this.matches[ct.id]?.teams ?? {}).filter((v) => v === side).length; }
+
+  /** V / the Pass button: throw the ball to the teammate you're most facing (anyone nearby out of a game). */
+  pass(me, people) {
+    const b = this.mine();
+    if (!b || b.kind !== 'basketball' || this.meter) return false;
+    const fx = Math.sin(me.heading), fz = Math.cos(me.heading), inGame = this.live(b.ct);
+    let best = null, bestScore = -Infinity;
+    for (const p of people.values()) {
+      if (p === me || (inGame && this.teamOf(b.ct, p.k) !== this.teamOf(b.ct, S.me))) continue;
+      const dx = p.x - me.x, dz = p.z - me.z, d = Math.hypot(dx, dz);
+      if (d < 1 || d > 26) continue;
+      const score = ((dx * fx + dz * fz) / d) * 2 - d / 20; // the one you're facing, then the closer
+      if (score > bestScore) { bestScore = score; best = p; }
+    }
+    if (!best) { this.onEvent?.('Nobody to pass to'); return true; }
+    const to = new THREE.Vector3(best.x, 1.3, best.z);
+    if (best.moving) to.add(new THREE.Vector3(Math.sin(best.heading), 0, Math.cos(best.heading)).multiplyScalar(1.2)); // lead them a little
+    b.held = null;
+    b.p.set(me.x + fx * 0.45, 1.3, me.z + fz * 0.45);
+    const dist = b.p.distanceTo(to), T = Math.max(0.3, dist / 13);
+    b.v.set((to.x - b.p.x) / T, (to.y - b.p.y + 0.5 * G * T * T) / T, (to.z - b.p.z) / T);
+    b.shot = null; b.lastBy = S.me; b.releasedAt = performance.now();
+    this.mustPass = null;
+    this.send(b, true);
+    me.char.emote('shoot');
+    sfx('whoosh', { vol: 0.35 });
+    return true;
+  }
+  /** The slot you're queued in (you stand in it until the game starts, or you press Leave). */
+  queuedSlot() {
+    for (const sl of this.slots) {
+      const m = this.matches[sl.ct.id];
+      if (m && !this.live(sl.ct) && m.teams?.[S.me] === sl.side && m.slots?.[S.me] === sl.slot) return sl;
+    }
+    return null;
+  }
 
   /** Z / X / C with the ball: crossover, behind the back, spin. A quick burst, the ball changes hands,
    *  and for a moment nobody can steal it. */
   dribble(me, kind) {
     const b = this.mine();
-    if (!b || b.kind !== 'basketball' || this.meter || (this.move && this.move.t > 0) || performance.now() < (this.moveCd ?? 0)) return false;
+    if (!b || b.kind !== 'basketball' || this.meter || this.mustPass || (this.move && this.move.t > 0) || performance.now() < (this.moveCd ?? 0)) return false;
     const fx = Math.sin(me.heading), fz = Math.cos(me.heading), rx = Math.cos(me.heading), rz = -Math.sin(me.heading);
     b.hand = -(b.hand ?? 1);
     const side = b.hand; // (the way the ball's going)
@@ -352,12 +403,11 @@ export class Balls {
     const len = Math.hypot(dx, dz);
     this.move = { kind, t: kind === 'spin' ? 0.45 : 0.28, dur: kind === 'spin' ? 0.45 : 0.28, dx: dx / len, dz: dz / len };
     this.moveCd = performance.now() + 700;
-    b.dm = true;
+    b.mvAnim = { kind, t0: performance.now(), side };
+    b.dm = kind;
     this.send(b, true);
     b.dm = false;
-    me.char.emote('bump');
-    sfx('whoosh', { vol: 0.35 });
-    this.onEvent?.({ cross: '↔️ Crossover!', behind: '🔁 Behind the back!', spin: '🌀 Spin move!' }[kind]);
+    sfx('bounce', { vol: 0.4 });
     return true;
   }
 
@@ -368,6 +418,7 @@ export class Balls {
     if (!m.steal && b.own === S.me && m.own !== S.me && performance.now() - b.sent < 200) return;
     b.own = m.own;
     if (m.hand) b.hand = m.hand;
+    if (m.mv) b.mvAnim = { kind: m.mv, t0: performance.now(), side: m.hand ?? 1 };
     const wasHeld = b.held;
     b.held = m.held ?? null;
     if (b.held) b.inbound = null;
@@ -389,7 +440,7 @@ export class Balls {
     if (!force && now - b.sent < 80) return;
     b.sent = now;
     b.own = S.me;
-    net.send('ball', { id: b.id, x: b.p.x, y: b.p.y, z: b.p.z, vx: b.v.x, vy: b.v.y, vz: b.v.z, held: b.held, hand: b.hand ?? 1, ...(b.dm ? { dm: 1 } : {}) });
+    net.send('ball', { id: b.id, x: b.p.x, y: b.p.y, z: b.p.z, vx: b.v.x, vy: b.v.y, vz: b.v.z, held: b.held, hand: b.hand ?? 1, ...(b.dm ? { dm: 1, mv: b.dm } : {}) });
   }
 
   /** The ball you're holding (if any). */
@@ -420,6 +471,7 @@ export class Balls {
     if (!n) return false;
     const b = n.b, dir = new THREE.Vector3(Math.sin(me.heading), 0, Math.cos(me.heading));
     if (n.verb === 'Steal') { this.steal(me, people); return true; }
+    if (this.mustPass && b.id === this.mustPass) { this.onEvent?.('📣 Pass it in first! (V)'); return true; }
     if (b.kind === 'basketball' && b.held === S.me) {
       // hold F to wind up the shot meter, let go in the green
       if (!this.meter) { this.meter = { b, t: 0 }; me.char.emote('shoot'); }
@@ -453,7 +505,7 @@ export class Balls {
     return true;
   }
 
-  /** Step into a slot to join that side; walk well away from yours (before the game) to leave. */
+  /** Step into a slot to join that side (then you stay in it until the game, or until you press Leave). */
   updateSlots(me) {
     const now = performance.now();
     for (const sl of this.slots) {
@@ -467,8 +519,10 @@ export class Balls {
       const d = Math.hypot(me.x - sl.x, me.z - sl.z);
       const mineHere = m?.teams?.[S.me] === sl.side && m?.slots?.[S.me] === sl.slot;
       if (d < 0.6 && !who && !mineHere) { net.send('court_join', { court: sl.ct.id, side: sl.side, slot: sl.slot }); this.slotSent = now; sfx('pop', { vol: 0.5 }); }
-      if (mineHere && d > 5) { net.send('court_leave', {}); this.slotSent = now; }
     }
+    // queued: you stay standing in your circle, facing the court
+    const q = this.queuedSlot();
+    if (q) { me.x += (q.x - me.x) * 0.25; me.z += (q.z - me.z) * 0.25; me.heading = Math.PI; }
   }
 
   /** The shot meter: where the green window is (narrower when someone's guarding you or you're far out). */
@@ -477,7 +531,7 @@ export class Balls {
     const b = this.meter?.b;
     let contest = 0;
     if (b) for (const p of people.values()) if (p !== me && this.rivals(b.ct, p.k)) contest = Math.max(contest, Math.min(1, Math.max(0, 1 - (Math.hypot(p.x - me.x, p.z - me.z) - 0.6) / 2.2)));
-    return { at: 0.8, half: 0.08 - contest * 0.04, contest };
+    return { at: 0.93, half: 0.045 - contest * 0.02, contest }; // (a small green window right at the top)
   }
   /** Let go of F: shoot, better the closer to the middle of the green you let go. */
   release(me, people) {
@@ -486,8 +540,9 @@ export class Balls {
     this.meter = null;
     const b = m.b;
     if (b.held !== S.me) return;
-    const v = Math.min(1, m.t / 0.85), zone = this.meterZone(me, people);
-    const off = Math.abs(v - zone.at), perfect = off < 0.025, green = off <= zone.half;
+    const v = Math.min(1, m.t / METER_FILL), zone = this.meterZone(me, people);
+    // in the green: perfect (always goes in). Just outside it: good. Further off: early / late
+    const off = Math.abs(v - zone.at), perfect = off <= zone.half, green = off <= zone.half * 2.5;
     const q = Math.max(0, 1 - off / 0.35);
     this.onShot?.(perfect ? 'PERFECT' : green ? 'GOOD' : v < zone.at ? 'EARLY' : 'LATE');
     b.lastBy = S.me;
@@ -506,7 +561,8 @@ export class Balls {
     b.p.set(me.x + dir.x * 0.4, 2.4, me.z + dir.z * 0.4);
     const T = 0.75 + dist * 0.045;
     b.v.set((target.x - b.p.x) / T, (target.y - b.p.y + 0.5 * G * T * T) / T, (target.z - b.p.z) / T);
-    b.shot = { three: dist > 6.75 };
+    b.shot = { three: dist > THREE_PT };
+    b.releasedAt = performance.now();
     me.char.emote('shoot');
     sfx('whoosh', { vol: 0.4 });
     this.send(b, true);
@@ -553,8 +609,8 @@ export class Balls {
     if (this.meter) {
       this.meter.t += dt;
       if (this.meter.b.held !== S.me) { this.meter = null; this.onMeter?.(null); }
-      else if (this.meter.t > 1.35) this.release(me, people);
-      else this.onMeter?.(Math.min(1, this.meter.t / 0.85), this.meterZone(me, people));
+      else if (this.meter.t > METER_FILL * 1.6) this.release(me, people);
+      else this.onMeter?.(Math.min(1, this.meter.t / METER_FILL), this.meterZone(me, people));
     } else this.onMeter?.(null);
     for (const b of this.balls.values()) {
       const def = b.def, ct = b.ct;
@@ -574,8 +630,16 @@ export class Balls {
         const hx = Math.sin(h.heading), hz = Math.cos(h.heading);
         const throwIn = b.kind === 'soccer';
         const dribble = b.kind === 'basketball' && h.moving ? Math.abs(Math.sin(now / 150)) : null;
-        const hand = (b.hand ?? 1) * 0.3;
-        b.p.set(h.x + hx * (throwIn ? 0.1 : 0.45) + (throwIn ? 0 : hz * hand), h.y + (throwIn ? 2.1 : dribble != null ? 0.25 + dribble * 0.9 : 1.1), h.z + hz * (throwIn ? 0.1 : 0.45) - (throwIn ? 0 : hx * hand));
+        let hand = (b.hand ?? 1) * 0.3, fwd = throwIn ? 0.1 : 0.45, y = throwIn ? 2.1 : dribble != null ? 0.25 + dribble * 0.9 : 1.1;
+        // a dribble move: the ball crosses low in front, wraps round behind, or swings round with the spin
+        const mv = b.mvAnim, mvDur = mv && (mv.kind === 'spin' ? 450 : 300);
+        if (mv && now - mv.t0 < mvDur) {
+          const u = (now - mv.t0) / mvDur, from = -mv.side * 0.32, to = mv.side * 0.32;
+          if (mv.kind === 'cross') { hand = from + (to - from) * u; y = 0.22 + Math.abs(u - 0.5) * 1.3; fwd = 0.55; }
+          else if (mv.kind === 'behind') { hand = from + (to - from) * u; y = 0.35 + Math.abs(u - 0.5) * 0.9; fwd = 0.45 - Math.sin(u * Math.PI) * 0.85; }
+          else { hand = mv.side * 0.42; y = 0.7 + Math.sin(u * Math.PI) * 0.25; fwd = 0.2; }
+        }
+        b.p.set(h.x + hx * fwd + (throwIn ? 0 : hz * hand), h.y + y, h.z + hz * fwd - (throwIn ? 0 : hx * hand));
         if (dribble != null && dribble < 0.08 && !b.bounced) { b.bounced = true; if (b.held === S.me) sfx('bounce', { vol: 0.35 }); }
         if (dribble != null && dribble > 0.3) b.bounced = false;
         b.mesh.position.copy(b.p);
@@ -654,7 +718,7 @@ export class Balls {
             const away = new THREE.Vector3(b.p.x - me.x, 0, b.p.z - me.z).normalize();
             b.v.set(away.x * 7, 2.5, away.z * 7);
             const from = b.shotBy;
-            b.shotBy = null; b.shot = null; b.lastBy = S.me;
+            b.shotBy = null; b.shot = null; b.lastBy = S.me; b.releasedAt = performance.now();
             this.send(b, true);
             net.send('ball_event', { kind: 'block', id: b.id, from });
             sfx('slam'); me.char.emote('bump');
@@ -669,17 +733,20 @@ export class Balls {
       // you: run into a soccer ball to dribble it; walk into a basketball to pick it up (a throw-in ball:
       // only the team throwing in can touch it, and they pick it up)
       const dx = b.p.x - me.x, dz = b.p.z - me.z, d = Math.hypot(dx, dz);
-      if (d < 0.75 && b.p.y < 1.6 && !this.mine()) {
+      if (d < 0.9 && b.p.y < 2 && !this.mine()) {
         const myTeam = this.teamOf(ct, S.me);
         if (b.inbound) {
-          if (myTeam === b.inbound.side || !this.live(ct)) { b.held = S.me; b.v.set(0, 0, 0); b.inbound = null; b.lastBy = S.me; this.send(b, true); sfx('pickup', { vol: 0.5 }); }
+          if (myTeam === b.inbound.side || !this.live(ct)) {
+            b.held = S.me; b.v.set(0, 0, 0); b.inbound = null; b.lastBy = S.me; this.send(b, true); sfx('pickup', { vol: 0.5 });
+            if (b.kind === 'basketball' && this.live(ct) && this.teamSize(ct, myTeam) > 1) { this.mustPass = b.id; this.onEvent?.('📣 Inbound: pass it in! (V)'); }
+          }
         } else if (b.kind === 'soccer' && me.moving) {
           const sp = me.speed > 1.2 ? 9 : 6;
           b.v.set(Math.sin(me.heading) * sp, 0.6, Math.cos(me.heading) * sp);
           b.lastBy = S.me;
           this.send(b, true);
           sfx('kick', { vol: 0.3 });
-        } else if (def.hold && (b.p.y < 1.2 || b.v.y < 0) && !(b.lastBy === S.me && now - b.sent < 500)) {
+        } else if (def.hold && b.p.y < 2 && !(b.lastBy === S.me && now - (b.releasedAt ?? 0) < 350)) {
           b.held = S.me; b.v.set(0, 0, 0); b.shot = null; b.lastBy = S.me;
           this.send(b, true);
           sfx('pickup', { vol: 0.5 });

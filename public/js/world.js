@@ -22,6 +22,7 @@ import { registerLook, mouseLooking } from './mouselook.js';
 import { touch, registerTouch, fitFov } from './touch.js';
 import { guardKeys } from './keyguard.js';
 const PITCH_MIN = -0.55, PITCH_LOW = 0.08; // how far you can look up; where the orbit stops dropping
+const FP_DIST = 0.3; // zoomed all the way in: first person
 
 
 export const EMOTES = M.EMOTES;
@@ -102,6 +103,7 @@ export class World {
     onSettings((s, changed) => { if ('quality' in changed) this.applyQuality(); });
 
     this.env = buildEnvironment(this.scene);
+    this.buildDecorSolids();
     this.collectCullables(); // (before the day/night cycle adds its moon and rain, which it shows and hides itself)
     this.dayNight = new DayNight(this.scene, this.env, this.hemi, this.sun);
     // rain splashes land on the terrain (or the lake's surface)
@@ -146,7 +148,7 @@ export class World {
       active: () => this.running && !this.hidden && !this.paused,
       stick: () => !this.fishing,
       keys: null,
-      zoom: (f) => { this.dist = clamp(this.dist * f, 7, 34); },
+      zoom: (f) => { this.dist = clamp(this.dist * f < 5 && f < 1 ? FP_DIST : this.dist <= FP_DIST + 0.01 && f > 1 ? 5 : this.dist * f, FP_DIST, 34); },
     });
 
     this.raycaster = new THREE.Raycaster();
@@ -269,11 +271,11 @@ export class World {
     this.scene.add(char.root);
     const wrap = document.createElement('div');
     wrap.className = `wl-actor${k === S.me ? ' me' : ''}`;
-    wrap.innerHTML = '<div class="wl-emote hidden"></div><div class="wl-bubble hidden"></div><div class="wl-tag"><span class="wl-lv"></span><b></b></div>';
+    wrap.innerHTML = '<div class="wl-emote hidden"></div><div class="wl-bubble hidden"></div><div class="wl-dev hidden"><span data-text="DEVELOPER">DEVELOPER</span></div><div class="wl-tag"><span class="wl-lv"></span><b></b></div>';
     this.labels.append(wrap);
     const a = {
       k, x, y, tx: x, ty: y, heading: 0, moving: false, char, lookRef: S.players[k]?.look, dustT: 0, speed: 1,
-      el: { wrap, emote: wrap.children[0], bubble: wrap.children[1], tag: wrap.children[2] },
+      el: { wrap, emote: wrap.querySelector('.wl-emote'), bubble: wrap.querySelector('.wl-bubble'), tag: wrap.querySelector('.wl-tag') },
     };
     char.onStep = (kind) => {
       const o = this.spatial(a);
@@ -502,6 +504,14 @@ export class World {
       if (key === 'e' && !e.repeat) this.standUp();
       if (key === 'e' || key === ' ') return;
     }
+    // Space jumps (just like in Coral Cove)
+    if (key === ' ' && !e.repeat && !this.riding && performance.now() > (this.jumpUntil ?? 0)) {
+      e.preventDefault();
+      this.actors.get(S.me)?.char.jump();
+      this.jumpUntil = performance.now() + 550;
+      sfx('jump', { vol: 0.4 });
+      return;
+    }
     if (key === 'e' && !this.near && this.nearBench) { this.sit(this.nearBench); return; }
     if (key === 'e' && this.near) {
       // a held-down E (or the press that just took you out of a building) mustn't walk you back in
@@ -577,7 +587,11 @@ export class World {
   };
   onWheel = (e) => {
     e.preventDefault();
-    this.dist = clamp(this.dist * (1 + e.deltaY * 0.0011 * settings.zoomSens), 7, 34);
+    // zoom right in and it snaps to first person (and back out the same way)
+    let d = this.dist * (1 + e.deltaY * 0.0011 * settings.zoomSens);
+    if (e.deltaY < 0 && d < 5) d = FP_DIST;
+    else if (e.deltaY > 0 && this.dist <= FP_DIST + 0.01) d = 5;
+    this.dist = clamp(d, FP_DIST, 34);
   };
 
   clickAt(cx, cy) {
@@ -627,10 +641,51 @@ export class World {
 
   // ---- simulation ----------------------------------------------------------------
 
+  /** Colliders for all the little things round town (planters, posts, rope stands, signs, statues,
+   *  benches…): anything that stands on the ground and is solid-looking gets a box, apart from right in
+   *  front of a door, so every entrance stays open. Kept in a grid so checks stay quick. */
+  buildDecorSolids() {
+    const CELL = 80, grid = new Map(), box = new THREE.Box3(), size = new THREE.Vector3();
+    const doors = SPOTS.map((s) => M.doorOf(s));
+    this.scene.updateMatrixWorld(true);
+    this.scene.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || o.userData.outline || o.userData.noSolid || !o.visible) return;
+      box.setFromObject(o);
+      if (box.isEmpty()) return;
+      box.getSize(size);
+      if (size.x > 12 || size.z > 12 || size.x < 0.15 || size.z < 0.15) return; // (big things are buildings, ground and the like)
+      const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+      const mx = cx * M.PX + M.CENTER.x, my = cz * M.PX + M.CENTER.y;
+      const ground = M.groundAt(mx, my);
+      // it has to stand on the ground and come up past your knees (flat paving, flowers and signs up high don't count)
+      if (box.min.y > ground + 0.5 || box.max.y < ground + 0.45) return;
+      const rect = { x: box.min.x * M.PX + M.CENTER.x, y: box.min.z * M.PX + M.CENTER.y, w: size.x * M.PX, h: size.z * M.PX };
+      if (doors.some((d) => M.distToRect(d, rect) < 45)) return;
+      if (Math.hypot(mx - M.CENTER.x, my - M.CENTER.y) < M.FOUNTAIN_R + 10) return;
+      for (let gx = Math.floor(rect.x / CELL); gx <= Math.floor((rect.x + rect.w) / CELL); gx++) {
+        for (let gy = Math.floor(rect.y / CELL); gy <= Math.floor((rect.y + rect.h) / CELL); gy++) {
+          const k = gx * 10000 + gy;
+          if (!grid.has(k)) grid.set(k, []);
+          grid.get(k).push(rect);
+        }
+      }
+    });
+    this.decor = { CELL, grid };
+  }
+
   blocked(x, y) {
     if (Math.hypot(x - M.CENTER.x, y - M.CENTER.y) < M.FOUNTAIN_R + R + 4) return true;
+    if (this.decor) {
+      const { CELL, grid } = this.decor, p = { x, y };
+      for (let gx = Math.floor((x - R) / CELL); gx <= Math.floor((x + R) / CELL); gx++) {
+        for (let gy = Math.floor((y - R) / CELL); gy <= Math.floor((y + R) / CELL); gy++) {
+          const list = grid.get(gx * 10000 + gy);
+          if (list && list.some((r) => M.distToRect(p, r) < R * 0.6)) return true;
+        }
+      }
+    }
     if (SPOTS.some((s) => spotDist(s, { x, y }) < R)) return true;
-    if (this.layout.trees.some((t) => t.kind !== 'bush' && Math.hypot(x - t.x, y - t.y) < 9 + R)) return true;
+    if (this.layout.trees.some((t) => Math.hypot(x - t.x, y - t.y) < (t.kind === 'bush' ? 6 : 9) + R)) return true;
     if (this.layout.lamps.some((l) => Math.hypot(x - l.x, y - l.y) < 6 + R)) return true;
     if (M.inCreek(x, y)) return true; // the creek is too deep to wade: use a bridge
     const p = { x, y };
@@ -888,6 +943,18 @@ export class World {
     const goal = new THREE.Vector3(p.x, 1.3 + (me ? M.groundAt(me.x, me.y) : 0), p.z);
     if (!this.camReady) { this.camTarget.copy(goal); this.camReady = true; }
     this.camTarget.lerp(goal, 1 - Math.exp(-dt * 9));
+    // first person: from your eyes, looking where you aim (your own character's hidden, and faces that way)
+    const myActor = this.actors.get(S.me);
+    const fp = this.dist <= FP_DIST + 0.01 && !this.seated && !this.fishing && !this.riding;
+    if (myActor?.char) myActor.char.root.visible = !fp;
+    if (fp) {
+      const c = this.camTarget, eye = new THREE.Vector3(c.x, c.y + 0.3, c.z), cp = Math.cos(this.pitch);
+      this.camera.position.copy(eye);
+      this.camera.lookAt(eye.x - Math.sin(this.yaw) * cp, eye.y - Math.sin(this.pitch), eye.z - Math.cos(this.yaw) * cp);
+      if (me) me.heading = this.yaw + Math.PI;
+      this.dayNight.update(c);
+      return;
+    }
     // below a low orbit the camera stays near the ground and tilts its gaze upwards instead, so you can
     // look up at tall buildings (but never straight up)
     const c = this.camTarget, orbit = Math.max(this.pitch, PITCH_LOW), cp = Math.cos(orbit);
@@ -998,6 +1065,7 @@ export class World {
       el.style.display = '';
       const scale = clamp(17 / camPos.distanceTo(v), 0.62, 1.15);
       el.style.transform = `translate3d(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`;
+      el.querySelector('.wl-dev')?.classList.toggle('hidden', !(p?.dev && p.look?.aura === 'aura_devtitle'));
       if (p && a.tagKey !== `${p.name}|${p.level}|${p.color}`) {
         a.tagKey = `${p.name}|${p.level}|${p.color}`;
         a.el.tag.querySelector('b').textContent = p.name;

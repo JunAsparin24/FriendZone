@@ -649,7 +649,7 @@ export function beachArea(stage) {
     <div class="hud-panel beach-ctx hidden"></div>
     <div class="hud-panel court-panel hidden"></div>
     <div class="hud-panel golf-panel hidden"></div>
-    <p class="hud-panel arena-help">Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski (<kbd>WASD</kbd>) · Fish off the end of the pier or from a boat · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park: pick a side and ready up for a game. step into a coloured circle by a court to join, hold <kbd>F</kbd> and let go in the green to shoot, <kbd>Z</kbd>/<kbd>X</kbd>/<kbd>C</kbd> dribble moves (<kbd>C</kbd> steals on defence), <kbd>Space</kbd>/<kbd>B</kbd> jumps to block and wins the tip · Golf at Coral Links: <kbd>A</kbd>/<kbd>D</kbd> aim, hold <kbd>F</kbd> to swing · The portal goes back to The Town</p>`);
+    <p class="hud-panel arena-help cove-tips"></p>`);
   const $h = (sel) => stage.hud.querySelector(sel);
   const ctxEl = $h('.beach-ctx'), courtEl = $h('.court-panel'), golfEl = $h('.golf-panel'), clockEl = $h('.cove-clock'), mapEl = $h('.cove-map');
   if (touch.enabled) setTouchButtons([{ icon: '✋', label: 'Action', key: 'f', code: 'KeyF', big: true }, { icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }]);
@@ -816,7 +816,7 @@ export function beachArea(stage) {
       <div class="ct-teams">${[0, 1].map((side) => `<div style="--c:${TEAM[side].color}"><b>${TEAM[side].name}</b><ul>${list(side)}</ul>
         <button class="btn small ${mine === side ? 'primary' : 'ghost'}" data-side="${side}">${mine === side ? 'Your team' : mine != null ? 'Switch here' : `Join ${TEAM[side].name}`}</button></div>`).join('')}</div>
       ${mine != null ? `<div class="row center"><button class="btn small ${(m.ready ?? []).includes(S.me) ? 'ghost' : 'primary'}" data-ready>${(m.ready ?? []).includes(S.me) ? 'Not ready' : 'Ready up'}</button><button class="btn small ghost" data-leave>Leave</button></div>
-        <small class="muted">The game starts when everyone on both sides is ready.</small>` : '<small class="muted">Pick a side to play.</small>'}`;
+        <small class="muted">You're in your spot until the game starts. Press Leave to step out.</small>` : '<small class="muted">Pick a side to play.</small>'}`;
   };
   courtEl.addEventListener('click', (e) => {
     const t = e.target.closest('button');
@@ -839,6 +839,7 @@ export function beachArea(stage) {
     if (k === 'f' && !e.repeat) action();
     if (k === ' ' && !e.repeat && mode === 'walk' && !fishing && performance.now() > jumpUntil) { me3.char.jump(); jumpUntil = performance.now() + 550; sfx('jump', { vol: 0.4 }); }
     if (k === 'e' && !e.repeat && performance.now() - boardedAt > 400) { if (mode === 'boat') leaveBoat(); else if (mode === 'ride') endRide(); else if (mode === 'golf') golfStop(); }
+    if (k === 'v' && !e.repeat && mode === 'walk') balls.pass(me3, stage.people);
     // Z X C with the ball: crossover, behind the back, spin (C without it: steal)
     if (['z', 'x', 'c'].includes(k) && !e.repeat && mode === 'walk') {
       const moved = balls.dribble(me3, { z: 'cross', x: 'behind', c: 'spin' }[k]);
@@ -894,10 +895,20 @@ export function beachArea(stage) {
     if (e.code === 'Space') { if (down && !e.repeat) fishing.press(); else if (!down) fishing.release(); }
     if (down && ['w', 'a', 's', 'd'].includes(e.key.toLowerCase()) && !boats.ride) stopFishing();
   };
-  stage.onPointer = (type, e) => {
-    if (!fishing || e?.target?.closest?.('.fish-hud button, .fish-rods')) return;
-    if (type === 'down') fishing.press();
-    if (type === 'up') fishing.release();
+  stage.onPointer = (type, e, d) => {
+    if (fishing) {
+      if (e?.target?.closest?.('.fish-hud button, .fish-rods')) return;
+      if (type === 'down') fishing.press();
+      if (type === 'up') fishing.release();
+      return;
+    }
+    // basketball: hold left click to wind up the shot meter, let go to shoot (a camera drag doesn't shoot)
+    if (mode !== 'walk') return;
+    if (type === 'down' && e?.button === 0 && e?.pointerType === 'mouse' && balls.mine()?.kind === 'basketball') balls.act(me3, stage.people);
+    if (type === 'up' && balls.meter) {
+      if (d?.moved && !document.pointerLockElement) balls.meter = null;
+      else balls.release(me3, stage.people);
+    }
   };
 
   // ---- crab race playback
@@ -965,6 +976,40 @@ export function beachArea(stage) {
   const center = new THREE.Vector3();
   const subOf = new Map();
 
+  // the ℹ️ tips change with what you're doing: a game at Coral Park, golf, a boat, fishing, or just exploring
+  const TIPS = {
+    general: '🏝️ Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski · Fish off the end of the pier · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park has basketball, soccer and volleyball · Golf at Coral Links · The portal goes back to The Town',
+    basket: '🏀 Step into a coloured circle by the court to queue (press <b>Leave</b> to step out), then <b>Ready up</b> · Hold <b>left click</b> (or <kbd>F</kbd>) and let go in the green at the top to shoot (green = perfect, always in) · you face where the camera looks · <kbd>V</kbd> passes to a teammate · <kbd>Z</kbd> crossover, <kbd>X</kbd> behind the back, <kbd>C</kbd> spin (<kbd>C</kbd> steals on defence) · <kbd>Space</kbd>/<kbd>B</kbd> jumps to block and wins the tip · Out of bounds: pass it in (not in 1v1)',
+    soccer: '⚽ Pick a side in the panel and ready up · Run into the ball to dribble it · <kbd>F</kbd> kicks · Over the line: a throw-in for the other team (<kbd>F</kbd>)',
+    volley: '🏐 <kbd>F</kbd> bumps the ball over the net · Keep it off the sand on your side',
+    golf: '⛳ <kbd>A</kbd>/<kbd>D</kbd> aim · hold <kbd>F</kbd> and let go to swing (longer = harder) · <kbd>E</kbd> to stop playing',
+    boat: '🚤 <kbd>WASD</kbd> to drive · <kbd>F</kbd> to fish from the boat · <kbd>E</kbd> to get off',
+    fishing: '🎣 Hold <kbd>Space</kbd> to cast and reel in · <kbd>WASD</kbd> to stop fishing',
+  };
+  const tipsEl = $h('.cove-tips');
+  let tipsCtx = '';
+  const tipsContext = () => {
+    if (fishing) return 'fishing';
+    if (mode === 'golf') return 'golf';
+    if (mode === 'boat') return 'boat';
+    const ct = COURTS.find((c) => Math.abs(me3.x - c.x) < c.w / 2 + 6 && Math.abs(me3.z - c.z) < c.d / 2 + 6);
+    return ct ? ct.kind : 'general';
+  };
+  // basketball: the camera's locked behind you, so you always face the way you're looking
+  stage.onFrame(() => {
+    if (mode !== 'walk' || fishing || balls.move?.t > 0) return;
+    const ct = COURTS.find((c) => c.kind === 'basket' && Math.abs(me3.x - c.x) < c.w / 2 + c.margin && Math.abs(me3.z - c.z) < c.d / 2 + c.margin);
+    if ((ct || balls.mine()?.kind === 'basketball') && stage.orbit) me3.heading = stage.orbit.yaw + Math.PI;
+  });
+  stage.onFrame(() => {
+    const ctx = tipsContext();
+    if (ctx === tipsCtx) return;
+    tipsCtx = ctx;
+    tipsEl.innerHTML = TIPS[ctx];
+    // a game's tips pop open for a few seconds when you walk up to it
+    const tab = tipsEl.closest('.tips-tab');
+    if (tab && ctx !== 'general') { tab.classList.add('open'); clearTimeout(tab.closeT); tab.closeT = setTimeout(() => tab.classList.remove('open'), 5000); }
+  });
   stage.onFrame((dt, now) => {
     const t = now / 1000;
     const dn = dayNight.update(center.set(me3.x, 0, me3.z));

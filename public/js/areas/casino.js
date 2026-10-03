@@ -9,7 +9,7 @@ import { casino } from '../games/casino.js';
 import { ROULETTE_ORDER, roulettePocketColor } from '../games/roulette.js';
 import { sfx } from '../sfx.js';
 
-const RW = 28, RD = 22, WALL_H = 5.5;
+const RW = 40, RD = 30, WALL_H = 6;
 const OUT = outlineMaterial(0.03);
 const SEG = TAU / ROULETTE_ORDER.length;
 
@@ -38,7 +38,7 @@ const carpetTex = canvasTexture(256, 256, (ctx) => {
   for (let x = 0; x <= 256; x += 64) for (let y = 0; y <= 256; y += 64) { ctx.beginPath(); ctx.arc(x, y, 6, 0, TAU); ctx.fill(); }
   ctx.fillStyle = 'rgba(0,0,0,.12)';
   for (let x = 32; x < 256; x += 64) for (let y = 32; y < 256; y += 64) { ctx.beginPath(); ctx.arc(x, y, 10, 0, TAU); ctx.fill(); }
-}, { repeat: [7, 5.5] });
+}, { repeat: [10, 7.5] });
 
 const wallTex = canvasTexture(256, 256, (ctx) => {
   ctx.fillStyle = '#4a2475';
@@ -49,7 +49,7 @@ const wallTex = canvasTexture(256, 256, (ctx) => {
   for (let x = 16; x < 256; x += 64) for (let y = 16; y < 256; y += 48) {
     ctx.beginPath(); ctx.moveTo(x, y - 8); ctx.lineTo(x + 6, y); ctx.lineTo(x, y + 8); ctx.lineTo(x - 6, y); ctx.fill();
   }
-}, { repeat: [6, 1.5] });
+}, { repeat: [9, 1.6] });
 
 const slotScreenTex = canvasTexture(192, 96, (ctx) => {
   ctx.fillStyle = '#fff';
@@ -189,13 +189,13 @@ function buildRoom() {
   add(walls.back, new THREE.PlaneGeometry(7, 1.75), new THREE.MeshBasicMaterial({ map: signTex, transparent: true }), { p: [0, 1.1, 0.06], cast: false });
 
   // columns
-  for (const x of [-7, 7]) for (const z of [-RD / 2 + 0.6, RD / 2 - 0.6]) {
+  for (const x of [-14, -7, 7, 14]) for (const z of [-RD / 2 + 0.6, RD / 2 - 0.6]) {
     add(g, new THREE.CylinderGeometry(0.4, 0.45, WALL_H, 16), toon('#f4ecd8'), { p: [x, WALL_H / 2, z], outline: true });
     add(g, new THREE.BoxGeometry(1.1, 0.3, 1.1), trim, { p: [x, WALL_H - 0.1, z] });
   }
   // chandeliers
   const glows = [];
-  for (const [x, z] of [[-6, -3], [6, -3], [0, 4]]) {
+  for (const [x, z] of [[-9, -5], [9, -5], [0, 6], [-12, 7], [12, 7]]) {
     add(g, new THREE.CylinderGeometry(0.02, 0.02, 2.2, 6), trim, { p: [x, WALL_H + 1.6, z], cast: false });
     add(g, new THREE.TorusGeometry(0.8, 0.07, 8, 32), trim, { p: [x, WALL_H + 0.5, z], r: [Math.PI / 2, 0, 0], cast: false });
     for (let i = 0; i < 8; i++) {
@@ -216,10 +216,10 @@ function buildRoom() {
   const machines = [];
 
   // slot machines along the left wall
-  for (let i = 0; i < 5; i++) {
-    const z = -6 + i * 3;
+  for (let i = 0; i < 8; i++) {
+    const z = -10.5 + i * 3;
     const m = new THREE.Group();
-    add(m, new THREE.BoxGeometry(1.3, 2.3, 1.1), toon(['#d6334a', '#3b5bdb', '#8f1530', '#2f9e44', '#b77bff'][i]), { p: [0, 1.15, 0], outline: true });
+    add(m, new THREE.BoxGeometry(1.3, 2.3, 1.1), toon(['#d6334a', '#3b5bdb', '#8f1530', '#2f9e44', '#b77bff', '#ff9f43', '#1fa3a0', '#e84393'][i]), { p: [0, 1.15, 0], outline: true });
     add(m, new THREE.BoxGeometry(1.4, 0.35, 1.2), trim, { p: [0, 2.45, 0] });
     add(m, new THREE.PlaneGeometry(1.0, 0.5), new THREE.MeshBasicMaterial({ map: slotScreenTex }), { p: [0, 1.55, 0.56], cast: false });
     add(m, new THREE.BoxGeometry(1.35, 0.1, 0.4), trim, { p: [0, 1.0, 0.7] });
@@ -301,6 +301,43 @@ function buildRoom() {
   g.add(rt);
   machines.push({ game: 'roulette', obj: rt, x: 0, z: -2, r: 3.4, label: 'join the roulette table', icon: 'roulette', solid: { x: 0, z: -4.5, w: 6.6, d: 3.6 } });
 
+  // Plinko: a tall upright board of pegs against the back wall, a ball bouncing down it
+  const pl = new THREE.Group();
+  add(pl, new THREE.BoxGeometry(2.6, 3.6, 0.4), toon('#2a1245'), { p: [0, 1.9, 0], outline: true });
+  add(pl, new THREE.BoxGeometry(2.8, 0.25, 0.5), trim, { p: [0, 3.8, 0] });
+  add(pl, new THREE.BoxGeometry(2.4, 3.0, 0.05), toon('#1a1030'), { p: [0, 2.0, 0.22] });
+  for (let r = 0; r < 8; r++) for (let k = 0; k <= r; k++) add(pl, new THREE.SphereGeometry(0.04, 6, 5), basic('#e8e2ff'), { p: [(k - r / 2) * 0.26, 3.2 - r * 0.3, 0.26], cast: false });
+  [9, 3, 1.4, 0.6, 0.3, 0.6, 1.4, 3, 9].forEach((mult, i) => add(pl, new THREE.BoxGeometry(0.22, 0.25, 0.08), basic(mult >= 3 ? '#ffc53d' : mult >= 1 ? '#7a2fc0' : '#3a2a5a'), { p: [(i - 4) * 0.26, 0.62, 0.26], cast: false }));
+  const plBall = add(pl, new THREE.SphereGeometry(0.08, 10, 8), toon('#ff5d8f'), { p: [0, 3.3, 0.3] });
+  anim.push((t) => { const f = (t * 0.4) % 1, step = Math.floor(f * 9); plBall.position.set(Math.sin(step * 1.7 + Math.floor(t * 0.4)) * 0.13 * Math.min(step, 4), 3.3 - f * 2.6, 0.3); });
+  pl.position.set(-9, 0, -RD / 2 + 0.6);
+  g.add(pl);
+  machines.push({ game: 'plinko', obj: pl, x: -9, z: -RD / 2 + 2.6, r: 2, label: 'play Plinko', icon: 'casino', solid: { x: -9, z: -RD / 2 + 0.6, w: 2.8, d: 0.8 } });
+
+  // Lucky Dice: a craps-style table with a padded rail and a pair of dice
+  const dt = new THREE.Group();
+  add(dt, new THREE.BoxGeometry(3.4, 0.9, 2.0), toon('#3a2410'), { p: [0, 0.45, 0], outline: true });
+  add(dt, new THREE.BoxGeometry(3.2, 0.06, 1.8), toon('#1f7a47'), { p: [0, 0.92, 0] });
+  for (const s of [-1, 1]) { add(dt, new THREE.BoxGeometry(3.5, 0.22, 0.18), toon('#8f1530'), { p: [0, 1.0, s * 1.0] }); add(dt, new THREE.BoxGeometry(0.18, 0.22, 2.1), toon('#8f1530'), { p: [s * 1.72, 1.0, 0] }); }
+  const dice = [0, 1].map((k) => add(dt, new THREE.BoxGeometry(0.22, 0.22, 0.22), toon('#ffffff'), { p: [-0.3 + k * 0.5, 1.07, 0], outline: true }));
+  dice.forEach((d) => { for (let p = 0; p < 3; p++) add(d, new THREE.SphereGeometry(0.025, 6, 5), basic('#d6283a'), { p: [-0.05 + p * 0.05, 0.111, -0.05 + p * 0.05], cast: false }); });
+  anim.push((t) => dice.forEach((d, k) => { d.rotation.y = t * (0.6 + k * 0.3); }));
+  dt.position.set(-11, 0, 4);
+  g.add(dt);
+  machines.push({ game: 'dice', obj: dt, x: -11, z: 6.2, r: 2.2, label: 'roll the dice', icon: 'casino', solid: { x: -11, z: 4, w: 3.6, d: 2.2 } });
+
+  // High-Low: a half-moon card table with a deck and a card turned up
+  const hl = new THREE.Group();
+  add(hl, new THREE.CylinderGeometry(1.4, 1.4, 0.12, 32, 1, false, 0, Math.PI), toon('#1f4f9a'), { p: [0, 1.0, 0], r: [0, Math.PI / 2, 0], outline: true });
+  add(hl, new THREE.CylinderGeometry(1.45, 1.45, 0.1, 32, 1, false, 0, Math.PI), trim, { p: [0, 0.93, 0], r: [0, Math.PI / 2, 0] });
+  add(hl, new THREE.CylinderGeometry(0.18, 0.25, 0.9, 10), toon('#3a2410'), { p: [0, 0.45, 0.3] });
+  add(hl, new THREE.BoxGeometry(0.3, 0.12, 0.42), toon('#7a2fc0'), { p: [-0.4, 1.12, 0.5] });
+  add(hl, new THREE.BoxGeometry(0.3, 0.02, 0.42), toon('#ffffff'), { p: [0.2, 1.07, 0.5], r: [0, 0.2, 0] });
+  hl.position.set(13, 0, 9);
+  hl.rotation.y = Math.PI;
+  g.add(hl);
+  machines.push({ game: 'hilo', obj: hl, x: 13, z: 7.4, r: 2.2, label: 'play High-Low', icon: 'casino', solid: { x: 13, z: 9.3, w: 3, d: 1.6 } });
+
   // the bar in the back right corner
   const bar = new THREE.Group();
   add(bar, new THREE.BoxGeometry(6, 1.2, 1.1), toon('#5a3a1c'), { p: [0, 0.6, 0], outline: true });
@@ -317,14 +354,15 @@ function buildRoom() {
   bar.position.set(8.5, 0, -RD / 2 + 1.4);
   g.add(bar);
 
-  // plants + velvet ropes by the door
-  for (const [x, z] of [[-12.5, 9.5], [12.5, 9.5], [-12.5, -9.5]]) {
+  // plants in the corners + velvet ropes by the door
+  const PLANTS = [[-RW / 2 + 1.3, RD / 2 - 1.5], [RW / 2 - 1.3, RD / 2 - 1.5], [-RW / 2 + 1.3, -RD / 2 + 1.5], [RW / 2 - 1.3, 6]];
+  for (const [x, z] of PLANTS) {
     add(g, new THREE.CylinderGeometry(0.45, 0.35, 0.8, 14), toon('#c9a227'), { p: [x, 0.4, z], outline: true });
     add(g, new THREE.IcosahedronGeometry(0.8, 1), toon('#2f9e44'), { p: [x, 1.4, z], outline: true });
   }
   for (const x of [-2.5, 2.5]) {
-    add(g, new THREE.CylinderGeometry(0.06, 0.08, 1, 8), trim, { p: [x, 0.5, 8.6] });
-    add(g, new THREE.SphereGeometry(0.1, 10, 8), trim, { p: [x, 1.05, 8.6] });
+    add(g, new THREE.CylinderGeometry(0.06, 0.08, 1, 8), trim, { p: [x, 0.5, RD / 2 - 2.4] });
+    add(g, new THREE.SphereGeometry(0.1, 10, 8), trim, { p: [x, 1.05, RD / 2 - 2.4] });
   }
 
   // staff (just for show)
@@ -342,8 +380,8 @@ function buildRoom() {
   const solids = [
     ...machines.map((m) => m.solid),
     { x: 8.5, z: -RD / 2 + 1.2, w: 6.4, d: 2.8 },
-    ...[[-7, -RD / 2 + 0.6], [7, -RD / 2 + 0.6], [-7, RD / 2 - 0.6], [7, RD / 2 - 0.6]].map(([x, z]) => ({ x, z, r: 0.5 })),
-    ...[[-12.5, 9.5], [12.5, 9.5], [-12.5, -9.5]].map(([x, z]) => ({ x, z, r: 0.6 })),
+    ...[-14, -7, 7, 14].flatMap((x) => [[x, -RD / 2 + 0.6], [x, RD / 2 - 0.6]]).map(([x, z]) => ({ x, z, r: 0.5 })),
+    ...PLANTS.map(([x, z]) => ({ x, z, r: 0.6 })),
     { x: 0, z: -6.8, r: 0.6 },
     { x: -6, z: 3.6, r: 0.6 },
   ];

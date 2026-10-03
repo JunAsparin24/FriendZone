@@ -549,7 +549,7 @@ function openArea(activity) {
   world.hidden = true;
   showPrompt(null);
   if (activity.scene) net.send('scene', { scene: activity.scene });
-  music.setContext(activity.battle ? 'battle' : 'main');
+  music.setContext(activity.scene ?? 'main'); // (games have their own themes)
   stage.open(activity, { onExit: closeArea });
 }
 
@@ -600,7 +600,7 @@ function openModal(activity, { locked = false } = {}) {
   $('#modal').classList.toggle('locked', locked);
   $('#modal').classList.remove('hidden');
   sfx('open');
-  if (activity.battle) music.setContext('battle');
+  if (activity.scene) music.setContext(activity.scene);
   modal = { activity, locked, cleanup: activity.mount($('#modalBody')) };
 }
 
@@ -616,7 +616,7 @@ function closeModal(force = false) {
   $('#modal').classList.add('hidden');
   $('#modalBody').innerHTML = '';
   sfx('close');
-  music.setContext(area?.battle ? 'battle' : 'main');
+  music.setContext(area?.scene ?? 'main');
   world.paused = !!area;
   if (activity.scene && screen === 'world') net.send('scene', { scene: 'world' });
 }

@@ -686,6 +686,8 @@ body.no-names .wl-tag { display: none; }
   -webkit-text-stroke: 6px #1a1330; text-shadow: 0 8px 0 #1a1330; pointer-events: none; animation: pop .3s ease-out;
 }
 .race-count.go { color: #6ee7a0; }
+.race-wrong { position: absolute; top: 34%; left: 50%; transform: translateX(-50%); font: 44px var(--pixel); color: #ff3b5c; text-shadow: 0 0 18px #ff3b5c, 0 4px 0 #0008; animation: blink .5s infinite; pointer-events: none; }
+.race-wrong.hidden { display: none; }
 .race-top { top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; align-items: center; width: min(560px, 70vw); }
 .race-pos b { font: 34px var(--pixel); color: #ffd84d; }
 .race-pos small { color: var(--muted); font-weight: 700; }
@@ -1527,6 +1529,27 @@ html.touch .gar-sw { width: 28px; height: 28px; }
 .trim-opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: 12px; border: 2px solid var(--line); background: var(--bg-2); color: var(--text); font: 700 12px var(--body); cursor: pointer; }
 .trim-opt span { width: 100%; height: 22px; border-radius: 6px; background: var(--c); box-shadow: inset 0 -5px 0 #0002, 0 0 0 1px #0003; }
 .trim-opt.on { border-color: var(--accent); box-shadow: 0 0 10px #ffd84d66; }
+/* the Developer Title: a glitchy holographic word over an admin's name tag */
+.wl-dev { display: flex; justify-content: center; margin-bottom: 3px; pointer-events: none; }
+.wl-dev.hidden { display: none; }
+.wl-dev span { position: relative; font: 15px var(--pixel); letter-spacing: 3px; padding: 2px 10px 1px; border-radius: 6px; color: #e9fdff;
+  background: linear-gradient(90deg, #0a1a3acc, #1a0a3acc); border: 1px solid #39e6ff; box-shadow: 0 0 10px #39e6ff, inset 0 0 8px #39e6ff66;
+  text-shadow: 0 0 6px #39e6ff, 0 0 14px #b77bff; animation: devPulse 2.4s ease-in-out infinite; }
+.wl-dev span::before, .wl-dev span::after { content: attr(data-text); position: absolute; inset: 2px 10px 1px; overflow: hidden; }
+.wl-dev span::before { color: #ff4fd8; transform: translate(-1px, 0); clip-path: inset(0 0 55% 0); animation: devGlitch 3.1s infinite steps(1); opacity: 0.8; }
+.wl-dev span::after { color: #39e6ff; transform: translate(1px, 0); clip-path: inset(55% 0 0 0); animation: devGlitch 2.3s infinite steps(1) reverse; opacity: 0.8; }
+@keyframes devPulse { 0%, 100% { box-shadow: 0 0 8px #39e6ff, inset 0 0 6px #39e6ff55; } 50% { box-shadow: 0 0 18px #b77bff, inset 0 0 10px #b77bff77; } }
+@keyframes devGlitch { 0%, 88%, 100% { transform: translate(0, 0); } 90% { transform: translate(-3px, -1px); } 93% { transform: translate(3px, 1px); } 96% { transform: translate(-2px, 0); } }
+/* the newer casino games */
+.plinko { display: block; margin: 0 auto 8px; width: 300px; height: 300px; }
+.dice-stage { display: flex; justify-content: center; gap: 18px; font-size: 76px; line-height: 1; margin: 10px 0 14px; }
+.die { display: inline-block; color: #fff; text-shadow: 0 4px 0 #0006; }
+.die.rolling { animation: dieShake .14s infinite; }
+@keyframes dieShake { 0% { transform: rotate(-12deg) translateY(-4px); } 50% { transform: rotate(10deg) translateY(2px); } 100% { transform: rotate(-12deg) translateY(-4px); } }
+.hilo-stage { display: flex; justify-content: center; gap: 18px; margin: 10px 0 14px; }
+.hilo-card { width: 76px; height: 106px; border-radius: 10px; background: #fff; color: #1a1330; display: grid; place-items: center; font: 34px var(--pixel); box-shadow: 0 6px 0 #0004; }
+.hilo-card.red { color: #d6283a; }
+.hilo-card.back { background: repeating-linear-gradient(45deg, #7a2fc0 0 8px, #5b1f8f 8px 16px); color: transparent; }
 .lt-pose { bottom: 70px; left: 50%; transform: translateX(-50%); }
 html.touch .lt-points { top: 64px; }
 html.touch .lt-board { display: none; }
@@ -1568,7 +1591,7 @@ html.touch .lt-board { display: none; }
 .tix-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .tix-head h2 { margin: 0; }
 .tix-bal { font: 20px var(--pixel); color: #ffd84d; background: var(--bg-2); border: 2px solid var(--line); border-radius: 12px; padding: 4px 12px; }
-.tix-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tix-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 10px; padding-top: 14px; } /* (room for the badges that sit on the cards' top edge) */
 .tix-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 8px; border-radius: 14px; border: 2px solid var(--line); background: var(--bg-2); text-align: center; }
 .tix-card b { font-size: 14px; line-height: 1.15; }
 .tix-card small { font-weight: 700; font-size: 11px; }

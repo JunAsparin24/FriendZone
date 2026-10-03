@@ -167,7 +167,13 @@ class Stage {
     this.canvas.addEventListener('pointerleave', () => { this.mouseIn = false; });
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      if (this.orbit) this.orbit.dist = clamp(this.orbit.dist * (1 + e.deltaY * 0.0011 * settings.zoomSens), this.orbit.minDist ?? 4, this.orbit.maxDist ?? 30);
+      const o = this.orbit;
+      if (!o) return;
+      let d = o.dist * (1 + e.deltaY * 0.0011 * settings.zoomSens);
+      // walking around: zoom right in and it snaps to first person (and back out)
+      if (o.fpZoom && e.deltaY < 0 && d < 4) d = o.minDist;
+      else if (o.fpZoom && e.deltaY > 0 && o.dist <= o.minDist + 0.01) d = 4;
+      o.dist = clamp(d, o.minDist ?? 4, o.maxDist ?? 30);
     }, { passive: false });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
@@ -346,7 +352,7 @@ class Stage {
     this.scene.add(char.root);
     const el = document.createElement('div');
     el.className = `wl-actor${k === S.me ? ' me' : ''}`;
-    el.innerHTML = '<div class="wl-emote hidden"></div><div class="wl-bubble hidden"></div><div class="area-sub"></div><div class="wl-tag"><span class="wl-lv"></span><b></b></div>';
+    el.innerHTML = '<div class="wl-emote hidden"></div><div class="wl-bubble hidden"></div><div class="area-sub"></div><div class="wl-dev hidden"><span data-text="DEVELOPER">DEVELOPER</span></div><div class="wl-tag"><span class="wl-lv"></span><b></b></div>';
     this.labels.append(el);
     p = {
       k, char, el, sub: el.querySelector('.area-sub'), x: 0, y: 0, z: 0, heading: 0, moving: false, speed: 1.25,
@@ -392,6 +398,7 @@ class Stage {
       const dist = this.camera.position.distanceTo(v);
       const scale = clamp(17 / dist, 0.55, 1.1);
       p.el.style.transform = `translate3d(${(((s.x + 1) / 2) * w).toFixed(1)}px, ${(((1 - s.y) / 2) * h).toFixed(1)}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`;
+      p.el.querySelector('.wl-dev')?.classList.toggle('hidden', !(pl?.dev && pl.look?.aura === 'aura_devtitle'));
       if (pl && p.tagKey !== `${pl.name}|${pl.level}|${pl.color}`) {
         p.tagKey = `${pl.name}|${pl.level}|${pl.color}`;
         p.el.querySelector('.wl-tag b').textContent = pl.name;
@@ -411,9 +418,9 @@ class Stage {
 
   applyOrbit(dt) {
     const o = this.orbit;
-    const goal = o.target.clone().add(new THREE.Vector3(0, o.height, 0));
+    const goal = o.target.clone().add(new THREE.Vector3(0, o.height + (o.fpZoom && o.dist < 1 && !o.fps ? 0.3 : 0), 0));
     if (!o.cur) o.cur = goal.clone();
-    if (o.fps) {
+    if (o.fps || (o.fpZoom && o.dist < 1)) {
       // first person: the camera sits at the eyes and looks along yaw/pitch (pitch > 0 looks down)
       o.cur.copy(goal);
       this.camera.position.copy(goal);
@@ -504,7 +511,7 @@ class Stage {
     this.camRoom = bounds ? { ...bounds, maxY: ceiling, off: false } : null;
     const me = this.person(S.me);
     Object.assign(me, { x: spawn.x, z: spawn.z, heading: Math.PI });
-    const o = this.useOrbit({ target: new THREE.Vector3(), yaw: 0, pitch: 0.62, dist: 11, minDist: 5, maxDist: 20, minPitch: -0.45, ...orbit });
+    const o = this.useOrbit({ target: new THREE.Vector3(), yaw: 0, pitch: 0.62, dist: 11, minDist: 0.3, maxDist: 20, minPitch: -0.45, fpZoom: true, ...orbit });
     let target = null, sent = { at: 0, x: 0, z: 0 };
     const R = 0.4;
     const blocked = (x, z) => {
@@ -560,6 +567,9 @@ class Stage {
       me.moving = false;
       me.speed = run > 1 ? 1.75 : 0.85;
       if (frozen?.()) { dx = dz = 0; target = null; } // (driving a boat, fishing…)
+      const fp = this.orbit === o && o.dist < 1;
+      if (this.orbit === o) me.visible = !fp;
+      if (fp) me.heading = o.yaw + Math.PI;
       if (Math.hypot(dx, dz)) {
         const step = (speedOf ? speedOf() : speed) * run * dt;
         const nx = me.x + (dx / len) * step, nz = me.z + (dz / len) * step;

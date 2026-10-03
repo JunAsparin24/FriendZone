@@ -3210,6 +3210,38 @@ const AURAS = {
       ground.material.opacity = 0.32 + Math.sin(t * 5) * 0.08;
     });
   },
+  aura_devtitle(g, anim) {
+    // Developer Title (admin-given only): a cyan hex grid under you and code glyphs orbiting and rising.
+    // While you're in admin mode, a glitchy DEVELOPER title floats over your name tag too.
+    const grid = canvasTexture(256, 256, (x) => {
+      x.clearRect(0, 0, 256, 256);
+      x.strokeStyle = 'rgba(57,230,255,.9)'; x.lineWidth = 2;
+      for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+        const cx = 16 + c * 28 + (r % 2) * 14, cy = 16 + r * 26;
+        if (Math.hypot(cx - 128, cy - 128) > 118) continue;
+        x.beginPath(); for (let k = 0; k <= 6; k++) { const a = (k / 6) * TAU + Math.PI / 6; x.lineTo(cx + Math.cos(a) * 12, cy + Math.sin(a) * 12); } x.stroke();
+      }
+    });
+    const hex = part(g, geo('devHex', () => new THREE.CircleGeometry(1.3, 6)), new THREE.MeshBasicMaterial({ map: grid, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }), { p: [0, 0.03, 0], r: [-Math.PI / 2, 0, 0], outline: null, shadow: false });
+    const glyphs = [];
+    const chars = ['</>', '{ }', '01', '=>', '#', '[]', '&&', '10'];
+    for (let k = 0; k < 10; k++) {
+      const tex = canvasTexture(128, 64, (x) => { x.clearRect(0, 0, 128, 64); x.font = 'bold 40px monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.shadowColor = '#39e6ff'; x.shadowBlur = 12; x.fillStyle = k % 3 ? '#9ff6ff' : '#ffffff'; x.fillText(chars[k % chars.length], 64, 34); });
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      sp.scale.set(0.42, 0.21, 1);
+      g.add(sp);
+      glyphs.push({ sp, a: (k / 10) * TAU, y: (k / 10) * 2.2, sp2: 0.5 + (k % 3) * 0.25 });
+    }
+    anim.push((t) => {
+      hex.rotation.z = t * 0.3;
+      hex.material.opacity = 0.6 + Math.sin(t * 3) * 0.2;
+      for (const q of glyphs) {
+        const y = (q.y + t * q.sp2 * 0.6) % 2.4, a = q.a + t * q.sp2;
+        q.sp.position.set(Math.cos(a) * 0.8, 0.15 + y, Math.sin(a) * 0.8);
+        q.sp.material.opacity = Math.min(1, y * 2) * Math.min(1, (2.4 - y) * 2) * (Math.sin(t * 20 + q.a * 9) > -0.9 ? 1 : 0.2); // (a little flicker)
+      }
+    });
+  },
   aura_dev(g, anim) {
     // Developer (admin-given only): a glowing rune circle turning on the ground, winds of white energy
     // whirling round you at different heights, lightning cracking through them and sparks spiralling up

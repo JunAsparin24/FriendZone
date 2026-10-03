@@ -768,12 +768,13 @@ export function racing(stage) {
     <div class="hud-panel race-speed"><b>0</b><small>km/h</small></div>
     <canvas class="race-map"></canvas>
     <div class="race-count hidden"></div>
+    <div class="race-wrong hidden">⚠️ WRONG WAY</div>
     <div class="hud-panel race-actions"></div>
     <div class="hud-panel race-garage hidden"></div>
-    <p class="hud-panel arena-help"><kbd>W</kbd> gas · <kbd>S</kbd> brake · <kbd>A</kbd>/<kbd>D</kbd> steer · hold <kbd>Space</kbd> to drift (let go for a mini-turbo) · <kbd>E</kbd> fire your item, <kbd>Q</kbd> fire it behind you · hit the ⚡ pads and ❓ boxes!</p>`;
+    <p class="hud-panel arena-help"><kbd>W</kbd> gas · <kbd>S</kbd> brake · <kbd>A</kbd>/<kbd>D</kbd> steer · hold <kbd>Space</kbd> to drift (let go for a mini-turbo) · <kbd>E</kbd> fire your item, <kbd>Q</kbd> fire shells, rockets and bombs behind you · hit the ⚡ pads and ❓ boxes!</p>`;
   const $h = (s) => stage.hud.querySelector(s);
   const posEl = $h('.race-pos'), lapEl = $h('.race-lap'), timeEl = $h('.race-time'), speedEl = $h('.race-speed b'), countEl = $h('.race-count');
-  const actions = $h('.race-actions'), itemEl = $h('.race-item'), mapCanvas = $h('.race-map');
+  const actions = $h('.race-actions'), itemEl = $h('.race-item'), mapCanvas = $h('.race-map'), wrongEl = $h('.race-wrong');
   const mapCtx = mapCanvas.getContext('2d');
 
   const karts = new Map();   // key -> { kart, p, x, z, h, v, tx, tz, th, prog, flags }
@@ -907,8 +908,8 @@ export function racing(stage) {
     itemEl.querySelector('.race-uses').textContent = me.item && me.rolling <= 0 && me.uses > 1 ? `×${me.uses}` : '';
   }
   const uid = () => `${S.me}-${Math.random().toString(36).slice(2, 8)}`;
-  /** Use your item. `back`: fire it behind you (shells, rockets and bombs go backwards; bananas and
-   *  oil get thrown forward onto the road ahead instead of dropped). */
+  /** Use your item. `back`: fire it behind you (shells, rockets and bombs; bananas and oil always just
+   *  drop behind you). */
   function useItem(back = false) {
     if (!me.item || me.rolling > 0 || !(racing() || S.race?.state === 'waiting')) return;
     const kind = me.item;
@@ -918,9 +919,10 @@ export function racing(stage) {
     if (kind === 'shield') { me.shield = 12; sfx('shield'); return; }
     if (kind === 'star') { me.star = 7; me.boost = Math.max(me.boost, 1); sfx('powerup'); return; }
     const drop = kind === 'banana' || kind === 'oil' || kind === 'bananas';
-    const h = drop ? (back ? me.h : me.h + Math.PI) : (back ? me.h + Math.PI : me.h);
-    const fx = Math.sin(h), fz = Math.cos(h), dist = drop && back ? 14 : drop ? 3 : 2.5;
-    const msg = { kind, id: uid(), h, x: me.x + fx * dist, z: me.z + fz * dist };
+    const h = drop || back ? me.h + Math.PI : me.h;
+    const fx = Math.sin(h), fz = Math.cos(h), dist = drop ? 3 : 2.5;
+    // (Triple Banana: one banana each go, three goes)
+    const msg = { kind: kind === 'bananas' ? 'banana' : kind, id: uid(), h, x: me.x + fx * dist, z: me.z + fz * dist };
     if (kind === 'rocket') {
       // aim at whoever is just ahead of you (or just behind, fired backwards)
       const mine = myProgress(), others = [...karts.entries()].filter(([k, v]) => k !== S.me && (back ? v.prog < mine : v.prog > mine));
@@ -1140,6 +1142,24 @@ export function racing(stage) {
     // lap counting: cross the line going forward, having been round the far side first
     const prevI = me.i;
     me.i = locate(me.x, me.z, me.i).i;
+    // going the wrong way: a warning, and in a race (if you keep at it) you're spun round to face the right way
+    const tr = table[me.i], along = (Math.sin(me.h) * tr.dx + Math.cos(me.h) * tr.dz) * Math.sign(me.v || 1);
+    if (!me.flip && Math.abs(me.v) > 4 && along < -0.4) me.wrongT = (me.wrongT ?? 0) + dt; else me.wrongT = Math.max(0, (me.wrongT ?? 0) - dt * 2);
+    wrongEl.classList.toggle('hidden', me.wrongT < 0.6);
+    if (me.wrongT > 2 && racing()) {
+      const to = Math.atan2(tr.dx, tr.dz);
+      me.flip = { from: me.h, to: me.h + Math.atan2(Math.sin(to - me.h), Math.cos(to - me.h)) + Math.PI * 2, t: 0 };
+      me.wrongT = 0;
+      sfx('whoosh');
+      stage.banner('🔄 Wrong way! Turned you around.', 1300);
+    }
+    if (me.flip) {
+      me.flip.t += dt / 0.7;
+      const u = Math.min(1, me.flip.t), ease = 1 - (1 - u) ** 3;
+      me.h = me.flip.from + (me.flip.to - me.flip.from) * ease;
+      me.v *= 0.9;
+      if (u >= 1) me.flip = null;
+    }
     if (me.i > SAMPLES * 0.4 && me.i < SAMPLES * 0.6) me.half = true;
     if (prevI > SAMPLES * 0.85 && me.i < SAMPLES * 0.15) {
       if (me.half) {

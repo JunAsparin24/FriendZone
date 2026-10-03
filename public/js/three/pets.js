@@ -54,43 +54,73 @@ const trot = (list, t, moving, speed = 14, amp = 0.6) => list.forEach((l, i) => 
 });
 
 const BUILD = {
-  pet_binturong(g) {
-    // a binturong (bearcat): shaggy black fur frosted grey, a long bushy tail curled at the tip, a grey
-    // face with long white whiskers, amber eyes and little white-rimmed ears with tufts
-    const fur = toon('#1e1d22'), frost = toon('#4a4850'), face0 = toon('#6c6a70'), white = basic('#f2f2f2');
-    add(g, sph(0.22), fur, { p: [0, 0.3, -0.04], s: [1, 0.85, 1.5] });
-    for (let i = 0; i < 9; i++) { const a = i * 0.7; add(g, cone(0.05, 0.12, 5), frost, { p: [Math.cos(a) * 0.12, 0.44 + (i % 3) * 0.02, -0.25 + i * 0.05], r: [-1.2, a, 0], outline: false }); }
-    const L = legs(g, fur, 0.12, 0.17, 0.2, 0.15, 0.06);
-    const head = add(g, sph(0.17), fur, { p: [0, 0.44, 0.24] });
-    add(head, sph(0.12), face0, { p: [0, -0.03, 0.07], s: [1, 0.9, 1] });
-    add(head, sph(0.06, 12, 10), face0, { p: [0, -0.06, 0.15], s: [1, 0.8, 1.2] });
-    add(head, sph(0.03, 10, 8), toon('#121014'), { p: [0, -0.04, 0.22], outline: false });
-    for (const s of [-1, 1]) {
-      add(head, sph(0.05, 10, 8), fur, { p: [s * 0.12, 0.12, -0.02], s: [1, 1, 0.5] });
-      add(head, new THREE.TorusGeometry(0.045, 0.012, 6, 12), white, { p: [s * 0.12, 0.12, 0.005], outline: false });
-      add(head, cone(0.025, 0.08, 5), fur, { p: [s * 0.13, 0.19, -0.02], outline: false });
-      add(head, sph(0.012, 6, 4), white, { p: [s * 0.06, 0.06, 0.13], outline: false }); // (pale brows)
-      for (let k = 0; k < 3; k++) add(head, cyl(0.002, 0.002, 0.2, 4), white, { p: [s * 0.1, -0.06 + k * 0.012, 0.16], r: [0, 0, s * (1.45 - k * 0.12)], outline: false });
+  pet_binturong(g0) {
+    // a binturong (bearcat), a bit bigger than most pets: a long, low, arched body of shaggy black fur
+    // frosted grey, a small head held low with a tapered snout, small amber eyes, little rounded ears with
+    // long black tufts, a spray of long white whiskers, and a thick tail as long as its body that hangs
+    // down and curls under at the tip
+    const g = new THREE.Group();
+    g.scale.setScalar(1.35);
+    g0.add(g);
+    const fur = toon('#17161b'), frost = toon('#45434a'), grey = toon('#2c2b31'), face0 = toon('#3a3940'), white = basic('#f0f0f0');
+    // the body: shoulders and hips humped, the back arched between them
+    add(g, sph(0.19), fur, { p: [0, 0.3, -0.02], s: [1, 0.95, 2.0] });
+    add(g, sph(0.17), fur, { p: [0, 0.36, 0.14], s: [1.05, 1, 1] }); // shoulders
+    add(g, sph(0.17), fur, { p: [0, 0.37, -0.2], s: [1.05, 1, 1.1] }); // hips
+    // grizzled fur: grey-tipped tufts over the back, shoulders and forelegs
+    for (let i = 0; i < 26; i++) {
+      const a = i * 2.39, z = -0.3 + (i / 25) * 0.52, side = Math.cos(a) * 0.16;
+      add(g, sph(0.05, 8, 6), i % 4 ? grey : frost, { p: [side, 0.38 + (0.17 - Math.abs(side)) * 0.9, z], s: [1, 0.35, 1.6], r: [0, 0, -side * 3], outline: false });
     }
-    face(head, 0.17, { spread: 0.3, y: 0.22, size: 0.16, color: '#c47a2a', blush: null, mouth: false });
-    // the tail: long and thick, tapering and curling up at the tip
+    const L = legs(g, fur, 0.11, 0.17, 0.22, 0.19, 0.06);
+    for (const l of L) for (let k = -1; k <= 1; k++) add(l, cone(0.012, 0.05, 4), toon('#2a2420'), { p: [k * 0.025, -0.2, 0.06], r: [1.4, 0, 0], outline: false }); // claws
+    L.slice(2).forEach((l) => add(l, sph(0.065, 8, 6), frost, { p: [0, -0.06, 0.02], s: [1, 1.4, 1], outline: false })); // frosted forelegs
+    // the head: small, held low and forward, the snout tapering to a black nose
+    const head = new THREE.Group();
+    head.position.set(0, 0.34, 0.36);
+    g.add(head);
+    add(head, sph(0.14), face0, { s: [1.15, 0.95, 1.05] });
+    for (let i = 0; i < 8; i++) { const a = i * 2.2; add(head, sph(0.035, 8, 6), frost, { p: [Math.cos(a) * 0.1, 0.08 + Math.abs(Math.sin(a)) * 0.03, -0.03 + (i % 4) * 0.02], s: [1, 0.35, 1.4], outline: false }); }
+    add(head, cone(0.075, 0.16, 12), face0, { p: [0, -0.03, 0.15], r: [Math.PI / 2, 0, 0] });
+    add(head, sph(0.03, 10, 8), toon('#0c0b0e'), { p: [0, -0.03, 0.23], s: [1.2, 0.9, 1] });
+    for (const s of [-1, 1]) {
+      // small amber eyes with dark pupils and a glint
+      const e = add(head, sph(0.032, 12, 10), basic('#5a3414'), { p: [s * 0.062, 0.03, 0.112], s: [1, 0.9, 0.6], outline: false });
+      add(e, sph(0.02, 8, 6), basic('#0c0806'), { p: [0, 0, 0.014], outline: false });
+      add(e, sph(0.009, 6, 4), white, { p: [0.01, 0.011, 0.026], outline: false });
+      add(head, sph(0.012, 6, 4), toon('#c8c6cc'), { p: [s * 0.055, 0.06, 0.1], s: [1.6, 0.6, 1], outline: false }); // pale brows
+      // little rounded ears, rimmed pale, with long black tufts sweeping up and back
+      add(head, sph(0.04, 10, 8), fur, { p: [s * 0.11, 0.1, -0.04], s: [1, 1, 0.55] });
+      add(head, new THREE.TorusGeometry(0.036, 0.008, 6, 12), toon('#bcbac2'), { p: [s * 0.11, 0.1, -0.02], outline: false });
+      add(head, cone(0.016, 0.07, 5), fur, { p: [s * 0.1, 0.14, -0.06], r: [-0.7, 0, -s * 0.3], outline: false });
+      // long white whiskers fanning out from the snout
+      for (let k = 0; k < 4; k++) add(head, cyl(0.0018, 0.0018, 0.26, 3), white, { p: [s * 0.13, -0.04 - k * 0.012, 0.12 - k * 0.01], r: [0, s * 0.35, s * (1.35 - k * 0.12)], outline: false });
+    }
+    // the tail: thick and bushy at the base, as long as the body, hanging down and curling under
     const tail = new THREE.Group();
-    tail.position.set(0, 0.28, -0.34);
+    tail.position.set(0, 0.36, -0.38);
     g.add(tail);
     const segs = [];
     let parent = tail;
-    for (let i = 0; i < 7; i++) {
-      const s = new THREE.Group();
-      s.position.set(0, 0, i ? -0.09 : 0);
-      parent.add(s);
-      add(s, sph(0.075 - i * 0.004, 10, 8), i % 2 ? fur : frost, { p: [0, 0, -0.045], s: [1, 1, 1.3] });
-      segs.push(s);
-      parent = s;
+    for (let i = 0; i < 16; i++) {
+      const sg = new THREE.Group();
+      sg.position.set(0, 0, i ? -0.05 : 0);
+      parent.add(sg);
+      const r = 0.1 - i * 0.004;
+      add(sg, sph(r, 10, 8), fur, { p: [0, 0, -0.04], s: [1, 1, 1.15] }); // (solid black: no stripes)
+      if (i < 4) add(sg, sph(0.05, 8, 6), grey, { p: [0, r * 0.75, -0.04], s: [1, 0.35, 1.5], outline: false });
+      segs.push(sg);
+      parent = sg;
     }
     return (t, dt, m) => {
-      trot(L, t, m, 12, 0.5);
-      segs.forEach((s, i) => { s.rotation.x = (i > 3 ? 0.35 : -0.08) + Math.sin(t * 2 + i * 0.6) * 0.06; s.rotation.y = Math.sin(t * 1.6 - i * 0.5) * 0.12; });
-      head.rotation.y = Math.sin(t * 0.7) * 0.25;
+      trot(L, t, m, 10, 0.45);
+      // the tail droops down behind and curls forward at the tip, swaying slowly
+      segs.forEach((sg, i) => {
+        sg.rotation.x = -((i === 0 ? 0.42 : i < 9 ? 0.09 : 0.3) + Math.sin(t * 1.6 + i * 0.5) * 0.025);
+        sg.rotation.y = Math.sin(t * 1.2 - i * 0.45) * (m ? 0.05 : 0.1);
+      });
+      head.rotation.y = Math.sin(t * 0.6) * 0.3;
+      head.rotation.x = 0.15 + Math.sin(t * 0.9) * 0.05; // (snuffling along, nose down)
     };
   },
   pet_ghost(g) {

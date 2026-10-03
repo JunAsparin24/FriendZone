@@ -435,6 +435,17 @@ def hilo_mult(card, pick):
     return 0 if n <= 0 else max(1.05, round(0.94 * 13 / n, 2))
 
 
+def can_recolor(f):
+    """Anything in a house can be recoloured except walls, doors, plushies and admin specials (as the client)."""
+    return bool(f.get("recolor") or (not f.get("room") and not f.get("drag") and not f.get("claw") and not f.get("exclusive") and f.get("kind", "floor") != "door"))
+
+
+def clean_board(text):
+    """What someone wrote on a chalkboard: short, and no rude words."""
+    text = " ".join(text.replace("\n", " | ").split())[:90]
+    return "Today's specials" if is_rude(text) else text
+
+
 COINFLIP_WIN = 0.4           # chance you call the coin right
 SLOT_PAIR_PAYS = 0.5         # a pair gives back half your bet
 SLOT_NEAR_MISS = 0.35        # a winning line that slips to a near miss at the last reel
@@ -924,7 +935,7 @@ def clean_house(p, data):
             if not (wh / 2 - 0.01 <= h <= HOUSE_WALL_H - wh / 2 + 0.01):
                 raise GameError("That doesn't fit on the wall.")
             rows = range(round((h - wh / 2) * HOUSE_SNAP), round((h + wh / 2) * HOUSE_SNAP))
-            cells = {("wall", "iw", round(face * HOUSE_SNAP), r, round(start * HOUSE_SNAP) + i, j) for i in range(round(f["w"] * HOUSE_SNAP)) for j in rows}
+            cells = {("wall", "iw", "over" if f.get("over") else "", round(face * HOUSE_SNAP), r, round(start * HOUSE_SNAP) + i, j) for i in range(round(f["w"] * HOUSE_SNAP)) for j in rows}
             hanging.append((f["name"], r % 2, face, start, f["w"]))
         elif kind == "wall":
             # which wall: r 0 back (column x), 1 left (row y), 2 front (column x), 3 right (row y); h: how
@@ -936,7 +947,7 @@ def clean_house(p, data):
             if not (wh / 2 - 0.01 <= h <= HOUSE_WALL_H - wh / 2 + 0.01):
                 raise GameError("That doesn't fit on the wall.")
             rows = range(round((h - wh / 2) * HOUSE_SNAP), round((h + wh / 2) * HOUSE_SNAP))
-            cells = {("wall", r, round(start * HOUSE_SNAP) + i, j) for i in range(round(f["w"] * HOUSE_SNAP)) for j in rows}
+            cells = {("wall", "over" if f.get("over") else "", r, round(start * HOUSE_SNAP) + i, j) for i in range(round(f["w"] * HOUSE_SNAP)) for j in rows}  # (curtains hang over windows)
             if start < 0 or start + f["w"] > (W if r % 2 == 0 else D):
                 raise GameError("That doesn't fit on the wall.")
             if r == 2 and start < door_x[1] and start + f["w"] > door_x[0] and h - wh / 2 < HOUSE_DOOR_H - 0.01:
@@ -974,7 +985,8 @@ def clean_house(p, data):
             raise GameError("Things can't overlap.")
         taken |= cells
         clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if kind == "floor" and f.get("drag") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
-                            **({"c": it["c"]} if f.get("recolor") and it.get("c") in CATALOG["clothColors"] else {})})
+                            **({"c": it["c"]} if can_recolor(f) and it.get("c") in CATALOG["clothColors"] else {}),
+                            **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {})})
     for name, cells in door_cells:
         if not cells <= wall_cells:
             raise GameError(f"The {name} has to go in a wall.")

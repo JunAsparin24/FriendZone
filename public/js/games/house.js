@@ -43,6 +43,8 @@ function tiledPlane(w, h, y0 = 0) {
 }
 const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 const kindOf = (id) => FURN[id]?.kind ?? 'floor';
+/** Anything can be recoloured (like Bloxburg), except walls, doors, plushies and admin specials. Must match server.py. */
+const canRecolor = (f) => !!f && (f.recolor || (!f.room && !f.drag && !f.claw && !f.exclusive && (f.kind ?? 'floor') !== 'door'));
 // free things (plain walls) never run out: you can put up as many as the limit
 const owned = (id) => (FURN[id]?.free ? FURN[id].max ?? 99 : me().furni?.[id] ?? 0);
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
@@ -86,6 +88,29 @@ for (const f of CATALOG.furniture) {
 const furniImg = (id) => `<img class="fem-img" src="${furnitureThumb(id)}" alt="">`;
 const decoBg = (id) => (id.startsWith('door_') ? `background:url(${doorImage(id)}) center/cover` : `background:url(${surfaceImage(id)}) center/cover, ${SWATCH[id] ?? '#888'}`);
 
+// surfaces: tables, desks, counters, nightstands, carts… things from the "top" kind sit on them
+const SURFACE_RE = /table|desk|counter|nightstand|bedside|dresser|vanity|island|cart|sideboard|cabinet|bar_counter|kit_/;
+const isSurface = (f) => !!f && (f.kind ?? 'floor') === 'floor' && !f.tuck && !f.room && (f.desk || SURFACE_RE.test(f.id)) && !SEATS[f.id];
+const surfTopCache = new Map();
+/** How high a surface's top is (tiles): the highest big flat part of the model (not the odd mug on it). */
+function surfTop(id) {
+  if (surfTopCache.has(id)) return surfTopCache.get(id);
+  const f = FURN[id], g = buildFurniture(id).group;
+  g.updateMatrixWorld(true);
+  const area = (f.w * f.d) * 0.3;
+  let top = 0, any = 0;
+  const b = new THREE.Box3();
+  g.traverse((o) => {
+    if (!o.isMesh || o.userData.outline) return;
+    b.setFromObject(o);
+    any = Math.max(any, b.max.y);
+    if ((b.max.x - b.min.x) * (b.max.z - b.min.z) >= area) top = Math.max(top, b.max.y);
+  });
+  const h = top || any || 0.75;
+  surfTopCache.set(id, h);
+  return h;
+}
+
 // furniture snaps to quarter tiles, so things can go almost anywhere
 const SNAP = 4;
 const snap = (v) => Math.round(v * SNAP) / SNAP;
@@ -100,7 +125,7 @@ function cellsOf(it, check = false) {
     const h = heightOf(it), wh = wallH(it.id);
     const r0 = Math.round((h - wh / 2) * SNAP), r1 = Math.round((h + wh / 2) * SNAP);
     // (on one of your own walls, the face it hangs on is part of the key too)
-    const face = it.iw ? `iw${Math.round((it.r % 2 === 0 ? it.y : it.x) * SNAP)}:` : '';
+    const face = (it.iw ? `iw${Math.round((it.r % 2 === 0 ? it.y : it.x) * SNAP)}:` : '') + (f.over ? 'over:' : ''); // (curtains hang over windows)
     const out = [];
     for (let i = 0; i < f.w * SNAP; i++) for (let j = r0; j < r1; j++) out.push(`wall:${face}${it.r % 4}:${start + i}:${j}`);
     return out;
@@ -434,7 +459,7 @@ export function house(stage) {
   const solids = [];
   const bounds = { minX: 0.1, maxX: WX() - 0.1, minZ: 0.1, maxZ: WZ() - 0.1 };
   const walker = stage.walker({
-    spawn: { x: WX() / 2, z: WZ() - 4.2 }, speed: 5, solids, bounds,
+    spawn: { x: WX() / 2, z: WZ() - 4.2 }, speed: 5, solids, bounds, frozen: () => !!edit, // (decorating: you float, see below)
     orbit: { yaw: 0, pitch: 0.72, dist: 11, minDist: 5, maxDist: 20 },
     ceiling: WALL_H * T - 0.3,
   });
@@ -468,6 +493,23 @@ export function house(stage) {
 
   // ---- building the furniture ------------------------------------------------------
 
+  /** The height of the surface under a tabletop item (every quarter-cell of it has to be on one), or null. */
+  function surfaceUnder(it, skip = -1) {
+    if (!home) return null;
+    const under = new Map();
+    home.items.forEach((o, i) => {
+      if (i === skip || !isSurface(FURN[o.id])) return;
+      const h = surfTop(o.id);
+      for (const c of cellsOf(o)) if (c.startsWith('floor:')) under.set(c.slice(6), Math.max(under.get(c.slice(6)) ?? 0, h));
+    });
+    let top = null;
+    for (const c of cellsOf(it)) {
+      const h = under.get(c.slice(c.indexOf(':') + 1));
+      if (h == null) return null;
+      top = Math.max(top ?? 0, h);
+    }
+    return top;
+  }
   function placeGroup(g, it) {
     const f = FURN[it.id];
     if (kindOf(it.id) === 'wall') {
@@ -486,7 +528,8 @@ export function house(stage) {
       return;
     }
     const [w, d] = footprint(it);
-    g.position.set(it.x + w / 2, kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? WALL_H : 0, it.y + d / 2); // (a hanging wall is built at its own height)
+    const y = kindOf(it.id) === 'top' ? surfaceUnder(it, placing?.from ?? -1) ?? 0 : kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? WALL_H : 0;
+    g.position.set(it.x + w / 2, y, it.y + d / 2); // (a hanging wall is built at its own height; tabletop things sit on their table)
     g.rotation.y = angleOf(it);
   }
 
@@ -497,7 +540,7 @@ export function house(stage) {
     const walls = roomWallCells(home.items);
     entries = home.items.map((it, index) => {
       const layout = isDragWall(it.id) ? wallLayout(it, home.items, walls) : null;
-      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null });
+      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null, text: it.t ?? null });
       built.group.userData.index = index;
       placeGroup(built.group, it);
       built.group.visible = !(placing && placing.from === index);
@@ -834,7 +877,8 @@ export function house(stage) {
     const taken = takenCells(placing.from);
     placing.valid = !placing.tooShort && fits(it) && !cellsOf(it, true).some((c) => taken.has(c)) && !blocksDoor(it)
       && (!isDoor(placing.id) || inWall(it, roomWallCells(home.items, placing.from)))
-      && (!it.iw || wallHost(it, home.items, placing.from) >= 0);
+      && (!it.iw || wallHost(it, home.items, placing.from) >= 0)
+      && (kindOf(placing.id) !== 'top' || surfaceUnder(it, placing.from) != null); // (plates and food go on a table)
     const mat = placing.valid ? ghostOk : ghostBad;
     ghost.traverse((o) => { if (o.isMesh && !o.userData.outline) o.material = mat; });
     ghost.visible = true;
@@ -1300,12 +1344,15 @@ export function house(stage) {
         ${kindOf(sel.id) === 'wall' || kindOf(sel.id) === 'ceiling' ? '<button class="btn small" data-act="up" title="[ ]">▲ Up</button><button class="btn small" data-act="down" title="[ ]">▼ Down</button>' : ''}
         ${isDragWall(sel.id) ? `<button class="btn small" data-act="shorter">− Shorter</button><button class="btn small" data-act="longer">＋ Longer</button><span class="muted small">${lenOf(sel)} tiles</span>` : ''}
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div>
-        ${FURN[sel.id].recolor ? `<div class="wd-label">🎨 Colour</div><div class="swatches palette"><button type="button" class="swatch orig ${sel.c ? '' : 'on'}" data-recolor="" title="Original colour">↺</button>${CATALOG.clothColors.map((c) => `<button type="button" class="swatch ${sel.c === c ? 'on' : ''}" data-recolor="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}</div>` : ''}
+        ${FURN[sel.id].text ? `<div class="wd-label">✏️ What it says <small class="muted">(new line or | for each line)</small></div><textarea class="menu-text" maxlength="90" rows="3" placeholder="MENU|Pizza 12|Pasta 10">${esc(sel.t ?? '')}</textarea>` : ''}
+        ${canRecolor(FURN[sel.id]) ? `<div class="wd-label">🎨 Colour</div><div class="swatches palette"><button type="button" class="swatch orig ${sel.c ? '' : 'on'}" data-recolor="" title="Original colour">↺</button>${CATALOG.clothColors.map((c) => `<button type="button" class="swatch ${sel.c === c ? 'on' : ''}" data-recolor="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}</div>` : ''}
       ${pageStrip(ITEM_FILTERS, itemFilter, 'item-filter')}
       <input class="item-search" type="search" placeholder="🔍 Search your items…" value="${esc(itemSearch)}">
       ${sets.length > 1 ? `<div class="shelf-jump item-sets"><button class="${itemSet === 'all' ? 'on' : ''}" data-item-set="all">Everything</button>${sets.map((g) => `<button class="${itemSet === g ? 'on' : ''}" data-item-set="${esc(g)}">${SET_LABEL[g] ?? esc(g)}</button>`).join('')}</div>` : ''}
       <p class="muted small">Pick something to place it:</p>
       <div class="item-grid">${itemGridHtml()}</div>`;
+    const mt = panel.querySelector('.menu-text');
+    if (mt) mt.onchange = () => { const it = { ...home.items[selected] }; const v = mt.value.trim().slice(0, 90); if (v) it.t = v; else delete it.t; home.items[selected] = it; commit('paint'); };
     const search = panel.querySelector('.item-search');
     search.oninput = () => { itemSearch = search.value; panel.querySelector('.item-grid').innerHTML = itemGridHtml(); }; // (only the grid: typing keeps focus)
   }
@@ -1330,13 +1377,13 @@ export function house(stage) {
   // shelved by matching set; floors, wallpapers and ceilings by kind (solid colours, wood, tiles…).
   const SHOP_PAGES = [['furniture', '🛋️ Furniture'], ['rooms', '🧱 Walls & doors'], ['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floors'], ['ceiling', '☁️ Ceilings'], ['door', '🚪 Front doors'], ['earn', '🏆 Earn']];
   const STYLE_PAGES = [['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floor'], ['ceiling', '☁️ Ceiling'], ['trim', '🎨 Trim'], ['door', '🚪 Front door'], ['size', '🏠 Room size']];
-  const ITEM_FILTERS = [['all', 'All'], ['furniture', '🛋️ Furniture'], ['decor', '🖼️ Wall decor'], ['ceiling', '💡 Ceiling'], ['rooms', '🧱 Walls & doors']];
+  const ITEM_FILTERS = [['all', 'All'], ['furniture', '🛋️ Furniture'], ['top', '🍽️ On tables'], ['decor', '🖼️ Wall decor'], ['ceiling', '💡 Ceiling'], ['rooms', '🧱 Walls & doors']];
   const itemMatches = (f) => itemFilter === 'all' || (itemFilter === 'rooms' ? f.set === 'Rooms'
-    : f.set !== 'Rooms' && (itemFilter === 'decor' ? kindOf(f.id) === 'wall' : itemFilter === 'ceiling' ? kindOf(f.id) === 'ceiling' : kindOf(f.id) === 'floor'));
+    : f.set !== 'Rooms' && (itemFilter === 'decor' ? kindOf(f.id) === 'wall' : itemFilter === 'ceiling' ? kindOf(f.id) === 'ceiling' : itemFilter === 'top' ? kindOf(f.id) === 'top' : kindOf(f.id) === 'floor'));
   const SET_LABEL = {
     Classics: '🛋️ Classics', Sweetheart: '💗 Sweetheart set', Rustic: '🪵 Rustic set', Modern: '🤍 Modern set', Nature: '🌿 Nature set',
     Plants: '🪴 Plants', Bathroom: '🛁 Bathroom', Gamer: '🎮 Gamer set', Lights: '💡 Lights & ceiling', 'Wall decor': '🖼️ Wall decor', Rooms: '🧱 Walls & doorways',
-    Plushies: '🧸 Claw machine plushies', Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🤍 White kitchen', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
+    Plushies: '🧸 Claw machine plushies', Tabletop: '🍽️ Plates, food & tabletop', Curtains: '🪟 Curtains', Restaurant: '🍷 Restaurant', Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🤍 White kitchen', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
   };
   const DECO_LISTS = { floor: CATALOG.floors, wall: CATALOG.walls, ceiling: CATALOG.ceilings, door: CATALOG.doors };
   let shopPage = 'furniture', stylePage = 'wall', itemFilter = 'all', itemSet = 'all', itemSearch = '';
@@ -1675,6 +1722,7 @@ export function house(stage) {
   const center = new THREE.Vector3(WX() / 2, 0, WZ() / 2);
   const coreFade = basic('#e8d6b8', { transparent: true, opacity: 0.18, depthWrite: false });
   const baseHeight = orbit.height;
+  let fly = null; // (where the decorating camera is floating)
   stage.onFrame((dt, now) => {
     const t = now / 1000;
     const p = walker.me;
@@ -1685,6 +1733,38 @@ export function house(stage) {
       p.y = seated.at.y;
       p.heading = seated.at.heading;
       p.moving = false;
+    }
+    if (edit) {
+      // decorating: a floating first-person camera (WASD to glide, Space up, Shift or C down, drag to look);
+      // you can't see yourself, and walls and furniture don't get in the way
+      const k = stage.keys;
+      if (!fly) fly = { x: p.x, y: Math.min(WALL_H * T - 0.4, 2.4), z: p.z };
+      let ix = 0, iy = 0;
+      if (k.has('a') || k.has('arrowleft')) ix -= 1;
+      if (k.has('d') || k.has('arrowright')) ix += 1;
+      if (k.has('w') || k.has('arrowup')) iy -= 1;
+      if (k.has('s') || k.has('arrowdown')) iy += 1;
+      const sp = 6 * dt;
+      if (ix || iy) {
+        const fx = -Math.sin(orbit.yaw), fz = -Math.cos(orbit.yaw), rx = Math.cos(orbit.yaw), rz = -Math.sin(orbit.yaw);
+        const dx = rx * ix - fx * iy, dz = rz * ix - fz * iy, l = Math.hypot(dx, dz);
+        fly.x += (dx / l) * sp; fly.z += (dz / l) * sp;
+      }
+      if (k.has(' ')) fly.y += sp * 0.7;
+      if (k.has('shift') || k.has('c')) fly.y -= sp * 0.7;
+      fly.x = Math.max(-2, Math.min(WX() + 2, fly.x)); fly.z = Math.max(-2, Math.min(WZ() + 2, fly.z));
+      fly.y = Math.max(0.5, Math.min(WALL_H * T + 3, fly.y));
+      stage.person(S.me).visible = false;
+      if (!preview.door && !preview.ceiling) {
+        orbit.fps = true;
+        orbit.target.set(fly.x, 0, fly.z);
+        orbit.height = fly.y;
+      }
+    } else if (fly) {
+      // back to walking: where you were, seen from behind again
+      fly = null;
+      orbit.fps = false; orbit.height = baseHeight;
+      stage.person(S.me).visible = true;
     }
     if (edit) {
       if (preview.door) {
@@ -1701,8 +1781,7 @@ export function house(stage) {
         orbit.height = WALL_H * T * 0.3;
         orbit.pitch = -0.55;
         orbit.yaw += dt * 0.25;
-      } else if (orbit.fps) { orbit.fps = false; orbit.height = baseHeight; }
-      // (otherwise decorating keeps your usual camera: you stay in the room, walking about as normal)
+      }
     }
     // doors open for whoever walks up to them (swinging away from them) and shut behind them
     const walkers = [walker.me, ...stage.people.values()];

@@ -1241,6 +1241,7 @@ export function house(stage) {
   };
   // Escape cancels placing/selection before it would close the house
   const onEscape = (e) => {
+    if (e.key === 'Tab' && edit && !e.target.closest?.('input, textarea')) { e.preventDefault(); sideOpen = !sideOpen; if (sideOpen && tab === 'visit') tab = 'items'; renderAll(); return; }
     if (e.key !== 'Escape' || !(placing || selected >= 0 || sideOpen)) return;
     e.stopPropagation();
     if (paintMode) { paintMode = false; brush = null; renderAll(); }
@@ -1281,6 +1282,7 @@ export function house(stage) {
       `<span class="pill">❤️ ${likes.length}</span>`,
       !mine() ? `<button class="btn small ${liked ? '' : 'primary'}" data-like ${liked ? 'disabled' : ''}>${liked ? '❤️ Liked' : '🤍 Like'}</button>` : '',
       mine() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : '✏️ Decorate'}</button>` : '',
+      edit ? `<button class="btn small" data-menu title="Tab">${sideOpen ? '⬅ Hide menu' : '📋 Menu'}</button>` : '',
       `<button class="btn small ${sideOpen && tab === 'visit' ? 'primary' : ''}" data-visits>🏘️ Visit</button>`,
       !mine() ? '<button class="btn small" data-home>🏡 My house</button>' : '',
     ].join('');
@@ -1325,12 +1327,12 @@ export function house(stage) {
   /** The owned pieces matching the filters and search, shelved by set (with jump buttons). */
   function itemGridHtml() {
     const q = itemSearch.trim().toLowerCase();
-    const list = CATALOG.furniture.filter((f) => owned(f.id) > 0 && !(f.retired && !placedCount(f.id)) && itemMatches(f)
+    const list = CATALOG.furniture.filter((f) => owned(f.id) > 0 && !(f.retired && !f.variant && !placedCount(f.id)) && itemMatches(f)
       && (itemSet === 'all' || (f.set ?? 'Classics') === itemSet) && (!q || f.name.toLowerCase().includes(q) || (f.set ?? '').toLowerCase().includes(q)))
       .sort((a, b) => !!b.free - !!a.free);
     if (!list.length) return q ? `<p class="muted">Nothing called “${esc(itemSearch)}”.</p>` : '<p class="muted">Nothing yet! Buy furniture in the Shop, or win trophies around the zone.</p>';
     const setOf = (f) => f.set ?? 'Classics', label = (g) => SET_LABEL[g] ?? esc(g);
-    return itemSet === 'all' && !q ? jumpStrip([...new Set(list.map(setOf))], label) + shelves(list, setOf, itemTile, label) : `<div class="furni-grid">${list.map(itemTile).join('')}</div>`;
+    return itemSet === 'all' && !q ? shelves(list, setOf, itemTile, label) : `<div class="furni-grid">${list.map(itemTile).join('')}</div>`; // (the set buttons above are the shortcuts)
   }
 
   function renderItems() {
@@ -1383,7 +1385,7 @@ export function house(stage) {
   const SET_LABEL = {
     Classics: '🛋️ Classics', Sweetheart: '💗 Sweetheart set', Rustic: '🪵 Rustic set', Modern: '🤍 Modern set', Nature: '🌿 Nature set',
     Plants: '🪴 Plants', Bathroom: '🛁 Bathroom', Gamer: '🎮 Gamer set', Lights: '💡 Lights & ceiling', 'Wall decor': '🖼️ Wall decor', Rooms: '🧱 Walls & doorways',
-    Plushies: '🧸 Claw machine plushies', Tabletop: '🍽️ Plates, food & tabletop', Curtains: '🪟 Curtains', Restaurant: '🍷 Restaurant', Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🤍 White kitchen', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
+    Plushies: '🧸 Claw machine plushies', Tabletop: '🍽️ Plates, food & tabletop', Curtains: '🪟 Curtains', Restaurant: '🍷 Restaurant', Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🗄️ Kitchen cabinets (recolour them!)', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
   };
   const DECO_LISTS = { floor: CATALOG.floors, wall: CATALOG.walls, ceiling: CATALOG.ceilings, door: CATALOG.doors };
   let shopPage = 'furniture', stylePage = 'wall', itemFilter = 'all', itemSet = 'all', itemSearch = '';
@@ -1475,7 +1477,7 @@ export function house(stage) {
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor],[data-trim],[data-item-filter],[data-item-set]');
+    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor],[data-trim],[data-item-filter],[data-item-set]');
     if (!t) return;
     const ds = t.dataset;
     if (ds.trim) { if (home.trim !== ds.trim) { home.trim = ds.trim; commit('paint'); } return; }
@@ -1519,6 +1521,11 @@ export function house(stage) {
       confirmBuy = null;
       if (trying()) setPreview(null);
       if (tab !== 'visit' && mine() && !edit) setEdit(true);
+      renderAll();
+    } else if (ds.menu != null) {
+      // decorating: tuck the menu away to see the room, bring it back (Tab does the same)
+      sideOpen = !sideOpen;
+      if (sideOpen && tab === 'visit') tab = 'items';
       renderAll();
     } else if (ds.visits != null) {
       sideOpen = !(sideOpen && tab === 'visit');

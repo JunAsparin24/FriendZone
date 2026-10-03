@@ -610,7 +610,9 @@ export function beachArea(stage) {
       if (!ct) return false;
       const outBy = (px, pz) => Math.max(0, Math.abs(px - ct.x) - ct.w / 2 - ct.margin, Math.abs(pz - ct.z) - ct.d / 2 - ct.margin);
       const now = outBy(x, z);
-      return now > 0 && now >= outBy(walker.me.x, walker.me.z);
+      if (now > 0 && now >= outBy(walker.me.x, walker.me.z)) return true;
+      // a 1v1 is half court: you can step just over the half-court line, no further
+      return balls.oneOnOne(ct) && x < ct.x - 1.2 && x < walker.me.x;
     },
   };
   const walker = stage.walker(walkerOpts);
@@ -853,6 +855,27 @@ export function beachArea(stage) {
     if (mode === 'golf' && (k === 'f' || k === ' ')) golf.release();
     if (k === 'f' && balls.meter) balls.release(me3, stage.people);
   });
+  // the countdown to tip-off: a huge 3, 2, 1, GO! in the middle of the screen for everyone in the game
+  const countEl = document.createElement('div');
+  countEl.className = 'bb-count hidden';
+  stage.hud.append(countEl);
+  let countShown = null, goUntil = 0;
+  stage.onFrame(() => {
+    const ct = balls.myCourt(), m = ct && balls.match(ct.id);
+    let txt = null;
+    if (m?.state === 'countdown') {
+      txt = String(Math.max(1, Math.ceil((m.left ?? 0) - (performance.now() - (m.at ?? 0)) / 1000)));
+      goUntil = performance.now() + 900;
+    } else if (m?.state === 'live' && performance.now() < goUntil) txt = 'GO!';
+    if (txt === countShown) return;
+    countShown = txt;
+    countEl.classList.toggle('hidden', !txt);
+    if (!txt) return;
+    countEl.textContent = txt;
+    countEl.classList.toggle('go', txt === 'GO!');
+    countEl.style.animation = 'none'; void countEl.offsetWidth; countEl.style.animation = '';
+    sfx(txt === 'GO!' ? 'whistle' : 'cratetick', { vol: 0.6 });
+  });
   // tip-off: everyone in the game jumps to their spot on the court
   balls.onTeleport = (x, z, heading) => { me3.x = x; me3.z = z; me3.heading = heading; sfx('whistle'); };
   // dribble moves: a quick burst (and a full turn for the spin) that still stops at walls and the field edge
@@ -878,9 +901,18 @@ export function beachArea(stage) {
     <path d="${SM_PATH}" class="sm-edge"/></svg><b></b><em></em>`;
   stage.hud.append(meterEl);
   let gradeUntil = 0;
+  const headAt = new THREE.Vector3();
+  const placeMeter = () => {
+    // up and to the right of your head on screen (like 2K), wherever the camera is
+    headAt.set(me3.x, (me3.y ?? 0) + 2.1, me3.z).project(stage.camera);
+    const r = stage.hud.getBoundingClientRect();
+    meterEl.style.left = `${((headAt.x + 1) / 2) * r.width + 34}px`;
+    meterEl.style.top = `${((1 - headAt.y) / 2) * r.height}px`;
+  };
   balls.onMeter = (v, zone) => {
     if (v == null) { if (performance.now() > gradeUntil) meterEl.classList.add('hidden'); return; }
     meterEl.classList.remove('hidden');
+    placeMeter();
     const fill = meterEl.querySelector('.sm-fill'), y = smY(v);
     fill.setAttribute('y', y); fill.setAttribute('height', 200 - y);
     const z = meterEl.querySelector('.sm-zone'), top = smY(Math.min(1, zone.at + zone.half)), bot = smY(zone.at - zone.half);
@@ -954,6 +986,7 @@ export function beachArea(stage) {
       if (m.kind === 'reach' && (m.by === S.me || m.from === S.me)) { stage.banner(m.by === S.me ? 'Missed the steal!' : `${nm(m.by)} reached in!`, 900); }
       if (m.kind === 'block' && m.by !== S.me) { stage.banner(`🚫 <b>${nm(m.by)}</b> BLOCKED <b>${nm(m.from)}</b>!`, 1600); sfx('slam'); }
       if (m.kind === 'out') stage.banner(`Out of bounds! <b style="color:${TEAM[m.side].color}">${TEAM[m.side].name}</b> throws it in.`, 1800);
+      if (m.kind === 'foul') stage.banner(m.n ? `🟨 Shooting foul on <b>${nm(m.from)}</b>! <b>${nm(m.by)}</b> goes to the line for ${m.n}.` : `🟨 Foul on <b>${nm(m.from)}</b>! <b style="color:${TEAM[m.side].color}">${TEAM[m.side].name}</b> ball, sideline inbound.`, 2200);
     },
     court_match: (m) => {
       const prev = balls.match(m.court);
@@ -987,7 +1020,7 @@ export function beachArea(stage) {
   // the ℹ️ tips change with what you're doing: a game at Coral Park, golf, a boat, fishing, or just exploring
   const TIPS = {
     general: '🏝️ Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski · Fish off the end of the pier · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park has basketball, soccer and volleyball · Golf at Coral Links · The portal goes back to The Town',
-    basket: '🏀 Stand on a coloured circle by the court and press <b>E</b> (or click it) to queue (press <b>Leave</b> to step out), then <b>Ready up</b> · Hold <b>left click</b> (or <kbd>F</kbd>) and let go in the green at the top to shoot (green = perfect, always in) · you face where the camera looks · <kbd>V</kbd> passes to a teammate · <kbd>Z</kbd> crossover, <kbd>X</kbd> behind the back, <kbd>C</kbd> spin (<kbd>C</kbd> steals on defence) · <kbd>Space</kbd>/<kbd>B</kbd> jumps to block and wins the tip · Out of bounds: pass it in (not in 1v1)',
+    basket: '🏀 Stand on a coloured circle by the court and press <b>E</b> (or click it) to queue (press <b>Leave</b> to step out), then <b>Ready up</b> · Hold <b>left click</b> (or <kbd>F</kbd>) and let go in the green at the top to shoot (green = perfect, always in) · you face where the camera looks · <kbd>V</kbd> passes to a teammate · <kbd>Z</kbd> crossover, <kbd>X</kbd> behind the back, <kbd>C</kbd> spin (<kbd>C</kbd> steals on defence) · <kbd>Space</kbd>/<kbd>B</kbd> jumps to block and wins the tip · You score on the hoop at the far end from where your team starts (not your own) · Stepping out with the ball is a turnover; out of bounds: pass it in from where it went out · Reach-ins can be fouls (on a shot: free throws) · No green past half court · 1v1 is half court: take it back past the arc after a change of possession',
     soccer: '⚽ Pick a side in the panel and ready up · Run into the ball to dribble it · <kbd>F</kbd> kicks · Over the line: a throw-in for the other team (<kbd>F</kbd>)',
     volley: '🏐 <kbd>F</kbd> bumps the ball over the net · Keep it off the sand on your side',
     golf: '⛳ <kbd>A</kbd>/<kbd>D</kbd> aim · hold <kbd>F</kbd> and let go to swing (longer = harder) · <kbd>E</kbd> to stop playing',

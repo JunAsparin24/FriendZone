@@ -1791,7 +1791,7 @@ class Game:
 
     def on_ball_steal(self, c, m):
         """Reach in for the ball someone's holding. Close enough and lucky: it's yours."""
-        if c.scene != "beach" or c.ax is None or not c.ready("steal", 1.1):
+        if c.scene != "beach" or c.ax is None or not c.ready("steal", 2.3):
             return
         bid = str(m.get("id", ""))[:12]
         room = c.room
@@ -1819,10 +1819,11 @@ class Game:
         """Blocks, tackles and throw-ins: the player's game works out the ball's new path and sends it
         itself; this just tells everyone (for the banner and the crowd)."""
         kind = m.get("kind")
-        if c.scene != "beach" or kind not in ("block", "out", "tackle") or not c.ready("bevent", 0.4):
+        if c.scene != "beach" or kind not in ("block", "out", "tackle", "foul", "ft", "made") or not c.ready("bevent:" + kind, 0.3):
             return
         c.room.broadcast({"t": "ball_event", "kind": kind, "by": c.key, "from": str(m.get("from", ""))[:24],
-                          "id": str(m.get("id", ""))[:12], "side": 1 if m.get("side") == 1 else 0}, scene="beach")
+                          "id": str(m.get("id", ""))[:12], "side": 1 if m.get("side") == 1 else 0,
+                          "n": int(num(m.get("n", 0), 0, 3)), "left": int(num(m.get("left", 0), 0, 3))}, scene="beach")
         if kind == "block":
             self.reward(c, xp=2)
 

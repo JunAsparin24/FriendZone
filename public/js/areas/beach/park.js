@@ -30,6 +30,10 @@ const METER_FILL = 0.55; // seconds for the shot meter to fill
 // the straight corner threes (out from the middle of the court), the key's length and width
 const THREE_PT = 12.6, THREE_CORNER = 11.7, KEY_L = 10.1, KEY_W = 8.5;
 const SLOT_COLORS = ['#ff5d73', '#39c6ff']; // home, away
+const FOUL_CHANCE = 0.3; // a missed reach-in that isn't on a shooter: how often it's called a foul
+const STEAL_CD = 2500, BLOCK_CD = 2500; // ms between steal tries, and between block tries
+// free throws: where the lane players stand (metres out from the baseline), either side of the key
+const LANE_SPOTS = [3.2, 4.8, 6.4];
 
 // ---- textures -------------------------------------------------------------------------------------
 function courtTex(kind, w, d) {
@@ -347,6 +351,21 @@ export class Balls {
   teamOf(ct, k) { return this.matches[ct.id]?.teams?.[k]; }
   /** Can `k` and S.me take the ball off each other in this court's game? */
   rivals(ct, k) { if (!this.live(ct)) return true; const a = this.teamOf(ct, S.me), b = this.teamOf(ct, k); return a != null && b != null && a !== b; }
+  /** A 1v1 game on this court (played half court, at the +x hoop)? */
+  oneOnOne(ct) {
+    const m = this.matches[ct.id];
+    if (!m || !this.live(ct) || ct.kind !== 'basket') return false;
+    const t = Object.values(m.teams ?? {});
+    return t.length === 2 && new Set(t).size === 2;
+  }
+  /** The hoop a side scores on: Home attacks the +x end, Away the -x end; a 1v1 is all at the +x end. */
+  attackHoop(ct, side) { const hs = this.park.hoops[ct.id]; return this.oneOnOne(ct) || side === 0 ? hs[1] : hs[0]; }
+  /** Behind the three-point line of a hoop (the arc, or the straight corner lines)? */
+  behindArc(h, x, z) { return Math.hypot(h.x - x, h.z - z) > THREE_PT || Math.abs(z - h.z) > THREE_CORNER; }
+  /** Over the lines (not just the out-of-bounds strip players can stand on)? A 1v1 also ends at half court. */
+  offCourt(ct, x, z, pad = 0) {
+    return Math.abs(x - ct.x) > ct.w / 2 + pad || Math.abs(z - ct.z) > ct.d / 2 + pad || (this.oneOnOne(ct) && x < ct.x - pad);
+  }
   /** The match court you're playing in right now (you're kept on it), or null. */
   myCourt() { return COURTS.find((ct) => this.live(ct) && this.teamOf(ct, S.me) != null) ?? null; }
 
@@ -361,7 +380,13 @@ export class Balls {
       if (first === S.me) this.send(b, true);
       // everyone to their spot: the slot-1 players face off at centre court for the jump ball
       const side = m.teams[S.me];
-      if (side != null) {
+      b.possTeam = null; this.needClear = false; this.ft = null; this.inbounder = null;
+      const solo = Object.keys(m.teams).length === 2 && new Set(Object.values(m.teams)).size === 2 && b.ct.kind === 'basket';
+      if (side != null && solo) {
+        // 1v1 is half court: Home at the top of the key with the ball, Away a step in front, guarding
+        const h = this.park.hoops[b.ct.id][1], x = side ? h.x - 12.2 : h.x - 13.8;
+        this.onTeleport?.(x, b.ct.z, side ? -Math.PI / 2 : Math.PI / 2);
+      } else if (side != null) {
         const ct = b.ct, s = side ? 1 : -1, k = m.slots?.[S.me] ?? 0;
         const spots = ct.kind === 'basket' ? [[0.9, 0], [4.5, -3.5], [4.5, 3.5]] : [[2, 0], [8, -8], [8, 8], [16, -5], [16, 5]];
         const [ox, oz] = spots[k] ?? spots[spots.length - 1];
@@ -375,7 +400,8 @@ export class Balls {
       const home = Object.entries(m.teams).find(([, v]) => v === 0)?.[0];
       b.held = home ?? null; b.v.set(0, 0, 0); b.tipoff = false; b.lastBy = home;
       if (first === S.me) this.send(b, true);
-      if (home === S.me) this.onEvent?.('🏀 Your ball! (1v1: Home starts with it)');
+      if (home === S.me) this.onEvent?.('🏀 Your ball! (1v1: half court, Home starts with it)');
+      else if (m.teams[S.me] != null) this.onEvent?.('🛡️ 1v1 half court: stop them!');
     } else if (m.state === 'live' && prev?.state === 'countdown' && b.kind === 'basketball') {
       // the jump ball: tossed straight up at centre court; jump (Space) at the top to tip it to your side
       b.p.set(b.ct.x, 1.7, b.ct.z); b.v.set(0, 8.5, 0); b.held = null; b.tipoff = true;
@@ -388,7 +414,8 @@ export class Balls {
   frozen() {
     if (this.mustPass && this.mine()?.id !== this.mustPass) this.mustPass = null;
     const ct = this.myCourt();
-    return (!!ct && this.matches[ct.id]?.state === 'countdown') || !!this.queuedSlot() || !!this.mustPass;
+    if (this.ft && (!ct || ct.id !== this.ft.ct.id)) this.ft = null;
+    return (!!ct && this.matches[ct.id]?.state === 'countdown') || !!this.queuedSlot() || !!this.mustPass || !!this.ft;
   }
   teamSize(ct, side) { return Object.values(this.matches[ct.id]?.teams ?? {}).filter((v) => v === side).length; }
 
@@ -470,7 +497,15 @@ export class Balls {
   /** A steal, block or throw-in someone else made. */
   event(m) {
     const b = this.balls.get(m.id);
-    if (m.kind === 'out' && b) b.inbound = { side: m.side, until: performance.now() + 9000 };
+    if (!b) return;
+    if ((m.kind === 'out' || m.kind === 'made' || (m.kind === 'foul' && !m.n)) && m.by !== S.me) b.inbound = { side: m.side, until: performance.now() + 9000 };
+    // a reach-in on me that missed: maybe a foul (always, if I was going up for a shot)
+    if (m.kind === 'reach' && m.from === S.me && b.held === S.me && b.kind === 'basketball' && this.live(b.ct) && !this.ft) {
+      const shooting = !!this.meter;
+      if (shooting || Math.random() < FOUL_CHANCE) this.foul(b, m.by, shooting);
+    }
+    if (m.kind === 'foul' && m.n > 0) this.startFreeThrows(b, m.by, m.side, m.n);
+    if (m.kind === 'ft' && this.ft && this.ft.shooter === m.by) { this.ft.left = m.left; if (!m.left) this.ft = null; }
   }
 
   send(b, force = false) {
@@ -583,7 +618,16 @@ export class Balls {
     const b = this.meter?.b;
     let contest = 0;
     if (b) for (const p of people.values()) if (p !== me && this.rivals(b.ct, p.k)) contest = Math.max(contest, Math.min(1, Math.max(0, 1 - (Math.hypot(p.x - me.x, p.z - me.z) - 0.6) / 2.2)));
-    return { at: 0.93, half: 0.045 - contest * 0.02, contest }; // (a small green window right at the top)
+    // how far out: past half court there's no green at all, and it shrinks the deeper you go past the arc
+    let half = 0.045 * (1 - 0.75 * contest), deep = false;
+    if (b && this.ft?.shooter !== S.me) {
+      const side = this.teamOf(b.ct, S.me) ?? 0;
+      const h = this.live(b.ct) ? this.attackHoop(b.ct, side) : this.park.hoops[b.ct.id].reduce((a, q) => (Math.hypot(q.x - me.x, q.z - me.z) < Math.hypot(a.x - me.x, a.z - me.z) ? q : a));
+      const dist = Math.hypot(h.x - me.x, h.z - me.z), halfCourt = b.ct.w / 2 - 1.6;
+      if (dist > halfCourt) { half = 0; deep = true; }
+      else if (dist > THREE_PT + 1.5) half *= Math.max(0.25, 1 - (dist - THREE_PT - 1.5) / 9);
+    }
+    return { at: 0.93, half, contest, deep }; // (a small green window right at the top)
   }
   /** Let go of F: shoot, better the closer to the middle of the green you let go. */
   release(me, people) {
@@ -594,18 +638,18 @@ export class Balls {
     if (b.held !== S.me) return;
     const v = Math.min(1, m.t / METER_FILL), zone = this.meterZone(me, people);
     // in the green: perfect (always goes in). Just outside it: good. Further off: early / late
-    const off = Math.abs(v - zone.at), perfect = off <= zone.half, green = off <= zone.half * 2.5;
+    const off = Math.abs(v - zone.at), perfect = zone.half > 0 && off <= zone.half, green = off <= Math.max(zone.half, 0.03) * 2.5;
     const q = Math.max(0, 1 - off / 0.35);
     this.onShot?.(perfect ? 'PERFECT' : green ? 'GOOD' : v < zone.at ? 'EARLY' : 'LATE');
     b.lastBy = S.me;
     const dir = new THREE.Vector3(Math.sin(me.heading), 0, Math.cos(me.heading));
-    const hs = this.park.hoops[b.ct.id];
-    const hp = hs.reduce((a, h) => (Math.hypot(h.x - me.x, h.z - me.z) < Math.hypot(a.x - me.x, a.z - me.z) ? h : a));
+    const hs = this.park.hoops[b.ct.id], myTeam = this.teamOf(b.ct, S.me);
+    const hp = this.live(b.ct) && myTeam != null ? this.attackHoop(b.ct, myTeam) : hs.reduce((a, h) => (Math.hypot(h.x - me.x, h.z - me.z) < Math.hypot(a.x - me.x, a.z - me.z) ? h : a));
     const dist = Math.hypot(hp.x - me.x, hp.z - me.z);
     // the further out the harder (a half-court heave hardly ever drops), contested shots harder still,
     // and timing matters most: perfect always goes in (even contested), a bad release almost never does
-    const base = Math.max(0.02, 0.92 - 0.02 * dist - 0.0014 * dist * dist) * (1 - 0.75 * zone.contest);
-    const chance = perfect ? 1 : green ? Math.min(0.95, base * 1.15) : base * 0.18 * q;
+    const base = Math.max(zone.deep ? 0.015 : 0.03, 0.82 - 0.02 * dist - 0.0015 * dist * dist) * (1 - 0.9 * zone.contest);
+    const chance = perfect ? 1 : green ? Math.min(0.8, base * 0.9) : base * 0.1 * q;
     const make = Math.random() < chance;
     const miss = make ? 0 : (0.3 + Math.random() * 0.35) * (Math.random() < 0.5 ? -1 : 1);
     const target = new THREE.Vector3(hp.x + miss * 0.8, RIM_Y + 0.1, hp.z + miss * 0.6);
@@ -613,7 +657,15 @@ export class Balls {
     b.p.set(me.x + dir.x * 0.4, 2.4, me.z + dir.z * 0.4);
     const T = 0.75 + dist * 0.045;
     b.v.set((target.x - b.p.x) / T, (target.y - b.p.y + 0.5 * G * T * T) / T, (target.z - b.p.z) / T);
-    b.shot = { three: dist > THREE_PT || Math.abs(me.z - hp.z) > THREE_CORNER };
+    const ft = this.ft?.shooter === S.me ? this.ft : null;
+    b.shot = { three: !ft && this.behindArc(hp, me.x, me.z), ft: !!ft, noCount: !ft && this.oneOnOne(b.ct) && this.needClear, hoop: hp };
+    this.inbounder = null;
+    if (ft) {
+      ft.left -= 1;
+      net.send('ball_event', { kind: 'ft', id: b.id, left: ft.left });
+      if (ft.left > 0) this.pendingGive = { b, at: performance.now() + 1500, run: () => { b.held = S.me; b.v.set(0, 0, 0); b.shot = null; this.send(b, true); } };
+      else this.ft = null; // (the last one: the ball's live off the rim)
+    }
     b.releasedAt = performance.now();
     me.char.emote('shoot');
     sfx('whoosh', { vol: 0.4 });
@@ -622,6 +674,9 @@ export class Balls {
 
   /** C / the Steal button: reach for the ball of a rival right next to you (the server rolls the dice). */
   steal(me) {
+    const now = performance.now();
+    if (now < (this.stealCd ?? 0)) { this.onEvent?.(`Steal cooling down (${((this.stealCd - now) / 1000).toFixed(1)}s)`); return; }
+    this.stealCd = now + STEAL_CD;
     let best = null, bd = 2.3;
     for (const b of this.balls.values()) {
       if (!b.held || b.held === S.me || !this.rivals(b.ct, b.held)) continue;
@@ -639,6 +694,70 @@ export class Balls {
     if (b.kind !== 'basketball') b.reset = performance.now() + 1800;
   }
 
+  /** I got fouled (I'm the holder, so my game decides): on a shot, free throws (3 from behind the arc);
+   *  otherwise my team inbounds it from the sideline, level with where it happened. */
+  foul(b, by, shooting) {
+    const ct = b.ct, side = this.teamOf(ct, S.me), me = this.people?.get(S.me);
+    this.meter = null; this.onMeter?.(null);
+    if (shooting) {
+      const h = this.attackHoop(ct, side), n = me && this.behindArc(h, me.x, me.z) ? 3 : 2;
+      net.send('ball_event', { kind: 'foul', id: b.id, from: by, side, n });
+      this.startFreeThrows(b, S.me, side, n);
+      return;
+    }
+    b.held = null; b.v.set(0, 0, 0);
+    const x = Math.min(Math.max(b.p.x, ct.x - ct.w / 2 + 2), ct.x + ct.w / 2 - 2);
+    b.p.set(this.oneOnOne(ct) ? Math.max(x, ct.x + 2) : x, b.def.r + 0.09, ct.z + ct.d / 2 + 0.4);
+    b.inbound = { side, until: performance.now() + 9000 };
+    this.send(b, true);
+    net.send('ball_event', { kind: 'foul', id: b.id, from: by, side, n: 0 });
+    sfx('whistle');
+  }
+  /** Free throws: the shooter on the line, everyone else on the lane spots (defenders nearest the hoop). */
+  startFreeThrows(b, shooter, side, n) {
+    const ct = b.ct, m = this.matches[ct.id];
+    if (!m) return;
+    const h = this.attackHoop(ct, side), dir = Math.sign(h.x - ct.x) || 1, base = ct.x + dir * ct.w / 2;
+    this.ft = { ct, b, shooter, side, left: n, n, hoop: h };
+    this.needClear = false; this.mustPass = null; this.inbounder = null;
+    sfx('whistle');
+    const myTeam = m.teams[S.me];
+    if (myTeam == null) return;
+    if (shooter === S.me) {
+      const x = base - dir * (KEY_L + 0.4);
+      this.onTeleport?.(x, ct.z, dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+      b.held = S.me; b.v.set(0, 0, 0); b.shot = null; b.lastBy = S.me;
+      this.send(b, true);
+      this.onEvent?.(`🎯 ${n} free throw${n > 1 ? 's' : ''}: hold to shoot!`);
+      return;
+    }
+    // the lane spots, alternating sides, nearest the hoop first: defenders get the first ones
+    const spots = [];
+    for (const d of LANE_SPOTS) for (const sz of [-1, 1]) spots.push([base - dir * d, ct.z + sz * (KEY_W / 2 + 0.7)]);
+    const order = Object.keys(m.teams).filter((k) => k !== shooter).sort((a, c) => ((m.teams[a] === side) - (m.teams[c] === side)) || (a < c ? -1 : 1));
+    const i = order.indexOf(S.me);
+    const [x, z] = spots[i] ?? [base - dir * (KEY_L + 3), ct.z + (i % 2 ? 4 : -4)];
+    this.onTeleport?.(x, z, Math.atan2(0, ct.z - z) || (z > ct.z ? Math.PI : 0));
+  }
+  /** A basket in a game: the other team gets it. 1v1: handed straight to them (they have to clear it
+   *  past the arc); otherwise an inbound from behind the baseline under that hoop. */
+  afterMake(b, h) {
+    const ct = b.ct, myTeam = this.teamOf(ct, S.me), other = 1 - myTeam;
+    this.pendingGive = { b, at: performance.now() + 900, run: () => {
+      if (b.own !== S.me && b.held) return;
+      if (this.oneOnOne(ct)) {
+        const to = Object.entries(this.matches[ct.id].teams).find(([, v]) => v === other)?.[0];
+        b.held = to ?? null; b.v.set(0, 0, 0); b.lastBy = to; this.send(b, true);
+        return;
+      }
+      const dir = Math.sign(h.x - ct.x) || 1;
+      b.held = null; b.v.set(0, 0, 0);
+      b.p.set(ct.x + dir * (ct.w / 2 + 0.4), b.def.r + 0.09, ct.z + 2.2);
+      b.inbound = { side: other, until: performance.now() + 9000 };
+      this.send(b, true);
+      net.send('ball_event', { kind: 'made', id: b.id, side: other });
+    } };
+  }
   /** Over the lines in a match: a throw-in for the other team, from where it went out. */
   out(b) {
     const ct = b.ct;
@@ -646,6 +765,7 @@ export class Balls {
     const side = lastTeam == null ? (b.p.x < ct.x ? 0 : 1) : 1 - lastTeam;
     b.p.x = Math.min(Math.max(b.p.x, ct.x - ct.w / 2 - 0.4), ct.x + ct.w / 2 + 0.4);
     b.p.z = Math.min(Math.max(b.p.z, ct.z - ct.d / 2 - 0.4), ct.z + ct.d / 2 + 0.4);
+    if (this.oneOnOne(ct) && b.p.x < ct.x) { b.p.x = ct.x; b.p.z = ct.z + ct.d / 2 + 0.4; } // (over half court: in from the sideline at half court)
     b.p.y = b.def.r + 0.09;
     b.v.set(0, 0, 0);
     b.inbound = { side, until: performance.now() + 9000 };
@@ -664,9 +784,34 @@ export class Balls {
       else if (this.meter.t > METER_FILL * 1.6) this.release(me, people);
       else this.onMeter?.(Math.min(1, this.meter.t / METER_FILL), this.meterZone(me, people));
     } else this.onMeter?.(null);
+    if (this.pendingGive && now > this.pendingGive.at) { const g = this.pendingGive; this.pendingGive = null; g.run(); }
+    this.people = people;
     for (const b of this.balls.values()) {
       const def = b.def, ct = b.ct;
       const mine = b.own === S.me;
+      if (b.kind === 'basketball' && this.live(ct) && this.matches[ct.id].state === 'live') {
+        // possession changes: in a 1v1, a new possession has to be taken back past the arc before it can score
+        if (b.held) {
+          const t = this.teamOf(ct, b.held);
+          if (t != null && t !== b.possTeam) {
+            if (b.held === S.me && this.oneOnOne(ct) && b.possTeam != null && !this.ft) { this.needClear = true; this.onEvent?.('↩️ Take it back past the arc!'); }
+            b.possTeam = t;
+          }
+        }
+        if (b.held === S.me && this.needClear && this.behindArc(this.park.hoops[ct.id][1], me.x, me.z)) { this.needClear = false; this.onEvent?.('✅ Cleared!'); }
+        // stepping over the lines with the ball is a turnover (unless you're the one inbounding it)
+        if (b.held === S.me) {
+          const out = this.offCourt(ct, me.x, me.z, 0.1);
+          if (this.inbounder === b.id && !out) this.inbounder = null;
+          if (out && this.inbounder !== b.id && !this.ft) {
+            b.held = null; b.lastBy = S.me; b.p.set(me.x, def.r + 0.09, me.z); b.v.set(0, 0, 0);
+            this.meter = null; this.onMeter?.(null);
+            this.onEvent?.(this.oneOnOne(ct) && me.x < ct.x ? 'Backcourt! Their ball' : 'You stepped out! Their ball');
+            this.out(b);
+            continue;
+          }
+        }
+      }
       const live = this.live(ct) && this.matches[ct.id].state === 'live';
       if (b.inbound && now > b.inbound.until) b.inbound = null;
       b.ring.visible = !!b.inbound;
@@ -722,7 +867,7 @@ export class Balls {
         sfx('whistle'); this.onEvent?.('⚽ GOOOAL!');
       }
       // a match: over the lines is out (a throw-in); otherwise the fence (or the field's edge) keeps it in
-      const outX = Math.abs(b.p.x - ct.x) > ct.w / 2 + def.r, outZ = Math.abs(b.p.z - ct.z) > ct.d / 2 + def.r;
+      const outX = Math.abs(b.p.x - ct.x) > ct.w / 2 + def.r || (b.kind === 'basketball' && this.oneOnOne(ct) && b.p.x < ct.x - def.r), outZ = Math.abs(b.p.z - ct.z) > ct.d / 2 + def.r;
       if (live && mine && !b.inbound && !b.reset && (outX || outZ) && !inGoalMouth && b.kind !== 'volleyball') this.out(b);
       const hw = ct.w / 2 + ct.margin, hd = ct.d / 2 + ct.margin;
       if (Math.abs(b.p.x - ct.x) > hw) { b.p.x = ct.x + Math.sign(b.p.x - ct.x) * hw; b.v.x *= -0.5; }
@@ -743,9 +888,15 @@ export class Balls {
             h.swish = 1;
             if (Math.hypot(b.p.x - me.x, b.p.z - me.z) < 40) sfx('swish');
             if (mine && b.lastBy === S.me) {
-              const pts = b.shot?.three ? 3 : 2;
-              this.score(b, 0, pts);
-              this.onEvent?.(pts === 3 ? '🏀 THREE POINTER! +3' : '🏀 Bucket! +2');
+              const team = this.teamOf(ct, S.me), inGame = this.live(ct) && team != null;
+              const pts = b.shot?.ft ? 1 : b.shot?.three ? 3 : 2;
+              if (inGame && h !== this.attackHoop(ct, team)) this.onEvent?.('Wrong hoop! That one doesn\'t count');
+              else if (inGame && b.shot?.noCount) { this.onEvent?.('↩️ No basket: take it back past the arc first!'); this.afterMake(b, h); }
+              else {
+                this.score(b, 0, pts);
+                this.onEvent?.(pts === 1 ? '🎯 Free throw! +1' : pts === 3 ? '🏀 THREE POINTER! +3' : '🏀 Bucket! +2');
+                if (inGame && !(b.shot?.ft && this.ft)) this.afterMake(b, h);
+              }
             }
           }
         }
@@ -763,8 +914,9 @@ export class Balls {
         }
         // block: jump into a rival's shot on its way up
         if (jumping && b.shotBy && b.shotBy !== S.me && now - b.shotAt < 900 && b.v.y > -2 && b.p.y > 1.4 && b.p.y < 3.9
-          && Math.hypot(b.p.x - me.x, b.p.z - me.z) < 1.7 && this.rivals(ct, b.shotBy) && b.blockTry !== b.shotAt) {
+          && Math.hypot(b.p.x - me.x, b.p.z - me.z) < 1.7 && this.rivals(ct, b.shotBy) && b.blockTry !== b.shotAt && now > (this.blockCd ?? 0)) {
           b.blockTry = b.shotAt; // (one try per shot: closer is likelier)
+          this.blockCd = now + BLOCK_CD;
           if (Math.random() > 0.85 - Math.hypot(b.p.x - me.x, b.p.z - me.z) * 0.25) this.onEvent?.('Just missed the block!');
           else {
             const away = new THREE.Vector3(b.p.x - me.x, 0, b.p.z - me.z).normalize();
@@ -790,6 +942,7 @@ export class Balls {
         if (b.inbound) {
           if (myTeam === b.inbound.side || !this.live(ct)) {
             b.held = S.me; b.v.set(0, 0, 0); b.inbound = null; b.lastBy = S.me; this.send(b, true); sfx('pickup', { vol: 0.5 });
+            this.inbounder = b.id;
             if (b.kind === 'basketball' && this.live(ct) && this.teamSize(ct, myTeam) > 1) { this.mustPass = b.id; this.onEvent?.('📣 Inbound: pass it in! (V)'); }
           }
         } else if (b.kind === 'soccer' && me.moving) {

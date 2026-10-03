@@ -96,7 +96,18 @@ export const SPOTS = PLAN_SPOTS.map((s) => {
 export const solidOf = (s) => ({ x: s.x, y: s.y + s.h * 0.42, w: s.w, h: s.h * 0.58 });
 /** Unit vector (map px) from a spot that faces the square ('c') towards the square's middle. */
 const toCenter = (s) => { const dx = CENTER.x - (s.x + s.w / 2), dy = CENTER.y - (s.y + s.h / 2), l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l]; };
-export function doorOf(s) {
+// buildings whose front door isn't in the middle of the front: how far right of centre it is (model units,
+// given the model's front width); must match the door() calls in three/buildings.js
+const DOOR_X = { studio: (w) => w * 0.25, petshop: (w) => w * 0.28, garage: (w) => w / 2 - 5 };
+/** The door's sideways offset from the middle of the front, in map px (to the building's right). */
+export function doorSide(s) {
+  const f = DOOR_X[s.kind];
+  if (!f) return 0;
+  const k = s.scale ?? 1, side = s.face === 'e' || s.face === 'w';
+  return f((side ? s.h : s.w) / PX / k) * k * PX;
+}
+/** The middle of a building's front, just outside it. */
+export function frontOf(s) {
   if (s.face === 'c') { const [dx, dy] = toCenter(s); const r = Math.max(s.w, s.h) / 2 + 20; return { x: s.x + s.w / 2 + dx * r, y: s.y + s.h / 2 + dy * r }; }
   if (s.kind === 'pond') return { x: s.x + s.w / 2, y: s.y - 30 };
   if (s.face === 'n') return { x: s.x + s.w / 2, y: s.y - 20 };
@@ -106,6 +117,13 @@ export function doorOf(s) {
 }
 /** Unit vector pointing out of the door. */
 export const doorDir = (s) => (s.face === 'c' ? toCenter(s) : { n: [0, -1], e: [1, 0], w: [-1, 0] }[s.kind === 'pond' ? 'n' : s.face] ?? [0, 1]);
+/** Just outside the building's actual front door (the model's +X, its right, is (dy, -dx) on the map). */
+export function doorOf(s) {
+  const f = frontOf(s), o = doorSide(s);
+  if (!o) return f;
+  const [dx, dy] = doorDir(s);
+  return { x: f.x + dy * o, y: f.y - dx * o };
+}
 
 export function distToRect(p, r) {
   const dx = Math.max(r.x - p.x, 0, p.x - (r.x + r.w));
@@ -608,11 +626,13 @@ export function renderGround(scale = 0.55) {
     const d = doorOf(s), [dx, dy] = doorDir(s);
     let best = null, bd = Infinity;
     for (const p of PATHS) for (const q of p.pts) { const dd = Math.hypot(q.x - d.x, q.y - d.y); if (dd < bd) { bd = dd; best = q; } }
-    return { s, d, dx, dy, to: bd < 400 ? best : null };
+    const out = Math.min(70, bd * 0.5), mid = { x: d.x + dx * out, y: d.y + dy * out };
+    return { s, d, f: frontOf(s), mid, dx, dy, to: bd < 400 ? best : null };
   });
+  const linkPts = (l) => [l.d, l.mid, l.to];
   // every layer is drawn for the streets, the links and the door aprons together (darkest and widest
   // first), so they all merge into one paved surface with no seams where they meet
-  const apronW = (l) => Math.max(l.s.w, l.s.h) * 0.55 + 40;
+  const apronW = (l) => Math.max(Math.max(l.s.w, l.s.h) * 0.55 + 40, Math.abs(doorSide(l.s)) * 2 + 90);
   for (const [width, color] of [[70, 'rgba(70,120,55,.3)'], [60, 'rgba(120,95,60,.35)'], [54, '#a8987c'], [48, '#c8b89a']]) {
     ctx.strokeStyle = ctx.fillStyle = color;
     for (const p of PATHS) {
@@ -623,11 +643,11 @@ export function renderGround(scale = 0.55) {
     }
     const grow = (width - 48) / 2;
     for (const l of links) {
-      if (l.to) { ctx.lineWidth = 34 + grow * 2; ctx.beginPath(); ctx.moveTo(l.d.x, l.d.y); ctx.lineTo(l.to.x, l.to.y); ctx.stroke(); }
+      if (l.to) { ctx.lineWidth = 34 + grow * 2; ctx.beginPath(); linkPts(l).forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke(); }
       // the apron: a rounded patch across the front of the building, from its wall out past the door
       const w = apronW(l);
       ctx.save();
-      ctx.translate(l.d.x, l.d.y);
+      ctx.translate(l.f.x, l.f.y);
       ctx.rotate(Math.atan2(l.dy, l.dx) - Math.PI / 2);
       ctx.beginPath(); ctx.roundRect(-w / 2 - grow, -26 - grow, w + grow * 2, 74 + grow * 2, 30 + grow); ctx.fill();
       ctx.restore();
@@ -650,10 +670,13 @@ export function renderGround(scale = 0.55) {
   }
   for (const l of links) {
     const w = apronW(l), ang = Math.atan2(l.dy, l.dx) - Math.PI / 2, ca = Math.cos(ang), sa = Math.sin(ang);
-    for (let u = -w / 2 + 8; u < w / 2 - 6; u += 9) for (let v = -20; v < 42; v += 9) cobble(l.d.x + u * ca - v * sa, l.d.y + u * sa + v * ca);
+    for (let u = -w / 2 + 8; u < w / 2 - 6; u += 9) for (let v = -20; v < 42; v += 9) cobble(l.f.x + u * ca - v * sa, l.f.y + u * sa + v * ca);
     if (l.to) {
-      const len = Math.hypot(l.to.x - l.d.x, l.to.y - l.d.y) || 1, nx = -(l.to.y - l.d.y) / len, ny = (l.to.x - l.d.x) / len;
-      for (let t = 0; t < len; t += 9) for (let o = -16; o <= 16; o += 9) cobble(l.d.x + ((l.to.x - l.d.x) * t) / len + nx * o, l.d.y + ((l.to.y - l.d.y) * t) / len + ny * o);
+      const pts = linkPts(l);
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i], len = Math.hypot(b.x - a.x, b.y - a.y) || 1, nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+        for (let t = 0; t < len; t += 9) for (let o = -16; o <= 16; o += 9) cobble(a.x + ((b.x - a.x) * t) / len + nx * o, a.y + ((b.y - a.y) * t) / len + ny * o);
+      }
     }
   }
   for (const p of PATHS) {

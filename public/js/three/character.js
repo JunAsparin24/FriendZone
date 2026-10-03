@@ -1958,6 +1958,20 @@ const HATS = {
     }
     anim.push((t) => tips.forEach((g, i) => { g.material.opacity = 0.45 + Math.sin(t * 3 + i) * 0.25; }));
   },
+  hat_pixelcrown(head, L) {
+    // an 8-bit crown built out of little cubes, with glowing pixel gems
+    const gold = toon('#ffc53d'), dark = toon('#c98a12'), gem = basic('#ff4fd8');
+    const n = 16;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU, x = Math.sin(a) * 0.3, z = Math.cos(a) * 0.3;
+      part(head, box(0.11, 0.11, 0.11), i % 2 ? dark : gold, { p: [x, 0.4, z], r: [0, a, 0], outline: null });
+      if (i % 4 === 0) {
+        part(head, box(0.09, 0.09, 0.09), gold, { p: [x, 0.5, z], r: [0, a, 0], outline: null });
+        part(head, box(0.07, 0.07, 0.07), gold, { p: [x, 0.58, z], r: [0, a, 0], outline: null });
+        part(head, box(0.05, 0.05, 0.05), gem, { p: [x * 1.05, 0.4, z * 1.05], r: [0, a, 0], outline: null, shadow: false });
+      } else if (i % 2 === 0) part(head, box(0.08, 0.08, 0.08), gold, { p: [x, 0.49, z], r: [0, a, 0], outline: null });
+    }
+  },
   hat_crown(head) {
     const gold = shiny('#ffc53d', { metalness: 0.7, roughness: 0.25, side: THREE.DoubleSide });
     part(head, cyl(0.31, 0.29, 0.16, 32, true), gold, { p: [0, 0.4, 0], outline: OUT_THIN });
@@ -2147,6 +2161,19 @@ const FACES = {
       const a = onFace(s * (EYE_X + 0.1), EYE_Y + 0.03, 0.02), b = new THREE.Vector3(s * (R + 0.015), EYE_Y + 0.03, 0.02), c2 = new THREE.Vector3(s * (R - 0.04), EYE_Y, -0.2);
       taper(head, [a, b, c2], 0.015, 0.015, m);
     }
+  },
+  face_visor(head, L) {
+    // a wraparound neon gamer visor with scanlines across it
+    const col = '#39e6ff';
+    const p = onFace(0, EYE_Y + 0.01, 0.04), q = faceTo(p);
+    const v = new THREE.Group();
+    v.position.copy(p);
+    v.quaternion.copy(q);
+    head.add(v);
+    part(v, box(0.56, 0.13, 0.04), toon('#1a1d33'), { p: [0, 0, -0.01], outline: OUT_THIN });
+    part(v, box(0.5, 0.08, 0.02), basic(col, { transparent: true, opacity: 0.85 }), { p: [0, 0, 0.012], outline: null, shadow: false });
+    for (const s of [-1, 1]) part(v, box(0.05, 0.1, 0.16), toon('#1a1d33'), { p: [s * 0.29, 0, -0.08], outline: null });
+    for (const y of [-0.02, 0.02]) part(v, box(0.5, 0.008, 0.01), basic('#ffffff', { transparent: true, opacity: 0.6 }), { p: [0, y, 0.025], outline: null, shadow: false });
   },
   face_pixelshades(head, L) {
     // chunky 8-bit "deal with it" shades: a black bar with stepped pixel lenses and white glints
@@ -2764,6 +2791,19 @@ const HANDS = {
     }));
     part(g, cyl(0.13, 0.13, 0.04, 28), new THREE.MeshToonMaterial({ map: swirl }), { p: [0, 0.44, 0], r: [Math.PI / 2, 0, 0], outline: OUT_THIN });
   },
+  hand_joystick(g, L, anim) {
+    // a retro arcade joystick: a chunky base with buttons and a ball-topped stick that wiggles
+    const col = handCol(L, '#ff4fd8');
+    part(g, box(0.2, 0.06, 0.14), toon('#221845'), { p: [0, 0.03, 0.06], outline: OUT_THIN });
+    part(g, box(0.21, 0.015, 0.15), toon(col), { p: [0, 0.065, 0.06], outline: null });
+    const stick = new THREE.Group();
+    stick.position.set(-0.04, 0.07, 0.06);
+    g.add(stick);
+    part(stick, cyl(0.012, 0.012, 0.1, 8), toon('#c0c6d4'), { p: [0, 0.05, 0], outline: null });
+    part(stick, sphere(0.035, 12, 10), toon('#e0463c'), { p: [0, 0.11, 0], outline: OUT_THIN });
+    ['#ffd84d', '#39c6ff'].forEach((c, i) => part(g, cyl(0.018, 0.018, 0.02, 10), toon(c), { p: [0.04 + i * 0.045, 0.075, 0.06], outline: null }));
+    anim.push((t) => { stick.rotation.set(Math.sin(t * 5) * 0.3, 0, Math.cos(t * 3.7) * 0.3); });
+  },
   hand_lasergun(g, L, anim) {
     // a chunky laser tag blaster with a glowing muzzle and side strips
     const col = handCol(L, '#39ff9e'), body = toon('#2a2d3e'), glow = basic(col);
@@ -2929,10 +2969,34 @@ function auraBase(g, anim, color, { motes = 10, column = 0.3, ring = true } = {}
 const AURA_BASE = {
   aura_sparkle: '#fff3a0', aura_hearts: '#ff7ab6', aura_fire: '#ff7a30', aura_rainbow: '#b98bff', aura_shadow: '#8a3dff',
   aura_koi: '#ffd84d', aura_abyss: '#1fd8c8', aura_warlord: '#ff2a2a', aura_laurel: '#ffd84d', aura_tide: '#5fc8ff',
-  aura_speed: '#ffffff', aura_storm: '#9fc8ff',
+  aura_speed: '#ffffff', aura_storm: '#9fc8ff', aura_arcade: '#39e6ff',
 };
 
 const AURAS = {
+  aura_arcade(g, anim) {
+    // little neon pixel invaders and blocks drifting round you, flickering like an old screen
+    const cols = ['#ff4fd8', '#39e6ff', '#ffd84d', '#6ee7a0', '#b77bff'];
+    const bits = [];
+    for (let i = 0; i < 14; i++) {
+      const b = new THREE.Group();
+      const m = basic(cols[i % cols.length], { transparent: true });
+      // an invader is a few cubes in a little shape; the rest are single blocks
+      const shape = i % 3 === 0 ? [[0, 0], [-1, 0], [1, 0], [-1, -1], [1, -1], [0, 1], [-2, 1], [2, 1]] : [[0, 0]];
+      for (const [x, y] of shape) part(b, box(0.05, 0.05, 0.05), m, { p: [x * 0.05, y * 0.05, 0], outline: null, shadow: false });
+      g.add(b);
+      bits.push({ b, m });
+    }
+    const glow = new THREE.Sprite(additive(glowTexture, 0x39e6ff, 0.25));
+    glow.scale.set(1.8, 2.2, 1);
+    glow.position.y = 0.9;
+    g.add(glow);
+    anim.push((t) => bits.forEach(({ b, m }, i) => {
+      const a = t * (i % 2 ? 0.6 : -0.45) + i * 0.9, r = 0.55 + (i % 3) * 0.12;
+      b.position.set(Math.cos(a) * r, 0.25 + ((i * 0.17 + t * 0.12) % 1) * 2.0, Math.sin(a) * r);
+      b.rotation.y = -a;
+      m.opacity = Math.floor(t * 8 + i) % 7 === 0 ? 0.2 : 0.95;
+    }));
+  },
   aura_sparkle(g, anim) {
     const list = sprites(g, additive(starTexture, 0xfff3a0), 16, 0.2);
     anim.push((t) => list.forEach((s, i) => {

@@ -44,9 +44,10 @@ function easeCamera(cam, pos, look, dt, state) {
 // ======================================================================================
 // Claw machine: a glass box of plushies, a moving claw with three prongs, and a prize chute
 // ======================================================================================
-export function clawMachine(g, x, z, color, anim) {
+export function clawMachine(g, x, z, color, anim, ry = 0) {
   const m = new THREE.Group();
   m.position.set(x, 0, z);
+  m.rotation.y = ry; // (everything inside is local: the front, where you stand, is its +z)
   g.add(m);
   const add = (geo, mat, p, r) => { const o = new THREE.Mesh(geo, mat); o.position.set(...p); if (r) o.rotation.set(...r); m.add(o); return o; };
   const body = toon(color), dark = toon('#1a1330'), chrome = toon('#d6dbe6'), trim = toon(new THREE.Color(color).multiplyScalar(0.7).getStyle());
@@ -243,7 +244,7 @@ export function clawGame(M, ui) {
       if (down && k === 'escape') ui.done();
     },
     free: true, // (played standing at the machine: you can walk about, and walking off ends it)
-    anchor: { x: M.group.position.x, z: M.group.position.z + 1.7 },
+    anchor: { x: M.group.position.x + Math.sin(M.group.rotation.y) * 1.7, z: M.group.position.z + Math.cos(M.group.rotation.y) * 1.7 },
     busy: () => !['ready', 'aim'].includes(st.phase),
     update(dt) {
       M.steer = st.dir;

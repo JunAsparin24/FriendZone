@@ -125,7 +125,7 @@ function ticketShop(body) {
       }).join('')}</div></div>`;
     body.querySelectorAll('.tix-card').forEach((el) => {
       const it = ITEMS[el.dataset.id];
-      portraitInto(el.querySelector('.tix-art'), { ...me().look, [it.slot]: it.id }, 96, 100, { zoom: zoomFor(it.slot) });
+      portraitInto(el.querySelector('.tix-art'), { ...me().look, [it.slot]: it.id }, 96, 100, { zoom: zoomFor(it.slot), face: it.slot === 'back' ? 5.6 : 1 }); // (back items: turned round so you can see them)
     });
   };
   body.onclick = (e) => {
@@ -194,7 +194,9 @@ export function arcadeArea(stage) {
 
   // the high-score wall in the middle of the back wall, with neon signs around it
   const board = scoreBoard();
-  add(g, new THREE.PlaneGeometry(8, 5), new THREE.MeshBasicMaterial({ map: board.tex }), { p: [0, 2.7, -hd + 0.06], cast: false });
+  // (sized to fit under the ceiling trim, and stood out from the wall in a neon frame so the rail can't cut through it)
+  add(g, new THREE.BoxGeometry(6.3, 4.0, 0.2), toon('#ff4fd8', { emissive: '#ff4fd8', emissiveIntensity: 0.5 }), { p: [0, 2.85, -hd + 0.12], cast: false });
+  add(g, new THREE.PlaneGeometry(5.92, 3.7), new THREE.MeshBasicMaterial({ map: board.tex }), { p: [0, 2.85, -hd + 0.23], cast: false });
   neonSign(g, 'ARCADE', '#ff4fd8', { p: [-11, 4.1, -hd + 0.08], w: 5, h: 1.1 });
   neonSign(g, 'GAME ON!', '#39e6ff', { p: [11, 4.1, -hd + 0.08], w: 5, h: 1.1 });
 
@@ -267,12 +269,15 @@ export function arcadeArea(stage) {
     mode.update(Math.min(dt, 0.05), now / 1000, stage.camera);
   });
 
-  // the claw machines: full of real plushies
-  for (const [x, col] of [[10, '#ff4fd8'], [12.6, '#39c6ff']]) {
-    const M = clawMachine(g, x, 7, col, anim);
-    solids.push({ x, z: 7, w: 1.9, d: 1.9 });
-    stage.interactable({ x, z: 8.7, r: 1.3, label: 'play the claw machine (🪙 25)', icon: 'arcade', use: () => (mode?.primary ? mode.primary() : play((ui) => clawGame(M, ui), { free: true })) });
-  }
+  // the claw machines: a long bank of them down the right wall (either side of Laser Tag), full of real plushies
+  const CLAW_COLS = ['#ff4fd8', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff', '#ff9f43'];
+  const clawX = hw - 1.1;
+  [-11.8, -9.8, -7.8, 2.6, 4.6, 6.6, 8.6, 10.6].forEach((z, i) => {
+    const M = clawMachine(g, clawX, z, CLAW_COLS[i % CLAW_COLS.length], anim, -Math.PI / 2);
+    solids.push({ x: clawX, z, w: 1.9, d: 1.9 });
+    stage.interactable({ x: clawX - 1.7, z, r: 1.0, label: 'play the claw machine (🪙 25)', icon: 'arcade', use: () => (mode?.primary ? mode.primary() : play((ui) => clawGame(M, ui), { free: true })) });
+  });
+  neonSign(g, 'CLAW CRAZE', '#ffd84d', { p: [hw - 0.08, 4.2, 6.6], r: [0, -Math.PI / 2, 0], w: 4.5, h: 1 });
   // the prize counter: a glass counter, shelves of prizes behind, and the attendant
   counter(g, -11, 6.5, 6, '#7c4dff');
   add(g, new THREE.BoxGeometry(5.6, 0.7, 0.7), toon('#dff4ff', { transparent: true, opacity: 0.35 }), { p: [-11, 1.55, 6.5], cast: false });

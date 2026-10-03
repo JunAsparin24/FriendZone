@@ -1555,11 +1555,14 @@ html.touch .lt-points { top: 64px; }
 html.touch .lt-board { display: none; }
 
 /* Coral Park basketball: the shot meter (fills up; let go in the green) */
-.shot-meter { position: absolute; right: 22%; top: 50%; transform: translateY(-50%); width: 22px; height: 170px; border-radius: 12px; background: #0d1f4ad9; border: 3px solid #fff; overflow: visible; pointer-events: none; }
+.shot-meter { position: absolute; right: 22%; top: 50%; transform: translateY(-50%); width: 80px; height: 160px; overflow: visible; pointer-events: none; filter: drop-shadow(0 3px 6px #000a); }
 .shot-meter.hidden { display: none; }
-.shot-meter i { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 8px; }
-.shot-meter .sm-zone { background: #6ee7a0aa; border-top: 2px solid #6ee7a0; border-bottom: 2px solid #6ee7a0; border-radius: 0; }
-.shot-meter .sm-fill { background: linear-gradient(0deg, #ff9f43, #ffd84d); opacity: 0.85; }
+.shot-meter svg { width: 100%; height: 100%; overflow: visible; }
+.shot-meter .sm-bg { fill: #0008; }
+.shot-meter .sm-edge { fill: none; stroke: #ffffffcc; stroke-width: 2.5; }
+.shot-meter .sm-fill { fill: #ffffff; }
+.shot-meter .sm-zone { fill: #1c8f3a; }
+.shot-meter .sm-zone.lit { fill: #4dff7a; filter: drop-shadow(0 0 6px #4dff7a); }
 .shot-meter b { position: absolute; left: 50%; top: -30px; transform: translateX(-50%); font: 18px var(--pixel); white-space: nowrap; text-shadow: 0 2px 0 #0008; }
 .shot-meter em { position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%); font: 700 12px var(--body); font-style: normal; color: #6ee7a0; white-space: nowrap; text-shadow: 0 1px 0 #000; }
 .shot-meter em.hot { color: #ff5d73; }

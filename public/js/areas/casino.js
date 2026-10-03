@@ -426,9 +426,9 @@ function buildRoom() {
   const cashier = canvasTexture(256, 64, (c) => { c.fillStyle = '#1a1320'; c.fillRect(0, 0, 256, 64); c.font = '38px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#ffd84d'; c.fillText('CASHIER', 128, 36); });
   add(cage, new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshBasicMaterial({ map: cashier }), { p: [0, 3.25, 0.31], cast: false });
   add(cage, new THREE.BoxGeometry(2.6, 0.7, 0.1), toon('#1a1320'), { p: [0, 3.25, 0.25] });
-  cage.position.set(-13, 0, -RD / 2 + 0.8);
+  cage.position.set(-13, 0, -RD / 2 + 2.0);
   g.add(cage);
-  solids.push({ x: -13, z: -RD / 2 + 0.8, w: 5.2, d: 1.6 });
+  solids.push({ x: -13, z: -RD / 2 + 1.35, w: 5.2, d: 2.7 });
   const pl = new THREE.Group();
   add(pl, new THREE.BoxGeometry(2.6, 3.6, 0.4), toon('#2a1245'), { p: [0, 1.9, 0], outline: true });
   add(pl, new THREE.BoxGeometry(2.8, 0.25, 0.5), gold, { p: [0, 3.8, 0] });
@@ -455,14 +455,14 @@ function buildRoom() {
   const bar = new THREE.Group();
   add(bar, new THREE.BoxGeometry(7, 1.2, 1.1), darkWood, { p: [0, 0.6, 0], outline: true });
   add(bar, new THREE.BoxGeometry(7.2, 0.12, 1.3), gold, { p: [0, 1.25, 0] });
-  add(bar, new THREE.BoxGeometry(7, 3, 0.4), toon('#2a1408'), { p: [0, 1.5, -1.5] });
-  for (let i = 0; i < 16; i++) add(bar, new THREE.CylinderGeometry(0.08, 0.08, 0.4, 8), toon(['#6ee7a0', '#ff9f43', '#39c6ff', '#e57bff'][i % 4], { transparent: true, opacity: 0.85 }), { p: [-3 + i * 0.4, 1.85 + (i % 2) * 0.75, -1.2], cast: false });
+  add(bar, new THREE.BoxGeometry(7, 3, 0.4), toon('#2a1408'), { p: [0, 1.5, -1.9] });
+  for (let i = 0; i < 16; i++) add(bar, new THREE.CylinderGeometry(0.08, 0.08, 0.4, 8), toon(['#6ee7a0', '#ff9f43', '#39c6ff', '#e57bff'][i % 4], { transparent: true, opacity: 0.85 }), { p: [-3 + i * 0.4, 1.85 + (i % 2) * 0.75, -1.6], cast: false });
   for (let i = 0; i < 5; i++) { add(bar, new THREE.CylinderGeometry(0.28, 0.28, 0.1, 16), toon('#8f1530'), { p: [-2.8 + i * 1.4, 0.85, 1.1] }); add(bar, new THREE.CylinderGeometry(0.05, 0.05, 0.8, 8), gold, { p: [-2.8 + i * 1.4, 0.4, 1.1], cast: false }); }
   const lounge = canvasTexture(512, 128, (c) => { c.font = '80px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.shadowColor = '#39e6ff'; c.shadowBlur = 22; c.fillStyle = '#e9fdff'; c.fillText('LOUNGE', 256, 70); });
-  add(bar, new THREE.PlaneGeometry(3.6, 0.9), new THREE.MeshBasicMaterial({ map: lounge, transparent: true }), { p: [0, 3.5, -1.28], cast: false });
-  bar.position.set(14, 0, -RD / 2 + 1.6);
+  add(bar, new THREE.PlaneGeometry(3.6, 0.9), new THREE.MeshBasicMaterial({ map: lounge, transparent: true }), { p: [0, 3.5, -1.68], cast: false });
+  bar.position.set(14, 0, -RD / 2 + 2.6);
   g.add(bar);
-  solids.push({ x: 14, z: -RD / 2 + 1.4, w: 7.2, d: 2.8 });
+  solids.push({ x: 14, z: -RD / 2 + 1.6, w: 7.2, d: 3.2 });
 
   // ---- palms in the corners ----
   for (const [x, z] of [[-RW / 2 + 1.2, RD / 2 - 1.3], [RW / 2 - 1.2, RD / 2 - 1.3], [3.5, RD / 2 - 1.3], [-3.5, RD / 2 - 1.3]]) {
@@ -480,10 +480,10 @@ function buildRoom() {
   cardDealer.root.position.set(8.5, 0.2, 1.8);
   g.add(cardDealer.root);
   const barkeep = new Character({ skin: '#8d5524', hairColor: '#e8e8e8', topColor: '#ffffff', bottomColor: '#23263f', hair: 'hair_curly', top: 'top_suit', hat: 'hat_none', face: 'face_mustache', back: 'back_none', aura: 'aura_none' });
-  barkeep.root.position.set(14, 0, -RD / 2 + 0.6);
+  barkeep.root.position.set(14, 0, -RD / 2 + 1.45);
   g.add(barkeep.root);
   const teller = new Character({ skin: '#f6c9a0', hairColor: '#b55a2b', topColor: '#23263f', bottomColor: '#23263f', hair: 'hair_long', top: 'top_suit', hat: 'hat_none', face: 'face_glasses', back: 'back_none', aura: 'aura_none' });
-  teller.root.position.set(-13, 0, -RD / 2 + 0.2);
+  teller.root.position.set(-13, 0, -RD / 2 + 0.85);
   g.add(teller.root);
   anim.push((t, dtt) => { dealer.update(dtt, t, false); barkeep.update(dtt, t + 2, false); cardDealer.update(dtt, t + 4, false); teller.update(dtt, t + 6, false); });
 

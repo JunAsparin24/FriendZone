@@ -653,7 +653,7 @@ CLAW_RARITY = {"common": 1.0, "rare": 0.7, "epic": 0.45}  # rarer plushies are h
 CLAW_PLUSH_CHANCE = 0.04  # of a win: also the claw-only plushie you can hold, if you haven't got one
 # the prize counter: a new line-up every hour, a couple of ticket-only exclusives plus regular cosmetics
 TICKET_PRICES = {"common": 150, "rare": 400, "epic": 900, "legendary": 2200, "mythic": 4500}
-TICKET_SHOP_SIZE, TICKET_SHOP_EXCLUSIVES = 6, 2
+TICKET_SHOP_SIZE, TICKET_SHOP_EXCLUSIVES = 6, 3
 
 
 def ticket_shop(hour):

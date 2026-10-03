@@ -865,19 +865,25 @@ export function beachArea(stage) {
     if (!walkerBlocked(nx, nz)) { me3.x = nx; me3.z = nz; }
     if (mv.kind === 'spin') me3.heading += (Math.PI * 2 * dt) / mv.dur;
   });
-  // the basketball shot meter: a bar that fills while you hold F, with a green window to let go in
+  // the basketball shot meter: a curved 2K-style bar (thin at the bottom, fat at the top) that fills
+  // while you hold to shoot, with the green window at the very top
   const meterEl = document.createElement('div');
   meterEl.className = 'shot-meter hidden';
-  meterEl.innerHTML = '<i class="sm-zone"></i><i class="sm-fill"></i><b></b><em></em>';
+  const SM_PATH = 'M 22 196 Q 14 92 60 12 Q 70 2 84 8 Q 92 14 86 26 Q 40 102 28 196 Q 25 199 22 196 Z';
+  const smY = (u) => 197 - u * 193; // (0 at the bottom of the bar, 1 at the top)
+  meterEl.innerHTML = `<svg viewBox="0 0 100 200"><defs><clipPath id="smClip"><path d="${SM_PATH}"/></clipPath></defs>
+    <path d="${SM_PATH}" class="sm-bg"/><g clip-path="url(#smClip)"><rect class="sm-fill" x="0" width="100" y="200" height="0"/><rect class="sm-zone" x="0" width="100" y="0" height="0"/></g>
+    <path d="${SM_PATH}" class="sm-edge"/></svg><b></b><em></em>`;
   stage.hud.append(meterEl);
   let gradeUntil = 0;
   balls.onMeter = (v, zone) => {
     if (v == null) { if (performance.now() > gradeUntil) meterEl.classList.add('hidden'); return; }
     meterEl.classList.remove('hidden');
-    meterEl.querySelector('.sm-fill').style.height = `${v * 100}%`;
-    const z = meterEl.querySelector('.sm-zone');
-    z.style.bottom = `${(zone.at - zone.half) * 100}%`;
-    z.style.height = `${zone.half * 200}%`;
+    const fill = meterEl.querySelector('.sm-fill'), y = smY(v);
+    fill.setAttribute('y', y); fill.setAttribute('height', 200 - y);
+    const z = meterEl.querySelector('.sm-zone'), top = smY(Math.min(1, zone.at + zone.half)), bot = smY(zone.at - zone.half);
+    z.setAttribute('y', top); z.setAttribute('height', bot - top);
+    z.classList.toggle('lit', v >= zone.at - zone.half && v <= zone.at + zone.half);
     const em = meterEl.querySelector('em');
     em.textContent = zone.contest > 0.05 ? `Contested ${Math.round(zone.contest * 100)}%` : 'Open';
     em.className = zone.contest > 0.5 ? 'hot' : '';

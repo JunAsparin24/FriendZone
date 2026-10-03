@@ -26,28 +26,66 @@ const BALL = {
 };
 const RIM_Y = 3.3, RIM_R = 0.42;
 const METER_FILL = 0.55; // seconds for the shot meter to fill
-const THREE_PT = 8.5; // how far out the three-point line is (from the hoop)
+// a real court's markings scaled up to these courts (x1.75): the three-point arc (from the hoop),
+// the straight corner threes (out from the middle of the court), the key's length and width
+const THREE_PT = 12.6, THREE_CORNER = 11.7, KEY_L = 10.1, KEY_W = 8.5;
 const SLOT_COLORS = ['#ff5d73', '#39c6ff']; // home, away
 
 // ---- textures -------------------------------------------------------------------------------------
 function courtTex(kind, w, d) {
-  const px = 16, W = Math.round(w * px), H = Math.round(d * px);
+  const px = kind === 'basket' ? 28 : 16, W = Math.round(w * px), H = Math.round(d * px);
   return canvasTexture(W, H, (c) => {
     const line = (x0, y0, x1, y1) => { c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); };
     c.lineWidth = 3; c.strokeStyle = '#ffffff';
     if (kind === 'basket') {
-      c.fillStyle = '#2f6fd6'; c.fillRect(0, 0, W, H);
-      c.fillStyle = '#ff9f43';
-      for (const s of [0, 1]) { const x = s ? W - 5.8 * px : 0; c.fillRect(x, H / 2 - 2.4 * px, 5.8 * px, 4.8 * px); }
-      c.strokeRect(4, 4, W - 8, H - 8); line(W / 2, 4, W / 2, H - 4);
-      c.beginPath(); c.arc(W / 2, H / 2, 1.8 * px, 0, TAU); c.stroke();
+      // a real court scaled up (x1.75): two-tone street paint like a city park court, a three-point arc
+      // with straight corner lines, the key with hash marks, free-throw and centre circles, logos
+      const HOOP = 1.6 * px, R = THREE_PT * px, CZ = THREE_CORNER * px, keyL = KEY_L * px, keyW = KEY_W * px, ftR = 3.1 * px;
+      const RED = '#b8443a', BLUE = '#2a6fb8', BLUE2 = '#235f9e';
+      const arcPath = (s) => {
+        // the three-point line: straight from the baseline along each corner, then the arc round the top
+        const hx = s ? W - HOOP : HOOP, dir = s ? -1 : 1, meet = Math.sqrt(R * R - CZ * CZ), a = Math.asin(CZ / R);
+        c.beginPath();
+        c.moveTo(s ? W : 0, H / 2 - CZ); c.lineTo(hx + dir * meet, H / 2 - CZ);
+        if (s) c.arc(hx, H / 2, R, Math.PI + a, Math.PI - a, true); else c.arc(hx, H / 2, R, -a, a, false);
+        c.lineTo(s ? W : 0, H / 2 + CZ);
+      };
+      c.fillStyle = RED; c.fillRect(0, 0, W, H);
       for (const s of [0, 1]) {
-        const hx = s ? W - 1.6 * px : 1.6 * px;
-        c.beginPath(); c.arc(hx, H / 2, THREE_PT * px, s ? Math.PI / 2 : -Math.PI / 2, s ? Math.PI * 1.5 : Math.PI / 2, false); c.stroke();
-        c.strokeRect(s ? W - 5.8 * px : 0, H / 2 - 2.4 * px, 5.8 * px, 4.8 * px);
-        c.beginPath(); c.arc(s ? W - 5.8 * px : 5.8 * px, H / 2, 1.8 * px, 0, TAU); c.stroke();
+        arcPath(s); c.closePath(); c.fillStyle = BLUE; c.fill();
+        const kx = s ? W - keyL : 0;
+        c.fillStyle = RED; c.fillRect(kx, H / 2 - keyW / 2, keyL, keyW);
+        // the free-throw circle: the half outside the key painted blue
+        c.beginPath(); c.arc(s ? W - keyL : keyL, H / 2, ftR, s ? Math.PI / 2 : -Math.PI / 2, s ? Math.PI * 1.5 : Math.PI / 2); c.fillStyle = BLUE2; c.fill();
       }
-      c.fillStyle = 'rgba(255,255,255,.18)'; c.font = `bold ${3 * px}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.beginPath(); c.arc(W / 2, H / 2, ftR, 0, TAU); c.fillStyle = BLUE; c.fill();
+      c.beginPath(); c.arc(W / 2, H / 2, 1.1 * px, 0, TAU); c.fillStyle = RED; c.fill();
+      // the lines
+      c.strokeStyle = '#ffffff'; c.lineWidth = 0.09 * px * 1.75;
+      c.strokeRect(c.lineWidth / 2, c.lineWidth / 2, W - c.lineWidth, H - c.lineWidth);
+      line(W / 2, 0, W / 2, H);
+      c.beginPath(); c.arc(W / 2, H / 2, ftR, 0, TAU); c.stroke();
+      c.beginPath(); c.arc(W / 2, H / 2, 1.1 * px, 0, TAU); c.stroke();
+      for (const s of [0, 1]) {
+        const hx = s ? W - HOOP : HOOP, kx = s ? W - keyL : 0, dir = s ? -1 : 1;
+        arcPath(s); c.stroke();
+        c.strokeRect(kx, H / 2 - keyW / 2, keyL, keyW);
+        c.beginPath(); c.arc(s ? W - keyL : keyL, H / 2, ftR, 0, TAU); c.stroke();
+        // the restricted-area arc under the hoop, and the backboard line
+        c.beginPath(); c.arc(hx, H / 2, 2.2 * px, s ? Math.PI / 2 : -Math.PI / 2, s ? Math.PI * 1.5 : Math.PI / 2, false); c.stroke();
+        line(hx - dir * 0.7 * px, H / 2 - 1.0 * px, hx - dir * 0.7 * px, H / 2 + 1.0 * px);
+        // hash marks down both sides of the key (where players line up for free throws)
+        for (const d of [2.6, 3.8, 5.4, 7.0]) for (const sz of [-1, 1]) line(s ? W - d * px : d * px, H / 2 + sz * keyW / 2, s ? W - d * px : d * px, H / 2 + sz * (keyW / 2 + 0.5 * px));
+        // a big painted logo inside the arc, reading from the half-court line
+        c.save();
+        c.translate(s ? W - (HOOP + R * 0.62) : HOOP + R * 0.62, H / 2 + (s ? -1 : 1) * keyW * 0.95);
+        c.rotate(s ? -Math.PI / 2 : Math.PI / 2);
+        c.fillStyle = 'rgba(255,255,255,.92)'; c.font = `italic 900 ${2.0 * px}px Rubik, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText('COVE', 0, 0);
+        c.restore();
+      }
+      // the centre logo
+      c.fillStyle = '#ffffff'; c.font = `italic 900 ${1.3 * px}px Rubik, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
       c.fillText('CORAL', W / 2, H / 2);
     } else if (kind === 'soccer') {
       for (let i = 0; i < 12; i++) { c.fillStyle = i % 2 ? '#4fa843' : '#5cb85a'; c.fillRect((i * W) / 12, 0, W / 12 + 1, H); }
@@ -124,7 +162,7 @@ export function buildPark(root, { anim, lights, solids, spots }) {
     if (kind !== 'volley') {
       // a slab for the court, painted on top
       const tex = courtTex(kind, w + (kind === 'basket' ? 0 : 0), d);
-      add(g, box(w + 4, 0.1, d + 4), toon(kind === 'basket' ? '#3a3f55' : '#3f8a3a'), { p: [x, 0.03, z], cast: false });
+      add(g, box(w + 4, 0.1, d + 4), toon(kind === 'basket' ? '#1f4f8a' : '#3f8a3a'), { p: [x, 0.03, z], cast: false });
       add(g, new THREE.PlaneGeometry(w, d), new THREE.MeshToonMaterial({ map: tex, gradientMap: toon('#fff').gradientMap }), { p: [x, 0.09, z], r: [-Math.PI / 2, 0, 0], cast: false });
     } else {
       add(g, new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: courtTex('volley', w, d), transparent: true }), { p: [x, 0.05, z], r: [-Math.PI / 2, 0, 0], cast: false });
@@ -552,7 +590,7 @@ export class Balls {
     const dist = Math.hypot(hp.x - me.x, hp.z - me.z);
     // the further out the harder (a half-court heave hardly ever drops), contested shots harder still,
     // and timing matters most: perfect always goes in (even contested), a bad release almost never does
-    const base = Math.max(0.02, 0.9 - 0.035 * dist - 0.0016 * dist * dist) * (1 - 0.75 * zone.contest);
+    const base = Math.max(0.02, 0.92 - 0.02 * dist - 0.0014 * dist * dist) * (1 - 0.75 * zone.contest);
     const chance = perfect ? 1 : green ? Math.min(0.95, base * 1.15) : base * 0.18 * q;
     const make = Math.random() < chance;
     const miss = make ? 0 : (0.3 + Math.random() * 0.35) * (Math.random() < 0.5 ? -1 : 1);
@@ -561,7 +599,7 @@ export class Balls {
     b.p.set(me.x + dir.x * 0.4, 2.4, me.z + dir.z * 0.4);
     const T = 0.75 + dist * 0.045;
     b.v.set((target.x - b.p.x) / T, (target.y - b.p.y + 0.5 * G * T * T) / T, (target.z - b.p.z) / T);
-    b.shot = { three: dist > THREE_PT };
+    b.shot = { three: dist > THREE_PT || Math.abs(me.z - hp.z) > THREE_CORNER };
     b.releasedAt = performance.now();
     me.char.emote('shoot');
     sfx('whoosh', { vol: 0.4 });

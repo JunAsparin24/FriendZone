@@ -54,6 +54,48 @@ const trot = (list, t, moving, speed = 14, amp = 0.6) => list.forEach((l, i) => 
 });
 
 const BUILD = {
+  pet_ghost(g) {
+    // a little arcade ghost: a dome with a wavy skirt, big eyes looking where it's going
+    const body = toon('#ff5d8f'), white = basic('#ffffff'), blue = basic('#2a4bd7');
+    const fly = new THREE.Group();
+    g.add(fly);
+    add(fly, new THREE.SphereGeometry(0.2, 20, 12, 0, TAU, 0, Math.PI / 2), body, { p: [0, 0.12, 0] });
+    add(fly, cyl(0.2, 0.2, 0.12, 20, 1), body, { p: [0, 0.06, 0] });
+    const skirt = [];
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU; skirt.push(add(fly, cone(0.06, 0.1, 6), body, { p: [Math.cos(a) * 0.15, -0.03, Math.sin(a) * 0.15], r: [Math.PI, 0, 0], outline: false })); }
+    const pupils = [];
+    for (const s of [-1, 1]) {
+      add(fly, sph(0.06, 12, 10), white, { p: [s * 0.08, 0.17, 0.15], s: [1, 1.2, 0.6], outline: false });
+      pupils.push(add(fly, sph(0.03, 10, 8), blue, { p: [s * 0.08, 0.17, 0.19], outline: false }));
+    }
+    return (t) => {
+      fly.position.y = 0.55 + Math.sin(t * 2.5) * 0.08;
+      skirt.forEach((c, k) => { c.position.y = -0.03 + Math.sin(t * 10 + k * 2) * 0.02; });
+      pupils.forEach((p) => { p.position.x = Math.sign(p.position.x) * 0.08 + Math.sin(t * 0.8) * 0.02; });
+    };
+  },
+  pet_invader(g) {
+    // a pixel space invader built out of cubes, stomping between its two frames
+    const m = toon('#6ee7a0');
+    const fly = new THREE.Group();
+    g.add(fly);
+    const px = 0.05;
+    const A = ['..X.....X..', '...X...X...', '..XXXXXXX..', '.XX.XXX.XX.', 'XXXXXXXXXXX', 'X.XXXXXXX.X', 'X.X.....X.X', '...XX.XX...'];
+    const B = ['..X.....X..', 'X..X...X..X', 'X.XXXXXXX.X', 'XXX.XXX.XXX', 'XXXXXXXXXXX', '.XXXXXXXXX.', '..X.....X..', '.X.......X.'];
+    const frame = (rows) => {
+      const f = new THREE.Group();
+      rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'X') add(f, new THREE.BoxGeometry(px, px, px * 1.6), m, { p: [(x - 5) * px, (3.5 - y) * px, 0], outline: false }); }));
+      fly.add(f);
+      return f;
+    };
+    const fa = frame(A), fb = frame(B);
+    return (t) => {
+      fly.position.y = 0.5 + Math.abs(Math.sin(t * 3)) * 0.06;
+      const on = Math.floor(t * 2.5) % 2 === 0;
+      fa.visible = on;
+      fb.visible = !on;
+    };
+  },
   pet_corgi(g) {
     const fur = toon('#e8944a'), light = toon('#fff3de');
     add(g, sph(0.19), fur, { p: [0, 0.24, -0.05], s: [1, 0.8, 1.45] });

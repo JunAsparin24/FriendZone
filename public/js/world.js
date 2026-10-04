@@ -650,6 +650,9 @@ export class World {
     this.scene.updateMatrixWorld(true);
     this.scene.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh || o.userData.outline || o.userData.noSolid || !o.visible) return;
+      // round green shrubs and hedges round the buildings: you can push through those, like the bushes
+      const gt = o.geometry?.type, col = o.material?.color;
+      if (col && /Sphere|Icosahedron|Dodecahedron|Octahedron/.test(gt ?? '')) { const hsl = col.getHSL({}); if (hsl.h > 0.17 && hsl.h < 0.47 && hsl.s > 0.2) return; }
       box.setFromObject(o);
       if (box.isEmpty()) return;
       box.getSize(size);
@@ -685,7 +688,7 @@ export class World {
       }
     }
     if (SPOTS.some((s) => spotDist(s, { x, y }) < R)) return true;
-    if (this.layout.trees.some((t) => Math.hypot(x - t.x, y - t.y) < (t.kind === 'bush' ? 6 : 9) + R)) return true;
+    if (this.layout.trees.some((t) => t.kind !== 'bush' && Math.hypot(x - t.x, y - t.y) < 9 + R)) return true; // (you can push through bushes)
     if (this.layout.lamps.some((l) => Math.hypot(x - l.x, y - l.y) < 6 + R)) return true;
     if (M.inCreek(x, y)) return true; // the creek is too deep to wade: use a bridge
     const p = { x, y };

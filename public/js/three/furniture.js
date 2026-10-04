@@ -3548,10 +3548,19 @@ export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [t
 
 const surfaceCache = new Map();
 
+// skies: one big picture over 8 tiles instead of a 2-tile square, so you never see it repeat as a grid
+const WIDE = new Set(['floor_starfield', 'wall_starfield', 'wall_nebula_purple', 'wall_nebula_blue', 'wall_galaxy_band', 'wall_planets', 'ceil_starfield', 'ceil_nebula', 'ceil_galaxy']);
+// slanted gradients: every other repeat is flipped, so the colours meet at the edges instead of jumping
+const MIRRORED = new Set(['ceil_sunset', 'ceil_pink']);
+/** How many times bigger than the usual 2 tiles a surface's picture is (its texture repeat is 1 / this). */
+export const surfaceSpan = (id) => (WIDE.has(id) ? 4 : 1);
+
 function surface(id, draw, h = 256) {
   if (!surfaceCache.has(id)) {
-    const tex = canvasTexture(256, h, draw);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    const span = surfaceSpan(id);
+    const tex = canvasTexture(256 * span, h === 256 ? h * span : h, draw); // (full-height wallpapers only get wider)
+    tex.wrapS = tex.wrapT = MIRRORED.has(id) ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+    tex.repeat.set(1 / span, 1 / span);
     surfaceCache.set(id, tex);
   }
   return surfaceCache.get(id);
@@ -3797,22 +3806,23 @@ const WALL_DRAW = {
   wall_nebula_purple(ctx) { spaceSky(ctx, { seed: 7, clouds: [[0.2, 0.3, 0.5, 'rgba(140,60,220,A)', 0.55], [0.7, 0.65, 0.45, 'rgba(230,80,180,A)', 0.4], [0.5, 0.1, 0.35, 'rgba(80,90,255,A)', 0.35]] }); },
   wall_nebula_blue(ctx) { spaceSky(ctx, { seed: 9, clouds: [[0.3, 0.4, 0.55, 'rgba(40,120,255,A)', 0.5], [0.75, 0.7, 0.4, 'rgba(60,220,255,A)', 0.35], [0.6, 0.15, 0.3, 'rgba(150,100,255,A)', 0.3]] }); },
   wall_galaxy_band(ctx) {
-    const H = ctx.canvas.height;
-    spaceSky(ctx, { seed: 13, stars: 340, clouds: [[0.0, 0.5, 0.45, 'rgba(200,170,255,A)', 0.3], [0.5, 0.45, 0.5, 'rgba(255,220,190,A)', 0.28], [1.0, 0.5, 0.45, 'rgba(200,170,255,A)', 0.3]] });
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    spaceSky(ctx, { seed: 13, stars: 340, clouds: [[0.0, 0.5, 0.45, 'rgba(200,170,255,A)', 0.3], [0.5, 0.45, 0.5, 'rgba(255,220,190,A)', 0.28]] });
     const rnd = prng(17); ctx.fillStyle = '#ffffff';
-    for (let i = 0; i < 500; i++) { const x = rnd() * 256, y = H * 0.5 + (rnd() + rnd() + rnd() - 1.5) * H * 0.12; ctx.globalAlpha = 0.3 + rnd() * 0.5; ctx.fillRect(x, y, 1, 1); }
+    for (let i = 0; i < 500 * (W / 256); i++) { const x = rnd() * W, y = H * 0.5 + (rnd() + rnd() + rnd() - 1.5) * H * 0.12; ctx.globalAlpha = 0.3 + rnd() * 0.5; ctx.fillRect(x, y, 1, 1); }
     ctx.globalAlpha = 1;
   },
   wall_infinite_void(ctx) { infiniteVoid(ctx); },
   wall_planets(ctx) {
-    const H = ctx.canvas.height;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
     spaceSky(ctx, { seed: 19, clouds: [[0.8, 0.2, 0.4, 'rgba(90,60,200,A)', 0.35]] });
-    // a ringed planet, a red one and a little moon
+    // a ringed planet, a red one, a blue one and a little moon (spread out along the wall)
     const planet = (x, y, r, c1, c2) => { const g = ctx.createRadialGradient(x - r * 0.4, y - r * 0.4, r * 0.1, x, y, r); g.addColorStop(0, c1); g.addColorStop(1, c2); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); };
-    planet(80, H * 0.35, 34, '#ffe0a8', '#b0702a');
-    ctx.strokeStyle = 'rgba(255,230,190,.75)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(80, H * 0.35, 58, 14, -0.3, 0, TAU); ctx.stroke();
-    planet(200, H * 0.7, 18, '#ff9a7a', '#8a2a1a');
-    planet(170, H * 0.2, 8, '#ffffff', '#8a8fa0');
+    planet(W * 0.16, H * 0.35, 34, '#ffe0a8', '#b0702a');
+    ctx.strokeStyle = 'rgba(255,230,190,.75)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(W * 0.16, H * 0.35, 58, 14, -0.3, 0, TAU); ctx.stroke();
+    planet(W * 0.56, H * 0.7, 18, '#ff9a7a', '#8a2a1a');
+    planet(W * 0.42, H * 0.2, 8, '#ffffff', '#8a8fa0');
+    planet(W * 0.83, H * 0.3, 24, '#a8d8ff', '#2a4a9a');
   },
 
   wall_forest_green(ctx) { plainWall(ctx, '#1b3a27'); },
@@ -4131,14 +4141,7 @@ const CEIL_DRAW = {
   ceil_starfield(ctx) { spaceSky(ctx, { stars: 300, seed: 21 }); },
   ceil_nebula(ctx) { spaceSky(ctx, { seed: 23, clouds: [[0.3, 0.3, 0.5, 'rgba(140,60,220,A)', 0.5], [0.7, 0.7, 0.5, 'rgba(40,120,255,A)', 0.45]] }); },
   ceil_infinite_void(ctx) { infiniteVoid(ctx); },
-  ceil_galaxy(ctx) {
-    const g = ctx.createRadialGradient(90, 110, 10, 128, 128, 200);
-    g.addColorStop(0, '#b25bff'); g.addColorStop(0.35, '#4a2a9a'); g.addColorStop(0.7, '#1a1a4a'); g.addColorStop(1, '#0d0d26');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
-    ctx.fillStyle = 'rgba(255,120,220,.18)'; ctx.beginPath(); ctx.ellipse(170, 170, 70, 30, 0.6, 0, TAU); ctx.fill();
-    const rnd = prng(23);
-    for (let i = 0; i < 90; i++) { ctx.fillStyle = i % 9 ? 'rgba(255,255,255,.9)' : '#9fe8ff'; ctx.beginPath(); ctx.arc(rnd() * 256, rnd() * 256, i % 9 ? 1 : 2.4, 0, TAU); ctx.fill(); }
-  },
+  ceil_galaxy(ctx) { spaceSky(ctx, { base: '#0d0d26', seed: 27, stars: 120, clouds: [[0.35, 0.4, 0.6, 'rgba(178,91,255,A)', 0.6], [0.8, 0.8, 0.55, 'rgba(74,42,154,A)', 0.7], [0.7, 0.2, 0.35, 'rgba(255,120,220,A)', 0.28]] }); },
   ceil_sunset(ctx) {
     const g = ctx.createLinearGradient(0, 0, 256, 256);
     g.addColorStop(0, '#ff7a59'); g.addColorStop(0.5, '#ffb36b'); g.addColorStop(1, '#c86bd0');
@@ -4225,23 +4228,49 @@ export const wallTexture = (id) => surface(id, WALL_DRAW[id] ?? decoDraw(DECO[id
 /** A little seeded random number generator (0..1), so patterns look scattered but never change. */
 /** Space: a black sky with soft nebula clouds and stars (big ones with a glow), for walls, ceilings and floors. */
 function spaceSky(ctx, { base = '#030308', clouds = [], stars = 260, seed = 3, H = null } = {}) {
-  const W = 256; H ??= ctx.canvas.height;
+  const W = ctx.canvas.width; H ??= ctx.canvas.height;
+  const k = W / 256;           // (wide skies are a few times bigger: more clouds and stars, not bigger ones)
+  const wrapY = H % 256 === 0; // (full-height wallpapers never repeat upwards)
+  const ky = wrapY ? H / 256 : 1;
   ctx.fillStyle = base; ctx.fillRect(0, 0, W, H);
+  // everything near an edge is drawn again on the far side, so the picture repeats without a seam
+  const wrapped = (x, y, pad, fn) => {
+    for (const dx of [-W, 0, W]) for (const dy of wrapY ? [-H, 0, H] : [0]) {
+      if (x + dx + pad < 0 || x + dx - pad > W || y + dy + pad < 0 || y + dy - pad > H) continue;
+      fn(x + dx, y + dy);
+    }
+  };
+  const blob = (x, y, R, col, a) => wrapped(x, y, R, (px, py) => {
+    const g = ctx.createRadialGradient(px, py, 0, px, py, R);
+    g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0));
+    ctx.fillStyle = g; ctx.fillRect(px - R, py - R, R * 2, R * 2);
+  });
+  const crnd = prng(seed + 101);
+  const mod1 = (v) => ((v % 1) + 1) % 1;
   for (const [x, y, r, col, a] of clouds) {
-    // (each cloud is drawn three times across, so the pattern repeats sideways without a seam)
-    for (const dx of [-W, 0, W]) {
-      const g = ctx.createRadialGradient(x * W + dx, y * H, 0, x * W + dx, y * H, r * W);
-      g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0));
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    if (k === 1) { blob(x * W, y * H, r * W, col, a); continue; }
+    // a wide sky: the cloud comes back once per 2 tiles, but each time shifted, resized and with its own wisps
+    for (let jx = 0; jx < k; jx++) for (let jy = 0; jy < ky; jy++) {
+      const cx = mod1((x + jx + (crnd() - 0.5) * 0.7) / k) * W;
+      const cy = wrapY ? mod1((y + jy + (crnd() - 0.5) * 0.7) / ky) * H : (y + (crnd() - 0.5) * 0.08) * H;
+      const R = r * 256 * (0.8 + crnd() * 0.8);
+      blob(cx, cy, R, col, a);
+      for (let p = 0; p < 4; p++) {
+        const ang = crnd() * TAU, dist = R * (0.3 + crnd() * 0.6);
+        blob(cx + Math.cos(ang) * dist, cy + Math.sin(ang) * dist * (wrapY ? 1 : 0.4), R * (0.25 + crnd() * 0.3), col, a * 0.45);
+      }
     }
   }
   const rnd = prng(seed);
-  for (let i = 0; i < stars; i++) {
+  for (let i = 0; i < stars * k * ky; i++) {
     const x = rnd() * W, y = rnd() * H, big = rnd() < 0.06, r = big ? 1.4 + rnd() * 1.2 : 0.4 + rnd() * 0.7;
-    ctx.fillStyle = ['#ffffff', '#cfe2ff', '#fff2cf', '#e5d4ff'][Math.floor(rnd() * 4)];
-    ctx.globalAlpha = 0.5 + rnd() * 0.5;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
-    if (big) { ctx.globalAlpha = 0.18; ctx.beginPath(); ctx.arc(x, y, r * 4, 0, TAU); ctx.fill(); ctx.globalAlpha = 0.6; ctx.fillRect(x - r * 5, y - 0.4, r * 10, 0.8); ctx.fillRect(x - 0.4, y - r * 5, 0.8, r * 10); }
+    const col = ['#ffffff', '#cfe2ff', '#fff2cf', '#e5d4ff'][Math.floor(rnd() * 4)], alpha = 0.5 + rnd() * 0.5;
+    wrapped(x, y, r * 5, (px, py) => {
+      ctx.fillStyle = col;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath(); ctx.arc(px, py, r, 0, TAU); ctx.fill();
+      if (big) { ctx.globalAlpha = 0.18; ctx.beginPath(); ctx.arc(px, py, r * 4, 0, TAU); ctx.fill(); ctx.globalAlpha = 0.6; ctx.fillRect(px - r * 5, py - 0.4, r * 10, 0.8); ctx.fillRect(px - 0.4, py - r * 5, 0.8, r * 10); }
+    });
   }
   ctx.globalAlpha = 1;
 }
@@ -4309,6 +4338,12 @@ export function surfaceImage(id) {
   const kind = FLOOR_DRAW[id] || CATALOG.floors.some((d) => d.id === id) ? 'floor' : CEIL_DRAW[id] || CATALOG.ceilings.some((d) => d.id === id) ? 'ceiling' : 'wall';
   const tex = kind === 'floor' ? floorTexture(id) : kind === 'ceiling' ? ceilingTexture(id) : wallTexture(id);
   const img = tex.image;
+  if (img?.width > 256) { // (a wide sky: just one corner of it, the same size as every other swatch)
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = Math.min(img.height, WALL_TALL_PX);
+    c.getContext('2d').drawImage(img, 0, 0);
+    return c.toDataURL();
+  }
   return img?.toDataURL ? img.toDataURL() : '';
 }
 

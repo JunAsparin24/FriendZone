@@ -8,7 +8,7 @@ import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
-import { buildFurniture, furnitureParts, TRIM_MAT, outdoorPanorama, floorTexture, wallTexture, ceilingTexture, wallIsTall, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
+import { buildFurniture, furnitureParts, TRIM_MAT, outdoorPanorama, floorTexture, wallTexture, ceilingTexture, wallIsTall, surfaceSpan, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
 import { settings } from '../settings.js';
 import { buildDoor, doorImage } from '../three/doors.js';
@@ -626,15 +626,16 @@ export function house(stage) {
     TRIM_MAT.color.set(home.trim ?? TRIM_DEFAULT);
     // (the room's planes carry their own tiling in their UVs, so every texture repeats once per 2 tiles)
     room.floorMat.map = floorTexture(floor);
-    room.floorMat.map.repeat.set(1, 1);
+    room.floorMat.map.repeat.setScalar(1 / surfaceSpan(floor)); // (wide skies cover more than 2 tiles)
     room.floorMat.needsUpdate = true;
     const wt = wallTexture(wall);
     // full-height wallpapers (murals, wainscoting) span floor to ceiling once instead of repeating up the wall
-    wt.repeat.set(1, wallIsTall(wall) ? 2 / WALL_H : 1);
+    wt.repeat.set(1 / surfaceSpan(wall), wallIsTall(wall) ? 2 / WALL_H : 1 / surfaceSpan(wall));
     room.wallMat.map = room.wallFade.map = wt;
     room.wallMat.needsUpdate = room.wallFade.needsUpdate = true;
-    const ct = ceilingTexture(preview.ceiling ?? home.ceiling ?? 'ceil_plain');
-    ct.repeat.set(1, 1);
+    const ceil = preview.ceiling ?? home.ceiling ?? 'ceil_plain';
+    const ct = ceilingTexture(ceil);
+    ct.repeat.setScalar(1 / surfaceSpan(ceil));
     room.ceilingMat.map = ct;
     room.ceilingMat.needsUpdate = true;
     drawAreas();
@@ -671,7 +672,7 @@ export function house(stage) {
   function paperMat(id) {
     if (!paperMats.has(id)) {
       const tex = wallTexture(id);
-      tex.repeat.set(1, wallIsTall(id) ? 2 / WALL_H : 1);
+      tex.repeat.set(1 / surfaceSpan(id), wallIsTall(id) ? 2 / WALL_H : 1 / surfaceSpan(id));
       paperMats.set(id, new THREE.MeshToonMaterial({ color: '#ffffff', map: tex, side: THREE.DoubleSide }));
     }
     return paperMats.get(id);
@@ -1055,11 +1056,23 @@ export function house(stage) {
     }
     if (isDragWall(placing.id) && placing.from < 0) { aimWall(); return; }
     if (isDoor(placing.id)) { aimDoor(); return; }
-    const p = stage.pointerOnPlane(0);
-    if (!p) { placing.x = -1; return; }
     const [w, d] = footprint(placing);
-    placing.x = Math.max(0, Math.min(NX - w, snap(p.x / T - w / 2)));
-    placing.y = Math.max(0, Math.min(NZ - d, snap(p.z / T - d / 2)));
+    const at = (height) => {
+      const p = stage.pointerOnPlane(height * T);
+      return p && { x: Math.max(0, Math.min(NX - w, snap(p.x / T - w / 2))), y: Math.max(0, Math.min(NZ - d, snap(p.z / T - d / 2))) };
+    };
+    if (kindOf(placing.id) === 'top') {
+      // plates and food: where you point on the tabletop itself (not on the floor behind the table, which
+      // is what the pointer is over once a table is tall or wide). Tallest surfaces first.
+      const tops = [...new Set(home.items.filter((o, i) => i !== placing.from && isSurface(FURN[o.id])).map((o) => surfTop(o.id)))].sort((a, b) => b - a);
+      for (const h of tops) {
+        const s = at(h);
+        if (s && surfaceUnder({ ...placing, ...s }, placing.from) === h) { placing.x = s.x; placing.y = s.y; return; }
+      }
+    }
+    const s = at(0);
+    if (!s) { placing.x = -1; return; }
+    placing.x = s.x; placing.y = s.y;
   }
 
   /** Hanging something on one of your own walls: which side you're pointing at, and how high and far along. */
@@ -1544,7 +1557,7 @@ export function house(stage) {
   const SET_LABEL = {
     Classics: '🛋️ Classics', Sweetheart: '💗 Sweetheart set', Rustic: '🪵 Rustic set', Modern: '🤍 Modern set', Nature: '🌿 Nature set',
     Plants: '🪴 Plants', Bathroom: '🛁 Bathroom', Gamer: '🎮 Gamer set', Lights: '💡 Lights & ceiling', 'Wall decor': '🖼️ Wall decor', Rooms: '🧱 Walls & doorways',
-    Plushies: '🧸 Claw machine plushies', Tabletop: '🍽️ Plates, food & tabletop', Curtains: '🪟 Curtains', Restaurant: '🍷 Restaurant', Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🗄️ Kitchen cabinets (recolour them!)', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
+    Plushies: '🧸 Claw machine plushies', Tabletop: '🍽️ Plates, food & tabletop', Curtains: '🪟 Curtains', Restaurant: '🍷 Restaurant', Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🗄️ Kitchen cabinets', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
   };
   const DECO_LISTS = { floor: CATALOG.floors, wall: CATALOG.walls, ceiling: CATALOG.ceilings, door: CATALOG.doors };
   let shopPage = 'furniture', stylePage = 'wall', itemFilter = 'all', itemSet = 'all', itemSearch = '';

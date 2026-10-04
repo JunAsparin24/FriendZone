@@ -15,7 +15,7 @@ export const DEFAULT_LOOK = {
   pet: 'pet_none', mount: 'mount_none', shoes: 'shoes_sneakers', socks: 'socks_none', sockColor: '#f5f5f5',
 };
 
-// Body shapes: leg/torso stretch for height; width, depth and limb thickness for build.
+//body shapes - leg/torso stretch for height, width, depth and limb thickness
 const HEIGHTS = {
   height_tiny: { leg: 0.62, torso: 0.84 },
   height_short: { leg: 0.8, torso: 0.92 },

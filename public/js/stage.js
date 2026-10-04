@@ -398,7 +398,7 @@ class Stage {
       const dist = this.camera.position.distanceTo(v);
       const scale = clamp(17 / dist, 0.55, 1.1);
       p.el.style.transform = `translate3d(${(((s.x + 1) / 2) * w).toFixed(1)}px, ${(((1 - s.y) / 2) * h).toFixed(1)}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`;
-      p.el.querySelector('.wl-dev')?.classList.toggle('hidden', !(pl?.dev && pl.look?.aura === 'aura_devtitle'));
+      p.el.querySelector('.wl-dev')?.classList.toggle('hidden', !(pl?.look?.aura === 'aura_devtitle'));
       if (pl && p.tagKey !== `${pl.name}|${pl.level}|${pl.color}`) {
         p.tagKey = `${pl.name}|${pl.level}|${pl.color}`;
         p.el.querySelector('.wl-tag b').textContent = pl.name;

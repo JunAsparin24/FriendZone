@@ -1015,6 +1015,14 @@ body.no-names .wl-tag { display: none; }
 .shelf-jump button { padding: 3px 10px; font-size: 12px; font-weight: 600; }
 .shelf-label { scroll-margin-top: 52px; margin-top: 6px; }
 .shelf-end { flex: none; height: 50vh; }
+.part-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.part-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 99px; border: 2px solid #fff3; background: transparent; color: inherit; font: 600 11px var(--body); cursor: pointer; }
+.part-chip span { width: 14px; height: 14px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px #0006; }
+.part-chip.on { border-color: var(--accent); background: #ffffff18; }
+.plot-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.plot-row { display: flex; align-items: center; gap: 6px; padding: 8px; border-radius: 12px; background: #ffffff10; }
+.plot-row .plot-ico { font-size: 22px; }
+.plot-row .plot-name-t { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .vbuild { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 99px; border: 2px solid var(--line, #fff3); white-space: nowrap; }
 .vbuild.on { background: #6ee7a0; color: #0b2a1a; border-color: #6ee7a0; }
 .item-search { width: 100%; padding: 7px 10px; border-radius: 10px; border: 2px solid var(--line, #0002); background: var(--bg); color: inherit; font: inherit; }

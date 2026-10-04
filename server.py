@@ -437,7 +437,16 @@ def hilo_mult(card, pick):
 
 def can_recolor(f):
     """Anything in a house can be recoloured except walls, doors, plushies and admin specials (as the client)."""
-    return bool(f.get("recolor") or (not f.get("room") and not f.get("drag") and not f.get("claw") and not f.get("exclusive") and f.get("kind", "floor") != "door"))
+    return bool(f.get("recolor") or (f.get("kind") == "door" and not f.get("drag")) or (not f.get("room") and not f.get("drag") and not f.get("claw") and not f.get("exclusive")))
+
+
+def clean_parts(cp):
+    """Colours for the parts of a piece: "m:#rrggbb" or "t:#rrggbb" -> a palette colour (up to 6)."""
+    out = {}
+    for k, v in list(cp.items())[:6]:
+        if isinstance(k, str) and re.fullmatch(r"[mt]:#[0-9a-f]{6}", k) and v in CATALOG["clothColors"]:
+            out[k] = v
+    return out
 
 
 def clean_board(text):
@@ -445,6 +454,9 @@ def clean_board(text):
     text = " ".join(text.replace("\n", " | ").split())[:90]
     return "Today's specials" if is_rude(text) else text
 
+
+HOUSE_SLOTS = 6  # how many house designs you can keep saved
+HOUSE_INFINITE = 999  # an admin's "unlimited" gift of furniture
 
 COINFLIP_WIN = 0.4           # chance you call the coin right
 SLOT_PAIR_PAYS = 0.5         # a pair gives back half your bet
@@ -695,7 +707,7 @@ ADMIN_HELP = [
     "/setcoins <name|me> <coins> — set someone's coins",
     "/xp <name|me> <amount> — give XP",
     "/item <name|me> <item id|all> — give a cosmetic (or every one)",
-    "/furni <name|me> <furniture id|all> [count] — give furniture, floors or wallpaper",
+    "/furni <name|me> <furniture id|all> [count|inf] — give furniture, floors or wallpaper (any amount, or unlimited)",
     "/items [search] — list item ids",
     "/score <name|me> <game> <value> — set a high score / leaderboard stat (/score me list for the games)",
     "/cove <name|all> [off] — let someone into Coral Cove whenever they like (or take it away)",
@@ -877,7 +889,7 @@ def met(p, cond):
     return p["stats"].get(cond["stat"], 0) >= cond["min"]
 
 
-HOUSE_SNAP = 4  # furniture snaps to quarter tiles
+HOUSE_SNAP = 8  # furniture snaps to eighth tiles (room walls and doors stick to quarters on the client)
 
 
 def snap_q(v):
@@ -986,7 +998,8 @@ def clean_house(p, data):
         taken |= cells
         clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
                             **({"c": it["c"]} if can_recolor(f) and it.get("c") in CATALOG["clothColors"] else {}),
-                            **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {})})
+                            **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {}),
+                            **({"cp": clean_parts(it["cp"])} if can_recolor(f) and isinstance(it.get("cp"), dict) and clean_parts(it["cp"]) else {})})
     for name, cells in door_cells:
         if not cells <= wall_cells:
             raise GameError(f"The {name} has to go in a wall.")
@@ -1023,15 +1036,20 @@ def clean_house(p, data):
             raise GameError("You don't own that wallpaper yet.")
         clean_wallp[k] = v
     trim = data.get("trim") if data.get("trim") in TRIM_COLORS else "#f4f0ff"
+    # single walls with a trim colour of their own (per room)
+    trimp = data.get("trimp") or {}
+    clean_trimp = {k: v for k, v in trimp.items() if isinstance(k, str) and len(k) <= 40 and v in TRIM_COLORS} if isinstance(trimp, dict) else {}
+    if len(clean_trimp) > 64:
+        raise GameError("That's too many wall trims.")
     return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items,
-            "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp, "trim": trim}
+            "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp, "trim": trim, "trimp": clean_trimp}
 
 
 def house_view(p):
     h = p["house"]
     return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"),
             "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"], "areas": h.get("areas", []),
-            "careas": h.get("careas", []), "wallp": h.get("wallp", {}), "trim": h.get("trim", "#f4f0ff"),
+            "careas": h.get("careas", []), "wallp": h.get("wallp", {}), "trim": h.get("trim", "#f4f0ff"), "trimp": h.get("trimp", {}),
             "builders": h.get("builders", [])}
 
 
@@ -1163,7 +1181,7 @@ IN_ZONE = {
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "crab_bet", "ball", "ball_steal", "ball_event", "court_join", "court_ready", "court_leave", "court_score", "golf_done", "boat", "boat_take", "boat_leave", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "play_public", "hilo_deal", "lt_move", "lt_shoot", "lt_team", "hockey_join", "hockey_leave", "hockey_mallet", "hockey_puck", "hockey_goal", "arcade_score", "arcade_play", "claw_play", "ticket_shop", "ticket_buy", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
-    "house_get", "house_save", "house_buy", "house_like", "house_builder", "fish_sell", "fish_hook",
+    "house_get", "house_save", "house_buy", "house_like", "house_builder", "house_slots", "house_slot", "fish_sell", "fish_hook",
 }
 
 
@@ -2174,8 +2192,9 @@ class Game:
         if len(args) < 2:
             raise GameError("Like: /furni me sofa_pink 2 (or /furni me all).")
         count = 1
-        if args[-1].isdigit() and len(args) >= 3:
-            count = max(1, min(20, int(args[-1])))
+        if len(args) >= 3 and (args[-1].isdigit() or args[-1].lower() in ("inf", "infinite", "unlimited", "∞")):
+            # an amount, as many as you like (or "inf": more than anyone could ever place)
+            count = HOUSE_INFINITE if not args[-1].isdigit() else max(1, min(HOUSE_INFINITE, int(args[-1])))
             args = args[:-1]
         fid = args[-1].lower()
         keys = self._adm_targets(c, " ".join(args[:-1]))
@@ -2187,10 +2206,12 @@ class Game:
         for k in keys:
             inv = c.room.zone["players"][k]["furni"]
             for i in ids:
-                limit = FURN[i].get("max", 10) if i in FURN else 1
-                inv[i] = min(limit, inv.get(i, 0) + count)
+                # (an admin gift can go past the usual limit, so you can hand out lots, or unlimited)
+                limit = (FURN[i].get("max", 10) if i in FURN else 1) if fid == "all" else HOUSE_INFINITE
+                inv[i] = min(limit, inv.get(i, 0) + count) if count < HOUSE_INFINITE else HOUSE_INFINITE
         self._adm_touch(c, keys)
-        self.sys(c, f"Gave {'all the furniture' if fid == 'all' else every[fid]['name']} to {self.names(c, keys)}.", "ok")
+        amount = "unlimited" if count >= HOUSE_INFINITE else f"{count}×"
+        self.sys(c, f"Gave {amount} {'of all the furniture' if fid == 'all' else every[fid]['name']} to {self.names(c, keys)}.", "ok")
 
     # leaderboard names for /score, and the stat each one sets
     SCORE_STATS = {"dungeon": "dungeonBest", "archery": "archeryBest", "race": "raceWins", "arena": "arenaWins",
@@ -4570,6 +4591,54 @@ class Game:
         c.room.broadcast({"t": "house", "k": key, "house": house_view(p), "by": c.key})
         self.push_player(c.room, key)
 
+    # ---- saved houses: keep several designs and swap which one is your house ----
+    def slots_view(self, p):
+        return [{"name": s["name"], "n": len(s["house"].get("items", [])), "at": s.get("at", 0)} for s in p.get("house_slots", [])]
+
+    def on_house_slots(self, c, m):
+        c.ws.send({"t": "house_slots", "slots": self.slots_view(c.player)})
+
+    def on_house_slot(self, c, m):
+        """Save your house as a design (a new one, or over an old one), put a saved design up, or delete one."""
+        if not c.ready("house_slot", 0.5):
+            return
+        p = c.player
+        slots = p.setdefault("house_slots", [])
+        op, i = m.get("op"), m.get("i")
+        name = " ".join(str(m.get("name") or "").split())[:24]
+        if name and is_rude(name):
+            name = ""
+        if op == "save":
+            snap = {k: v for k, v in house_view(p).items() if k not in ("likes", "builders")}
+            entry = {"name": name or f"House {len(slots) + 1}", "house": snap, "at": int(time.time())}
+            if isinstance(i, int) and 0 <= i < len(slots):
+                entry["name"] = name or slots[i]["name"]
+                slots[i] = entry
+            else:
+                if len(slots) >= HOUSE_SLOTS:
+                    raise GameError(f"You can keep up to {HOUSE_SLOTS} saved houses. Delete one first.")
+                slots.append(entry)
+            self.sys(c, f"💾 Saved “{entry['name']}”.", "ok")
+        elif op == "load":
+            if not (isinstance(i, int) and 0 <= i < len(slots)):
+                raise GameError("That saved house is gone.")
+            likes, builders = p["house"]["likes"], p["house"].get("builders", [])
+            p["house"].update(clean_house(p, slots[i]["house"]))  # (checked again: you still have to own it all)
+            p["house"]["likes"], p["house"]["builders"] = likes, builders
+            c.room.broadcast({"t": "house", "k": c.key, "house": house_view(p)})
+            self.push_player(c.room, c.key)
+            self.sys(c, f"🏠 Moved into “{slots[i]['name']}”.", "ok")
+        elif op == "delete":
+            if isinstance(i, int) and 0 <= i < len(slots):
+                slots.pop(i)
+        elif op == "rename":
+            if isinstance(i, int) and 0 <= i < len(slots) and name:
+                slots[i]["name"] = name
+        else:
+            return
+        self.store.mark()
+        c.ws.send({"t": "house_slots", "slots": self.slots_view(p)})
+
     def on_house_builder(self, c, m):
         """Give someone permission to build in your house (with your furniture), or take it away."""
         if not c.ready("house_builder", 0.3):
@@ -4580,7 +4649,9 @@ class Game:
             raise GameError("Pick someone else.")
         h = c.player["house"]
         builders = [b for b in h.get("builders", []) if b in c.room.zone["players"]]
-        if m.get("on"):
+        on = (key not in builders) if m.get("on") is None else bool(m.get("on"))  # (no "on": flip it)
+        m = {**m, "on": on}
+        if on:
             if key not in builders:
                 if len(builders) >= 12:
                     raise GameError("Up to 12 people can build in your house.")
@@ -4596,6 +4667,11 @@ class Game:
 
     def on_house_buy(self, c, m):
         p = c.player
+        # building in a friend's house: what you buy is for their house (you pay for it)
+        key = str(m.get("k") or c.key).lower()
+        owner = c.room.zone["players"].get(key) if key != c.key else None
+        if owner is not None and c.key in owner["house"].get("builders", []):
+            return self.buy_for(c, owner, key, str(m.get("id", "")))
         item_id = str(m.get("id", ""))
         item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id) or CEILINGS.get(item_id) or DOORS.get(item_id) or HOUSE_SIZES.get(item_id)
         if not item or "price" not in item:
@@ -4611,6 +4687,23 @@ class Game:
         self.store.mark()
         c.ws.send({"t": "house_bought", "id": item_id})
         self.push_player(c.room, c.key)
+
+    def buy_for(self, c, owner, key, item_id):
+        item = FURN.get(item_id) or FLOORS.get(item_id) or WALLS.get(item_id) or CEILINGS.get(item_id) or DOORS.get(item_id)
+        if not item or "price" not in item:
+            raise GameError("That isn't for sale.")
+        have = owner["furni"].get(item_id, 0)
+        limit = 1 if item_id not in FURN else item.get("max", 10)
+        if have >= limit:
+            raise GameError("They already have that." if limit == 1 else f"They can have up to {limit} of those.")
+        if c.player["coins"] < item["price"]:
+            raise GameError(f"You need {item['price']:,} coins for that.")
+        c.player["coins"] -= item["price"]
+        owner["furni"][item_id] = have + 1
+        self.store.mark()
+        c.ws.send({"t": "house_bought", "id": item_id})
+        self.push_player(c.room, c.key)
+        self.push_player(c.room, key)
 
     def on_house_like(self, c, m):
         key = str(m.get("k", "")).lower()

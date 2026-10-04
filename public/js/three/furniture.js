@@ -2076,6 +2076,21 @@ Object.assign(FURNITURE, {
   wdoor_stone(g, A, { len = 1.25 } = {}) { archway(g, len, 'stone'); },
   wdoor_wide(g, A, { len = 2.5 } = {}) { doorFrame(g, len); },
   wdoor_wide_arch(g, A, { len = 2.5 } = {}) { archway(g, len, 'round'); },
+  wdoor_vault(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#5a6070'); return doorPanel(g, A, 'vault', len); },
+  wdoor_modern(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#2a2a30'); return doorPanel(g, A, 'modern', len); },
+  wdoor_flush(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#c9955a'); return doorPanel(g, A, 'flush', len); },
+  wdoor_dutch(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#f4f0ea'); return doorPanel(g, A, 'dutch', len); },
+  wdoor_louvre(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#f4f0ea'); return doorPanel(g, A, 'louvre', len); },
+  wdoor_plank(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#6b4226'); return doorPanel(g, A, 'plank', len); },
+  wdoor_farmhouse(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#f4f0ea'); return doorPanel(g, A, 'farmhouse', len); },
+  wdoor_porthole(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#c0c6d4'); return doorPanel(g, A, 'porthole', len); },
+  wdoor_craftsman(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#5a3a24'); return doorPanel(g, A, 'craftsman', len); },
+  wdoor_frosted(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#2a2a30'); return doorPanel(g, A, 'frosted', len); },
+  wdoor_stained(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#5a3a24'); return doorPanel(g, A, 'stained', len); },
+  wdoor_double(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#f4f0ea'); return doorPanel(g, A, 'double_glass', len); },
+  wdoor_bookcase(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#5a3a24'); return doorPanel(g, A, 'bookcase', len); },
+  wdoor_pocket(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#c9955a'); return doorPanel(g, A, 'pocket', len); },
+  wdoor_slide_glass(g, A, { len = 1.25 } = {}) { doorFrame(g, len, '#2a2a30'); return doorPanel(g, A, 'slide_glass', len); },
   // half walls, drawn out like walls: one up from the floor (a divider), one hanging from the ceiling
   room_halfwall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps, top: HALF_H }); },
   room_hangwall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps, bottom: ROOM_H - HANG_H }); },
@@ -2128,6 +2143,17 @@ function doorPanel(g, A, style, w) {
     const lat = toon('#5a3a22');
     for (let k = 0; k <= 3; k++) add(panel, box(0.03, H, 0.045), lat, { p: [-W / 2 + (k / 3) * W, H / 2, 0], outline: false });
     for (let k = 0; k <= 6; k++) add(panel, box(W, 0.03, 0.045), lat, { p: [0, (k / 6) * H, 0], outline: false });
+  } else if (style === 'pocket' || style === 'slide_glass') {
+    // slides sideways into the wall: a plain wooden slab, or a black-framed glass panel
+    if (style === 'pocket') {
+      add(panel, box(W, H, 0.045), toon('#c9955a'), { p: [0, H / 2, 0] });
+      for (const z of [-1, 1]) add(panel, box(0.04, 0.22, 0.01), toon('#2a2a30'), { p: [W / 2 - 0.1, 1.0, z * 0.028], outline: false }); // (a flush pull)
+    } else {
+      const frame = toon('#2a2a30');
+      for (const [bw, bh, x, y] of [[W, 0.06, 0, 0.03], [W, 0.06, 0, H - 0.03], [0.06, H, -W / 2 + 0.03, H / 2], [0.06, H, W / 2 - 0.03, H / 2]]) add(panel, box(bw, bh, 0.05), frame, { p: [x, y, 0], outline: false });
+      add(panel, box(W - 0.08, H - 0.08, 0.015), new THREE.MeshStandardMaterial({ color: '#cfefff', transparent: true, opacity: 0.3, roughness: 0.05, depthWrite: false }), { p: [0, H / 2, 0], outline: false });
+      add(panel, box(0.03, 0.5, 0.06), frame, { p: [W / 2 - 0.12, 1.0, 0], outline: false });
+    }
   } else if (style === 'barn') {
     // a sliding barn door on a rail across the front of the wall
     pivot.position.set(0, 0, ROOM_T / 2 + 0.06);
@@ -2153,6 +2179,24 @@ function doorPanel(g, A, style, w) {
       add(pivot2, box(half, 0.9, T), toon('#a8723f'), { p: [-half / 2, 1.15, 0] });
       for (let k = 0; k < 4; k++) add(pivot2, box(half - 0.12, 0.05, T + 0.02), toon('#7a4a28'), { p: [-half / 2, 0.85 + k * 0.2, 0], outline: false });
       A.second = pivot2;
+    } else if (style === 'double_glass') {
+      // a pair of french doors meeting in the middle, each a white frame round panes
+      const half = W / 2 - 0.01, frame = toon('#f4f0ea');
+      const glass = new THREE.MeshStandardMaterial({ color: '#cfefff', transparent: true, opacity: 0.32, roughness: 0.05, depthWrite: false });
+      const leaf = (grp, s) => {
+        const x0 = s > 0 ? 0 : -half;
+        for (const [bw, bh, x, y] of [[half, 0.08, half / 2, 0.04], [half, 0.08, half / 2, H - 0.04], [0.08, H, 0.04, H / 2], [0.08, H, half - 0.04, H / 2], [half, 0.04, half / 2, 0.75], [half, 0.04, half / 2, 1.4]]) add(grp, box(bw, bh, T), frame, { p: [x0 + x, y, 0], outline: false });
+        add(grp, box(half - 0.08, H - 0.08, 0.02), glass, { p: [x0 + half / 2, H / 2, 0], outline: false });
+        lever(grp, x0 + (s > 0 ? half - 0.08 : 0.08), 1.0, T / 2, shiny('#d4af37', { metalness: 0.7 }));
+      };
+      leaf(panel, 1);
+      const pivot2 = new THREE.Group();
+      pivot2.position.set(W / 2, 0, 0);
+      g.add(pivot2);
+      leaf(pivot2, -1);
+      A.second = pivot2;
+    } else if (FANCY_DOORS.has(style)) {
+      fancyDoor(panel, style, W, H, T);
     } else if (style === 'glass') {
       // a french door: a white frame round glass panes
       const glass = new THREE.MeshStandardMaterial({ color: '#cfefff', transparent: true, opacity: 0.35, roughness: 0.05, depthWrite: false });
@@ -2169,7 +2213,7 @@ function doorPanel(g, A, style, w) {
       }
       for (const y of [0.3, H - 0.3]) add(panel, cyl(0.022, 0.022, 0.14, 8), shiny('#8d96a8', { metalness: 0.6 }), { p: [0.005, y, 0], outline: false }); // hinges
     }
-    if (style !== 'saloon') lever(panel, W - 0.12, 1.0, T / 2, shiny(style === 'white' || style === 'glass' ? '#c8ced8' : '#ffc53d', { metalness: 0.75, roughness: 0.3 }));
+    if (style !== 'saloon' && style !== 'double_glass' && !FANCY_DOORS.has(style)) lever(panel, W - 0.12, 1.0, T / 2, shiny(style === 'white' || style === 'glass' ? '#c8ced8' : '#ffc53d', { metalness: 0.75, roughness: 0.3 }));
   }
   // A.open (0..1) is how far it should be open; the house sets it when someone's near
   let cur = 0, side = 1;
@@ -2179,12 +2223,102 @@ function doorPanel(g, A, style, w) {
     const want = A.open;
     if (want > 0 && cur < 0.05) side = A.side; // swing away from whoever's coming through
     cur += (want - cur) * Math.min(1, dt * 7);
-    if (style === 'barn' || style === 'shoji') pivot.position.x = -cur * (W + 0.05);
+    if (style === 'barn' || style === 'shoji' || style === 'pocket' || style === 'slide_glass') pivot.position.x = -cur * (W + 0.05);
     else pivot.rotation.y = side * cur * 1.55;
     if (A.second) A.second.rotation.y = -side * cur * 1.55;
     return false;
   });
   return {};
+}
+const FANCY_DOORS = new Set(['vault', 'modern', 'flush', 'dutch', 'louvre', 'plank', 'farmhouse', 'porthole', 'craftsman', 'frosted', 'stained', 'bookcase']);
+/** The hinged doors with their own looks (the panel is built from the hinge, out to x = W). */
+function fancyDoor(panel, style, W, H, T) {
+  const slab = (col) => add(panel, box(W, H, T), toon(col), { p: [W / 2, H / 2, 0] });
+  const both = (geom, mat, x, y, extra = 0) => { for (const z of [-1, 1]) add(panel, geom, mat, { p: [x, y, z * (T / 2 + 0.006 + extra)], outline: false }); };
+  const brass = shiny('#d4af37', { metalness: 0.75, roughness: 0.3 }), chrome = shiny('#c8ced8', { metalness: 0.75, roughness: 0.3 }), black = toon('#1d1b22');
+  const knob = (mat) => { for (const z of [-1, 1]) add(panel, sph(0.04, 12, 10), mat, { p: [W - 0.12, 1.0, z * (T / 2 + 0.03)], outline: false }); };
+  const glassMat = (col = '#cfefff', op = 0.35) => new THREE.MeshStandardMaterial({ color: col, transparent: true, opacity: op, roughness: 0.05, depthWrite: false });
+  if (style === 'vault') {
+    // a bank vault: a thick steel slab, a round door face ringed with bolts, and a big spoked wheel
+    const steel = shiny('#9aa3b2', { metalness: 0.8, roughness: 0.35 }), dark = shiny('#5a6070', { metalness: 0.8, roughness: 0.4 });
+    add(panel, box(W, H, T * 2.2), steel, { p: [W / 2, H / 2, 0] });
+    for (const z of [-1, 1]) {
+      const f = z * (T * 1.1 + 0.01);
+      add(panel, cyl(0.5, 0.5, 0.04, 36), dark, { p: [W / 2, H / 2 + 0.05, f], r: [Math.PI / 2, 0, 0] });
+      add(panel, new THREE.TorusGeometry(0.5, 0.03, 8, 36), steel, { p: [W / 2, H / 2 + 0.05, f + z * 0.02], outline: false });
+      for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU; add(panel, cyl(0.025, 0.025, 0.04, 8), steel, { p: [W / 2 + Math.cos(a) * 0.42, H / 2 + 0.05 + Math.sin(a) * 0.42, f + z * 0.03], r: [Math.PI / 2, 0, 0], outline: false }); }
+      // the wheel: a hub with spokes and handles round the rim
+      add(panel, cyl(0.06, 0.06, 0.08, 14), brass, { p: [W / 2, H / 2 + 0.05, f + z * 0.06], r: [Math.PI / 2, 0, 0], outline: false });
+      add(panel, new THREE.TorusGeometry(0.22, 0.02, 8, 28), brass, { p: [W / 2, H / 2 + 0.05, f + z * 0.1], outline: false });
+      for (let k = 0; k < 4; k++) { const a = (k / 4) * TAU; add(panel, box(0.02, 0.44, 0.02), brass, { p: [W / 2, H / 2 + 0.05, f + z * 0.1], r: [0, 0, a], outline: false }); add(panel, sph(0.035, 8, 6), brass, { p: [W / 2 + Math.cos(a) * 0.24, H / 2 + 0.05 + Math.sin(a) * 0.24, f + z * 0.1], outline: false }); }
+    }
+    for (const y of [0.4, H - 0.4]) add(panel, cyl(0.05, 0.05, 0.3, 12), dark, { p: [0.01, y, 0], outline: false }); // (big hinges)
+  } else if (style === 'modern') {
+    slab('#2a2a30');
+    both(box(0.025, 0.7, 0.03), chrome, W - 0.12, 1.05, 0.02); // (a long bar handle)
+    both(box(W - 0.2, 0.01, 0.004), toon('#3a3a44'), W / 2, 1.6);
+  } else if (style === 'flush') {
+    slab('#c9955a'); knob(chrome);
+  } else if (style === 'dutch') {
+    // split across the middle, with a little shelf on the bottom half
+    add(panel, box(W, H * 0.5 - 0.01, T), toon('#f4f0ea'), { p: [W / 2, H * 0.25, 0] });
+    add(panel, box(W, H * 0.5 - 0.01, T), toon('#f4f0ea'), { p: [W / 2, H * 0.75, 0] });
+    both(box(W + 0.02, 0.04, 0.08), toon('#e8e2d8'), W / 2, H * 0.5);
+    for (const y of [H * 0.25, H * 0.75]) both(box(W * 0.65, H * 0.36, 0.012), toon('#e8e2d8'), W / 2, y);
+    knob(brass);
+  } else if (style === 'louvre') {
+    const frame = toon('#f4f0ea');
+    for (const [bw, bh, x, y] of [[W, 0.12, W / 2, 0.06], [W, 0.12, W / 2, H - 0.06], [0.12, H, 0.06, H / 2], [0.12, H, W - 0.06, H / 2], [W, 0.1, W / 2, H / 2]]) add(panel, box(bw, bh, T), frame, { p: [x, y, 0] });
+    for (let k = 0; k < 22; k++) { const y = 0.16 + k * ((H - 0.32) / 22); if (Math.abs(y - H / 2) < 0.07) continue; add(panel, box(W - 0.22, 0.05, 0.012), frame, { p: [W / 2, y, 0], r: [0.6, 0, 0], outline: false }); }
+    knob(brass);
+  } else if (style === 'plank') {
+    // a cottage door of vertical planks with black iron straps and a ring pull
+    for (let k = 0; k < 5; k++) add(panel, box(W / 5 - 0.008, H, T), toon(k % 2 ? '#6b4226' : '#74482a'), { p: [(k + 0.5) * (W / 5), H / 2, 0] });
+    for (const y of [0.4, H - 0.4]) { both(box(W * 0.8, 0.07, 0.01), black, W * 0.4, y); both(cyl(0.025, 0.025, 0.01, 8), black, W * 0.78, y); }
+    for (const z of [-1, 1]) add(panel, new THREE.TorusGeometry(0.06, 0.012, 6, 16), black, { p: [W - 0.15, 1.0, z * (T / 2 + 0.015)], outline: false });
+  } else if (style === 'farmhouse') {
+    slab('#f4f0ea');
+    for (const z of [-1, 1]) {
+      const f = z * (T / 2 + 0.008);
+      for (const [bw, bh, x, y] of [[W - 0.04, 0.1, W / 2, 0.1], [W - 0.04, 0.1, W / 2, H - 0.1], [W - 0.04, 0.1, W / 2, H / 2]]) add(panel, box(bw, bh, 0.016), toon('#e8e2d8'), { p: [x, y, f], outline: false });
+      for (const [y0, y1] of [[0.15, H / 2 - 0.05], [H / 2 + 0.05, H - 0.15]]) { const len = Math.hypot(W - 0.2, y1 - y0); add(panel, box(0.08, len, 0.016), toon('#e8e2d8'), { p: [W / 2, (y0 + y1) / 2, f], r: [0, 0, Math.atan2(W - 0.2, y1 - y0)], outline: false }); }
+    }
+    knob(black);
+  } else if (style === 'porthole') {
+    slab('#c0c6d4');
+    for (const z of [-1, 1]) {
+      add(panel, new THREE.TorusGeometry(0.2, 0.035, 8, 28), brass, { p: [W / 2, 1.55, z * (T / 2 + 0.01)], outline: false });
+      for (let k = 0; k < 8; k++) { const a = (k / 8) * TAU; add(panel, sph(0.012, 6, 4), brass, { p: [W / 2 + Math.cos(a) * 0.2, 1.55 + Math.sin(a) * 0.2, z * (T / 2 + 0.04)], outline: false }); }
+    }
+    add(panel, cyl(0.19, 0.19, T + 0.01, 24), glassMat('#9fd8ff', 0.45), { p: [W / 2, 1.55, 0], r: [Math.PI / 2, 0, 0], outline: false });
+    both(box(0.025, 0.4, 0.03), chrome, W - 0.12, 1.0, 0.02);
+  } else if (style === 'craftsman') {
+    slab('#5a3a24');
+    for (let k = 0; k < 3; k++) add(panel, box(W * 0.22, 0.32, T + 0.004), glassMat('#fff2c8', 0.55), { p: [W * (0.22 + k * 0.28), H - 0.38, 0], outline: false });
+    both(box(W + 0.02, 0.05, 0.06), toon('#4a2e1c'), W / 2, H - 0.62);
+    both(box(W * 0.75, 0.9, 0.012), toon('#4a2e1c'), W / 2, 0.75);
+    knob(brass);
+  } else if (style === 'frosted' || style === 'stained') {
+    const frame = toon(style === 'frosted' ? '#2a2a30' : '#5a3a24');
+    for (const [bw, bh, x, y] of [[W, 0.14, W / 2, 0.07], [W, 0.14, W / 2, H - 0.07], [0.12, H, 0.06, H / 2], [0.12, H, W - 0.06, H / 2]]) add(panel, box(bw, bh, T), frame, { p: [x, y, 0] });
+    if (style === 'frosted') add(panel, box(W - 0.22, H - 0.26, 0.02), new THREE.MeshStandardMaterial({ color: '#f4f8fb', transparent: true, opacity: 0.75, roughness: 0.9 }), { p: [W / 2, H / 2, 0], outline: false });
+    else {
+      // a grid of coloured glass with lead lines
+      const cols = ['#d6283a', '#2f5bd6', '#ffd23a', '#2f9e44', '#b77bff', '#ff9f43'];
+      const nx = 3, ny = 7, cw = (W - 0.22) / nx, ch = (H - 0.26) / ny;
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) add(panel, box(cw - 0.015, ch - 0.015, 0.02), new THREE.MeshStandardMaterial({ color: cols[(i * 3 + j * 5) % cols.length], transparent: true, opacity: 0.7, roughness: 0.2, emissive: cols[(i * 3 + j * 5) % cols.length], emissiveIntensity: 0.15 }), { p: [0.11 + (i + 0.5) * cw, 0.13 + (j + 0.5) * ch, 0], outline: false });
+    }
+    both(box(0.025, 0.5, 0.03), style === 'frosted' ? chrome : brass, W - 0.13, 1.0, 0.02);
+  } else if (style === 'bookcase') {
+    // a secret door: from the front, just a bookcase full of books
+    add(panel, box(W, H, 0.12), toon('#5a3a24'), { p: [W / 2, H / 2, 0] });
+    for (let r = 0; r < 5; r++) {
+      const y = 0.12 + r * ((H - 0.2) / 5);
+      add(panel, box(W - 0.06, 0.03, 0.14), toon('#4a2e1c'), { p: [W / 2, y, 0.01], outline: false });
+      let x = 0.06;
+      while (x < W - 0.1) { const bw = 0.035 + ((x * 97 + r * 13) % 3) * 0.012, bh = 0.24 + ((x * 53 + r) % 4) * 0.03; add(panel, box(bw, bh, 0.1), toon(['#7a2a2a', '#26355e', '#2f6b4f', '#c9955a', '#e8e2d0'][Math.floor(x * 41 + r * 3) % 5]), { p: [x + bw / 2, y + 0.015 + bh / 2, 0.03], outline: false }); x += bw + 0.006; }
+    }
+  }
 }
 /** Strings of beads across a doorway that sway as you walk through. */
 function beadCurtain(g, A, w) {
@@ -2215,7 +2349,8 @@ function archFill(g, w, rise) {
   shape.lineTo(r, DOOR_H); shape.lineTo(-r, DOOR_H);
   const fill = new THREE.ExtrudeGeometry(shape, { depth: ROOM_T - 0.01, bevelEnabled: false });
   fill.translate(0, 0, -(ROOM_T - 0.01) / 2);
-  const m = add(g, fill, toon('#fff1d6', { side: THREE.DoubleSide }), { outline: false });
+  const m = add(g, fill, toon('#fff1d6', { side: THREE.DoubleSide }), { outline: false, cast: false });
+  m.receiveShadow = false; // (like the wallpaper round it: in shadow it came out as darker patches over the arch)
   m.userData.wallpaper = true;
 }
 /** An open archway `w` wide: round (wooden trim, plinths and a keystone) or stone (a ring of blocks). */
@@ -2520,10 +2655,92 @@ function recolorTexture(mat, to) {
   }
   return recolorCache.get(key);
 }
+// ---- colouring the parts of a piece separately (a rug's base, border and pattern; a sofa's frame and cushions…)
+// A part is a colour the piece is made of: either the colour of some of its meshes ("m:#hex"), or one of the
+// main colours painted in one of its textures ("t:#hex"). Recolouring a texture part shifts every pixel
+// near that colour by the same amount, so the shading and the little details survive.
+const palCache = new WeakMap();
+function texPalette(img) {
+  if (palCache.has(img)) return palCache.get(img);
+  let data = null;
+  try { data = img.getContext?.('2d')?.getImageData(0, 0, img.width, img.height).data; } catch { data = null; }
+  if (!data) { palCache.set(img, []); return []; }
+  const buckets = new Map();
+  let total = 0;
+  for (let i = 0; i < data.length; i += 4 * 5) {
+    if (data[i + 3] < 128) continue;
+    const k = ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4);
+    const b = buckets.get(k) ?? { n: 0, r: 0, g: 0, b: 0 };
+    b.n++; b.r += data[i]; b.g += data[i + 1]; b.b += data[i + 2];
+    buckets.set(k, b); total++;
+  }
+  const out = [];
+  for (const b of [...buckets.values()].sort((a, c) => c.n - a.n)) {
+    if (b.n / total < 0.025 || out.length >= 4) break;
+    const c = { r: b.r / b.n, g: b.g / b.n, b: b.b / b.n, n: b.n / total };
+    if (out.some((o) => Math.hypot(o.r - c.r, o.g - c.g, o.b - c.b) < 55)) continue;
+    out.push(c);
+  }
+  const res = out.map((c) => ({ ...c, hex: `#${new THREE.Color(c.r / 255, c.g / 255, c.b / 255).getHexString()}` }));
+  palCache.set(img, res);
+  return res;
+}
+const partsCache = new Map();
+/** The parts of a piece you can colour separately (most used first), as [{ key, color }]. */
+export function furnitureParts(id) {
+  if (partsCache.has(id)) return partsCache.get(id);
+  const g = buildFurniture(id).group, count = new Map();
+  g.traverse((o) => {
+    if (!o.isMesh || o.userData.outline || o.userData.wallpaper || !o.material) return;
+    const m = o.material;
+    if (m.map?.image?.getContext) for (const p of texPalette(m.map.image)) count.set(`t:${p.hex}`, (count.get(`t:${p.hex}`) ?? 0) + p.n * 6);
+    else if (m.color) { const k = `m:#${m.color.getHexString()}`; count.set(k, (count.get(k) ?? 0) + 1); }
+  });
+  const parts = [...count].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([key]) => ({ key, color: key.slice(2) }));
+  partsCache.set(id, parts);
+  return parts;
+}
+const texPartCache = new Map();
+function applyParts(group, parts) {
+  group.traverse((o) => {
+    if (!o.isMesh || o.userData.outline || o.userData.wallpaper || !o.material) return;
+    const m = o.material;
+    if (m.map?.image?.getContext) {
+      const pal = texPalette(m.map.image), wanted = pal.filter((p) => parts[`t:${p.hex}`]);
+      if (!wanted.length) return;
+      const key = `${m.map.uuid}|${wanted.map((p) => p.hex + parts[`t:${p.hex}`]).join()}`;
+      if (!texPartCache.has(key)) {
+        const img = m.map.image, c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const x = c.getContext('2d');
+        x.drawImage(img, 0, 0);
+        const d = x.getImageData(0, 0, c.width, c.height), D = d.data;
+        const to = pal.map((p) => { const t = parts[`t:${p.hex}`]; if (!t) return null; const col = new THREE.Color(t); return [col.r * 255 - p.r, col.g * 255 - p.g, col.b * 255 - p.b]; });
+        for (let i = 0; i < D.length; i += 4) {
+          let best = -1, bd = 1e9;
+          for (let k = 0; k < pal.length; k++) { const p = pal[k], dd = (D[i] - p.r) ** 2 + (D[i + 1] - p.g) ** 2 + (D[i + 2] - p.b) ** 2; if (dd < bd) { bd = dd; best = k; } }
+          const sh = best >= 0 && bd < 95 * 95 ? to[best] : null;
+          if (sh) { D[i] = Math.max(0, Math.min(255, D[i] + sh[0])); D[i + 1] = Math.max(0, Math.min(255, D[i + 1] + sh[1])); D[i + 2] = Math.max(0, Math.min(255, D[i + 2] + sh[2])); }
+        }
+        x.putImageData(d, 0, 0);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = m.map.colorSpace; tex.wrapS = m.map.wrapS; tex.wrapT = m.map.wrapT; tex.repeat.copy(m.map.repeat);
+        texPartCache.set(key, tex);
+      }
+      o.material = m.clone();
+      o.material.map = texPartCache.get(key);
+    } else if (m.color) {
+      const t = parts[`m:#${m.color.getHexString()}`];
+      if (!t) return;
+      o.material = m.clone();
+      o.material.color.set(t);
+    }
+  });
+}
 function recolor(group, to, from = null) {
   const target = new THREE.Color(to).getHSL({});
   const mats = [];
-  group.traverse((o) => { if (o.isMesh && !o.userData.outline && o.material?.color && !o.material.map) mats.push(o); });
+  group.traverse((o) => { if (o.isMesh && !o.userData.outline && !o.userData.wallpaper && o.material?.color && !o.material.map) mats.push(o); });
   // pieces whose colour is in their texture (rugs, mats) get the texture shifted instead
   const textured = [];
   group.traverse((o) => { if (o.isMesh && !o.userData.outline && o.material?.map?.image?.getContext) textured.push(o); });
@@ -3307,9 +3524,9 @@ for (const [id, sp] of Object.entries(PLUSH)) FURNITURE[id] = (g, A) => plushie(
 export const PLUSH_IDS = Object.keys(PLUSH);
 export const plushEmoji = (id) => PLUSH_EMOJI[PLUSH[id]?.kind] ?? '🧸';
 
-export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true], color = null, text = null } = {}) {
+export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true], color = null, text = null, parts = null } = {}) {
   const data = FURN_DATA[id];
-  if (data?.base) return buildFurniture(data.base, { drop, len, openings, caps, color: color ?? data.color, text });
+  if (data?.base) return buildFurniture(data.base, { drop, len, openings, caps, color: color ?? data.color, text, parts });
   const group = new THREE.Group();
   const A = { anim: [], text }; // (text: what's written on it, for the chalkboard menu)
   let target = group;
@@ -3320,7 +3537,8 @@ export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [t
     add(group, cyl(0.012, 0.012, drop, 5), toon('#3a3f5a'), { p: [0, -drop / 2, 0], outline: false });
   }
   const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps } : undefined) ?? {};
-  if (color) recolor(group, color, data?.recolorFrom ?? null); // (recolorFrom: which colour is the one to change)
+  if (parts && Object.keys(parts).length) applyParts(group, parts); // (each part its own colour)
+  else if (color) recolor(group, color, data?.recolorFrom ?? null); // (recolorFrom: which colour is the one to change)
   return { group, use: res.use ?? null, anim: A.anim, A };
 }
 
@@ -3340,6 +3558,9 @@ function surface(id, draw, h = 256) {
 }
 
 const FLOOR_DRAW = {
+  floor_void_black(ctx) { ctx.fillStyle = '#030305'; ctx.fillRect(0, 0, 256, 256); ctx.fillStyle = 'rgba(255,255,255,.03)'; ctx.fillRect(0, 0, 256, 2); ctx.fillRect(0, 0, 2, 256); },
+  floor_starfield(ctx) { spaceSky(ctx, { stars: 240, seed: 31 }); },
+  floor_infinite_void(ctx) { infiniteVoid(ctx); },
   floor_emerald(ctx) {
     for (let y = 0; y < 256; y += 64) for (let x = 0; x < 256; x += 64) {
       ctx.fillStyle = (x + y) % 128 ? '#1f5a3a' : '#24684a'; ctx.fillRect(x, y, 64, 64);
@@ -3569,6 +3790,31 @@ const FLOOR_DRAW = {
 };
 
 const WALL_DRAW = {
+  // ---- the darkest blacks, and space (for a domain expansion room) ----
+  wall_void_black(ctx) { plainWall(ctx, '#050507'); },
+  wall_pitch_black(ctx) { plainWall(ctx, '#000000'); },
+  wall_starfield(ctx) { spaceSky(ctx, { stars: 320, seed: 5 }); },
+  wall_nebula_purple(ctx) { spaceSky(ctx, { seed: 7, clouds: [[0.2, 0.3, 0.5, 'rgba(140,60,220,A)', 0.55], [0.7, 0.65, 0.45, 'rgba(230,80,180,A)', 0.4], [0.5, 0.1, 0.35, 'rgba(80,90,255,A)', 0.35]] }); },
+  wall_nebula_blue(ctx) { spaceSky(ctx, { seed: 9, clouds: [[0.3, 0.4, 0.55, 'rgba(40,120,255,A)', 0.5], [0.75, 0.7, 0.4, 'rgba(60,220,255,A)', 0.35], [0.6, 0.15, 0.3, 'rgba(150,100,255,A)', 0.3]] }); },
+  wall_galaxy_band(ctx) {
+    const H = ctx.canvas.height;
+    spaceSky(ctx, { seed: 13, stars: 340, clouds: [[0.0, 0.5, 0.45, 'rgba(200,170,255,A)', 0.3], [0.5, 0.45, 0.5, 'rgba(255,220,190,A)', 0.28], [1.0, 0.5, 0.45, 'rgba(200,170,255,A)', 0.3]] });
+    const rnd = prng(17); ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 500; i++) { const x = rnd() * 256, y = H * 0.5 + (rnd() + rnd() + rnd() - 1.5) * H * 0.12; ctx.globalAlpha = 0.3 + rnd() * 0.5; ctx.fillRect(x, y, 1, 1); }
+    ctx.globalAlpha = 1;
+  },
+  wall_infinite_void(ctx) { infiniteVoid(ctx); },
+  wall_planets(ctx) {
+    const H = ctx.canvas.height;
+    spaceSky(ctx, { seed: 19, clouds: [[0.8, 0.2, 0.4, 'rgba(90,60,200,A)', 0.35]] });
+    // a ringed planet, a red one and a little moon
+    const planet = (x, y, r, c1, c2) => { const g = ctx.createRadialGradient(x - r * 0.4, y - r * 0.4, r * 0.1, x, y, r); g.addColorStop(0, c1); g.addColorStop(1, c2); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); };
+    planet(80, H * 0.35, 34, '#ffe0a8', '#b0702a');
+    ctx.strokeStyle = 'rgba(255,230,190,.75)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(80, H * 0.35, 58, 14, -0.3, 0, TAU); ctx.stroke();
+    planet(200, H * 0.7, 18, '#ff9a7a', '#8a2a1a');
+    planet(170, H * 0.2, 8, '#ffffff', '#8a8fa0');
+  },
+
   wall_forest_green(ctx) { plainWall(ctx, '#1b3a27'); },
   wall_olive(ctx) { plainWall(ctx, '#6b7a3a'); },
   wall_hunter(ctx) {
@@ -3863,7 +4109,7 @@ function decoDraw(d, kind) {
   return styles[kind]?.[d.style] ?? ((x) => plainWall(x, c));
 }
 const TALL_STYLES = new Set(['wainscot', 'twotone']);
-const TALL_WALLS = new Set(['wall_wainscot', 'wall_sakura', 'wall_jungle', 'wall_forest', 'wall_greenhouse']);
+const TALL_WALLS = new Set(['wall_wainscot', 'wall_sakura', 'wall_jungle', 'wall_forest', 'wall_greenhouse', 'wall_infinite_void', 'wall_galaxy_band', 'wall_planets']);
 /** Wallpapers drawn as one picture from the floor to the ceiling (they repeat sideways, never upwards). */
 export const wallIsTall = (id) => TALL_WALLS.has(id) || TALL_STYLES.has(DECO[id]?.style);
 const WALL_TALL_PX = 410; // (256 px per 2 tiles across, so 410 for the 3.2 tiles up)
@@ -3881,6 +4127,10 @@ function linedWall(ctx, color) {
 }
 
 const CEIL_DRAW = {
+  ceil_void_black(ctx) { plainWall(ctx, '#000000'); },
+  ceil_starfield(ctx) { spaceSky(ctx, { stars: 300, seed: 21 }); },
+  ceil_nebula(ctx) { spaceSky(ctx, { seed: 23, clouds: [[0.3, 0.3, 0.5, 'rgba(140,60,220,A)', 0.5], [0.7, 0.7, 0.5, 'rgba(40,120,255,A)', 0.45]] }); },
+  ceil_infinite_void(ctx) { infiniteVoid(ctx); },
   ceil_galaxy(ctx) {
     const g = ctx.createRadialGradient(90, 110, 10, 128, 128, 200);
     g.addColorStop(0, '#b25bff'); g.addColorStop(0.35, '#4a2a9a'); g.addColorStop(0.7, '#1a1a4a'); g.addColorStop(1, '#0d0d26');
@@ -3973,6 +4223,48 @@ export const wallTexture = (id) => surface(id, WALL_DRAW[id] ?? decoDraw(DECO[id
 
 /** n x n tiles with grout lines; `mosaic`: colours scattered, `checker`: alternating. */
 /** A little seeded random number generator (0..1), so patterns look scattered but never change. */
+/** Space: a black sky with soft nebula clouds and stars (big ones with a glow), for walls, ceilings and floors. */
+function spaceSky(ctx, { base = '#030308', clouds = [], stars = 260, seed = 3, H = null } = {}) {
+  const W = 256; H ??= ctx.canvas.height;
+  ctx.fillStyle = base; ctx.fillRect(0, 0, W, H);
+  for (const [x, y, r, col, a] of clouds) {
+    // (each cloud is drawn three times across, so the pattern repeats sideways without a seam)
+    for (const dx of [-W, 0, W]) {
+      const g = ctx.createRadialGradient(x * W + dx, y * H, 0, x * W + dx, y * H, r * W);
+      g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    }
+  }
+  const rnd = prng(seed);
+  for (let i = 0; i < stars; i++) {
+    const x = rnd() * W, y = rnd() * H, big = rnd() < 0.06, r = big ? 1.4 + rnd() * 1.2 : 0.4 + rnd() * 0.7;
+    ctx.fillStyle = ['#ffffff', '#cfe2ff', '#fff2cf', '#e5d4ff'][Math.floor(rnd() * 4)];
+    ctx.globalAlpha = 0.5 + rnd() * 0.5;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    if (big) { ctx.globalAlpha = 0.18; ctx.beginPath(); ctx.arc(x, y, r * 4, 0, TAU); ctx.fill(); ctx.globalAlpha = 0.6; ctx.fillRect(x - r * 5, y - 0.4, r * 10, 0.8); ctx.fillRect(x - 0.4, y - r * 5, 0.8, r * 10); }
+  }
+  ctx.globalAlpha = 1;
+}
+/** Infinite Void: deep black, a vast swirl of white-blue light pulling in to a bright centre, rings of stars. */
+function infiniteVoid(ctx, cx = 0.5, cy = 0.5) {
+  const W = 256, H = ctx.canvas.height;
+  spaceSky(ctx, { base: '#000002', stars: 220, seed: 11, clouds: [[cx, cy, 0.9, 'rgba(40,70,160,A)', 0.35], [cx, cy, 0.4, 'rgba(160,200,255,A)', 0.35]] });
+  const rnd = prng(29);
+  ctx.save(); ctx.translate(cx * W, cy * H);
+  for (let arm = 0; arm < 5; arm++) {
+    for (let k = 0; k < 160; k++) {
+      const t = k / 160, a = arm * (TAU / 5) + t * 5.5, r = 6 + t * Math.max(W, H) * 0.75;
+      ctx.globalAlpha = (1 - t) * 0.5;
+      ctx.fillStyle = t < 0.3 ? '#ffffff' : t < 0.6 ? '#bcd8ff' : '#6f9cff';
+      const s = 1 + (1 - t) * 2.5 + rnd();
+      ctx.beginPath(); ctx.arc(Math.cos(a) * r + (rnd() - 0.5) * 6, Math.sin(a) * r * (H / W) + (rnd() - 0.5) * 6, s, 0, TAU); ctx.fill();
+    }
+  }
+  const core = ctx.createRadialGradient(0, 0, 0, 0, 0, 30);
+  core.addColorStop(0, 'rgba(255,255,255,1)'); core.addColorStop(0.4, 'rgba(190,220,255,.7)'); core.addColorStop(1, 'rgba(120,160,255,0)');
+  ctx.globalAlpha = 1; ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0, 0, 30, 0, TAU); ctx.fill();
+  ctx.restore();
+}
 function prng(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 function squareTiles(ctx, n, cols, grout, gw, mosaic = false, checker = false) {

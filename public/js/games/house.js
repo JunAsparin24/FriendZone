@@ -8,7 +8,7 @@ import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
-import { buildFurniture, TRIM_MAT, outdoorPanorama, floorTexture, wallTexture, ceilingTexture, wallIsTall, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
+import { buildFurniture, furnitureParts, TRIM_MAT, outdoorPanorama, floorTexture, wallTexture, ceilingTexture, wallIsTall, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
 import { settings } from '../settings.js';
 import { buildDoor, doorImage } from '../three/doors.js';
@@ -44,7 +44,7 @@ function tiledPlane(w, h, y0 = 0) {
 const FURN = Object.fromEntries(CATALOG.furniture.map((f) => [f.id, f]));
 const kindOf = (id) => FURN[id]?.kind ?? 'floor';
 /** Anything can be recoloured (like Bloxburg), except walls, doors, plushies and admin specials. Must match server.py. */
-const canRecolor = (f) => !!f && (f.recolor || (!f.room && !f.drag && !f.claw && !f.exclusive && (f.kind ?? 'floor') !== 'door'));
+const canRecolor = (f) => !!f && (f.recolor || (f.kind === 'door' && !f.drag) || (!f.room && !f.drag && !f.claw && !f.exclusive)); // (doors too)
 // free things (plain walls) never run out: you can put up as many as the limit
 // (building in someone else's house: their things, not yours; see invOf in houseArea)
 let invOf = () => me();
@@ -114,8 +114,9 @@ function surfTop(id) {
 }
 
 // furniture snaps to quarter tiles, so things can go almost anywhere
-const SNAP = 4;
+const SNAP = 8; // (eighth tiles: furniture and wall decorations line up nicely, easy to centre)
 const snap = (v) => Math.round(v * SNAP) / SNAP;
+const snapQ = (v) => Math.round(v * 4) / 4; // (room walls and doors stay on quarter tiles)
 
 /** Footprint cells (on the quarter-tile grid) of a placed item, keyed by layer so rugs can sit under furniture. */
 function cellsOf(it, check = false) {
@@ -331,7 +332,8 @@ function buildRoom() {
     grp.position.set(x, y, z);
     grp.rotation.y = ry;
     g.add(grp);
-    return { grp, face };
+    base.userData.isTrim = true;
+    return { grp, face, base };
   };
   const walls = {
     back: wall(NX, WALL_H, NX / 2, WALL_H / 2, 0, 0),
@@ -369,7 +371,7 @@ function buildRoom() {
   mat.rotation.x = -Math.PI / 2;
   mat.position.set(NX / 2, 0.01, NZ - 0.45);
   g.add(mat);
-  walls.front = { grp: front, faces: [fl.face, fr.face, ft.face] };
+  walls.front = { grp: front, faces: [fl.face, fr.face, ft.face], bases: [fl.base, fr.base] };
   // outside: a lawn with a path to the door, so the doorway never looks into a void
   const lawn = new THREE.Mesh(new THREE.PlaneGeometry(110, 110), toon('#5fae55'));
   lawn.rotation.x = -Math.PI / 2;
@@ -477,6 +479,10 @@ export function house(stage) {
   const tabsEl = $h('.house-tabs'), panel = $h('.house-panel'), hint = $h('.house-hint');
 
   let viewKey = null, home = null, edit = false, placing = null, selected = -1, tab = 'visit', sideOpen = false;
+  let fly = null; // (where the decorating camera is floating)
+  let grab = null; // (pressed on a piece: dragging it moves it)
+  let trimMode = false, trimBrush = null; // (trim, one wall at a time)
+  let partSel = null; // (colouring one part of the selected piece)
   let confirmBuy = null, saveTimer = 0, echoes = 0, ghost = null, seated = null;
   let preview = {};        // { floor?, wall? }: ones you're trying on before buying
   let paintMode = false, brush = null; // painting a room's floor / ceiling or one wall: on, and with what
@@ -493,8 +499,8 @@ export function house(stage) {
   const payload = () => ({
     k: viewKey,
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
-    items: home.items.map(({ id, x, y, r, h, l, iw, dg, c, t }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}) })),
-    areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT,
+    items: home.items.map(({ id, x, y, r, h, l, iw, dg, c, t, cp }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}) })),
+    areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT, trimp: home.trimp ?? {},
   });
 
   // ---- building the furniture ------------------------------------------------------
@@ -544,9 +550,18 @@ export function house(stage) {
     stage.interactables = stage.interactables.filter((i) => !i.house);
     solids.length = 0;
     const walls = roomWallCells(home.items);
-    entries = home.items.map((it, index) => {
+    entries = home.items.map((it, index) => { try { return buildEntry(it, index, walls); } catch (err) {
+      // (something went wrong building one piece: leave a gap for it, rather than losing the whole room)
+      console.error('house item', it, err);
+      const group = new THREE.Group(); group.userData.index = index; room.items.add(group);
+      return { group, it, A: { anim: [] }, anim: [], bounce: 1, use: null };
+    } });
+    afterBuild();
+  }
+  function buildEntry(it, index, walls) {
+    {
       const layout = isDragWall(it.id) ? wallLayout(it, home.items, walls) : null;
-      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null, text: it.t ?? null });
+      const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null, text: it.t ?? null, parts: it.cp ?? null });
       built.group.userData.index = index;
       placeGroup(built.group, it);
       built.group.visible = !(placing && placing.from === index);
@@ -589,7 +604,9 @@ export function house(stage) {
       });
       entry.inter.house = true;
       return entry;
-    });
+    }
+  }
+  function afterBuild() {
     // keep the light count sane: only the first few lamps really light the room
     let lights = 0;
     room.items.traverse((o) => {
@@ -659,9 +676,99 @@ export function house(stage) {
     }
     return paperMats.get(id);
   }
+  /** Where walls you've built meet one of the house's outer walls (0 back, 1 left, 2 front, 3 right):
+   *  the points along it that split it into rooms. */
+  function outerSplits(side) {
+    const out = [];
+    for (const it of home.items) {
+      const f = FURN[it.id];
+      if (!isDragWall(it.id) || f.kind === 'ceiling' || (f.wallH && f.wallH !== 'full')) continue;
+      const [w, d] = footprint(it), along = it.r % 2 === 0; // (along: runs across, left to right)
+      const near = 0.35;
+      if (side === 0 && !along && it.y <= near) out.push(it.x + w / 2);
+      if (side === 2 && !along && it.y + d >= NZ - near) out.push(it.x + w / 2);
+      if (side === 1 && along && it.x <= near) out.push(it.y + d / 2);
+      if (side === 3 && along && it.x + w >= NX - near) out.push(it.y + d / 2);
+    }
+    return [...new Set(out.map((v) => Math.round(v * 4) / 4))].sort((a, b) => a - b);
+  }
+  /** The stretch [a, b] of an outer wall around point t (or null if no walls split it). */
+  function outerSegment(side, t) {
+    const cuts = outerSplits(side);
+    if (!cuts.length) return null;
+    const len = side % 2 === 0 ? NX : NZ, pts = [0, ...cuts, len];
+    for (let i = 1; i < pts.length; i++) if (t <= pts[i]) return [pts[i - 1], pts[i]];
+    return [pts[pts.length - 2], len];
+  }
+  /** A trim colour of its own for one wall: an outer wall (h0..h3) or a wall you built (by where it is). */
+  const trimKeyOf = (it) => `i:${it.x}:${it.y}:${it.r % 2}`;
+  const trimMats = new Map();
+  const trimMat = (c) => { if (!trimMats.has(c)) { const m = TRIM_MAT.clone(); m.color.set(c); trimMats.set(c, m); } return trimMats.get(c); };
+  function paintTrims() {
+    const own = home.trimp ?? {};
+    const pick = (key) => (own[key] ? trimMat(own[key]) : TRIM_MAT);
+    room.walls.back.base.material = pick('h0');
+    room.walls.left.base.material = pick('h1');
+    room.walls.right.base.material = pick('h3');
+    room.walls.front.bases.forEach((b) => { b.material = pick('h2'); });
+    for (const e of entries) {
+      if (!e.roomWall) continue;
+      const m = pick(trimKeyOf(e.it));
+      e.group.traverse((o) => { if (o.isMesh && (o.material === TRIM_MAT || o.userData.isTrim)) { o.userData.isTrim = true; o.material = m; } });
+    }
+  }
+  /** Trim brush: give the wall under the pointer its own trim colour. */
+  function trimAt() {
+    stage.raycaster.setFromCamera(stage.mouse, stage.camera);
+    const house = { h0: room.walls.back.face, h1: room.walls.left.face, h3: room.walls.right.face };
+    const targets = [...Object.values(house), ...room.walls.front.faces, ...paintOverlays, ...entries.filter((e) => e.roomWall).map((e) => e.group)];
+    const hit = stage.raycaster.intersectObjects(targets.filter((o) => o.visible !== false), true).find((h) => !h.object.userData.outline);
+    if (!hit) { sfx('error'); return; }
+    let key = Object.keys(house).find((k) => house[k] === hit.object) ?? (room.walls.front.faces.includes(hit.object) ? 'h2' : null);
+    const ov = paintOverlays.indexOf(hit.object);
+    if (ov >= 0) key = ['h0', 'h1', 'h2', 'h3'][[room.walls.back.grp, room.walls.left.grp, room.walls.front.grp, room.walls.right.grp].indexOf(hit.object.parent)];
+    if (!key) {
+      let index = -1;
+      for (let o = hit.object; o; o = o.parent) if (o.userData.index != null) { index = o.userData.index; break; }
+      if (!home.items[index]) { sfx('error'); return; }
+      key = trimKeyOf(home.items[index]);
+    }
+    const own = { ...(home.trimp ?? {}) };
+    if (trimBrush === (home.trim ?? TRIM_DEFAULT)) delete own[key]; else own[key] = trimBrush;
+    if (Object.keys(own).length > 64) { toast('That\'s a lot of trims! Clear some first.', 'error'); return; }
+    home.trimp = own;
+    commit('paint');
+  }
+  let paintOverlays = [];
   function paintWalls() {
+    paintTrims();
     const own = home.wallp ?? {};
     const mat = (key) => (own[key] ? paperMat(own[key]) : room.wallMat);
+    // painted stretches of the outer walls: a sheet of that wallpaper just in front of the wall
+    paintOverlays.forEach((o) => o.parent?.remove(o));
+    paintOverlays = [];
+    for (const [key, id] of Object.entries(own)) {
+      const m = key.match(/^h(\d):([\d.]+):([\d.]+)$/);
+      if (!m) continue;
+      const side = +m[1], a = +m[2], b = +m[3];
+      const sheet = (x0, x1, y0, y1) => {
+        const pl = new THREE.Mesh(tiledPlane(x1 - x0, y1 - y0, y0), paperMat(id));
+        pl.receiveShadow = false;
+        const mid = (x0 + x1) / 2, my = (y0 + y1) / 2;
+        if (side === 0) { pl.position.set(mid - NX / 2, my - WALL_H / 2, 0.006); room.walls.back.grp.add(pl); }
+        else if (side === 1) { pl.position.set(-(mid - NZ / 2), my - WALL_H / 2, 0.006); room.walls.left.grp.add(pl); }
+        else if (side === 3) { pl.position.set(mid - NZ / 2, my - WALL_H / 2, 0.006); room.walls.right.grp.add(pl); }
+        else { pl.position.set(mid, my, NZ - 0.006); pl.rotation.y = Math.PI; room.walls.front.grp.add(pl); }
+        paintOverlays.push(pl);
+      };
+      if (side !== 2) sheet(a, b, 0, WALL_H);
+      else {
+        // (the front wall has the front door in it: go round the doorway)
+        if (a < DOOR.x0) sheet(a, Math.min(b, DOOR.x0), 0, WALL_H);
+        if (b > DOOR.x1) sheet(Math.max(a, DOOR.x1), b, 0, WALL_H);
+        if (b > DOOR.x0 && a < DOOR.x1) sheet(Math.max(a, DOOR.x0), Math.min(b, DOOR.x1), DOOR.h, WALL_H);
+      }
+    }
     room.walls.back.face.material = mat('h0');
     room.walls.left.face.material = mat('h1');
     room.walls.front.faces.forEach((f) => { f.material = mat('h2'); });
@@ -675,10 +782,18 @@ export function house(stage) {
   function paintWallAt() {
     stage.raycaster.setFromCamera(stage.mouse, stage.camera);
     const house = { h0: room.walls.back.face, h1: room.walls.left.face, h3: room.walls.right.face };
-    const targets = [...Object.values(house), ...room.walls.front.faces, ...entries.filter((e) => e.roomWall).map((e) => e.group)];
+    const targets = [...Object.values(house), ...room.walls.front.faces, ...paintOverlays, ...entries.filter((e) => e.roomWall).map((e) => e.group)];
     const hit = stage.raycaster.intersectObjects(targets.filter((o) => o.visible !== false), true).find((h) => !h.object.userData.outline);
     if (!hit) { sfx('error'); return; }
     let key = Object.keys(house).find((k) => house[k] === hit.object) ?? (room.walls.front.faces.includes(hit.object) ? 'h2' : null);
+    const ov = paintOverlays.indexOf(hit.object);
+    if (ov >= 0) key = ['h0', 'h1', 'h2', 'h3'][[room.walls.back.grp, room.walls.left.grp, room.walls.front.grp, room.walls.right.grp].indexOf(hit.object.parent)];
+    if (key) {
+      // an outer wall split up by walls you've built: only paint the stretch in the room you clicked in
+      const side = +key[1], p = room.group.worldToLocal(hit.point.clone());
+      const seg = outerSegment(side, side % 2 === 0 ? p.x : p.z);
+      if (seg) key = `h${side}:${seg[0]}:${seg[1]}`;
+    }
     if (!key) {
       let index = -1;
       for (let o = hit.object; o; o = o.parent) if (o.userData.index != null) { index = o.userData.index; break; }
@@ -982,11 +1097,11 @@ export function house(stage) {
     });
     if (!best) {
       // not near a wall: show it (red) where you're pointing
-      Object.assign(placing, { x: Math.max(0, Math.min(NX - fw, snap(px - fw / 2))), y: Math.max(0, Math.min(NZ - 0.25, snap(pz))), r: 0 });
+      Object.assign(placing, { x: Math.max(0, Math.min(NX - fw, snapQ(px - fw / 2))), y: Math.max(0, Math.min(NZ - 0.25, snapQ(pz))), r: 0 });
       return;
     }
     const l = lenOf(best), horiz = best.r % 2 === 0, start = horiz ? best.x : best.y;
-    const a = Math.max(start, Math.min(start + l - fw, snap((horiz ? px : pz) - fw / 2)));
+    const a = Math.max(start, Math.min(start + l - fw, snapQ((horiz ? px : pz) - fw / 2)));
     Object.assign(placing, horiz ? { x: a, y: best.y, r: 0 } : { x: best.x, y: a, r: 1 });
   }
 
@@ -994,7 +1109,7 @@ export function house(stage) {
   function floorPoint() {
     const p = stage.pointerOnPlane(0);
     if (!p) return null;
-    return { x: Math.max(0, Math.min(NX, snap(p.x / T))), y: Math.max(0, Math.min(NZ, snap(p.z / T))) };
+    return { x: Math.max(0, Math.min(NX, snapQ(p.x / T))), y: Math.max(0, Math.min(NZ, snapQ(p.z / T))) };
   }
   /** Every occupied cell, leaving out one item (the one being moved). */
   function takenCells(skip = -1) {
@@ -1034,7 +1149,7 @@ export function house(stage) {
 
   function startPlacing(id, from = -1) {
     placing = { id, r: from >= 0 ? home.items[from].r : 0, dg: from >= 0 ? home.items[from].dg : undefined, from, x: -1, y: -1, valid: false, h: from >= 0 ? heightOf(home.items[from]) : kindOf(id) === 'ceiling' ? 0.4 : WALL_Y };
-    if (isDragWall(id)) Object.assign(placing, { l: from >= 0 ? lenOf(home.items[from]) : 1 / SNAP, start: null, armed: false });
+    if (isDragWall(id)) Object.assign(placing, { l: from >= 0 ? lenOf(home.items[from]) : 0.25, start: null, armed: false });
     if (kindOf(id) === 'wall' && from < 0) placing.r = 0;
     selected = -1;
     buildGhost();
@@ -1138,7 +1253,7 @@ export function house(stage) {
     if (selected < 0) return;
     const it = home.items[selected];
     if (!isDragWall(it.id)) return;
-    const next = { ...it, l: Math.max(1 / SNAP, lenOf(it) + dir / SNAP) };
+    const next = { ...it, l: Math.max(0.25, lenOf(it) + dir / 4) };
     if (next.l === lenOf(it) || !fits(next) || cellsOf(next, true).some((c) => takenCells(selected).has(c)) || blocksDoor(next)) { sfx('error'); return; }
     home.items[selected] = next;
     commit('rotate');
@@ -1222,13 +1337,33 @@ export function house(stage) {
       }
       if (type === 'up' && d && !d.moved && d.button === 2) { cancelWall(); return; }
     }
+    if (type === 'down' && e.button === 0 && !placing && !paintMode) {
+      const idx = pickItem();
+      if (idx >= 0) { grab = { idx, wasFixed: orbit.fixed }; orbit.fixed = true; } // (hold still: you're holding it)
+    }
+    if (type === 'move' && grab && d?.moved && !placing && home.items[grab.idx]) {
+      startPlacing(home.items[grab.idx].id, grab.idx);
+      placing.dragging = true;
+    }
+    if (type === 'up' && grab) {
+      orbit.fixed = grab.wasFixed;
+      grab = null;
+      if (placing?.dragging) {
+        // let go: it lands where you dropped it (or stays in your hand if it can't go there)
+        placing.dragging = false;
+        aimPlacement(); updateGhost(); place();
+        return;
+      }
+    }
     if (type === 'move' && placing) { aimPlacement(); updateGhost(); }
     if (paintMode && brush && !placing && tab === 'style' && PAINTABLE.has(stylePage) && type === 'up' && d && !d.moved && d.button === 0) { paintAt(); return; }
+    if (trimMode && trimBrush && !placing && tab === 'style' && stylePage === 'trim' && type === 'up' && d && !d.moved && d.button === 0) { trimAt(); return; }
     if (type !== 'up' || !d || d.moved) return;
     if (d.button === 2) { rotate(); return; }
     if (placing) { aimPlacement(); updateGhost(); place(); return; }
     const idx = pickItem();
     selected = idx === selected ? -1 : idx;
+    partSel = null;
     if (idx >= 0) { sfx('pickup', { vol: 0.5 }); entries[idx].bounce = 0; }
     renderSelection();
     renderAll();
@@ -1238,7 +1373,7 @@ export function house(stage) {
     const k = e.key.toLowerCase();
     // once you sit down you stay put until you press E again
     if (seated && k === 'e' && !e.repeat && !stage.near) { standUp(); return; } // (if nothing else caught the E)
-    if (edit && mine()) {
+    if (edit && canEdit() && !e.target?.closest?.('input, textarea')) { // (builders too; never while you're typing)
       if (k === 'r') { stage.keys.delete('r'); if (!e.repeat) rotate(); } // R turns furniture instead of the camera
       else if (k === ']' || k === 'pageup') nudgeHeight(1);
       else if (k === '[' || k === 'pagedown') nudgeHeight(-1);
@@ -1296,7 +1431,7 @@ export function house(stage) {
 
   function renderTabs() {
     // (building in a friend's house: their items and styles, but buying is up to them)
-    const list = [['visit', '🏘️ Visit'], ...(mine() ? [['items', '🛋️ Items'], ['shop', '🛒 Shop'], ['style', '🎨 Style']] : canEdit() ? [['items', '🛋️ Their items'], ['style', '🎨 Style']] : [])];
+    const list = [['visit', '🏘️ Visit'], ...(mine() ? [['items', '🛋️ Items'], ['shop', '🛒 Shop'], ['style', '🎨 Style'], ['plots', '💾 Houses']] : canEdit() ? [['items', '🛋️ Items'], ['shop', '🛒 Shop'], ['style', '🎨 Style']] : [])]; // (builders: everything but your saved houses)
     if (!list.some(([id]) => id === tab)) tab = 'visit';
     tabsEl.innerHTML = list.map(([id, label]) => `<button data-tab="${id}" class="${tab === id ? 'on' : ''}">${label}</button>`).join('');
   }
@@ -1306,7 +1441,21 @@ export function house(stage) {
     if (tab === 'visit') return renderVisit();
     if (tab === 'items') return renderItems();
     if (tab === 'shop') return renderShop();
+    if (tab === 'plots') return renderPlots();
     return renderStyle();
+  }
+  /** Saved houses: save the one you're in as a design, swap another one in, rename or delete them. */
+  let slots = null;
+  function renderPlots() {
+    if (!slots) { panel.innerHTML = '<h3>💾 Saved houses</h3><p class="muted">Loading…</p>'; net.send('house_slots'); return; }
+    panel.innerHTML = `<h3>💾 Saved houses</h3>
+      <p class="muted small">Save the house you're in as a design, then build something new and switch between them whenever you like. Saving doesn't use up furniture: each design uses the things you own.</p>
+      <div class="row"><input class="plot-name item-search" maxlength="24" placeholder="Name this house (e.g. Cosy Cabin)"><button class="btn primary small" data-slot-save="new">💾 Save as new</button></div>
+      <div class="plot-list">${slots.length ? slots.map((sl, i) => `<div class="plot-row">
+        <span class="plot-ico">🏠</span><span class="plot-name-t"><b>${esc(sl.name)}</b><small class="muted">🛋️ ${sl.n} things</small></span>
+        <button class="btn small primary" data-slot-load="${i}">Move in</button>
+        <button class="btn small" data-slot-save="${i}" title="Save the house you're in over this one">Overwrite</button>
+        <button class="btn small ghost" data-slot-del="${i}" title="Delete">🗑️</button></div>`).join('') : '<p class="muted">No saved houses yet.</p>'}</div>`;
   }
 
   function renderVisit() {
@@ -1317,7 +1466,7 @@ export function house(stage) {
         <span class="vav"></span>
         <span class="vname"><b>${esc(p.name)}${p.key === S.me ? ' <small>(you)</small>' : ''}</b>
           <small>🛋️ ${p.house?.n ?? 0} · ❤️ ${p.house?.likes ?? 0}${here(p.key) ? ` · <span class="win">${here(p.key)} inside</span>` : ''}</small></span>
-        ${mine() && viewKey === S.me && p.key !== S.me ? `<span class="vbuild ${(home?.builders ?? []).includes(p.key) ? 'on' : ''}" data-builder="${esc(p.key)}" title="Let them build in your house">🔨 ${(home?.builders ?? []).includes(p.key) ? 'Can build' : 'Let build'}</span>` : ''}
+        ${mine() && viewKey === S.me && p.key !== S.me ? `<span class="vbuild ${(home?.builders ?? []).includes(p.key.toLowerCase()) ? 'on' : ''}" data-builder="${esc(p.key)}" title="Tap to let them build in your house, tap again to stop them">🔨 ${(home?.builders ?? []).includes(p.key.toLowerCase()) ? 'Can build ✓' : 'Let build'}</span>` : ''}
         <span class="vgo">${p.key === viewKey ? 'Here' : 'Go →'}</span>
       </button>`).join('')}</div>
       ${mine() ? '<p class="muted small">🔨 <b>Let build</b> lets a friend decorate your house with your furniture. Tap again to take it away.</p>' : (home?.builders ?? []).includes(S.me) ? '<p class="muted small">🔨 You can build here! Press <b>Build here</b> up top.</p>' : ''}`;
@@ -1356,6 +1505,7 @@ export function house(stage) {
         ${isDragWall(sel.id) ? `<button class="btn small" data-act="shorter">− Shorter</button><button class="btn small" data-act="longer">＋ Longer</button><span class="muted small">${lenOf(sel)} tiles</span>` : ''}
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div>
         ${FURN[sel.id].text ? `<div class="wd-label">✏️ What it says <small class="muted">(new line or | for each line)</small></div><textarea class="menu-text" maxlength="90" rows="3" placeholder="MENU|Pizza 12|Pasta 10">${esc(sel.t ?? '')}</textarea>` : ''}
+        ${canRecolor(FURN[sel.id]) && furnitureParts(sel.id).length > 1 ? `<div class="wd-label">🧩 Colour a part <small class="muted">(pick one, then a colour)</small></div><div class="part-chips"><button type="button" class="part-chip ${partSel ? '' : 'on'}" data-part="">Whole thing</button>${furnitureParts(sel.id).map((p, i) => `<button type="button" class="part-chip ${partSel === p.key ? 'on' : ''}" data-part="${p.key}" title="Part ${i + 1}"><span style="--c:${sel.cp?.[p.key] ?? p.color}"></span>Part ${i + 1}</button>`).join('')}</div>` : ''}
         ${canRecolor(FURN[sel.id]) ? `<div class="wd-label">🎨 Colour</div><div class="swatches palette"><button type="button" class="swatch orig ${sel.c ? '' : 'on'}" data-recolor="" title="Original colour">↺</button>${CATALOG.clothColors.map((c) => `<button type="button" class="swatch ${sel.c === c ? 'on' : ''}" data-recolor="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}</div>` : ''}
       ${pageStrip(ITEM_FILTERS, itemFilter, 'item-filter')}
       <input class="item-search" type="search" placeholder="🔍 Search your items…" value="${esc(itemSearch)}">
@@ -1448,8 +1598,12 @@ export function house(stage) {
     if (stylePage === 'trim') {
       // the baseboards and the tops of half walls, all in one colour (free)
       const cur = home?.trim ?? TRIM_DEFAULT;
-      body = `<p class="muted small">The colour of the baseboards along every wall and the tops of half walls. Free to change any time.</p>
-        <div class="trim-grid">${CATALOG.trimColors.map((t) => `<button class="trim-opt ${cur === t.c ? 'on' : ''}" data-trim="${t.c}" title="${esc(t.name)}"><span style="--c:${t.c}"></span>${esc(t.name)}</button>`).join('')}</div>`;
+      const n = Object.keys(home?.trimp ?? {}).length;
+      body = `<p class="muted small">The colour of the baseboards and the tops of half walls. Free to change any time.</p>
+        <div class="row"><button class="btn small ${trimMode ? '' : 'primary'}" data-trim-mode="all">🏠 Whole house</button><button class="btn small ${trimMode ? 'primary' : ''}" data-trim-mode="wall">🖌️ One wall at a time</button>
+        ${n ? `<button class="btn small ghost" data-trim-mode="clear">↺ Clear ${n} wall trim${n > 1 ? 's' : ''}</button>` : ''}</div>
+        <p class="muted small">${trimMode ? (trimBrush ? 'Now click a wall to give it this trim (pick the whole-house colour to put it back).' : 'Pick a colour, then click the walls of a room.') : 'Picks the trim for every wall.'}</p>
+        <div class="trim-grid">${CATALOG.trimColors.map((t) => `<button class="trim-opt ${(trimMode ? trimBrush : cur) === t.c ? 'on' : ''}" data-trim="${t.c}" title="${esc(t.name)}"><span style="--c:${t.c}"></span>${esc(t.name)}</button>`).join('')}</div>`;
     } else if (stylePage === 'size') {
       // room size: any width and depth up to the biggest house upgrade you own
       const [mw, md] = maxSize(), [sw, sd] = home?.size ?? [14, 14];
@@ -1486,14 +1640,48 @@ export function house(stage) {
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-builder],[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor],[data-trim],[data-item-filter],[data-item-set]');
+    const t = e.target.closest('[data-slot-save],[data-slot-load],[data-slot-del],[data-builder],[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-part],[data-recolor],[data-trim-mode],[data-trim],[data-item-filter],[data-item-set]');
     if (!t) return;
     const ds = t.dataset;
-    if (ds.trim) { if (home.trim !== ds.trim) { home.trim = ds.trim; commit('paint'); } return; }
+    if (ds.slotSave) {
+      const name = panel.querySelector('.plot-name')?.value ?? '';
+      if (ds.slotSave !== 'new' && !confirm(`Save the house you're in over “${slots?.[+ds.slotSave]?.name}”?`)) return;
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = 0; net.send('house_save', payload()); } // (the latest changes first)
+      net.send('house_slot', { op: 'save', i: ds.slotSave === 'new' ? null : +ds.slotSave, name });
+      return;
+    }
+    if (ds.slotLoad) {
+      if (!confirm(`Move into “${slots?.[+ds.slotLoad]?.name}”? The house you're in now will be swapped out, so save it first if you want to keep it.`)) return;
+      if (edit) setEdit(false);
+      net.send('house_slot', { op: 'load', i: +ds.slotLoad });
+      return;
+    }
+    if (ds.slotDel) { if (confirm(`Delete “${slots?.[+ds.slotDel]?.name}” for good?`)) net.send('house_slot', { op: 'delete', i: +ds.slotDel }); return; }
+    if (ds.trimMode) {
+      if (ds.trimMode === 'clear') { home.trimp = {}; commit('paint'); return; }
+      trimMode = ds.trimMode === 'wall'; trimBrush = null; renderPanel(); return;
+    }
+    if (ds.trim) {
+      if (trimMode) { trimBrush = ds.trim; sfx('click'); renderPanel(); return; }
+      if (home.trim !== ds.trim) { home.trim = ds.trim; commit('paint'); }
+      return;
+    }
     if (ds.itemFilter) { itemFilter = ds.itemFilter; renderPanel(); panel.scrollTop = 0; return; }
     if (ds.itemSet) { itemSet = ds.itemSet; renderPanel(); panel.scrollTop = 0; return; }
+    if (ds.part != null) { partSel = ds.part || null; renderPanel(); return; }
     if (ds.recolor != null && selected >= 0) {
       const it = { ...home.items[selected] };
+      if (partSel) {
+        // one part: its own colour (the whole-piece colour steps aside so the parts show as picked)
+        const cp = { ...(it.cp ?? {}) };
+        if (ds.recolor) cp[partSel] = ds.recolor; else delete cp[partSel];
+        delete it.c;
+        if (Object.keys(cp).length) it.cp = cp; else delete it.cp;
+        home.items[selected] = it;
+        commit('paint');
+        return;
+      }
+      delete it.cp;
       if (ds.recolor) it.c = ds.recolor; else delete it.c;
       home.items[selected] = it;
       commit('paint');
@@ -1521,7 +1709,7 @@ export function house(stage) {
     if (ds.size) { resize(ds.size); return; }
     if (ds.previewBuy != null) {
       const id = preview[ds.previewBuy];
-      if (id) { buyThenUse = { field: ds.previewBuy, id }; net.send('house_buy', { id }); }
+      if (id) { buyThenUse = { field: ds.previewBuy, id }; net.send('house_buy', { id, k: viewKey }); }
       return;
     }
     if (ds.previewStop != null) { setPreview(ds.previewStop, null); renderPanel(); return; }
@@ -1532,7 +1720,7 @@ export function house(stage) {
       if (tab !== 'visit' && canEdit() && !edit) setEdit(true);
       renderAll();
     } else if (ds.builder) {
-      net.send('house_builder', { k: ds.builder, on: !(home?.builders ?? []).includes(ds.builder) });
+      net.send('house_builder', { k: ds.builder }); // (the server flips it: on if they can't build yet, off if they can)
       sfx('click');
     } else if (ds.menu != null) {
       // decorating: tuck the menu away to see the room, bring it back (Tab does the same)
@@ -1568,7 +1756,8 @@ export function house(stage) {
     } else if (ds.buy) {
       // floors and wallpapers go up on your walls while you decide
       if (ds.kind) setPreview(ds.kind, ds.buy);
-      if (confirmBuy === ds.buy) { net.send('house_buy', { id: ds.buy }); confirmBuy = null; if (ds.kind) buyThenUse = { field: ds.kind, id: ds.buy }; }
+      // (building in a friend's house: what you buy is theirs, and you pay)
+      if (confirmBuy === ds.buy) { net.send('house_buy', { id: ds.buy, k: viewKey }); confirmBuy = null; if (ds.kind) buyThenUse = { field: ds.kind, id: ds.buy }; }
       else confirmBuy = ds.buy;
       renderPanel();
     } else if (ds.style) {
@@ -1605,7 +1794,19 @@ export function house(stage) {
   }
 
   function setEdit(on) {
+    const was = edit;
     edit = on && canEdit();
+    const p = walker.me;
+    if (edit && !was) {
+      // building: the camera floats from where you were, and your body is tucked away out of the house, so
+      // nobody sees it standing about and it can't end up stuck inside something you build
+      fly = { x: p.x, y: Math.min(WALL_H * T - 0.4, 2.4), z: p.z };
+      Object.assign(p, { x: -200, z: -200, moving: false });
+    } else if (!edit && was) {
+      // done: back in through the front door
+      Object.assign(p, { x: WX() / 2, z: WZ() - 4.2, heading: Math.PI, moving: false });
+      orbit.yaw = 0;
+    }
     if (!edit) { paintMode = false; brush = null; }
     if (!edit && trying()) setPreview(null);
     room.grid.visible = edit;
@@ -1676,7 +1877,7 @@ export function house(stage) {
 
   const off = [
     net.on('player', (m) => {
-      if (m.p.key !== S.me || !buyThenUse || !home || !mine()) return;
+      if (m.p.key !== viewKey || !buyThenUse || !home || !canEdit()) return;
       const d = [...CATALOG.floors, ...CATALOG.walls, ...CATALOG.ceilings, ...CATALOG.doors].find((x) => x.id === buyThenUse.id);
       if (!d || !ownsDeco(d)) return;
       const { field, id } = buyThenUse;
@@ -1706,9 +1907,11 @@ export function house(stage) {
         if (echoes > 0 || saveTimer) { home.likes = m.house.likes; renderHeader(); return; }
       }
       const fresh = !home;
-      const same = home && JSON.stringify(payload()) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', size: m.house.size ?? [14, 14], items: m.house.items, areas: m.house.areas ?? [], careas: m.house.careas ?? [], wallp: m.house.wallp ?? {} });
+      const { k: _k, trim: _t, trimp: _tp, ...mineNow } = home ? payload() : {};
+      const trimSame = (home?.trim ?? TRIM_DEFAULT) === (m.house.trim ?? TRIM_DEFAULT) && JSON.stringify(home?.trimp ?? {}) === JSON.stringify(m.house.trimp ?? {});
+      const same = home && JSON.stringify(mineNow) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', size: m.house.size ?? [14, 14], items: m.house.items, areas: m.house.areas ?? [], careas: m.house.careas ?? [], wallp: m.house.wallp ?? {} });
       const newLikes = home && m.house.likes.length > home.likes.length;
-      if (same) home.likes = m.house.likes;
+      if (same && trimSame) home.likes = m.house.likes;
       else {
         if (seated) standUp();
         home = { ...m.house, size: m.house.size ?? [14, 14], items: m.house.items.map((it) => ({ ...it })) };
@@ -1721,6 +1924,7 @@ export function house(stage) {
       if (edit && !canEdit()) { setEdit(false); toast('Your building permission here was taken away.'); }
       renderAll();
     }),
+    net.on('house_slots', (m) => { slots = m.slots; if (sideOpen && tab === 'plots') renderPlots(); }),
     net.on('house_bought', (m) => {
       sfx('buy');
       const upgrade = CATALOG.houseSizes.find((z) => z.id === m.id);
@@ -1743,7 +1947,6 @@ export function house(stage) {
   const center = new THREE.Vector3(WX() / 2, 0, WZ() / 2);
   const coreFade = basic('#e8d6b8', { transparent: true, opacity: 0.18, depthWrite: false });
   const baseHeight = orbit.height;
-  let fly = null; // (where the decorating camera is floating)
   stage.onFrame((dt, now) => {
     const t = now / 1000;
     const p = walker.me;

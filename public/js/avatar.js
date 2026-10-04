@@ -127,7 +127,7 @@ function pump() {
   else pumping = false;
 }
 
-/** Fill `el` with a portrait: immediately if cached, otherwise progressively. */
+/** fill `el` wth a porrait immeditely if cached, othrwise progsively. */
 export function portraitInto(el, look, w = 72, h = w, opts = {}) {
   const dpr = Math.max(2, Math.min(3, window.devicePixelRatio || 1));
   const key = `${JSON.stringify(look)}|${Math.round(w * dpr)}x${Math.round(h * dpr)}|${opts.zoom ?? 'body'}|${opts.face ?? 1}`;
@@ -144,7 +144,7 @@ export function portraitInto(el, look, w = 72, h = w, opts = {}) {
   }
 }
 
-/** Live-render a portrait into an existing 2D context (wardrobe preview). */
+
 export function paintPortrait(ctx, look, w, h, { yaw = 0.45, time = 0, zoom = 'body', pose = 'idle', phase = 0 } = {}) {
   const dpr = Math.max(2, Math.min(3, window.devicePixelRatio || 1));
   const img = renderPortrait(look ?? DEFAULT_LOOK, Math.round(w * dpr), Math.round(h * dpr), { zoom, yaw, time, pose, phase });

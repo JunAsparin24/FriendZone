@@ -1068,7 +1068,7 @@ export class World {
       el.style.display = '';
       const scale = clamp(17 / camPos.distanceTo(v), 0.62, 1.15);
       el.style.transform = `translate3d(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`;
-      el.querySelector('.wl-dev')?.classList.toggle('hidden', !(p?.dev && p.look?.aura === 'aura_devtitle'));
+      el.querySelector('.wl-dev')?.classList.toggle('hidden', !(p?.look?.aura === 'aura_devtitle'));
       if (p && a.tagKey !== `${p.name}|${p.level}|${p.color}`) {
         a.tagKey = `${p.name}|${p.level}|${p.color}`;
         a.el.tag.querySelector('b').textContent = p.name;

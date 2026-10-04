@@ -993,7 +993,7 @@ body.no-names .wl-tag { display: none; }
 .house-bar .house-title svg { width: 24px; height: 24px; }
 .house-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .house-side {
-  top: 70px; right: 12px; bottom: 60px; width: min(340px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 10px; overflow: hidden;
+  top: 92px; right: 12px; bottom: 60px; width: min(340px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 10px; overflow: hidden;
 }
 /* (the list fills the whole side panel and scrolls, rather than stopping halfway down it) */
 .house-side .house-panel { overflow: auto; flex: 1; min-height: 0; max-height: none; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
@@ -1004,7 +1004,7 @@ body.no-names .wl-tag { display: none; }
 .house-side.wide .fem-img, .house-side.wide .furni .swatch-em { width: 72px; height: 72px; }
 .house-side.wide .style-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 .house-side.wide .style-sw { height: 46px; }
-.shop-pages { display: flex; flex-wrap: wrap; gap: 6px; position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 2px 0 8px; }
+.shop-pages { display: flex; flex-wrap: wrap; gap: 6px; position: sticky; top: -1px; z-index: 2; background: var(--bg); padding: 6px 0 10px; margin-top: -2px; box-shadow: 0 6px 8px -6px #0008; } /* (a soft edge, so things scrolling under it don't look cut off) */
 .shop-pages button, .shelf-jump button {
   border: 2px solid var(--line); background: var(--bg-2); color: var(--text); border-radius: 99px; padding: 6px 12px;
   font: 700 13px var(--body); cursor: pointer;

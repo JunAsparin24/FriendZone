@@ -60,14 +60,14 @@ PUBLIC_MAX = 20
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-]{3,16}$")
 PASSWORD_MIN, PASSWORD_MAX = 4, 64
 
-SCENES = {"lobby", "world", "race", "arena", "lasertag", "boss", "house", "casino", "doodle", "archery", "shop", "petshop", "arcade", "tavern", "beach"}
-AREA_SCENES = {"casino", "shop", "petshop", "arcade", "tavern", "beach"}  # 3D rooms you walk around in; positions are relayed to everyone inside
+SCENES = {"lobby", "world", "race", "arena", "lasertag", "boss", "house", "hood", "casino", "doodle", "archery", "shop", "petshop", "arcade", "tavern", "beach"}
+AREA_SCENES = {"casino", "shop", "petshop", "arcade", "tavern", "beach", "hood"}  # 3D rooms you walk around in; positions are relayed to everyone inside
 COVE_OPEN = False  # Coral Cove is still being built: only admins can go through the portal for now
 
 
 def is_area(scene):
-    """Walk-around rooms: the casino, and every member's house ("house:<owner>")."""
-    return scene in AREA_SCENES or (isinstance(scene, str) and scene.startswith("house:"))
+    """Walk-around places: the casino, the shops, Coral Cove and the neighbourhood (where the houses are)."""
+    return scene in AREA_SCENES
 POSES = {"fish", "cast", "bite", "reel", "catch", "bench", "ride"}
 WORLD_W, WORLD_H = 7200, 4800
 START_COINS = 500
@@ -582,6 +582,7 @@ class Store:
         for zone in self.zones.values():
             for player in zone["players"].values():
                 migrate(player)
+            assign_plots(zone)
 
     def mark(self):
         self.dirty = True
@@ -1035,14 +1036,117 @@ def clean_house(p, data):
         if not isinstance(k, str) or len(k) > 40 or v not in WALLS or not owns_deco(p, v):
             raise GameError("You don't own that wallpaper yet.")
         clean_wallp[k] = v
-    trim = data.get("trim") if data.get("trim") in TRIM_COLORS else "#f4f0ff"
+    trim = data.get("trim") if data.get("trim") in TRIM_COLORS or data.get("trim") == "none" else "#f4f0ff"  # ("none": no trim at all)
     # single walls with a trim colour of their own (per room)
     trimp = data.get("trimp") or {}
-    clean_trimp = {k: v for k, v in trimp.items() if isinstance(k, str) and len(k) <= 40 and v in TRIM_COLORS} if isinstance(trimp, dict) else {}
+    clean_trimp = {k: v for k, v in trimp.items() if isinstance(k, str) and len(k) <= 40 and (v in TRIM_COLORS or v == "none")} if isinstance(trimp, dict) else {}
     if len(clean_trimp) > 64:
         raise GameError("That's too many wall trims.")
     return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items,
-            "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp, "trim": trim, "trimp": clean_trimp}
+            "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp, "trim": trim, "trimp": clean_trimp,
+            "ext": clean_ext(data["ext"] if "ext" in data else p["house"].get("ext"), (W, D))}
+
+
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+EXT_WALLS = {w["id"]: w for w in CATALOG["extWalls"]}
+ROOF_SHAPES = {r["id"] for r in CATALOG["roofShapes"]}
+ROOF_MATS = {r["id"]: r for r in CATALOG["roofMats"]}
+GROUND_MATS = {g["id"]: g for g in CATALOG["groundMats"]}
+EXT_TRIMS = {t["id"] for t in CATALOG["extTrims"]}
+YARD_ITEMS = {y["id"]: y for y in CATALOG["yardItems"]}
+PLOT = CATALOG["plot"]  # every house stands on a plot this big (tiles), its front wall `front` tiles from the street
+MAX_GROUND, MAX_YARD = 48, 80
+
+
+def default_ext():
+    """A new house from outside: cream siding, a red shingle roof, a path to the door and a driveway."""
+    mid, front = PLOT["w"] // 2, PLOT["d"] - PLOT["front"]
+    return {
+        "wall": {"m": "siding", "c": "#f2ead8"}, "walls": {}, "trim": {"s": "full", "c": "#ffffff"},
+        "roof": {"s": "gable", "m": "shingle", "c": "#b3403a", "ch": 1},
+        "ground": [{"m": "pavers", "c": "#d8cfc0", "x": mid - 1, "y": front, "w": 2, "d": PLOT["front"]},
+                   {"m": "concrete", "c": "#c9c9c9", "x": PLOT["w"] - 7, "y": front - 2, "w": 5, "d": PLOT["front"] + 2}],
+        "yard": [{"id": "mailbox", "x": mid + 2, "y": PLOT["d"] - 1, "r": 0}, {"id": "tree_oak", "x": 4, "y": PLOT["d"] - 5, "r": 0},
+                 {"id": "bush", "x": mid - 4, "y": front + 1, "r": 0}, {"id": "bush", "x": mid + 4, "y": front + 1, "r": 0}],
+    }
+
+
+def clean_ext(data, size):
+    """Validate the outside of a house: each wall's finish, the trim, the roof, the paths and the yard."""
+    base = default_ext()
+    if not isinstance(data, dict):
+        return base
+
+    def colour(v, d):
+        return v.lower() if isinstance(v, str) and HEX_RE.match(v) else d
+
+    def finish(v, d):
+        v = v if isinstance(v, dict) else {}
+        m = v.get("m") if v.get("m") in EXT_WALLS else d["m"]
+        return {"m": m, "c": colour(v.get("c"), d["c"] if m == d["m"] else EXT_WALLS[m]["c"])}
+
+    def half(v, lo, hi):
+        v = round(float(v) * 2) / 2
+        if not (math.isfinite(v) and lo <= v <= hi):
+            raise ValueError("off the plot")
+        return int(v) if v == int(v) else v
+
+    out = {"wall": finish(data.get("wall"), base["wall"]), "walls": {}}
+    walls = data.get("walls")
+    if isinstance(walls, dict):
+        for k in ("h0", "h1", "h2", "h3"):  # (back, left, front, right: each outside wall has its own finish)
+            if k in walls:
+                out["walls"][k] = finish(walls[k], out["wall"])
+    trim = data.get("trim") if isinstance(data.get("trim"), dict) else {}
+    out["trim"] = {"s": trim.get("s") if trim.get("s") in EXT_TRIMS else base["trim"]["s"], "c": colour(trim.get("c"), base["trim"]["c"])}
+    roof = data.get("roof") if isinstance(data.get("roof"), dict) else {}
+    out["roof"] = {"s": roof.get("s") if roof.get("s") in ROOF_SHAPES else base["roof"]["s"],
+                   "m": roof.get("m") if roof.get("m") in ROOF_MATS else base["roof"]["m"],
+                   "c": colour(roof.get("c"), base["roof"]["c"]), "ch": 1 if roof.get("ch") else 0}
+    W, D = size
+    hx, hz = (PLOT["w"] - W) // 2, PLOT["d"] - PLOT["front"] - D  # where the house stands on its plot
+    ground, yard = data.get("ground"), data.get("yard")
+    if not isinstance(ground, list) or len(ground) > MAX_GROUND:
+        raise GameError(f"A yard can have up to {MAX_GROUND} paths and driveways.")
+    if not isinstance(yard, list) or len(yard) > MAX_YARD:
+        raise GameError(f"A yard can hold up to {MAX_YARD} things.")
+    out["ground"], out["yard"] = [], []
+    try:
+        for g in ground:
+            if g.get("m") not in GROUND_MATS:
+                raise GameError("That isn't a path material.")
+            w, d = half(g["w"], 0.5, PLOT["w"]), half(g["d"], 0.5, PLOT["d"])
+            out["ground"].append({"m": g["m"], "c": colour(g.get("c"), GROUND_MATS[g["m"]]["c"]),
+                                  "x": half(g["x"], 0, PLOT["w"] - w), "y": half(g["y"], 0, PLOT["d"] - d), "w": w, "d": d})
+        for y in yard:
+            if y.get("id") not in YARD_ITEMS:
+                raise GameError("That isn't a yard decoration.")
+            x, z = half(y["x"], 0.5, PLOT["w"] - 0.5), half(y["y"], 0.5, PLOT["d"] - 0.5)
+            if hx - 0.4 < x < hx + W + 0.4 and hz - 0.4 < z < hz + D + 0.4:
+                continue  # (the house grew over it: it goes)
+            out["yard"].append({"id": y["id"], "x": x, "y": z, "r": int(y.get("r", 0)) % 4})
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise GameError("That doesn't fit on the plot.")
+    return out
+
+
+def assign_plots(zone):
+    """Everyone's house has its own plot on the street: a number that never changes once it's theirs."""
+    used = {p.get("plot") for p in zone["players"].values() if isinstance(p.get("plot"), int)}
+    n = 0
+    for p in zone["players"].values():
+        if isinstance(p.get("plot"), int):
+            continue
+        while n in used:
+            n += 1
+        p["plot"] = n
+        used.add(n)
+
+
+def house_windows(h):
+    """The windows hung on a house's outer walls, so they show from the street: [wall, along, height, width, tall]."""
+    return [[it["r"] % 4, it["x"] if it["r"] % 2 == 0 else it["y"], it.get("h", HOUSE_WALL_Y), FURN[it["id"]]["w"], FURN[it["id"]].get("wh", 1)]
+            for it in h["items"] if it["id"].startswith("window") and it["id"] in FURN and not it.get("iw")][:24]
 
 
 def house_view(p):
@@ -1050,7 +1154,7 @@ def house_view(p):
     return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"),
             "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"], "areas": h.get("areas", []),
             "careas": h.get("careas", []), "wallp": h.get("wallp", {}), "trim": h.get("trim", "#f4f0ff"), "trimp": h.get("trimp", {}),
-            "builders": h.get("builders", [])}
+            "builders": h.get("builders", []), "ext": h.get("ext") or default_ext()}
 
 
 def public(p, client):
@@ -1058,7 +1162,10 @@ def public(p, client):
         "key": p.get("key", p["name"].lower()), "name": p["name"], "color": p["color"],
         "coins": p["coins"], "tickets": p.get("tickets", 0), "cove": bool(p.get("cove")), "xp": p["xp"], "level": level_for(p["xp"]), "stats": p["stats"],
         "look": p["look"], "lookSet": p["lookSet"], "owned": p["owned"], "fishdex": p["fishdex"], "fishbag": p.get("fishbag", []), "rods": p["rods"], "rod": p["rod"],
-        "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"])},
+        "furni": p["furni"], "house": {"n": len(p["house"]["items"]), "likes": len(p["house"]["likes"]), "size": list(house_dims(p["house"])),
+                                   "door": p["house"].get("door", "door_classic"), "ext": p["house"].get("ext") or default_ext(),
+                                   "win": house_windows(p["house"])},
+        "plot": p.get("plot", 0),
         "dailyAt": p.get("lastDaily", 0) + DAILY_SECS,
         "online": client is not None, "scene": client.scene if client else None, "dev": bool(client and client.admin),
     }
@@ -1452,6 +1559,7 @@ class Game:
             raise GameError(f"An admin removed you from the server. You can come back in {mins} minute{'s' if mins != 1 else ''}.")
         room = room or (self.public_room(key) if online else self.room(code))
         player = room.zone["players"][key]
+        assign_plots(room.zone)
         player.setdefault("key", key)  # older saves: pin the key before the name can change
         if token is None:
             token = secrets.token_urlsafe(18)
@@ -1698,8 +1806,6 @@ class Game:
             return self.sys(c, "🚧 Coral Cove is coming soon!")
         if scene in SCENES:
             self.set_scene(c, scene)
-        elif isinstance(scene, str) and scene.startswith("house:") and scene[6:] in c.room.zone["players"]:
-            self.set_scene(c, scene)  # walking into someone's house
 
     def set_scene(self, c, scene):
         room, prev = c.room, c.scene
@@ -1777,7 +1883,8 @@ class Game:
     def on_area_move(self, c, m):
         if not is_area(c.scene):
             return
-        c.ax, c.az, c.ah = num(m["x"], -260, 260), num(m["z"], -260, 260), num(m.get("h", 0), -7, 7)
+        far = 2600 if c.scene == "hood" else 260  # (the neighbourhood street is long)
+        c.ax, c.az, c.ah = num(m["x"], -far, far), num(m["z"], -far, far), num(m.get("h", 0), -7, 7)
         c.room.broadcast({"t": "area_pos", "k": c.key, "x": round(c.ax, 2), "z": round(c.az, 2), "h": round(c.ah, 2)},
                          scene=c.scene, exclude=c)
 
@@ -2027,16 +2134,16 @@ class Game:
         c.room.broadcast({"t": "boat", "id": bid, **b}, scene="beach", exclude=c)
 
     def on_area_sit(self, c, m):
-        """Sitting on a seat in a house (a sofa has two); one person per seat. seat: [item, seat] or None."""
-        if not (c.scene or "").startswith("house:"):
+        """Sitting on a seat in a house (a sofa has two); one person per seat. seat: [item, seat, owner] or None."""
+        if c.scene != "hood":
             return
         seat = m.get("seat")
         if seat is not None:
             try:
-                seat = [int(seat[0]), int(seat[1])]
+                seat = [int(seat[0]), int(seat[1]), str(seat[2]).lower()]  # [item, seat, whose house]
             except (TypeError, ValueError, IndexError):
                 raise GameError("That isn't a seat.")
-            if not (0 <= seat[0] < HOUSE_MAX_ITEMS and 0 <= seat[1] < 4):
+            if not (0 <= seat[0] < HOUSE_MAX_ITEMS and 0 <= seat[1] < 4 and seat[2] in c.room.zone["players"]):
                 raise GameError("That isn't a seat.")
             if any(o.aseat == seat for o in c.room.clients.values() if o is not c and o.scene == c.scene):
                 raise GameError("Someone's already sitting there!")

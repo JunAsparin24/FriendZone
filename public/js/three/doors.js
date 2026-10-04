@@ -157,7 +157,30 @@ const STYLES = {
 export function buildDoor(id) {
   const g = new THREE.Group();
   (STYLES[id] ?? STYLES.door_classic)(g);
+  hinge(g);
   return g;
+}
+
+/**
+ * Make the door a working one: everything that isn't the frame (the leaf, its panels, handles and
+ * glass) goes onto a hinge down the left edge. g.userData.swing(k) opens it (k: -1..1, 0 is shut; the
+ * sign is the way it swings). Double doors and sliding ones swing as one leaf.
+ */
+function hinge(g) {
+  const leaf = new THREE.Group();
+  leaf.position.set(-PW / 2, 0, PZ);
+  const b = new THREE.Box3();
+  for (const o of [...g.children]) {
+    b.setFromObject(o);
+    // the frame: anything reaching the jambs or the header, the threshold, or standing proud of the wall
+    const frame = b.min.x < -DOOR_W / 2 + 0.03 || b.max.x > DOOR_W / 2 - 0.03 || b.max.y > DOOR_H - 0.01 || b.max.y < 0.05;
+    if (frame) continue;
+    o.position.x += PW / 2;
+    o.position.z -= PZ;
+    leaf.add(o);
+  }
+  g.add(leaf);
+  g.userData.swing = (k) => { leaf.rotation.y = k * 1.75; };
 }
 
 // ---- little pictures for the shop and style picker ------------------------------------------------

@@ -506,7 +506,10 @@ class Stage {
    * Let the player walk around a room with WASD/click-to-walk, with others in the same scene
    * synced through area_move. solids: [{ x, z, w, d }] boxes (centre + size) or [{ x, z, r }] circles.
    */
-  walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {}, ceiling = 4.6, speedOf = null, frozen = null, blockedAt = null }) {
+  walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {}, ceiling = 4.6, speedOf = null, frozen = null, blockedAt = null, wire = null }) {
+    // (wire: { out, in } turn positions into the ones sent over the network and back, for a place whose
+    // own coordinates move about, like the neighbourhood, which is always centred on the house you're at)
+    const wOut = (x, z, h) => (wire ? wire.out(x, z, h) : { x, z, h }), wIn = (x, z, h) => (wire ? wire.in(x, z, h) : { x, z, h });
     // keep the camera inside the room: it can zoom out only as far as the walls (and stays under their top)
     this.camRoom = bounds ? { ...bounds, maxY: ceiling, off: false } : null;
     const me = this.person(S.me);
@@ -532,12 +535,12 @@ class Stage {
     const offs = [
       net.on('area', (m) => {
         for (const k of [...this.people.keys()]) if (k !== S.me) this.removePerson(k);
-        for (const q of m.others) { const p = this.person(q.k); Object.assign(p, { x: q.x ?? 0, z: q.z ?? 0, tx: q.x ?? 0, tz: q.z ?? 0, heading: q.h ?? 0 }); }
+        for (const q of m.others) { const p = this.person(q.k), at = wIn(q.x ?? 0, q.z ?? 0, q.h ?? 0); Object.assign(p, { x: at.x, z: at.z, tx: at.x, tz: at.z, heading: at.h }); }
       }),
       net.on('area_pos', (m) => {
-        const p = this.person(m.k);
-        if (p.tx == null) { p.x = m.x; p.z = m.z; }
-        p.tx = m.x; p.tz = m.z; p.heading = m.h;
+        const p = this.person(m.k), at = wIn(m.x, m.z, m.h);
+        if (p.tx == null) { p.x = at.x; p.z = at.z; }
+        p.tx = at.x; p.tz = at.z; p.heading = at.h;
       }),
       net.on('area_del', (m) => this.removePerson(m.k)),
     ];
@@ -582,7 +585,8 @@ class Stage {
       o.target.set(me.x, 0, me.z);
       if (now - sent.at > 80 && (me.x !== sent.x || me.z !== sent.z)) {
         sent = { at: now, x: me.x, z: me.z };
-        net.send('area_move', { x: +me.x.toFixed(2), z: +me.z.toFixed(2), h: +me.heading.toFixed(2) });
+        const at = wOut(me.x, me.z, me.heading);
+        net.send('area_move', { x: +at.x.toFixed(2), z: +at.z.toFixed(2), h: +at.h.toFixed(2) });
       }
       const lerp = 1 - Math.exp(-dt * 12);
       for (const p of this.people.values()) {

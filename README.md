@@ -61,7 +61,7 @@ For a quick test without a cloud account you can also expose your own machine wi
 | 💰 | Trading | Send coins to anyone in your zone |
 | 👕 | Style Shop (3D) | Walk in and browse the mannequins for every kind of clothing, open mystery crates, or change at the mirror |
 | 🐾 | Pet Shop (3D) | Meet the pets in their pens and buy one, or hatch a random pet from an egg (cheaper). Pets follow you everywhere |
-| 🏠 | Houses | Your own house to walk around in: buy furniture, floors and wallpaper, then decorate (place, move, rotate) right there in the room. Visit friends' houses to walk around inside them together, sit on their sofas and ❤️ them. Your wardrobe lives here too. Furniture is interactive (lamps, TV, jukebox, piano, arcade…), and trophies unlock around the zone |
+| 🏠 | Houses | Maple Lane, a street where every member has a plot with their house on it. You arrive on the pavement outside yours, walk up the path and in through the front door (doors open as you walk up), and can stroll over to anyone else's. Build mode works inside and out: furniture, room walls, a finish for every wall inside (wallpaper, panelling…) and outside (siding, brick, stone, stucco, logs… one wall at a time if you like), trim or no trim, the roof (shape, material, colour, chimney), paths and driveways, and a yard of trees, fences and flowers. Furniture is interactive (lamps, TV, jukebox, piano, arcade…), friends can ❤️ your house, and you can let them build with you |
 | 🗺️ | Exploration | Walk around the shared world, chat bubbles, emotes (keys 1–6), minimap |
 
 The town has a square with a fountain, winding streets, a spring-fed creek with bridges, cottages, market stalls, a windmill on the
@@ -91,8 +91,8 @@ and the client read, so adding a new item is mostly a matter of adding it there 
 - `public/cosmetics.json`: cosmetics, crate odds, the fish table, and house furniture, floors and wallpapers
 - `public/js/`: the web client. `world.js` (the 3D world, camera and movement), `map.js` (layout
   shared with collisions and the minimap), `stage.js` (the full-screen 3D areas you teleport into),
-  `games/*.js` (one file per activity), `areas/` (the casino floor and the walk-in shops), `three/` (characters,
-  pets, buildings, the town's props, furniture, effects, environment, day and night, materials), `mouselook.js` (Ctrl mouse look), `wardrobe.js` (creator/shop), `sfx.js` +
+  `games/*.js` (one file per activity; `house.js` is the inside of a house and build mode, `hood.js` the street the houses stand on), `areas/` (the casino floor and the walk-in shops), `three/` (characters,
+  pets, buildings, the town's props, furniture, the outside of houses (`exterior.js`: wall finishes, roofs, paths, yard), effects, environment, day and night, materials), `mouselook.js` (Ctrl mouse look), `wardrobe.js` (creator/shop), `sfx.js` +
   `music.js` (procedural sound effects and music), `settings.js` + `settings-panel.js`, `icons.js`
   (the SVG activity badges), `main.js` (screens and HUD)
 - `public/icon.svg`: the app icon (browser tab)

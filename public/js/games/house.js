@@ -1,7 +1,8 @@
-// Houses (3D): every member has a house you can walk around in. Decorate it with furniture you buy
-// or win around the zone, then visit (and ❤️) everyone else's. Visiting puts you inside their
-// house, together with anyone else who's there. Furniture is usable: lamps switch, the jukebox
-// plays, chairs and sofas are for sitting…
+// Houses (3D): every member has a house on the neighbourhood street (see hood.js). You arrive on the
+// pavement outside yours, walk up the path and in through the front door, and can stroll over to
+// anyone else's. The house you're at is the one this file builds the inside of: its rooms, furniture
+// and build mode (inside and out). Furniture is usable: lamps switch, the jukebox plays, chairs and
+// sofas are for sitting…
 import * as THREE from 'three';
 import { net } from '../net.js';
 import { S, esc, fmt, me, nameOf, toast } from '../state.js';
@@ -13,6 +14,8 @@ import { sfx } from '../sfx.js';
 import { settings } from '../settings.js';
 import { buildDoor, doorImage } from '../three/doors.js';
 import { iconSvg } from '../icons.js';
+import { createHood } from './hood.js';
+import { PLOT, houseSpot, extSwatch, buildYardItem, YARD_ITEMS } from '../three/exterior.js';
 
 let NX = 14, NZ = 14;  // this room's size in tiles (width x depth: bigger with house upgrades)
 const T = 1.6;        // world units per tile, so furniture is people-sized
@@ -287,7 +290,8 @@ function wallLayout(it, items, walls) {
 }
 
 // ---------------------------------------------------------------------------
-// the room: floor, four walls (a doorway in the front one) and a garden outside
+// the room: the inside of a house (floor, the inner faces of its four walls, ceiling). The outside of
+// the same walls, the roof, the front door and the garden are built by exterior.js on the street.
 // ---------------------------------------------------------------------------
 
 function buildRoom() {
@@ -299,13 +303,9 @@ function buildRoom() {
   floor.position.set(NX / 2, 0, NZ / 2);
   floor.receiveShadow = true;
   g.add(floor);
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(NX + 0.6, 0.4, NZ + 0.6), toon('#6b4a2b'));
-  slab.position.set(NX / 2, -0.201, NZ / 2);
-  g.add(slab);
   const wallMat = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide });
   // (room walls you build inside fade out when they're between the camera and you)
   const wallFade = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide, transparent: true, opacity: 0.22, depthWrite: false });
-  const outside = toon('#e8d6b8');
   const trim = TRIM_MAT;
   const wallGrids = [];
   const wallGridMat = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.4 });
@@ -313,11 +313,9 @@ function buildRoom() {
     const grp = new THREE.Group();
     const face = new THREE.Mesh(tiledPlane(w, h, y - h / 2), wallMat);
     face.receiveShadow = false; // (wallpaper stays evenly lit, the same as on walls you build)
-    const shell = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.25), outside);
-    shell.position.z = -0.14;
     const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, 0.06), trim);
     base.position.set(0, -h / 2 + 0.08, 0.03);
-    grp.add(face, shell);
+    grp.add(face);
     if (skirting) grp.add(base);
     // a grid on the wall for hanging things (every half tile up, every tile along)
     const pts = [];
@@ -348,75 +346,16 @@ function buildRoom() {
   const ft = wall(DOOR.x1 - DOOR.x0, WALL_H - DOOR.h, NX / 2, DOOR.h + (WALL_H - DOOR.h) / 2, NZ, Math.PI, false);
   for (const p of [fl, ft, fr]) front.add(p.grp);
   g.add(front);
-  // the front door (closed: walk up to it to go outside), in whichever style the owner picked
-  const doorSlot = new THREE.Group();
-  doorSlot.position.set(NX / 2, 0, NZ);
-  front.add(doorSlot);
   const ceilingMat = new THREE.MeshToonMaterial({ color: '#ffffff', side: THREE.DoubleSide });
   const ceiling = new THREE.Mesh(tiledPlane(NX, NZ), ceilingMat);
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(NX / 2, WALL_H, NZ / 2);
   g.add(ceiling);
-  // a pitched roof on top (seen from outside while decorating)
-  const roof = new THREE.Group();
-  const rise = 2.2 * Math.min(1.5, NX / 10);
-  const roofShape = new THREE.Shape();
-  roofShape.moveTo(-NX / 2 - 0.4, 0); roofShape.lineTo(NX / 2 + 0.4, 0); roofShape.lineTo(0, rise); roofShape.closePath();
-  const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: NZ + 0.8, bevelEnabled: false });
-  const roofMesh = new THREE.Mesh(roofGeo, toon('#b3403a'));
-  roofMesh.position.set(NX / 2, WALL_H + 0.02, -0.4);
-  roof.add(roofMesh);
-  g.add(roof);
   const mat = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), toon('#b3203a'));
   mat.rotation.x = -Math.PI / 2;
   mat.position.set(NX / 2, 0.01, NZ - 0.45);
   g.add(mat);
   walls.front = { grp: front, faces: [fl.face, fr.face, ft.face], bases: [fl.base, fr.base] };
-  // outside: a lawn with a path to the door, so the doorway never looks into a void
-  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(110, 110), toon('#5fae55'));
-  lawn.rotation.x = -Math.PI / 2;
-  lawn.position.set(NX / 2, -0.4, NZ / 2);
-  lawn.receiveShadow = true;
-  g.add(lawn);
-  const path = new THREE.Mesh(new THREE.PlaneGeometry(2, 6), toon('#d8bd88'));
-  path.rotation.x = -Math.PI / 2;
-  path.position.set(NX / 2, -0.39, NZ + 3.2);
-  g.add(path);
-  for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * Math.PI * 2, r = Math.max(NX, NZ) / 2 + 6 + (i % 3) * 2.5;
-    const tree = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 1.4, 8), toon('#7a4a28'));
-    trunk.position.y = 0.3;
-    const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(1 + (i % 2) * 0.3, 1), toon(i % 3 ? '#3f9a4a' : '#57b35a'));
-    leaves.position.y = 1.6;
-    tree.add(trunk, leaves);
-    tree.position.set(NX / 2 + Math.cos(a) * r, -0.4, NZ / 2 + Math.sin(a) * r);
-    g.add(tree);
-  }
-  // a nicer garden: a picket fence round the yard, flower beds and bushes along the house, stepping stones
-  const fenceMat = toon('#ffffff'), fx0 = -4, fx1 = NX + 4, fz0 = -4, fz1 = NZ + 8;
-  const picket = new THREE.BoxGeometry(0.1, 0.8, 0.05), rail = toon('#f4f0ff');
-  for (const [ax, az, bx, bz] of [[fx0, fz0, fx1, fz0], [fx0, fz0, fx0, fz1], [fx1, fz0, fx1, fz1], [fx0, fz1, NX / 2 - 1.5, fz1], [NX / 2 + 1.5, fz1, fx1, fz1]]) {
-    const len = Math.hypot(bx - ax, bz - az), n = Math.round(len / 0.32), ang = Math.atan2(bx - ax, bz - az);
-    const posts = new THREE.InstancedMesh(picket, fenceMat, n + 1);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ang, 0));
-    for (let k = 0; k <= n; k++) posts.setMatrixAt(k, m4.compose(new THREE.Vector3(ax + ((bx - ax) * k) / n, 0, az + ((bz - az) * k) / n), q, new THREE.Vector3(1, 1, 1)));
-    g.add(posts);
-    for (const y of [-0.15, 0.2]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, len), rail); r.position.set((ax + bx) / 2, y, (az + bz) / 2); r.rotation.y = ang; g.add(r); }
-  }
-  const bloom = ['#ff8fc7', '#ffd84d', '#ffffff', '#b77bff', '#ff5d73'];
-  for (const [x0, z0, x1, z1] of [[-1.4, -1.4, NX + 1.4, -1.4], [-1.4, -1.4, -1.4, NZ + 1.4], [NX + 1.4, -1.4, NX + 1.4, NZ + 1.4]]) {
-    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / 1.1);
-    const bed = new THREE.Mesh(new THREE.BoxGeometry(x0 === x1 ? 1.2 : len, 0.14, x0 === x1 ? len : 1.2), toon('#6b4a2e'));
-    bed.position.set((x0 + x1) / 2, -0.33, (z0 + z1) / 2);
-    g.add(bed);
-    for (let k = 0; k <= n; k++) {
-      const x = x0 + ((x1 - x0) * k) / n, z = z0 + ((z1 - z0) * k) / n;
-      if (k % 3 === 0) { const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 1), toon('#4f9a45')); b.position.set(x, -0.1, z); b.scale.y = 0.75; g.add(b); continue; }
-      for (let f = 0; f < 3; f++) { const fl = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), toon(bloom[(k + f) % bloom.length])); fl.position.set(x + (f - 1) * 0.25, -0.12 + (f % 2) * 0.06, z + ((f * 7) % 3 - 1) * 0.15); g.add(fl); }
-    }
-  }
-  for (let k = 0; k < 5; k++) { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.45, 0.08, 10), toon('#c9c3b8')); st.position.set(NX / 2 + (k % 2 ? 0.25 : -0.25), -0.36, NZ + 1.2 + k * 1.3); g.add(st); }
   // editing helpers
   const gridPts = [];
   for (let i = 0; i <= NX; i++) gridPts.push(i, 0.015, 0, i, 0.015, NZ);
@@ -438,35 +377,52 @@ function buildRoom() {
   g.add(marker);
   const items = new THREE.Group();
   g.add(items);
-  g.traverse((o) => { if (o.isMesh && o !== floor && o !== lawn) o.castShadow = true; });
-  return { group: g, wallGrids, floor, floorMat, wallMat, wallFade, ceiling, ceilingMat, roof, walls, grid, marker, items, doorSlot };
+  g.traverse((o) => { if (o.isMesh && o !== floor) o.castShadow = true; });
+  return { group: g, wallGrids, floor, floorMat, wallMat, wallFade, ceiling, ceilingMat, walls, grid, marker, items };
 }
 
 // ---------------------------------------------------------------------------
 
 export function house(stage) {
   const WX = () => NX * T, WZ = () => NZ * T; // the room in world units
-  const sun = stage.lights({ background: '#9fd4ff', sky: 0xfff4e6, ground: 0x6a5a8a, hemi: 1.35, sun: 1.7, box: 16 });
+  // the street everyone's houses stand on. The world is always centred on the house you're at (`view`
+  // turns the street's coordinates into that house's), so everything below works in room coordinates.
+  setDims(S.players[S.me]?.house?.size ?? [14, 14]);
+  const hood = createHood();
+  stage.scene.add(hood.group);
+  let view = hood.viewFrom(S.me, [NX, NZ]);
+  view.apply();
+  const sun = stage.lights({ background: '#9fd4ff', sky: 0xfff4e6, ground: 0x6a5a8a, hemi: 1.35, sun: 1.7, box: 34 });
   stage.scene.background = outdoorPanorama(); // (the same view the windows look out onto)
   sun.position.set(WX() / 2 + 6, 40, WZ() / 2 + 12); // high overhead so the walls don't shade the floor
   sun.target.position.set(WX() / 2, 0, WZ() / 2);
   let room = buildRoom();
   stage.scene.add(room.group);
-  /** The sun's shadows cover the whole room (a big room would otherwise get a dark wedge). */
-  function fitSun() {
-    const box = Math.max(16, Math.max(WX(), WZ()) * 0.75 + 4);
-    Object.assign(sun.shadow.camera, { left: -box, right: box, top: box, bottom: -box });
-    sun.shadow.camera.updateProjectionMatrix();
-  }
-  fitSun();
 
   const solids = [];
-  const bounds = { minX: 0.1, maxX: WX() - 0.1, minZ: 0.1, maxZ: WZ() - 0.1 };
+  const bounds = {};
+  /** The edges of the neighbourhood, as this house sees them. */
+  function fitBounds() {
+    const b = hood.bounds(), p = view.toLocal(b.minX, b.minZ), q = view.toLocal(b.maxX, b.maxZ);
+    Object.assign(bounds, { minX: Math.min(p.x, q.x), maxX: Math.max(p.x, q.x), minZ: Math.min(p.z, q.z), maxZ: Math.max(p.z, q.z) });
+  }
+  fitBounds();
+  const arrive = hood.arrival(S.me);
   const walker = stage.walker({
-    spawn: { x: WX() / 2, z: WZ() - 4.2 }, speed: 5, solids, bounds, frozen: () => !!edit, // (decorating: you float, see below)
-    orbit: { yaw: 0, pitch: 0.72, dist: 11, minDist: 5, maxDist: 20 },
+    spawn: view.toLocal(arrive.x, arrive.z), speed: 5, solids, bounds, frozen: () => !!edit, // (decorating: you float, see below)
+    orbit: { yaw: 0, pitch: 0.5, dist: 11, minDist: 5, maxDist: 26 },
     ceiling: WALL_H * T - 0.3,
+    // hedges, house walls (yours and everyone else's), trees and fences
+    blockedAt: (x, z) => { const h = view.toHood(x, z); return hood.blocked(h.x, h.z); },
+    // over the network everyone is on the street's coordinates (while you build, your body is tucked away)
+    wire: {
+      out: (x, z, h) => (edit ? { x: 2500, z: 2500, h: 0 } : { ...view.toHood(x, z), h: h + view.turn }),
+      in: (x, z, h) => ({ ...view.toLocal(x, z), h: h - view.turn }),
+    },
   });
+  // inside a house the camera stays within its walls; out on the street it's free
+  stage.camRoom = { minX: 0.1, maxX: WX() - 0.1, minZ: 0.1, maxZ: WZ() - 0.1, maxY: WALL_H * T - 0.3, off: true };
+  const insideRoom = (p) => p.x > 0 && p.x < WX() && p.z > 0 && p.z < WZ();
   const walkPointer = stage.onPointer;
   const orbit = stage.orbit;
 
@@ -485,6 +441,7 @@ export function house(stage) {
   let partSel = null; // (colouring one part of the selected piece)
   let confirmBuy = null, saveTimer = 0, echoes = 0, ghost = null, seated = null;
   let preview = {};        // { floor?, wall? }: ones you're trying on before buying
+  let outsideSig = '', cutSig = ''; // (what the street is showing of this house, and which walls are cut away)
   let paintMode = false, brush = null; // painting a room's floor / ceiling or one wall: on, and with what
   const PAINTABLE = new Set(['floor', 'ceiling', 'wall']);
   const areaGroup = new THREE.Group(); // the painted floors, drawn just above the main one
@@ -501,6 +458,7 @@ export function house(stage) {
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
     items: home.items.map(({ id, x, y, r, h, l, iw, dg, c, t, cp }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}) })),
     areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT, trimp: home.trimp ?? {},
+    ext: home.ext,
   });
 
   // ---- building the furniture ------------------------------------------------------
@@ -623,7 +581,7 @@ export function house(stage) {
     if (!home) return;
     const floor = preview.floor ?? home.floor;
     const wall = preview.wall ?? home.wall;
-    TRIM_MAT.color.set(home.trim ?? TRIM_DEFAULT);
+    if ((home.trim ?? TRIM_DEFAULT) !== 'none') TRIM_MAT.color.set(home.trim ?? TRIM_DEFAULT);
     // (the room's planes carry their own tiling in their UVs, so every texture repeats once per 2 tiles)
     room.floorMat.map = floorTexture(floor);
     room.floorMat.map.repeat.setScalar(1 / surfaceSpan(floor)); // (wide skies cover more than 2 tiles)
@@ -639,12 +597,20 @@ export function house(stage) {
     room.ceilingMat.map = ct;
     room.ceilingMat.needsUpdate = true;
     drawAreas();
-    const doorId = preview.door ?? home.door ?? 'door_classic';
-    if (room.doorSlot.userData.id !== doorId) {
-      room.doorSlot.clear();
-      room.doorSlot.add(buildDoor(doorId));
-      room.doorSlot.userData.id = doorId;
-    }
+    syncOutside();
+  }
+  /** Keep the house as the street shows it (walls, roof, door, windows, paths, yard) in step with what's
+   *  being built here, without waiting for the server. */
+  function syncOutside() {
+    if (!home) return;
+    const win = home.items.filter((it) => it.id.startsWith('window') && FURN[it.id] && !it.iw)
+      .map((it) => [it.r % 4, it.r % 2 === 0 ? it.x : it.y, it.h ?? WALL_Y, FURN[it.id].w, wallH(it.id)]);
+    const data = { size: home.size ?? [14, 14], door: preview.door ?? home.door ?? 'door_classic', ext: home.ext, win };
+    const sig = JSON.stringify(data);
+    if (sig === outsideSig) return;
+    outsideSig = sig;
+    cutSig = '';
+    hood.override(viewKey, data);
   }
   /** Painted room floors: each fills its room (up to the walls), later ones over earlier ones. */
   function drawAreas() {
@@ -707,15 +673,20 @@ export function house(stage) {
   const trimMat = (c) => { if (!trimMats.has(c)) { const m = TRIM_MAT.clone(); m.color.set(c); trimMats.set(c, m); } return trimMats.get(c); };
   function paintTrims() {
     const own = home.trimp ?? {};
-    const pick = (key) => (own[key] ? trimMat(own[key]) : TRIM_MAT);
-    room.walls.back.base.material = pick('h0');
-    room.walls.left.base.material = pick('h1');
-    room.walls.right.base.material = pick('h3');
-    room.walls.front.bases.forEach((b) => { b.material = pick('h2'); });
+    // ("none": no trim on that wall at all: the boards themselves go, they aren't just painted to match)
+    const paint = (o, key) => {
+      const c = own[key] ?? home.trim ?? TRIM_DEFAULT;
+      o.visible = c !== 'none';
+      if (c !== 'none') o.material = own[key] ? trimMat(own[key]) : TRIM_MAT;
+    };
+    paint(room.walls.back.base, 'h0');
+    paint(room.walls.left.base, 'h1');
+    paint(room.walls.right.base, 'h3');
+    room.walls.front.bases.forEach((b) => paint(b, 'h2'));
     for (const e of entries) {
       if (!e.roomWall) continue;
-      const m = pick(trimKeyOf(e.it));
-      e.group.traverse((o) => { if (o.isMesh && (o.material === TRIM_MAT || o.userData.isTrim)) { o.userData.isTrim = true; o.material = m; } });
+      const key = trimKeyOf(e.it);
+      e.group.traverse((o) => { if (o.isMesh && (o.material === TRIM_MAT || o.userData.isTrim)) { o.userData.isTrim = true; paint(o, key); } });
     }
   }
   /** Trim brush: give the wall under the pointer its own trim colour. */
@@ -840,7 +811,7 @@ export function house(stage) {
   // who's sitting where: key -> [item index, seat] (seats are side by side, e.g. a sofa's two cushions)
   const seatsTaken = new Map();
   const seatCount = (id) => SEATS[id]?.n ?? 1;
-  const takenBy = (i, s) => [...seatsTaken].find(([k, v]) => k !== S.me && v && v[0] === i && v[1] === s)?.[0];
+  const takenBy = (i, s) => [...seatsTaken].find(([k, v]) => k !== S.me && v && v[0] === i && v[1] === s && v[2] === viewKey)?.[0];
 
   /** Sit down on the nearest free seat of a piece (E again stands you up). */
   function sit(entry) {
@@ -852,9 +823,10 @@ export function house(stage) {
     seated = entry;
     entry.seat = pick;
     entry.at = placeOnSeat(p, entry.it, pick);
-    seatsTaken.set(S.me, [i, pick]);
-    net.send('area_sit', { seat: [i, pick] });
-    net.send('area_move', { x: +p.x.toFixed(2), z: +p.z.toFixed(2), h: +p.heading.toFixed(2) });
+    seatsTaken.set(S.me, [i, pick, viewKey]);
+    net.send('area_sit', { seat: [i, pick, viewKey] });
+    const at = view.toHood(p.x, p.z);
+    net.send('area_move', { x: +at.x.toFixed(2), z: +at.z.toFixed(2), h: +(p.heading + view.turn).toFixed(2) });
     sfx(BEDS.has(entry.it.id) ? 'snore' : 'squish');
   }
   /** Where seat s of a piece is, across its width (in world units, before any perching forward). */
@@ -903,7 +875,7 @@ export function house(stage) {
   function applyOtherSeat(k) {
     const p = stage.people.get(k);
     if (!p || k === S.me) return;
-    const v = seatsTaken.get(k), entry = v && entries[v[0]];
+    const v = seatsTaken.get(k), entry = v && v[2] === viewKey && entries[v[0]]; // (only seats in the house you're at)
     if (entry && SEATS[entry.it.id] != null && v[1] < seatCount(entry.it.id)) {
       const at = placeOnSeat(p, entry.it, v[1]);
       p.tx = at.x; p.tz = at.z;
@@ -1222,6 +1194,7 @@ export function house(stage) {
   }
 
   function rotate() {
+    if (edit && tab === 'outside') { if (extPage === 'yard' && yardPick) { yardTurn = (yardTurn + 1) % 4; sfx('rotate'); moveYardGhost(); } return; }
     if (placing) {
       if ((isDragWall(placing.id) && placing.from < 0) || isDoor(placing.id)) return; // (drawn walls go whichever way you drag; doors go along their wall)
       if (kindOf(placing.id) !== 'wall') { Object.assign(placing, nextTurn(placing)); sfx('rotate'); updateGhost(); }
@@ -1326,6 +1299,7 @@ export function house(stage) {
   stage.onPointer = (type, e, d) => {
     if (!edit) { walkPointer?.(type, e, d); return; }
     if (!home || !canEdit()) return;
+    if (tab === 'outside') { outsidePointer(type, e, d); return; }
     // drawing a wall: press where it starts and drag to where it ends (or click the start, then the end).
     // The camera holds still while you drag.
     if (placing && isDragWall(placing.id) && placing.from < 0) {
@@ -1390,7 +1364,7 @@ export function house(stage) {
       if (k === 'r') { stage.keys.delete('r'); if (!e.repeat) rotate(); } // R turns furniture instead of the camera
       else if (k === ']' || k === 'pageup') nudgeHeight(1);
       else if (k === '[' || k === 'pagedown') nudgeHeight(-1);
-      else if ((k === 'delete' || k === 'backspace') && selected >= 0) { e.preventDefault(); storeSelected(); }
+      else if ((k === 'delete' || k === 'backspace') && selected >= 0 && tab !== 'outside') { e.preventDefault(); storeSelected(); }
     }
   };
   // Escape cancels placing/selection before it would close the house
@@ -1415,6 +1389,7 @@ export function house(stage) {
     side.classList.toggle('wide', sideOpen && tab !== 'visit');
     if (sideOpen) { renderTabs(); renderPanel(); }
     hint.innerHTML = !home ? 'Knocking on the door…'
+      : edit && tab === 'outside' ? outsideHint()
       : placing && isDragWall(placing.id) && placing.from < 0 ? (placing.start
         ? `Drag (or move and click) to where the wall ends · walls join up flush at corners · <kbd>Esc</kbd> to let go`
         : `Press on the floor where the wall starts and drag it out to any length (or click the start, then the end) · <kbd>Esc</kbd> when you're done`)
@@ -1422,12 +1397,13 @@ export function house(stage) {
       : placing && isDoor(placing.id) ? 'Point at a wall you\'ve built and click to put the door in it · <kbd>Esc</kbd> to cancel'
       : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point anywhere on a wall (the house\'s or either side of one you\'ve built), as high or low as you like' : kindOf(placing.id) === 'ceiling' ? ' · it hangs above the green square · <kbd>[</kbd> <kbd>]</kbd> lower / raise it' : ''}`
         : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
-          : 'Walk around with <kbd>WASD</kbd> · <kbd>E</kbd> uses furniture (sit on chairs!) · head to the front door to leave';
+          : 'Walk around with <kbd>WASD</kbd> · front doors open as you walk up · <kbd>E</kbd> uses furniture (sit on chairs!) · stroll down the street to visit the neighbours';
   }
 
   function renderHeader() {
     const p = S.players[viewKey];
     const name = mine() ? 'My House' : `${esc(p?.name ?? '?')}'s House`;
+    side.classList.toggle('slim', sideOpen && tab === 'outside');
     titleEl.innerHTML = `${iconSvg('house')} ${name}`;
     stage.title.innerHTML = `${iconSvg('house')} ${name}`;
     const likes = home?.likes ?? [];
@@ -1435,16 +1411,16 @@ export function house(stage) {
     actions.innerHTML = [
       `<span class="pill">❤️ ${likes.length}</span>`,
       !mine() ? `<button class="btn small ${liked ? '' : 'primary'}" data-like ${liked ? 'disabled' : ''}>${liked ? '❤️ Liked' : '🤍 Like'}</button>` : '',
-      canEdit() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : mine() ? '✏️ Decorate' : '🔨 Build here'}</button>` : '',
+      canEdit() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : mine() ? '🔨 Build mode' : '🔨 Build here'}</button>` : '',
       edit ? `<button class="btn small" data-menu title="Tab">${sideOpen ? '⬅ Hide menu' : '📋 Menu'}</button>` : '',
-      `<button class="btn small ${sideOpen && tab === 'visit' ? 'primary' : ''}" data-visits>🏘️ Visit</button>`,
+      `<button class="btn small ${sideOpen && tab === 'visit' ? 'primary' : ''}" data-visits>🏘️ Neighbours</button>`,
       !mine() ? '<button class="btn small" data-home>🏡 My house</button>' : '',
     ].join('');
   }
 
   function renderTabs() {
     // (building in a friend's house: their items and styles, but buying is up to them)
-    const list = [['visit', '🏘️ Visit'], ...(mine() ? [['items', '🛋️ Items'], ['shop', '🛒 Shop'], ['style', '🎨 Style'], ['plots', '💾 Houses']] : canEdit() ? [['items', '🛋️ Items'], ['shop', '🛒 Shop'], ['style', '🎨 Style']] : [])]; // (builders: everything but your saved houses)
+    const list = [['visit', '🏘️ Neighbours'], ...(mine() ? [['items', '🛋️ Build'], ['style', '🎨 Inside'], ['outside', '🏡 Outside'], ['shop', '🛒 Shop'], ['plots', '💾 Houses']] : canEdit() ? [['items', '🛋️ Build'], ['style', '🎨 Inside'], ['outside', '🏡 Outside'], ['shop', '🛒 Shop']] : [])]; // (builders: everything but your saved houses)
     if (!list.some(([id]) => id === tab)) tab = 'visit';
     tabsEl.innerHTML = list.map(([id, label]) => `<button data-tab="${id}" class="${tab === id ? 'on' : ''}">${label}</button>`).join('');
   }
@@ -1455,6 +1431,7 @@ export function house(stage) {
     if (tab === 'items') return renderItems();
     if (tab === 'shop') return renderShop();
     if (tab === 'plots') return renderPlots();
+    if (tab === 'outside') return renderOutside();
     return renderStyle();
   }
   /** Saved houses: save the one you're in as a design, swap another one in, rename or delete them. */
@@ -1473,16 +1450,17 @@ export function house(stage) {
 
   function renderVisit() {
     const list = Object.values(S.players).sort((a, b) => (b.key === S.me) - (a.key === S.me) || (b.house?.likes ?? 0) - (a.house?.likes ?? 0) || a.name.localeCompare(b.name));
-    const here = (k) => Object.values(S.players).filter((p) => p.online && p.scene === `house:${k}`).length;
+    // (who's at whose house: everyone on the street whose feet are on that plot)
+    const here = (k) => [...stage.people.values()].filter((q) => { const h = view.toHood(q.x, q.z); return hood.ownerAt(h.x, h.z) === k; }).length;
     panel.innerHTML = `<div class="visit-list">${list.map((p) => `
       <button class="visit-row ${p.key === viewKey ? 'on' : ''}" data-visit="${esc(p.key)}">
         <span class="vav"></span>
         <span class="vname"><b>${esc(p.name)}${p.key === S.me ? ' <small>(you)</small>' : ''}</b>
-          <small>🛋️ ${p.house?.n ?? 0} · ❤️ ${p.house?.likes ?? 0}${here(p.key) ? ` · <span class="win">${here(p.key)} inside</span>` : ''}</small></span>
+          <small>🛋️ ${p.house?.n ?? 0} · ❤️ ${p.house?.likes ?? 0}${here(p.key) ? ` · <span class="win">${here(p.key)} there</span>` : ''}</small></span>
         ${mine() && viewKey === S.me && p.key !== S.me ? `<span class="vbuild ${(home?.builders ?? []).includes(p.key.toLowerCase()) ? 'on' : ''}" data-builder="${esc(p.key)}" title="Tap to let them build in your house, tap again to stop them">🔨 ${(home?.builders ?? []).includes(p.key.toLowerCase()) ? 'Can build ✓' : 'Let build'}</span>` : ''}
         <span class="vgo">${p.key === viewKey ? 'Here' : 'Go →'}</span>
       </button>`).join('')}</div>
-      ${mine() ? '<p class="muted small">🔨 <b>Let build</b> lets a friend decorate your house with your furniture. Tap again to take it away.</p>' : (home?.builders ?? []).includes(S.me) ? '<p class="muted small">🔨 You can build here! Press <b>Build here</b> up top.</p>' : ''}`;
+      ${mine() ? '<p class="muted small">Every house is on this street: walk over, or tap <b>Go →</b> to pop up on their front path. 🔨 <b>Let build</b> lets a friend decorate your house with your furniture. Tap again to take it away.</p>' : (home?.builders ?? []).includes(S.me) ? '<p class="muted small">🔨 You can build here! Press <b>Build here</b> up top.</p>' : ''}`;
     panel.querySelectorAll('[data-visit]').forEach((el) => portraitInto(el.querySelector('.vav'), S.players[el.dataset.visit]?.look, 40, 40, { zoom: 'head' }));
   }
 
@@ -1550,7 +1528,7 @@ export function house(stage) {
   // The shop and the style picker are split into pages (a strip of buttons along the top). Furniture is
   // shelved by matching set; floors, wallpapers and ceilings by kind (solid colours, wood, tiles…).
   const SHOP_PAGES = [['furniture', '🛋️ Furniture'], ['rooms', '🧱 Walls & doors'], ['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floors'], ['ceiling', '☁️ Ceilings'], ['door', '🚪 Front doors'], ['earn', '🏆 Earn']];
-  const STYLE_PAGES = [['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floor'], ['ceiling', '☁️ Ceiling'], ['trim', '🎨 Trim'], ['door', '🚪 Front door'], ['size', '🏠 Room size']];
+  const STYLE_PAGES = [['wall', '🖼️ Wall finishes'], ['floor', '🟫 Floors'], ['ceiling', '☁️ Ceilings'], ['trim', '🪵 Trim'], ['door', '🚪 Front door'], ['size', '🏠 House size']];
   const ITEM_FILTERS = [['all', 'All'], ['furniture', '🛋️ Furniture'], ['top', '🍽️ On tables'], ['decor', '🖼️ Wall decor'], ['ceiling', '💡 Ceiling'], ['rooms', '🧱 Walls & doors']];
   const itemMatches = (f) => itemFilter === 'all' || (itemFilter === 'rooms' ? f.set === 'Rooms'
     : f.set !== 'Rooms' && (itemFilter === 'decor' ? kindOf(f.id) === 'wall' : itemFilter === 'ceiling' ? kindOf(f.id) === 'ceiling' : itemFilter === 'top' ? kindOf(f.id) === 'top' : kindOf(f.id) === 'floor'));
@@ -1612,11 +1590,11 @@ export function house(stage) {
       // the baseboards and the tops of half walls, all in one colour (free)
       const cur = home?.trim ?? TRIM_DEFAULT;
       const n = Object.keys(home?.trimp ?? {}).length;
-      body = `<p class="muted small">The colour of the baseboards and the tops of half walls. Free to change any time.</p>
+      body = `<p class="muted small">The baseboards and the tops of half walls: any colour, or <b>No trim</b> to take them off altogether. Free to change any time. (The trim outside is under 🏡 Outside.)</p>
         <div class="row"><button class="btn small ${trimMode ? '' : 'primary'}" data-trim-mode="all">🏠 Whole house</button><button class="btn small ${trimMode ? 'primary' : ''}" data-trim-mode="wall">🖌️ One wall at a time</button>
         ${n ? `<button class="btn small ghost" data-trim-mode="clear">↺ Clear ${n} wall trim${n > 1 ? 's' : ''}</button>` : ''}</div>
         <p class="muted small">${trimMode ? (trimBrush ? 'Now click a wall to give it this trim (pick the whole-house colour to put it back).' : 'Pick a colour, then click the walls of a room.') : 'Picks the trim for every wall.'}</p>
-        <div class="trim-grid">${CATALOG.trimColors.map((t) => `<button class="trim-opt ${(trimMode ? trimBrush : cur) === t.c ? 'on' : ''}" data-trim="${t.c}" title="${esc(t.name)}"><span style="--c:${t.c}"></span>${esc(t.name)}</button>`).join('')}</div>`;
+        <div class="trim-grid"><button class="trim-opt ${(trimMode ? trimBrush : cur) === 'none' ? 'on' : ''}" data-trim="none" title="No trim at all"><span class="no-trim"></span>No trim</button>${CATALOG.trimColors.map((t) => `<button class="trim-opt ${(trimMode ? trimBrush : cur) === t.c ? 'on' : ''}" data-trim="${t.c}" title="${esc(t.name)}"><span style="--c:${t.c}"></span>${esc(t.name)}</button>`).join('')}</div>`;
     } else if (stylePage === 'size') {
       // room size: any width and depth up to the biggest house upgrade you own
       const [mw, md] = maxSize(), [sw, sd] = home?.size ?? [14, 14];
@@ -1783,6 +1761,212 @@ export function house(stage) {
     }
   });
 
+  // ---- the outside: each wall's finish, the roof, the trim, paths and driveways, the yard -----------
+
+  const EXT_PAGES = [['walls', '🧱 Walls'], ['roof', '🏠 Roof'], ['trim', '🪵 Trim'], ['paths', '🛣️ Paths & driveways'], ['yard', '🌳 Yard']];
+  const MAX_GROUND = 48, MAX_YARD = 80; // (as on the server)
+  let extPage = 'walls', extOne = false, extBrush = { m: 'brick', c: '#b5533c' };
+  let pathBrush = { m: 'concrete', c: '#c9c9c9' }, pathErase = false, pathDrag = null, pathGhost = null;
+  let yardPick = null, yardErase = false, yardTurn = 0, yardGhost = null;
+  const half = (v) => Math.round(v * 2) / 2;
+  /** Change the outside (the keys stay in the order the server keeps them, so what comes back matches). */
+  function setExt(change, sound = 'paint') {
+    const e = home.ext;
+    home.ext = { wall: e.wall, walls: e.walls ?? {}, trim: e.trim, roof: e.roof, ground: e.ground ?? [], yard: e.yard ?? [], ...change };
+    commit(sound);
+  }
+  /** Where the pointer is on the plot (in plot tiles), or null. */
+  function plotPoint() {
+    const p = stage.pointerOnPlane(0);
+    return p ? view.localToPlot(p.x, p.z) : null;
+  }
+  /** Plot tiles -> where that is in the room's group. */
+  const fromPlot = (x, z) => { const sp = houseSpot([NX, NZ]); return [x - sp.x, z - sp.z]; };
+  const inHouse = (x, z, pad = 0.4) => { const sp = houseSpot([NX, NZ]); return x > sp.x - pad && x < sp.x + NX + pad && z > sp.z - pad && z < sp.z + NZ + pad; };
+  function clearOutsideTools() {
+    if (pathDrag) orbit.fixed = pathDrag.wasFixed;
+    pathDrag = null;
+    for (const g of [pathGhost, yardGhost]) if (g) room.group.remove(g);
+    pathGhost = yardGhost = null;
+  }
+  /** The stretch being dragged out for a path: from where you pressed to the pointer, on the half-tile grid. */
+  function pathRect() {
+    const q = plotPoint();
+    if (!pathDrag || !q) return null;
+    const cl = (v, hi) => Math.max(0, Math.min(hi, half(v)));
+    let x0 = cl(Math.min(pathDrag.x, q.x), PLOT.w), x1 = cl(Math.max(pathDrag.x, q.x), PLOT.w), z0 = cl(Math.min(pathDrag.z, q.z), PLOT.d), z1 = cl(Math.max(pathDrag.z, q.z), PLOT.d);
+    // (a click with no drag lays one tile)
+    if (x1 - x0 < 0.5) { x0 = Math.max(0, Math.min(PLOT.w - 1, x0 - 0.5)); x1 = x0 + 1; }
+    if (z1 - z0 < 0.5) { z0 = Math.max(0, Math.min(PLOT.d - 1, z0 - 0.5)); z1 = z0 + 1; }
+    return { x: x0, y: z0, w: x1 - x0, d: z1 - z0 };
+  }
+  function showPathGhost() {
+    const r = pathRect();
+    if (!r) return;
+    if (!pathGhost) { pathGhost = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), ghostOk); pathGhost.rotation.x = -Math.PI / 2; room.group.add(pathGhost); }
+    const [x, z] = fromPlot(r.x + r.w / 2, r.y + r.d / 2);
+    pathGhost.position.set(x, 0.05, z);
+    pathGhost.scale.set(r.w, r.d, 1);
+  }
+  function moveYardGhost() {
+    if (yardGhost && yardGhost.userData.id !== yardPick) { room.group.remove(yardGhost); yardGhost = null; }
+    const q = plotPoint();
+    if (!yardPick || yardErase || !q || !edit || tab !== 'outside' || extPage !== 'yard') { if (yardGhost) yardGhost.visible = false; return; }
+    if (!yardGhost) {
+      yardGhost = buildYardItem(yardPick);
+      yardGhost.userData.id = yardPick;
+      room.group.add(yardGhost);
+    }
+    const x = half(q.x), z = half(q.z), ok = x >= 0.5 && x <= PLOT.w - 0.5 && z >= 0.5 && z <= PLOT.d - 0.5 && !inHouse(x, z);
+    yardGhost.traverse((o) => { if (o.isMesh) { o.material = ok ? ghostOk : ghostBad; o.castShadow = false; } });
+    const [gx, gz] = fromPlot(x, z);
+    yardGhost.position.set(gx, 0, gz);
+    yardGhost.rotation.y = yardTurn * Math.PI / 2;
+    yardGhost.visible = true;
+    yardGhost.userData.at = ok ? { x, z } : null;
+  }
+  /** Clicks and drags while the Outside tab is open (the camera still turns when you drag elsewhere). */
+  function outsidePointer(type, e, d) {
+    const click = type === 'up' && d && !d.moved && d.button === 0;
+    if (type === 'up' && d && !d.moved && d.button === 2) { rotate(); return; }
+    if (extPage === 'walls') {
+      if (!click || !extOne) return;
+      // one wall: whichever outside wall (or the bit of it up under the roof) is under the pointer
+      const pl = hood.plotOf(viewKey);
+      const hit = pl?.parts && stage.pick([...pl.parts.walls, pl.parts.roof]).find((h) => h.object.userData.side != null || h.object.userData.roof);
+      if (!hit || hit.object.userData.side == null) { sfx('error'); return; }
+      const walls = { ...(home.ext.walls ?? {}), [`h${hit.object.userData.side}`]: { m: extBrush.m, c: extBrush.c } };
+      setExt({ walls: Object.fromEntries(['h0', 'h1', 'h2', 'h3'].filter((k) => walls[k]).map((k) => [k, walls[k]])) });
+    } else if (extPage === 'paths') {
+      if (pathErase) {
+        if (!click) return;
+        const q = plotPoint(), list = home.ext.ground ?? [];
+        let i = list.length - 1;
+        for (; i >= 0; i--) { const g = list[i]; if (q && q.x >= g.x && q.x <= g.x + g.w && q.z >= g.y && q.z <= g.y + g.d) break; }
+        if (i < 0) { sfx('error'); return; }
+        setExt({ ground: list.filter((_, k) => k !== i) }, 'store');
+        return;
+      }
+      if (type === 'down' && e.button === 0) {
+        const q = plotPoint();
+        if (!q || q.x < -1 || q.x > PLOT.w + 1 || q.z < -1 || q.z > PLOT.d + 1) return;
+        pathDrag = { x: q.x, z: q.z, wasFixed: orbit.fixed }; // (the camera holds still while you drag it out)
+        orbit.fixed = true;
+        showPathGhost();
+      } else if (type === 'move' && pathDrag) showPathGhost();
+      else if (type === 'up' && pathDrag) {
+        const r = pathRect();
+        clearOutsideTools();
+        if (!r) return;
+        if ((home.ext.ground ?? []).length >= MAX_GROUND) { toast(`A yard can have up to ${MAX_GROUND} paths and driveways. Rub some out first.`, 'error'); return; }
+        setExt({ ground: [...(home.ext.ground ?? []), { m: pathBrush.m, c: pathBrush.c, ...r }] }, 'place');
+      }
+    } else if (extPage === 'yard') {
+      if (type === 'move') { moveYardGhost(); return; }
+      if (!click) return;
+      const q = plotPoint(), list = home.ext.yard ?? [];
+      if (!q) return;
+      if (yardErase || !yardPick) {
+        // put away whatever's nearest the click
+        let best = -1, bd = 1.1;
+        list.forEach((y, i) => { const dd = Math.hypot(y.x - q.x, y.y - q.z); if (dd < bd) { bd = dd; best = i; } });
+        if (best < 0) { if (yardErase) sfx('error'); return; }
+        setExt({ yard: list.filter((_, k) => k !== best) }, 'store');
+        return;
+      }
+      moveYardGhost();
+      const at = yardGhost?.userData.at;
+      if (!at) { sfx('error'); toast('That has to go in the yard, not in the house.', 'error'); return; }
+      if (list.length >= MAX_YARD) { toast(`A yard can hold up to ${MAX_YARD} things.`, 'error'); return; }
+      setExt({ yard: [...list, { id: yardPick, x: at.x, y: at.z, r: yardTurn }] }, 'place');
+    }
+  }
+  const outsideHint = () => (extPage === 'walls' ? (extOne ? '🖌️ Click an outside wall to give it this finish · drag to look around · <kbd>WASD</kbd> fly, <kbd>Space</kbd> up, <kbd>Shift</kbd> down' : 'Pick a finish and a colour for the outside walls · <kbd>WASD</kbd> fly, <kbd>Space</kbd> up, <kbd>Shift</kbd> down')
+    : extPage === 'paths' ? (pathErase ? '🧽 Click a path or driveway to rub it out' : '🛣️ Press on the lawn and drag to lay a path or driveway (a click lays one tile) · later pieces go over earlier ones')
+      : extPage === 'yard' ? (yardErase || !yardPick ? '🧽 Click something in the yard to put it away' : '🌳 Click the lawn to put it down · <kbd>R</kbd>/right-click to turn it')
+        : 'Fly round your house with <kbd>WASD</kbd>, <kbd>Space</kbd> and <kbd>Shift</kbd> · drag to look');
+
+  function renderOutside() {
+    const e = home?.ext;
+    if (!e) { panel.innerHTML = '<p class="muted">Loading…</p>'; return; }
+    const cols = (cur, attr) => `<div class="swatches palette">${CATALOG.extColors.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-x="${attr}:${c}" style="--c:${c}"></button>`).join('')}</div>`;
+    const tile = (on, attr, style, name, inner = '') => `<button class="style-opt ${on ? 'on' : ''}" data-x="${attr}" title="${esc(name)}"><span class="style-sw" style="${style}">${inner}</span><span>${esc(name)}</span></button>`;
+    const sw = (m, c) => `background:url(${extSwatch(m, c)}) center/cover`;
+    const bar = (...btns) => `<div class="shop-pages paint-bar">${btns.filter(Boolean).map(([attr, label, on]) => `<button data-x="${attr}" class="${on ? 'on' : ''}">${label}</button>`).join('')}</div>`;
+    let body = '';
+    if (extPage === 'walls') {
+      const cur = extOne ? extBrush : e.wall, n = Object.keys(e.walls ?? {}).length;
+      body = `${bar(['one:0', '🏠 Every wall', !extOne], ['one:1', '🖌️ One wall at a time', extOne], n ? ['clearwalls', `↺ Clear ${n} painted wall${n > 1 ? 's' : ''}`, false] : null)}
+        <p class="muted small">${extOne ? 'Pick a finish and a colour, then <b>click an outside wall</b>: only that wall changes (a brick front, dark siding down the sides…). The inside of the same wall keeps its own wallpaper.' : 'The finish and colour of the outside walls. Walls you\'ve painted one at a time keep their own.'}</p>
+        <div class="wd-label">Finish</div><div class="style-grid">${CATALOG.extWalls.map((w) => tile(cur.m === w.id, `wallm:${w.id}`, sw(w.id, cur.m === w.id ? cur.c : w.c), w.name)).join('')}</div>
+        <div class="wd-label">Colour</div>${cols(cur.c, 'wallc')}`;
+    } else if (extPage === 'roof') {
+      const r = e.roof;
+      body = `<div class="wd-label">Shape</div><div class="style-grid">${CATALOG.roofShapes.map((x) => tile(r.s === x.id, `roofs:${x.id}`, 'background:#2b3050;display:grid;place-items:center;font-size:26px', x.name, x.emoji)).join('')}</div>
+        <div class="wd-label">Material</div><div class="style-grid">${CATALOG.roofMats.map((x) => tile(r.m === x.id, `roofm:${x.id}`, sw(x.id, r.m === x.id ? r.c : x.c), x.name)).join('')}</div>
+        <div class="wd-label">Colour</div>${cols(r.c, 'roofc')}
+        ${bar(['chimney', r.ch ? '🧱 Chimney: on' : '🧱 Chimney: off', !!r.ch])}`;
+    } else if (extPage === 'trim') {
+      const t = e.trim;
+      body = `<p class="muted small">The boards round the outside of the house. <b>No trim</b> takes them off altogether. (The baseboards inside are under 🎨 Inside → Trim.)</p>
+        <div class="trim-grid">${CATALOG.extTrims.map((x) => `<button class="trim-opt ${t.s === x.id ? 'on' : ''}" data-x="trims:${x.id}">${x.id === 'none' ? '<span class="no-trim"></span>' : `<span style="--c:${t.c}"></span>`}${esc(x.name)}</button>`).join('')}</div>
+        ${t.s === 'none' ? '' : `<div class="wd-label">Colour</div>${cols(t.c, 'trimc')}`}`;
+    } else if (extPage === 'paths') {
+      const n = (e.ground ?? []).length;
+      body = `${bar(['perase:0', '🛣️ Lay', !pathErase], ['perase:1', '🧽 Rub out', pathErase], n ? ['clearpaths', `✕ Clear all ${n}`, false] : null)}
+        <p class="muted small">${pathErase ? 'Click a path or driveway to take it up.' : 'Pick a surface and a colour, then <b>press on the lawn and drag</b> to lay it: a walk from the pavement to your door, a driveway, a patio round the back. Overlap pieces to make corners and other shapes.'} <span class="muted">${n}/${MAX_GROUND}</span></p>
+        <div class="wd-label">Surface</div><div class="style-grid">${CATALOG.groundMats.map((x) => tile(pathBrush.m === x.id, `pathm:${x.id}`, sw(x.id, pathBrush.m === x.id ? pathBrush.c : x.c), x.name)).join('')}</div>
+        <div class="wd-label">Colour</div>${cols(pathBrush.c, 'pathc')}`;
+    } else {
+      const n = (e.yard ?? []).length;
+      body = `${bar(['yerase:0', '🌳 Place', !yardErase], ['yerase:1', '🧽 Put away', yardErase], n ? ['clearyard', `✕ Clear all ${n}`, false] : null)}
+        <p class="muted small">${yardErase ? 'Click something in the yard to put it away.' : 'Pick something, then click the lawn to put it down (<kbd>R</kbd> turns it). Fences and hedges go down a tile at a time. All free.'} <span class="muted">${n}/${MAX_YARD}</span></p>
+        <div class="furni-grid">${CATALOG.yardItems.map((y) => `<button class="furni ${yardPick === y.id && !yardErase ? 'confirm' : ''}" data-x="yard:${y.id}"><span class="fem size-em">${y.emoji}</span><span class="fname">${esc(y.name)}</span></button>`).join('')}</div>`;
+    }
+    panel.innerHTML = `${pageStrip(EXT_PAGES, extPage, 'x-page')}${body}`;
+  }
+
+  stage.hud.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-x],[data-x-page],[data-tab]');
+    if (!t || !home || !canEdit()) return;
+    if (t.dataset.tab) {
+      // over to the Outside tab: step back onto the front lawn and look at the house
+      if (tab === 'outside' && edit) { fly = { x: WX() / 2 - 9, y: 9, z: WZ() + 24 }; orbit.yaw = -0.33; orbit.pitch = 0.2; }
+      else clearOutsideTools();
+      return;
+    }
+    if (t.dataset.xPage) { extPage = t.dataset.xPage; clearOutsideTools(); sfx('click'); renderAll(); panel.scrollTop = 0; return; }
+    const [op, ...rest] = t.dataset.x.split(':'), v = rest.join(':'), e = home.ext;
+    const def = (list, id) => list.find((x) => x.id === id)?.c;
+    if (op === 'one') { extOne = v === '1'; if (extOne) extBrush = { ...e.wall }; renderAll(); }
+    else if (op === 'clearwalls') setExt({ walls: {} });
+    else if (op === 'wallm') { if (extOne) { extBrush = { m: v, c: def(CATALOG.extWalls, v) }; sfx('click'); renderPanel(); } else setExt({ wall: { m: v, c: def(CATALOG.extWalls, v) } }); }
+    else if (op === 'wallc') { if (extOne) { extBrush = { ...extBrush, c: v }; sfx('click'); renderPanel(); } else setExt({ wall: { m: e.wall.m, c: v } }); }
+    else if (op === 'roofs') setExt({ roof: { ...e.roof, s: v } });
+    else if (op === 'roofm') setExt({ roof: { ...e.roof, m: v, c: def(CATALOG.roofMats, v) } });
+    else if (op === 'roofc') setExt({ roof: { ...e.roof, c: v } });
+    else if (op === 'chimney') setExt({ roof: { ...e.roof, ch: e.roof.ch ? 0 : 1 } });
+    else if (op === 'trims') setExt({ trim: { s: v, c: e.trim.c } });
+    else if (op === 'trimc') setExt({ trim: { s: e.trim.s, c: v } });
+    else if (op === 'perase') { pathErase = v === '1'; clearOutsideTools(); renderAll(); }
+    else if (op === 'clearpaths') setExt({ ground: [] }, 'store');
+    else if (op === 'pathm') { pathBrush = { m: v, c: def(CATALOG.groundMats, v) }; pathErase = false; sfx('click'); renderAll(); }
+    else if (op === 'pathc') { pathBrush = { ...pathBrush, c: v }; pathErase = false; sfx('click'); renderAll(); }
+    else if (op === 'yerase') { yardErase = v === '1'; clearOutsideTools(); renderAll(); }
+    else if (op === 'clearyard') setExt({ yard: [] }, 'store');
+    else if (op === 'yard') { yardPick = yardPick === v && !yardErase ? null : v; yardErase = false; sfx('pickup'); clearOutsideTools(); renderAll(); }
+  });
+
+  /** The street was laid out again (someone joined or left): keep looking at it from this house. */
+  function restreet() {
+    const nv = hood.viewFrom(viewKey, [NX, NZ]);
+    if (!nv) return;
+    view = nv;
+    view.apply();
+    fitBounds();
+    if (sideOpen && tab === 'visit') renderVisit();
+  }
+
   /** Make your room a tile wider/narrower or deeper/shallower ("w:1", "d:-1"); anything that no
    *  longer fits goes back in your inventory. */
   function resize(step) {
@@ -1816,9 +2000,10 @@ export function house(stage) {
       fly = { x: p.x, y: Math.min(WALL_H * T - 0.4, 2.4), z: p.z };
       Object.assign(p, { x: -200, z: -200, moving: false });
     } else if (!edit && was) {
-      // done: back in through the front door
-      Object.assign(p, { x: WX() / 2, z: WZ() - 4.2, heading: Math.PI, moving: false });
+      // done: back just inside the front door (or on the path, if you were working outside)
+      Object.assign(p, { x: WX() / 2, z: tab === 'outside' ? WZ() + 4 : WZ() - 4.2, heading: Math.PI, moving: false });
       orbit.yaw = 0;
+      clearOutsideTools();
     }
     if (!edit) { paintMode = false; brush = null; }
     if (!edit && trying()) setPreview(null);
@@ -1833,8 +2018,29 @@ export function house(stage) {
     }
   }
 
-  /** Walk into someone's house (your own included). */
-  function visit(k) {
+  /** Bring the world round to another house: positions on the street stay put, the frame changes. */
+  function rebase(nv) {
+    const turn = view.turn - nv.turn, norm = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    const conv = (x, z) => { const h = view.toHood(x, z); return nv.toLocal(h.x, h.z); };
+    for (const p of stage.people.values()) {
+      Object.assign(p, conv(p.x, p.z));
+      if (p.tx != null) { const t = conv(p.tx, p.tz); p.tx = t.x; p.tz = t.z; }
+      p.heading = norm(p.heading + turn);
+      p.char.root.rotation.y += turn;
+    }
+    if (fly) Object.assign(fly, conv(fly.x, fly.z));
+    orbit.yaw += turn;
+    const t = conv(orbit.target.x, orbit.target.z);
+    orbit.target.set(t.x, orbit.target.y, t.z);
+    if (orbit.cur) { const c = conv(orbit.cur.x, orbit.cur.z); orbit.cur.set(c.x, orbit.cur.y, c.z); }
+    view = nv;
+    view.apply();
+    fitBounds();
+  }
+
+  /** The house you're at becomes the one the world is built around: its rooms and furniture appear. */
+  function activate(k) {
+    if (!hood.plotOf(k)) return;
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = 0;
@@ -1843,28 +2049,39 @@ export function house(stage) {
     if (placing) stopPlacing();
     if (seated) standUp();
     setEdit(false);
+    if (viewKey) { hood.override(viewKey, null); hood.cutaway(viewKey, null); }
     viewKey = k;
     home = null;
     selected = -1;
     echoes = 0;
+    outsideSig = cutSig = '';
     while (room.items.children.length) room.items.remove(room.items.children[0]);
     stage.interactables = stage.interactables.filter((i) => !i.house);
     solids.length = 0;
-    Object.assign(walker.me, { x: WX() / 2, z: WZ() - 4.2, heading: Math.PI });
-    net.send('scene', { scene: `house:${k}` });
+    const size = S.players[k]?.house?.size ?? [14, 14];
+    rebase(hood.viewFrom(k, size));
+    applySize(size);
     net.send('house_get', { k });
-    sfx('knock');
-    if (k !== S.me) stage.banner(`<div class="big">🏠 ${esc(nameOf(k))}'s House</div>Make yourself at home!`, 2200);
     renderAll();
   }
 
-  // leave through the front door
-  const exitDoor = stage.interactable({ x: WX() / 2, z: WZ() - 0.6, r: 2.3, label: 'go back outside', use: () => stage.onExit?.() });
+  /** Go straight to someone's house (your own included): you pop up on the pavement at their front path. */
+  function visit(k) {
+    if (!hood.plotOf(k)) return;
+    activate(k);
+    const a = hood.arrival(k), at = view.toLocal(a.x, a.z);
+    Object.assign(walker.me, { x: at.x, z: at.z, heading: Math.PI, moving: false });
+    orbit.yaw = 0;
+    orbit.cur = null;
+    sfx('knock');
+    if (k !== S.me) stage.banner(`<div class="big">🏠 ${esc(nameOf(k))}'s House</div>Walk up the path and in through the front door!`, 2600);
+    renderAll();
+  }
 
   /** Build the room at this house's size (only when it changes: visiting a bigger house, or resizing yours). */
   function applySize(size = [14, 14]) {
     if (size[0] === NX && size[1] === NZ && room) return;
-    const wasIn = { x: walker.me.x / WX(), z: walker.me.z / WZ() };
+    const nv = hood.viewFrom(viewKey, size); // (a house stands in the middle of its plot, so its corner moves as it grows)
     setDims(size);
     if (ghost) room.group.remove(ghost);
     stage.scene.remove(room.group);
@@ -1874,16 +2091,9 @@ export function house(stage) {
     room.wallGrids.forEach((l) => { l.visible = edit; });
     ghost = null;
     buildGhost();
-    Object.assign(bounds, { maxX: WX() - 0.1, maxZ: WZ() - 0.1 });
-    if (stage.camRoom) Object.assign(stage.camRoom, { maxX: WX() - 0.1, maxZ: WZ() - 0.1 });
-    Object.assign(exitDoor, { x: WX() / 2, z: WZ() - 0.6 });
+    if (nv) rebase(nv);
+    Object.assign(stage.camRoom, { maxX: WX() - 0.1, maxZ: WZ() - 0.1 });
     center.set(WX() / 2, 0, WZ() / 2);
-    sun.position.set(WX() / 2 + 6, 40, WZ() / 2 + 12);
-    sun.target.position.set(WX() / 2, 0, WZ() / 2);
-    fitSun();
-    // stay at the same spot in the room, relatively (resizing your own house while standing in it)
-    walker.me.x = Math.min(WX() - 0.6, Math.max(0.6, wasIn.x * WX()));
-    walker.me.z = Math.min(WZ() - 0.6, Math.max(0.6, wasIn.z * WZ()));
   }
 
   // ---- network ------------------------------------------------------------------------
@@ -1899,6 +2109,8 @@ export function house(stage) {
       home[field] = id;
       commit('paint');
     }),
+    // the street changes when someone redecorates the outside of their house, joins or leaves
+    net.on('player', () => { hood.sync(); restreet(); }),
     net.on('area', (m) => {
       seatsTaken.clear();
       for (const q of m.others) if (q.seat) seatsTaken.set(q.k, q.seat);
@@ -1912,7 +2124,7 @@ export function house(stage) {
     // beaten to the seat by someone else
     net.on('error', (m) => { if (m.for === 'area_sit' && seated) { const s = seated; seated = null; seatsTaken.delete(S.me); walker.me.y = 0; walker.me.char.setPose('idle'); s.at = null; } }),
     // the owner of the house you're in left the zone: back to your own
-    net.on('member_left', (m) => { if (m.k === viewKey) visit(S.me); else if (sideOpen && tab === 'visit') renderVisit(); }),
+    net.on('member_left', (m) => { hood.sync(); if (m.k === viewKey || !hood.plotOf(viewKey)) visit(S.me); else { restreet(); if (sideOpen && tab === 'visit') renderVisit(); } }),
     net.on('house', (m) => {
       if (m.k !== viewKey) { if (sideOpen && tab === 'visit') renderVisit(); return; }
       if (m.k === viewKey && home && m.by === S.me) {
@@ -1922,7 +2134,7 @@ export function house(stage) {
       const fresh = !home;
       const { k: _k, trim: _t, trimp: _tp, ...mineNow } = home ? payload() : {};
       const trimSame = (home?.trim ?? TRIM_DEFAULT) === (m.house.trim ?? TRIM_DEFAULT) && JSON.stringify(home?.trimp ?? {}) === JSON.stringify(m.house.trimp ?? {});
-      const same = home && JSON.stringify(mineNow) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', size: m.house.size ?? [14, 14], items: m.house.items, areas: m.house.areas ?? [], careas: m.house.careas ?? [], wallp: m.house.wallp ?? {} });
+      const same = home && JSON.stringify(mineNow) === JSON.stringify({ floor: m.house.floor, wall: m.house.wall, ceiling: m.house.ceiling ?? 'ceil_plain', door: m.house.door ?? 'door_classic', size: m.house.size ?? [14, 14], items: m.house.items, areas: m.house.areas ?? [], careas: m.house.careas ?? [], wallp: m.house.wallp ?? {}, ext: m.house.ext });
       const newLikes = home && m.house.likes.length > home.likes.length;
       if (same && trimSame) home.likes = m.house.likes;
       else {
@@ -1989,8 +2201,10 @@ export function house(stage) {
       }
       if (k.has(' ')) fly.y += sp * 0.7;
       if (k.has('shift') || k.has('c')) fly.y -= sp * 0.7;
-      fly.x = Math.max(-2, Math.min(WX() + 2, fly.x)); fly.z = Math.max(-2, Math.min(WZ() + 2, fly.z));
-      fly.y = Math.max(0.5, Math.min(WALL_H * T + 3, fly.y));
+      // (anywhere over your plot, and high enough to look down on the roof)
+      const lo = view.plotToLocal(-2, -2), hi = view.plotToLocal(PLOT.w + 2, PLOT.d + 5);
+      fly.x = Math.max(lo.x, Math.min(hi.x, fly.x)); fly.z = Math.max(lo.z, Math.min(hi.z, fly.z));
+      fly.y = Math.max(0.5, Math.min(WALL_H * T + 20, fly.y));
       stage.person(S.me).visible = false;
       if (!preview.door && !preview.ceiling) {
         orbit.fps = true;
@@ -2049,6 +2263,26 @@ export function house(stage) {
     room.walls.left.grp.visible = c.x > 0.2;
     room.walls.right.grp.visible = c.x < WX() - 0.2;
     // walls you've built inside are solid: the camera stops in front of them instead (see stage.applyOrbit)
+    // out on the street: whichever house's plot you step onto becomes the house you're at
+    const meH = view.toHood(p.x, p.z);
+    if (!edit && !seated) {
+      const owner = hood.ownerAt(meH.x, meH.z);
+      if (owner && owner !== viewKey) { activate(owner); return; }
+    }
+    stage.camRoom.off = !(edit ? !!preview.door : insideRoom(p));
+    // the outside of this house: whole from the street; cut away (and the roof off) while you build inside
+    const cutNow = edit && tab !== 'outside' ? { walls: [c.z > 0.2, c.x > 0.2, c.z < WZ() - 0.2, c.x < WX() - 0.2], roof: false } : null;
+    const cs = JSON.stringify(cutNow);
+    if (cs !== cutSig) { cutSig = cs; hood.cutaway(viewKey, cutNow); }
+    room.ceiling.visible = !(edit && tab === 'outside'); // (so nothing shows through a flat roof's edge while you work on it)
+    // front doors (everyone's) swing open for whoever walks up
+    const swung = hood.update(dt, [...stage.people.values()].map((q) => view.toHood(q.x, q.z)), meH);
+    if (swung) sfx(swung > 0 ? 'open' : 'close', { vol: 0.5 });
+    // the sun's shadows follow you down the street
+    // (in steps, not every frame: a shadow map that slides along with you makes the shadows' edges crawl)
+    const sx = Math.round((edit && fly ? fly.x : p.x) / 6) * 6, sz = Math.round((edit && fly ? fly.z : p.z) / 6) * 6;
+    sun.position.set(sx + 6, 40, sz + 12);
+    sun.target.position.set(sx, 0, sz);
     if (stage.camRoom) {
       stage.camRoom.blockers = entries.filter((e) => e.roomWall && e.roomWall !== 'hang').map((e) => {
         const [w, d] = footprint(e.it);
@@ -2066,6 +2300,7 @@ export function house(stage) {
     if (saveTimer && home && canEdit()) net.send('house_save', payload()); // flush a pending save
     clearTimeout(saveTimer);
     stage.scene?.remove(room.group);
+    stage.scene?.remove(hood.group);
     setDims([14, 14]);
   };
 }

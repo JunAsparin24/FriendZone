@@ -18,7 +18,7 @@ import { sfx, ambient } from '../sfx.js';
 import { listen, onKeys } from '../games/util.js';
 import { touch, setTouchButtons } from '../touch.js';
 import { add, box, cyl, sph, group, merge, tf, instanced, plank, stripeMat, nightLights, lamp, flushLamps, windowMat, seeded } from './beach/common.js';
-import { buildPier, pierHeight, onPierFootprint, PIER_Y, PIER_DX } from './beach/pier.js';
+import { buildPier, pierHeight, onPierFootprint, PIER_Y, PIER_DX, PIER_OPEN } from './beach/pier.js';
 import { buildPark, Balls, Golf, COURTS, HOLES, PONDS } from './beach/park.js';
 import { timeOfDay } from '../three/daynight.js';
 import { Boats } from './beach/boats.js';
@@ -549,14 +549,14 @@ function coveMap() {
   c.fillStyle = '#c99a62';
   c.fillRect(X(-172), Z(-18.5), W, 7); c.fillRect(X(-3.5), Z(PORTAL.z), 7, -18 - PORTAL.z);
   // the pier (in its own coordinates, shifted)
-  for (const [x0, x1, z0, z1] of [[135, 165, -15, 212], [104, 196, 86, 164], [122, 178, 170, 212], [90, 135, 68, 84], [90, 104, 84, 150]]) c.fillRect(X(x0 + PIER_DX), Z(z0), x1 - x0, z1 - z0);
+  if (PIER_OPEN) for (const [x0, x1, z0, z1] of [[135, 165, -15, 212], [104, 196, 86, 164], [122, 178, 170, 212], [90, 135, 68, 84], [90, 104, 84, 150]]) c.fillRect(X(x0 + PIER_DX), Z(z0), x1 - x0, z1 - z0);
   for (const ct of COURTS) { c.fillStyle = ct.kind === 'basket' ? '#2f6fd6' : ct.kind === 'soccer' ? '#4fa843' : '#e8c98c'; c.fillRect(X(ct.x - ct.w / 2), Z(ct.z - ct.d / 2), ct.w, ct.d); c.strokeStyle = '#ffffff'; c.strokeRect(X(ct.x - ct.w / 2), Z(ct.z - ct.d / 2), ct.w, ct.d); }
   c.strokeStyle = '#a8e08a'; c.lineWidth = 7; c.lineCap = 'round';
   for (const h of HOLES) { c.beginPath(); c.moveTo(X(h.tee[0]), Z(h.tee[1])); c.lineTo(X(h.cup[0]), Z(h.cup[1])); c.stroke(); }
   c.fillStyle = '#3fb6e0'; for (const pd of PONDS) { c.beginPath(); c.arc(X(pd.x), Z(pd.z), pd.r, 0, TAU); c.fill(); }
   c.fillStyle = '#8fd3ff'; c.beginPath(); c.arc(X(PORTAL.x), Z(PORTAL.z), 9, 0, TAU); c.fill();
   c.font = 'bold 11px sans-serif'; c.textAlign = 'center'; c.fillStyle = '#1d1b2e';
-  for (const [t, x, z] of [['Portal', 0, -112], ['Coral Park', -80, -128], ['Coral Links', 66, -140], ['Pier', 105 + PIER_DX + 30, 120], ['Marina', 52, 100], ['Crab Races', 42, 32], ['Surf', -66, 2]]) c.fillText(t, X(x), Z(z));
+  for (const [t, x, z] of [['Portal', 0, -112], ['Coral Park', -80, -128], ['Coral Links', 66, -140], ...(PIER_OPEN ? [['Pier', 105 + PIER_DX + 30, 120], ['Marina', 52, 100]] : [['Boats', 70, 96]]), ['Crab Races', 42, 32], ['Surf', -66, 2]]) c.fillText(t, X(x), Z(z));
   return { base, W, H, X, Z };
 }
 
@@ -1019,7 +1019,7 @@ export function beachArea(stage) {
 
   // the ℹ️ tips change with what you're doing: a game at Coral Park, golf, a boat, fishing, or just exploring
   const TIPS = {
-    general: '🏝️ Swim in the sea · <kbd>E</kbd> at the marina to drive a boat or jet ski · Fish off the end of the pier · Ride the Ferris wheel, roller coaster, carousel and drop tower · Coral Park has basketball, soccer and volleyball · Golf at Coral Links · The portal goes back to The Town',
+    general: '🏝️ Swim in the sea · ' + (PIER_OPEN ? '<kbd>E</kbd> at the marina to drive a boat or jet ski · Fish off the end of the pier · Ride the Ferris wheel, roller coaster, carousel and drop tower' : 'Swim out to the boats anchored off the beach and press <kbd>E</kbd> to drive one · Fish from a boat') + ' · Coral Park has basketball, soccer and volleyball · Golf at Coral Links · The portal goes back to The Town',
     basket: '🏀 Stand on a coloured circle by the court and press <b>E</b> (or click it) to queue (press <b>Leave</b> to step out), then <b>Ready up</b> · Hold <b>left click</b> (or <kbd>F</kbd>) and let go in the green at the top to shoot (green = perfect, always in) · you face where the camera looks · <kbd>V</kbd> passes to a teammate · <kbd>Z</kbd> crossover, <kbd>X</kbd> behind the back, <kbd>C</kbd> spin (<kbd>C</kbd> steals on defence) · <kbd>Space</kbd>/<kbd>B</kbd> jumps to block and wins the tip · You score on the hoop at the far end from where your team starts (not your own) · Stepping out with the ball is a turnover; out of bounds: pass it in from where it went out · Reach-ins can be fouls (on a shot: free throws) · No green past half court · 1v1 is half court: take it back past the arc after a change of possession',
     soccer: '⚽ Pick a side in the panel and ready up · Run into the ball to dribble it · <kbd>F</kbd> kicks · Over the line: a throw-in for the other team (<kbd>F</kbd>)',
     volley: '🏐 <kbd>F</kbd> bumps the ball over the net · Keep it off the sand on your side',

@@ -7,6 +7,11 @@ import { toon, shiny, basic, additive, glowTexture, TAU } from '../../three/mate
 import { letterSign } from '../../three/signs3d.js';
 import { add, box, cyl, sph, group, plank, stripeMat, lamp, windowMat, seeded } from './common.js';
 
+// The pier is closed for now: Coral Cove is just the beach, the park and the boats. Nothing else was
+// taken out, so setting this back to true brings the whole pier back (its decks, shops, rides, fishing
+// platform and the marina dock), and everything that checks pierHeight / onPierFootprint makes room again.
+export const PIER_OPEN = false;
+
 // decks (world units): the long walk, the wide amusement deck, the fishing platform, the boat dock
 export const PIER_Y = 1.3, DOCK_Y = 0.45;
 // the pier is modelled at x ~ 90..210 and slid west by PIER_DX (so it sits closer to everything else)
@@ -22,6 +27,7 @@ const inR = (r, x, z, pad = 0) => x >= r.x0 - pad && x <= r.x1 + pad && z >= r.z
 
 /** The height of the pier/dock surface here (null if you're not on it). */
 export function pierHeight(x, z) {
+  if (!PIER_OPEN) return null;
   x -= PIER_DX;
   if (inR(RAMP, x, z)) return 0.1 + (PIER_Y - 0.1) * Math.min(1, Math.max(0, (z - RAMP.z0) / (RAMP.z1 - RAMP.z0)));
   if (inR(STAIRS, x, z)) return DOCK_Y + (PIER_Y - DOCK_Y) * Math.min(1, Math.max(0, (x - STAIRS.x0) / (STAIRS.x1 - STAIRS.x0)));
@@ -30,7 +36,7 @@ export function pierHeight(x, z) {
   return null;
 }
 /** Is (x, z) anywhere on the pier's footprint (so nothing else goes there)? */
-export const onPierFootprint = (x, z, pad = 0) => (x -= PIER_DX, [PIER_WALK, PIER_PARK, PIER_END, DOCK, DOCK2, RAMP].some((r) => inR(r, x, z, pad)));
+export const onPierFootprint = (x, z, pad = 0) => PIER_OPEN && (x -= PIER_DX, [PIER_WALK, PIER_PARK, PIER_END, DOCK, DOCK2, RAMP].some((r) => inR(r, x, z, pad)));
 
 const SHOPS = [
   // side: -1 west row (facing east), +1 east row (facing west)
@@ -42,6 +48,7 @@ const SHOPS = [
 ];
 
 export function buildPier(root, { anim, lights, solids, spots }) {
+  if (!PIER_OPEN) return; // (no decks, no shops or rides, nothing to bump into or use)
   const g = group(root, PIER_DX, 0, 0);
   const s0 = solids.length, p0 = spots.length;
   const r = seeded(31);

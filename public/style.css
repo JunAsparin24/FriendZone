@@ -1542,6 +1542,11 @@ html.touch .gar-sw { width: 28px; height: 28px; }
 .trim-opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: 12px; border: 2px solid var(--line); background: var(--bg-2); color: var(--text); font: 700 12px var(--body); cursor: pointer; }
 .trim-opt span { width: 100%; height: 22px; border-radius: 6px; background: var(--c); box-shadow: inset 0 -5px 0 #0002, 0 0 0 1px #0003; }
 .trim-opt.on { border-color: var(--accent); box-shadow: 0 0 10px #ffd84d66; }
+/* "no trim": a struck-through chip instead of a colour */
+.trim-opt span.no-trim { background: linear-gradient(135deg, transparent 46%, #ff5d73 46% 54%, transparent 54%), var(--bg-1, #1b1e33); box-shadow: 0 0 0 1px #0003; }
+/* building the outside: a narrower menu, so you can see the house you're working on */
+.house-side.wide.slim { width: min(430px, calc(100vw - 24px)); }
+.house-side.wide.slim .style-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
 /* the Developer Title: a glitchy holographic word over an admin's name tag */
 .wl-dev { display: flex; justify-content: center; margin-bottom: 3px; pointer-events: none; }
 .wl-dev.hidden { display: none; }

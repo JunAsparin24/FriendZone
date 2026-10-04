@@ -472,7 +472,7 @@
     { "id": "trophy_venom", "name": "Venom Queen Statue", "emoji": "🕷️", "w": 1, "d": 1, "max": 1, "drop": "Venom Queen", "use": "squish" },
     { "id": "trophy_lich", "name": "Bone Lich Statue", "emoji": "💀", "w": 1, "d": 1, "max": 1, "drop": "Bone Lich", "use": "slam" },
     { "id": "trophy_dragon", "name": "Shadow Dragon Statue", "emoji": "🐉", "w": 1, "d": 1, "max": 1, "drop": "Shadow Dragon", "use": "roar" },
-    { "id": "room_wall", "name": "Room Wall", "emoji": "🧱", "w": 2, "d": 0.25, "free": true, "drag": true, "max": 60, "set": "Rooms", "room": true },
+    { "id": "room_wall", "name": "Wall", "emoji": "🧱", "w": 2, "d": 0.25, "free": true, "drag": true, "max": 200, "set": "Rooms", "room": true },
     { "id": "room_wall_short", "name": "Short Room Wall", "emoji": "🧱", "w": 1, "d": 0.25, "free": true, "drag": true, "max": 40, "set": "Rooms", "room": true, "retired": true },
     { "id": "room_doorway", "name": "Doorway", "emoji": "🚪", "w": 2, "d": 0.25, "free": true, "max": 12, "set": "Rooms", "room": true, "doorway": true, "retired": true },
     { "id": "room_door", "name": "Wooden Door", "emoji": "🚪", "w": 2, "d": 0.25, "price": 200, "max": 12, "set": "Rooms", "room": true, "doorway": true, "retired": true },

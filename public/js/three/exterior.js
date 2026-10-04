@@ -1,34 +1,28 @@
-// The outside of a house: wall finishes (siding, brick, stone…), trim, roofs, paths and driveways, and
-// yard decorations. Everything here is built from a house's `ext` data (see default_ext / clean_ext in
-// server.py), in room tiles, so the same code draws your own house and everyone else's on the street.
+// The outside of a house: wall finishes (siding, brick, stone…), roofs, paths and driveways, and yard
+// decorations. Everything here is built from a house's `ext` data (see default_ext / clean_ext in
+// server.py), in plot tiles, so the same code draws your own house and everyone else's on the street.
+// (The walls themselves are ordinary walls you draw on the plot: see house.js.)
 //
 // To add a finish, roof material or ground material: add it to cosmetics.json and give it a pattern in
 // PATTERNS below. To add a roof shape: add it to cosmetics.json and to ROOFS. Yard things: YARD.
 import * as THREE from 'three';
 import { toon, canvasTexture } from './materials.js';
 import { CATALOG } from '../catalog.js';
-import { buildDoor, WALL_T } from './doors.js';
+import { WALL_T } from './doors.js';
 
 export const WALL_H = 3.2;          // (tiles: the same as inside)
 export const TH = WALL_T;           // how thick the outside walls are
 export const PLOT = CATALOG.plot;   // { w, d, front }: the plot in tiles, and how far the front wall is from the street
-const DOOR_W = 2, DOOR_H = 2.2;
 const byId = (list) => Object.fromEntries(list.map((x) => [x.id, x]));
 export const EXT_WALLS = byId(CATALOG.extWalls), ROOF_MATS = byId(CATALOG.roofMats), GROUND_MATS = byId(CATALOG.groundMats), YARD_ITEMS = byId(CATALOG.yardItems);
 
-/** Where a house of this size stands on its plot (the room's back-left corner, in plot tiles). */
-export const houseSpot = ([w, d]) => ({ x: Math.floor((PLOT.w - w) / 2), z: PLOT.d - PLOT.front - d });
+/** (A house is the whole plot now: its coordinates start at the plot's back-left corner.) */
+export const houseSpot = () => ({ x: 0, z: 0 });
 
 export function defaultExt() {
-  const mid = Math.floor(PLOT.w / 2), front = PLOT.d - PLOT.front;
-  return {
-    wall: { m: 'siding', c: '#f2ead8' }, walls: {}, trim: { s: 'full', c: '#ffffff' }, roof: { s: 'gable', m: 'shingle', c: '#b3403a', ch: 1 },
-    ground: [{ m: 'pavers', c: '#d8cfc0', x: mid - 1, y: front, w: 2, d: PLOT.front }, { m: 'concrete', c: '#c9c9c9', x: PLOT.w - 7, y: front - 2, w: 5, d: PLOT.front + 2 }],
-    yard: [],
-  };
+  const mid = Math.floor(PLOT.w / 2);
+  return { wall: { m: 'siding', c: '#f2ead8' }, roofs: [], ground: [{ m: 'pavers', c: '#d8cfc0', x: mid - 1, y: PLOT.d - 5, w: 2, d: 5 }], yard: [] };
 }
-/** A wall's finish: its own, or the house's. side: 0 back, 1 left, 2 front, 3 right. */
-export const finishOf = (ext, side) => ext.walls?.[`h${side}`] ?? ext.wall;
 
 // ---------------------------------------------------------------------------
 // patterns: light, greyish pictures that the colour you pick tints
@@ -255,113 +249,32 @@ const ROOFS = {
 };
 
 // ---------------------------------------------------------------------------
-// the house from outside
+// roofs: pieces you lay over the house, each a rectangle with its own shape, material and colour
 // ---------------------------------------------------------------------------
 
 /**
- * The outside of a house, in room tiles (the room's back-left corner at the origin, the front wall at
- * z = d). Each wall, the trim and the roof are separate, so each has its own finish. Returns the group
- * and its parts: walls[side] (a group per wall: hide one to see in), roof, door (the working front door).
+ * Every piece of roof on a plot (plot tiles). The wall that fills in under a roof (gable ends, a flat
+ * roof's parapet) takes the house's outside finish. Each piece is a group tagged userData.roof = its
+ * index, so it can be picked.
  */
-export function buildExterior(extIn, [w, d], { door = 'door_classic', windows = [], withDoor = true } = {}) {
-  const ext = { ...defaultExt(), ...(extIn ?? {}) };
+export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
   const g = new THREE.Group();
-  const walls = [0, 1, 2, 3].map(() => new THREE.Group());
-  walls.forEach((x, i) => { x.userData.side = i; g.add(x); });
-  const x0 = -TH, x1 = w + TH, z0 = -TH, z1 = d + TH, H = WALL_H;
-  const mats = [0, 1, 2, 3].map((s) => { const f = finishOf(ext, s); return extMaterial(f.m in EXT_WALLS ? f.m : 'paint', f.c); });
-  const cores = [0, 1, 2, 3].map((s) => toon(finishOf(ext, s).c));
-  // a stretch of wall: a solid core with the finish on its outer face. along: [a, b] along the wall,
-  // y: [y0, y1]. (Back and front walls run the whole width, corners included; the side walls fit between.)
-  const stretch = (side, a, b, y0, y1) => {
-    if (b - a < 0.01 || y1 - y0 < 0.01) return;
-    const grp = walls[side], mid = (a + b) / 2, my = (y0 + y1) / 2, len = b - a, hgt = y1 - y0;
-    const horiz = side % 2 === 0, out = side === 0 || side === 1 ? -1 : 1; // (which way is outside)
-    const at = side === 0 ? 0 : side === 2 ? d : side === 1 ? 0 : w;       // the inside face of this wall
-    const core = horiz ? boxAt(len, hgt, TH - 0.01, mid, my, at + out * TH / 2, cores[side]) : boxAt(TH - 0.01, hgt, len, at + out * TH / 2, my, mid, cores[side]);
-    core.userData.side = side;
-    const o = at + out * (TH + 0.003);
-    const fa = !horiz && a === 0 ? z0 : a, fb = !horiz && b === d ? z1 : b; // (a side wall's finish wraps the corner)
-    const face = mesh([{ pts: horiz ? [V(a, y0, o), V(b, y0, o), V(b, y1, o), V(a, y1, o)] : [V(o, y0, fa), V(o, y0, fb), V(o, y1, fb), V(o, y1, fa)], hint: [N.back, N.left, N.front, N.right][side] }], mats[side]);
-    face.userData.side = side;
-    face.castShadow = false;
-    face.receiveShadow = false; // (walls stay evenly lit, like the wallpaper inside: the eaves would shade half of them)
-    grp.add(core, face);
-  };
-  const dx0 = w / 2 - DOOR_W / 2, dx1 = w / 2 + DOOR_W / 2;
-  stretch(0, x0, x1, 0, H);
-  stretch(1, 0, d, 0, H);
-  stretch(3, 0, d, 0, H);
-  stretch(2, x0, dx0, 0, H); stretch(2, dx1, x1, 0, H); stretch(2, dx0, dx1, DOOR_H, H);
-
-  // ---- the roof, and the wall under it
-  const roofG = new THREE.Group();
-  const r = ext.roof ?? {}, shape = (ROOFS[r.s] ?? ROOFS.gable)(x0, x1, z0, z1, H);
-  const roofMat = extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a');
-  const roofMesh = mesh(shape.roof, roofMat);
-  roofMesh.userData.roof = true;
-  roofG.add(roofMesh);
-  for (const [side, faces] of Object.entries(shape.walls)) { const m = mesh(faces, mats[side]); m.userData.side = +side; roofG.add(m); }
-  if (r.ch) {
-    // a brick chimney, standing through the roof on the right-hand side
-    const cx = x1 - Math.max(1.6, (x1 - x0) * 0.22), cz = z0 + (z1 - z0) * 0.3, top = shape.top + 0.9;
-    const stack = boxAt(1.1, top - H, 1.1, cx, (top + H) / 2, cz, extMaterial('brick', '#a5503c'));
-    roofG.add(stack, boxAt(1.3, 0.16, 1.3, cx, top + 0.08, cz, toon('#d8d2c8')), boxAt(0.6, 0.28, 0.6, cx, top + 0.3, cz, toon('#3a3d46')));
-  }
-  g.add(roofG);
-
-  // ---- trim: a baseboard round the bottom, a band under the eaves, boards up the corners (or none of it)
-  const trimG = new THREE.Group();
-  const ts = ext.trim?.s ?? 'full';
-  if (ts !== 'none') {
-    const tm = toon(ext.trim?.c ?? '#ffffff'), p = 0.05;
-    const run = (a, b, y, h, side) => { // a board along a wall, standing just proud of it
-      if (b - a < 0.01) return;
-      const horiz = side % 2 === 0, at = side === 0 ? z0 - p / 2 : side === 2 ? z1 + p / 2 : side === 1 ? x0 - p / 2 : x1 + p / 2;
-      const m = horiz ? boxAt(b - a, h, p + 0.02, (a + b) / 2, y + h / 2, at, tm) : boxAt(p + 0.02, h, b - a, at, y + h / 2, (a + b) / 2, tm);
-      m.castShadow = false;
-      trimG.add(m);
-    };
-    const all = (y, h, gapForDoor) => {
-      run(x0 - p, x1 + p, y, h, 0); run(z0 - p, z1 + p, y, h, 1); run(z0 - p, z1 + p, y, h, 3);
-      if (gapForDoor) { run(x0 - p, dx0 - 0.16, y, h, 2); run(dx1 + 0.16, x1 + p, y, h, 2); } else run(x0 - p, x1 + p, y, h, 2);
-    };
-    all(0, 0.3, true);
-    if (ts === 'band' || ts === 'full') all(H - 0.26, 0.26, false);
-    if (ts === 'corner' || ts === 'full') for (const cx of [x0, x1]) for (const cz of [z0, z1]) trimG.add(boxAt(0.3, H, 0.3, cx + (cx < 0 ? 0.1 : -0.1), H / 2, cz + (cz < 0 ? 0.1 : -0.1), tm));
-  }
-  g.add(trimG);
-
-  // ---- windows, seen from outside (wherever the owner hung one on an outer wall)
-  const glass = toon('#bfe3ff', { emissive: '#7fb6e6', emissiveIntensity: 0.35 }), frameMat = toon('#ffffff');
-  for (const [side, start, hy, ww, wh] of windows) {
-    const win = new THREE.Group();
-    win.add(boxAt(ww, wh, 0.05, 0, 0, 0, glass), boxAt(ww + 0.16, 0.1, 0.09, 0, wh / 2, 0, frameMat), boxAt(ww + 0.22, 0.12, 0.14, 0, -wh / 2, 0.02, frameMat),
-      boxAt(0.1, wh, 0.09, -ww / 2, 0, 0, frameMat), boxAt(0.1, wh, 0.09, ww / 2, 0, 0, frameMat), boxAt(0.05, wh, 0.07, 0, 0, 0, frameMat), boxAt(ww, 0.05, 0.07, 0, 0, 0, frameMat));
-    const mid = start + ww / 2, o = TH + 0.03;
-    if (side === 0) { win.position.set(mid, hy, -o); win.rotation.y = Math.PI; } else if (side === 2) win.position.set(mid, hy, d + o);
-    else if (side === 1) { win.position.set(-o, hy, mid); win.rotation.y = -Math.PI / 2; } else { win.position.set(w + o, hy, mid); win.rotation.y = Math.PI / 2; }
-    win.traverse((m) => { m.castShadow = false; });
-    walls[side].add(win);
-  }
-
-  // ---- the front door, in its doorway (it swings open for whoever walks up)
-  let doorG = null;
-  if (withDoor) {
-    doorG = buildDoor(door);
-    doorG.position.set(w / 2, 0, d);
-    g.add(doorG);
-  }
-  return { group: g, walls, roof: roofG, trim: trimG, door: doorG };
-}
-
-/** The outer walls as boxes you can't walk through (room tiles), with the doorway left open. */
-export function exteriorSolids([w, d]) {
-  const t = TH, dx0 = w / 2 - DOOR_W / 2 + 0.1, dx1 = w / 2 + DOOR_W / 2 - 0.1;
-  return [
-    { x0: -t, x1: w + t, z0: -t, z1: 0 }, { x0: -t, x1: 0, z0: 0, z1: d }, { x0: w, x1: w + t, z0: 0, z1: d },
-    { x0: -t, x1: dx0, z0: d, z1: d + t }, { x0: dx1, x1: w + t, z0: d, z1: d + t },
-  ];
+  const wallMat = extMaterial(finish.m in EXT_WALLS ? finish.m : 'paint', finish.c);
+  list.forEach((r, i) => {
+    const piece = new THREE.Group();
+    const x0 = r.x, x1 = r.x + r.w, z0 = r.y, z1 = r.y + r.d;
+    const shape = (ROOFS[r.s] ?? ROOFS.gable)(x0, x1, z0, z1, WALL_H);
+    piece.add(mesh(shape.roof, extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a')));
+    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, wallMat); m.receiveShadow = false; piece.add(m); }
+    if (r.ch) {
+      // a brick chimney, standing through the roof towards one end
+      const cx = x1 - Math.max(1.4, (x1 - x0) * 0.22), cz = z0 + (z1 - z0) * 0.3, top = shape.top + 0.9;
+      piece.add(boxAt(1.1, top - WALL_H, 1.1, cx, (top + WALL_H) / 2, cz, extMaterial('brick', '#a5503c')), boxAt(1.3, 0.16, 1.3, cx, top + 0.08, cz, toon('#d8d2c8')), boxAt(0.6, 0.28, 0.6, cx, top + 0.3, cz, toon('#3a3d46')));
+    }
+    piece.traverse((o) => { o.userData.roof = i; });
+    g.add(piece);
+  });
+  return g;
 }
 
 // ---------------------------------------------------------------------------

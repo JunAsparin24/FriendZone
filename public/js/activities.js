@@ -49,5 +49,5 @@ export const ACTIVITIES = {
     touch: { buttons: [{ icon: '🏀', label: 'Shoot/Dig', key: 'f', code: 'KeyF', big: true }, { icon: '🫳', label: 'Steal/Spin', key: 'c', code: 'KeyC' }, { icon: '🤾', label: 'Pass', key: 'v', code: 'KeyV' }, { icon: '↔️', label: 'Cross', key: 'z', code: 'KeyZ' }, { icon: '✋', label: 'Block', key: 'b', code: 'KeyB' }], hint: 'Left thumb: walk · Right thumb: look around · <b>Dig</b> where the detector beeps fastest' } },
   wardrobe: { icon: 'wardrobe', emoji: '🪞', name: 'Wardrobe', wide: true, mount: (body) => wardrobe(body) },
   house: { icon: 'house', emoji: '🏠', name: 'Houses', place: 'Maple Lane', scene: 'hood', area: house,
-    touch: { buttons: [{ icon: '🔄', label: 'Rotate', key: 'r', code: 'KeyR' }], hint: 'Left thumb: walk · Right thumb: look around · tap to place furniture' } },
+    touch: { buttons: [{ icon: '🔄', label: 'Rotate', key: 'r', code: 'KeyR' }, { icon: '🐴', label: 'Ride', key: 'g', code: 'KeyG' }], hint: 'Left thumb: walk · Right thumb: look around · tap to place things' } },
 };

@@ -149,6 +149,7 @@ function ticketShop(body) {
   return () => { off(); clearInterval(timer); };
 }
 
+let backFromLaserTag = false;
 export function arcadeArea(stage) {
   stage.lights({ background: '#0a0620', sky: 0xb9a0ff, ground: 0x2a1a4a, hemi: 0.85, sun: 0.5, sunPos: [6, 30, 12], box: 22 });
   const W = 34, D = 26;
@@ -221,6 +222,7 @@ export function arcadeArea(stage) {
   stage.interactable({ x: hw - 1.6, z: -4, r: 1.8, label: 'play Laser Tag (🪙 10)', icon: 'arcade', obj: lt,
     use: () => {
       if ((me()?.coins ?? 0) < 10) { sfx('error'); stage.banner('🪙 Laser Tag costs 10 coins.', 1800); return; }
+      backFromLaserTag = true; // (when you come back out, you're by its door)
       window.dispatchEvent(new CustomEvent('fz:area', { detail: 'lasertag' }));
     } });
   // laser tag vests hanging either side of the door
@@ -269,10 +271,10 @@ export function arcadeArea(stage) {
     mode.update(Math.min(dt, 0.05), now / 1000, stage.camera);
   });
 
-  // the claw machines: a long bank of them down the right wall (either side of Laser Tag), full of real plushies
+  // the claw machines: a bank of them down the right wall (towards the front, past Laser Tag), full of real plushies
   const CLAW_COLS = ['#ff4fd8', '#39c6ff', '#ffd84d', '#6ee7a0', '#b77bff', '#ff9f43'];
   const clawX = hw - 1.1;
-  [-11.8, -9.8, -7.8, 2.6, 4.6, 6.6, 8.6, 10.6].forEach((z, i) => {
+  [2.6, 4.6, 6.6, 8.6, 10.6].forEach((z, i) => {
     const M = clawMachine(g, clawX, z, CLAW_COLS[i % CLAW_COLS.length], anim, -Math.PI / 2);
     solids.push({ x: clawX, z, w: 1.9, d: 1.9 });
     stage.interactable({ x: clawX - 1.7, z, r: 1.0, label: 'play the claw machine (🪙 25)', icon: 'arcade', use: () => (mode?.primary ? mode.primary() : play((ui) => clawGame(M, ui), { free: true })) });
@@ -332,6 +334,12 @@ export function arcadeArea(stage) {
   anim.push((t) => spots2.forEach((l, i) => { l.intensity = 11 + Math.sin(t * 1.5 + i * 2) * 4; }));
 
   const walker = openWalker(stage, { w: W, d: D, solids, frozen: () => !!mode && !mode.free });
+  if (backFromLaserTag) {
+    // just out of Laser Tag: standing in front of its door, facing into the arcade
+    backFromLaserTag = false;
+    Object.assign(walker.me, { x: hw - 2.4, z: -4, heading: -Math.PI / 2 });
+    stage.orbit.yaw = Math.PI / 2;
+  }
   const off = listen({ arcade_board: () => board.draw() });
   stage.onFrame((dt, now) => { for (const fn of anim) fn(now / 1000, dt); });
   stage.banner(`<div class="big">🕹️ Arcade</div>Each go costs 🪙 coins and wins 🎟️ tickets. Spend them at the prize counter: new prizes every hour!`, 3500);

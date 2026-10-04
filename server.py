@@ -1031,7 +1031,8 @@ def house_view(p):
     h = p["house"]
     return {"floor": h["floor"], "wall": h["wall"], "ceiling": h.get("ceiling", "ceil_plain"), "door": h.get("door", "door_classic"),
             "size": list(house_dims(h)), "items": h["items"], "likes": h["likes"], "areas": h.get("areas", []),
-            "careas": h.get("careas", []), "wallp": h.get("wallp", {}), "trim": h.get("trim", "#f4f0ff")}
+            "careas": h.get("careas", []), "wallp": h.get("wallp", {}), "trim": h.get("trim", "#f4f0ff"),
+            "builders": h.get("builders", [])}
 
 
 def public(p, client):
@@ -1162,7 +1163,7 @@ IN_ZONE = {
     "boss_move", "boss_shoot", "boss_hit", "boss_hurt", "boss_start", "boss_pick", "arena_pick", "arena_shield_pop", "area_move", "area_sit", "area_pose", "crab_bet", "ball", "ball_steal", "ball_event", "court_join", "court_ready", "court_leave", "court_score", "golf_done", "boat", "boat_take", "boat_leave", "pose",
     "doodle_start", "doodle_pick", "doodle_draw", "doodle_undo", "doodle_clear", "doodle_guess",
     "play_public", "hilo_deal", "lt_move", "lt_shoot", "lt_team", "hockey_join", "hockey_leave", "hockey_mallet", "hockey_puck", "hockey_goal", "arcade_score", "arcade_play", "claw_play", "ticket_shop", "ticket_buy", "trade_ask", "trade_answer", "trade_offer", "trade_ready", "trade_cancel", "roulette_bet", "roulette_clear", "roulette_sync",
-    "house_get", "house_save", "house_buy", "house_like", "fish_sell", "fish_hook",
+    "house_get", "house_save", "house_buy", "house_like", "house_builder", "fish_sell", "fish_hook",
 }
 
 
@@ -4553,15 +4554,45 @@ class Game:
     def on_house_save(self, c, m):
         if not c.ready("house_save", 0.2):
             return
-        p = c.player
+        # your own house, or someone else's that they've given you permission to build in (with their things)
+        key = str(m.get("k") or c.key).lower()
+        p = c.room.zone["players"].get(key)
+        if not p or (key != c.key and c.key not in p["house"].get("builders", [])):
+            raise GameError("You don't have permission to build here.")
         try:
+            builders = p["house"].get("builders", [])
             p["house"].update(clean_house(p, m))
+            p["house"]["builders"] = builders  # (only the owner changes who can build)
         except GameError:
-            c.ws.send({"t": "house", "k": c.key, "house": house_view(p)})  # put the client back in sync
+            c.ws.send({"t": "house", "k": key, "house": house_view(p)})  # put the client back in sync
             raise
         self.store.mark()
-        c.room.broadcast({"t": "house", "k": c.key, "house": house_view(p)})
-        self.push_player(c.room, c.key)
+        c.room.broadcast({"t": "house", "k": key, "house": house_view(p), "by": c.key})
+        self.push_player(c.room, key)
+
+    def on_house_builder(self, c, m):
+        """Give someone permission to build in your house (with your furniture), or take it away."""
+        if not c.ready("house_builder", 0.3):
+            return
+        key = str(m.get("k", "")).lower()
+        other = c.room.zone["players"].get(key)
+        if not other or key == c.key:
+            raise GameError("Pick someone else.")
+        h = c.player["house"]
+        builders = [b for b in h.get("builders", []) if b in c.room.zone["players"]]
+        if m.get("on"):
+            if key not in builders:
+                if len(builders) >= 12:
+                    raise GameError("Up to 12 people can build in your house.")
+                builders.append(key)
+        else:
+            builders = [b for b in builders if b != key]
+        h["builders"] = builders
+        self.store.mark()
+        c.room.broadcast({"t": "house", "k": c.key, "house": house_view(c.player)})
+        cl = c.room.clients.get(key)
+        if cl:
+            self.sys(cl, f"🔨 {c.player['name']} {'let you build in their house!' if m.get('on') else 'took away your building permission.'}", "ok" if m.get("on") else "info")
 
     def on_house_buy(self, c, m):
         p = c.player

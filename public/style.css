@@ -1015,6 +1015,8 @@ body.no-names .wl-tag { display: none; }
 .shelf-jump button { padding: 3px 10px; font-size: 12px; font-weight: 600; }
 .shelf-label { scroll-margin-top: 52px; margin-top: 6px; }
 .shelf-end { flex: none; height: 50vh; }
+.vbuild { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 99px; border: 2px solid var(--line, #fff3); white-space: nowrap; }
+.vbuild.on { background: #6ee7a0; color: #0b2a1a; border-color: #6ee7a0; }
 .item-search { width: 100%; padding: 7px 10px; border-radius: 10px; border: 2px solid var(--line, #0002); background: var(--bg); color: inherit; font: inherit; }
 .item-sets button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 .house-hint { max-width: min(760px, calc(100vw - 420px)); }

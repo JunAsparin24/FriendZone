@@ -38,7 +38,7 @@ function applyVolumes(instant = false) {
   const set = (node, v) => (instant ? (node.gain.value = v) : node.gain.setTargetAtTime(v, ac.currentTime, 0.05));
   set(master, settings.muted ? 0 : settings.master);
   set(sfxBus, settings.sfx);
-  set(musicBus, settings.musicOn ? settings.music * 0.55 : 0);
+  set(musicBus, settings.musicOn ? settings.music * 0.2 : 0); // (100% on the slider is a comfortable level, well under the sound effects)
 }
 onSettings(() => applyVolumes());
 

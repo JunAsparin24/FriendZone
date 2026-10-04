@@ -180,7 +180,11 @@ export function clawMachine(g, x, z, color, anim, ry = 0) {
     // gravity for the plushies (the ones not in the claw)
     for (const p of prizes) {
       if (p.held) continue;
-      if (p.y > p.rest) { p.vy -= 9 * dt; p.y = Math.max(p.rest, p.y + p.vy * dt); if (p.y === p.rest) p.vy = 0; }
+      if (p.y > p.rest) {
+        p.vy -= 9 * dt; p.y = Math.max(p.rest, p.y + p.vy * dt);
+        if (p.spin) { p.obj.rotation.x += p.spin * dt; p.obj.rotation.z += p.spin * 0.6 * dt; }
+        if (p.y === p.rest) { p.vy = 0; p.spin = 0; }
+      }
       p.obj.position.set(p.x, p.y, p.z);
     }
     M.place(dt);
@@ -230,6 +234,24 @@ export function clawGame(M, ui) {
     player: () => { wal.innerHTML = wallet(); },
   });
   const finish = (text, cls) => { msg.innerHTML = `<span class="${cls}">${text}</span>`; st.phase = 'ready'; M.playing = false; renderPad(); };
+  // a plushie in the claw is carried by the claw head itself: it swings with it, held between the prong tips
+  const tmp = new THREE.Vector3();
+  const attach = (P, ox, oz) => {
+    P.held = true;
+    P.off = { x: THREE.MathUtils.clamp(ox, -0.06, 0.06), z: THREE.MathUtils.clamp(oz, -0.06, 0.06) };
+    P.tilt = { x: P.obj.rotation.x + P.off.z * 3, z: P.obj.rotation.z - P.off.x * 3 };
+    M.head.add(P.obj);
+    P.obj.position.set(P.off.x, -0.32, P.off.z);
+    P.obj.rotation.set(P.tilt.x, P.obj.rotation.y, P.tilt.z);
+  };
+  const detach = (P) => {
+    P.obj.getWorldPosition(tmp);
+    M.group.worldToLocal(tmp);
+    M.group.add(P.obj);
+    P.held = false;
+    P.x = tmp.x; P.y = tmp.y; P.z = tmp.z;
+    P.obj.position.copy(tmp);
+  };
   renderPad();
   start(); // (walking up and pressing E gets you straight to steering; you pay when the claw drops)
   return {
@@ -255,7 +277,9 @@ export function clawGame(M, ui) {
         if ((st.timer -= dt) <= 0) drop();
         msg.textContent = `Steer (I J K L or the arrows here), then E to DROP! ⏱ ${Math.ceil(st.timer)}`;
       } else if (st.phase === 'drop') {
-        const bottom = (T ? T.y : 1.08) + 0.22;
+        // down until the prong tips meet the top of the plushie (or the heap)
+        const onTarget = T && Math.hypot(T.x - M.hx, T.z - M.hz) < 0.2;
+        const bottom = (onTarget ? T.y + 0.3 : 1.36);
         M.hy = Math.max(bottom, M.hy - 0.9 * dt);
         if (M.hy <= bottom) {
           // reached the heap: pay and ask the machine whether it holds
@@ -263,35 +287,56 @@ export function clawGame(M, ui) {
           net.send('claw_play', { prize: T?.id ?? PRIZES()[0].id, aim: Math.max(0, 1 - d / 0.13) });
           st.phase = 'wait';
           st.waitT = 0;
+          st.grip = onTarget ? 0.38 + Math.min(0.2, d) : 0.12; // (the prongs close round the plushie and stop on it)
+          sfx('whoosh', { vol: 0.3 });
         }
       } else if (st.phase === 'wait') {
-        M.setOpen(Math.max(0.15, M.open - dt * 2.5));
+        M.setOpen(Math.max(st.grip, M.open - dt * 2.2));
+        // the closing prongs shove the plushies they brush against
+        for (const p of M.prizes) {
+          if (p.held || p === T) continue;
+          const dx = p.x - M.hx, dz = p.z - M.hz, d = Math.hypot(dx, dz);
+          if (d < 0.18 && d > 0.001) { p.x += (dx / d) * dt * 0.25; p.z += (dz / d) * dt * 0.25; }
+        }
         if ((st.waitT += dt) > 6) finish('The machine got stuck. Try again!', 'lose');
-        if (st.result && M.open <= 0.16) {
-          // a grab: whatever it decided, the claw picks the plushie up a little
-          if (T && Math.hypot(T.x - M.hx, T.z - M.hz) < 0.22) { T.held = true; st.carry = T; }
+        if (st.result && M.open <= st.grip + 0.01) {
+          if (T && Math.hypot(T.x - M.hx, T.z - M.hz) < 0.2) {
+            // gripped: the plushie now hangs in the claw (tilted if you grabbed it off-centre)
+            attach(T, T.x - M.hx, T.z - M.hz);
+            st.carry = T;
+            st.slipAt = st.result.win ? Infinity : 1.45 + Math.random() * 0.5;
+          } else if (T) { T.vy = 0.6; T.rest = T.y; T.x += (T.x - M.hx) * 0.3; T.z += (T.z - M.hz) * 0.3; } // (a miss knocks it over)
           st.phase = 'lift';
+          st.wob = 0;
         }
       } else if (st.phase === 'lift') {
         M.hy = Math.min(2.3, M.hy + 0.7 * dt);
         const P = st.carry;
         if (P) {
-          P.x += (M.hx - P.x) * Math.min(1, dt * 8); P.z += (M.hz - P.z) * Math.min(1, dt * 8);
-          P.y = M.hy - 0.28;
-          P.obj.position.set(P.x, P.y, P.z);
-          if (!st.result.win && M.hy > 1.55) { P.held = false; P.vy = 0.5; P.rest = 1.02 + Math.random() * 0.06; st.carry = null; M.setOpen(0.6); sfx('bonk', { power: 0.3 }); }
+          // the weight pulls the prongs open a touch; a losing grip wobbles, then lets go
+          if (M.hy > st.slipAt - 0.25) { st.wob += dt; P.obj.position.x = P.off.x + Math.sin(st.wob * 40) * 0.015; P.obj.rotation.z = P.tilt.z + Math.sin(st.wob * 30) * 0.15; M.setOpen(st.grip + st.wob * 0.25); }
+          if (M.hy > st.slipAt) {
+            detach(P);
+            P.vy = -0.2; P.rest = 1.06 + Math.random() * 0.08; P.spin = (Math.random() - 0.5) * 6;
+            st.carry = null; M.setOpen(0.65); sfx('bonk', { power: 0.3 });
+          }
         }
         if (M.hy >= 2.3) {
           if (st.carry) st.phase = 'carry';
           else finish(st.result.win ? 'It slipped… but the machine felt bad: check again!' : 'So close! It slipped out of the claw.', 'lose');
         }
       } else if (st.phase === 'carry') {
-        const P = st.carry;
+        // over to the chute, swinging on the cable with the plushie dangling
         M.hx += (0.5 - M.hx) * Math.min(1, dt * 2.5);
         M.hz += (0.5 - M.hz) * Math.min(1, dt * 2.5);
-        P.x = M.hx; P.z = M.hz; P.y = M.hy - 0.28;
-        P.obj.position.set(P.x, P.y, P.z);
-        if (Math.hypot(M.hx - 0.5, M.hz - 0.5) < 0.02) { M.setOpen(1); P.held = false; P.rest = 0.2; P.vy = 0; st.phase = 'fall'; }
+        if (Math.hypot(M.hx - 0.5, M.hz - 0.5) < 0.02) {
+          const P = st.carry;
+          M.setOpen(1);
+          detach(P);
+          P.vy = 0; P.rest = 0.2; P.spin = (Math.random() - 0.5) * 8;
+          st.phase = 'fall';
+          sfx('whoosh', { vol: 0.3 });
+        }
       } else if (st.phase === 'fall') {
         const P = st.carry;
         if (P.y <= 0.25) {
@@ -305,7 +350,7 @@ export function clawGame(M, ui) {
         }
       }
     },
-    stop() { off(); M.playing = false; if (st.carry) { st.carry.held = false; st.carry = null; } },
+    stop() { off(); M.playing = false; if (st.carry) { detach(st.carry); st.carry.rest = 1.06; st.carry = null; } },
   };
 }
 

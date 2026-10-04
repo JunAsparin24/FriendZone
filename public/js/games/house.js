@@ -46,7 +46,9 @@ const kindOf = (id) => FURN[id]?.kind ?? 'floor';
 /** Anything can be recoloured (like Bloxburg), except walls, doors, plushies and admin specials. Must match server.py. */
 const canRecolor = (f) => !!f && (f.recolor || (!f.room && !f.drag && !f.claw && !f.exclusive && (f.kind ?? 'floor') !== 'door'));
 // free things (plain walls) never run out: you can put up as many as the limit
-const owned = (id) => (FURN[id]?.free ? FURN[id].max ?? 99 : me().furni?.[id] ?? 0);
+// (building in someone else's house: their things, not yours; see invOf in houseArea)
+let invOf = () => me();
+const owned = (id) => (FURN[id]?.free ? FURN[id].max ?? 99 : invOf()?.furni?.[id] ?? 0);
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
 const MIN_SIZE = 6; // (HOUSE_MIN on the server)
 /** The biggest room you can have, from the house upgrades you own: [width, depth]. */
@@ -485,9 +487,13 @@ export function house(stage) {
   let buyThenUse = null;   // put this up as soon as the purchase goes through
   let entries = [];           // built items: { group, use, A, it, bounce, inter }
   const mine = () => viewKey === S.me;
+  /** Can you decorate this house? Your own, or one whose owner gave you permission. */
+  const canEdit = () => mine() || (home?.builders ?? []).includes(S.me);
+  invOf = () => (!mine() && S.players[viewKey]) || me();
   const payload = () => ({
+    k: viewKey,
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
-    items: home.items.map(({ id, x, y, r, h, l, iw, dg, c }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}) })),
+    items: home.items.map(({ id, x, y, r, h, l, iw, dg, c, t }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}) })),
     areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT,
   });
 
@@ -1191,7 +1197,7 @@ export function house(stage) {
 
   stage.onPointer = (type, e, d) => {
     if (!edit) { walkPointer?.(type, e, d); return; }
-    if (!home || !mine()) return;
+    if (!home || !canEdit()) return;
     // drawing a wall: press where it starts and drag to where it ends (or click the start, then the end).
     // The camera holds still while you drag.
     if (placing && isDragWall(placing.id) && placing.from < 0) {
@@ -1281,7 +1287,7 @@ export function house(stage) {
     actions.innerHTML = [
       `<span class="pill">❤️ ${likes.length}</span>`,
       !mine() ? `<button class="btn small ${liked ? '' : 'primary'}" data-like ${liked ? 'disabled' : ''}>${liked ? '❤️ Liked' : '🤍 Like'}</button>` : '',
-      mine() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : '✏️ Decorate'}</button>` : '',
+      canEdit() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : mine() ? '✏️ Decorate' : '🔨 Build here'}</button>` : '',
       edit ? `<button class="btn small" data-menu title="Tab">${sideOpen ? '⬅ Hide menu' : '📋 Menu'}</button>` : '',
       `<button class="btn small ${sideOpen && tab === 'visit' ? 'primary' : ''}" data-visits>🏘️ Visit</button>`,
       !mine() ? '<button class="btn small" data-home>🏡 My house</button>' : '',
@@ -1289,7 +1295,8 @@ export function house(stage) {
   }
 
   function renderTabs() {
-    const list = [['visit', '🏘️ Visit'], ...(mine() ? [['items', '🛋️ Items'], ['shop', '🛒 Shop'], ['style', '🎨 Style']] : [])];
+    // (building in a friend's house: their items and styles, but buying is up to them)
+    const list = [['visit', '🏘️ Visit'], ...(mine() ? [['items', '🛋️ Items'], ['shop', '🛒 Shop'], ['style', '🎨 Style']] : canEdit() ? [['items', '🛋️ Their items'], ['style', '🎨 Style']] : [])];
     if (!list.some(([id]) => id === tab)) tab = 'visit';
     tabsEl.innerHTML = list.map(([id, label]) => `<button data-tab="${id}" class="${tab === id ? 'on' : ''}">${label}</button>`).join('');
   }
@@ -1310,8 +1317,10 @@ export function house(stage) {
         <span class="vav"></span>
         <span class="vname"><b>${esc(p.name)}${p.key === S.me ? ' <small>(you)</small>' : ''}</b>
           <small>🛋️ ${p.house?.n ?? 0} · ❤️ ${p.house?.likes ?? 0}${here(p.key) ? ` · <span class="win">${here(p.key)} inside</span>` : ''}</small></span>
+        ${mine() && viewKey === S.me && p.key !== S.me ? `<span class="vbuild ${(home?.builders ?? []).includes(p.key) ? 'on' : ''}" data-builder="${esc(p.key)}" title="Let them build in your house">🔨 ${(home?.builders ?? []).includes(p.key) ? 'Can build' : 'Let build'}</span>` : ''}
         <span class="vgo">${p.key === viewKey ? 'Here' : 'Go →'}</span>
-      </button>`).join('')}</div>`;
+      </button>`).join('')}</div>
+      ${mine() ? '<p class="muted small">🔨 <b>Let build</b> lets a friend decorate your house with your furniture. Tap again to take it away.</p>' : (home?.builders ?? []).includes(S.me) ? '<p class="muted small">🔨 You can build here! Press <b>Build here</b> up top.</p>' : ''}`;
     panel.querySelectorAll('[data-visit]').forEach((el) => portraitInto(el.querySelector('.vav'), S.players[el.dataset.visit]?.look, 40, 40, { zoom: 'head' }));
   }
 
@@ -1477,7 +1486,7 @@ export function house(stage) {
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor],[data-trim],[data-item-filter],[data-item-set]');
+    const t = e.target.closest('[data-builder],[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-recolor],[data-trim],[data-item-filter],[data-item-set]');
     if (!t) return;
     const ds = t.dataset;
     if (ds.trim) { if (home.trim !== ds.trim) { home.trim = ds.trim; commit('paint'); } return; }
@@ -1520,8 +1529,11 @@ export function house(stage) {
       tab = ds.tab;
       confirmBuy = null;
       if (trying()) setPreview(null);
-      if (tab !== 'visit' && mine() && !edit) setEdit(true);
+      if (tab !== 'visit' && canEdit() && !edit) setEdit(true);
       renderAll();
+    } else if (ds.builder) {
+      net.send('house_builder', { k: ds.builder, on: !(home?.builders ?? []).includes(ds.builder) });
+      sfx('click');
     } else if (ds.menu != null) {
       // decorating: tuck the menu away to see the room, bring it back (Tab does the same)
       sideOpen = !sideOpen;
@@ -1572,7 +1584,7 @@ export function house(stage) {
   /** Make your room a tile wider/narrower or deeper/shallower ("w:1", "d:-1"); anything that no
    *  longer fits goes back in your inventory. */
   function resize(step) {
-    if (!home || !mine()) return;
+    if (!home || !canEdit()) return;
     const [axis, delta] = step.split(':');
     const [mw, md] = maxSize();
     const size = [...(home.size ?? [14, 14])];
@@ -1593,7 +1605,7 @@ export function house(stage) {
   }
 
   function setEdit(on) {
-    edit = on && mine();
+    edit = on && canEdit();
     if (!edit) { paintMode = false; brush = null; }
     if (!edit && trying()) setPreview(null);
     room.grid.visible = edit;
@@ -1612,7 +1624,7 @@ export function house(stage) {
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = 0;
-      if (home && mine()) net.send('house_save', payload());
+      if (home && canEdit()) net.send('house_save', payload());
     }
     if (placing) stopPlacing();
     if (seated) standUp();
@@ -1689,7 +1701,7 @@ export function house(stage) {
     net.on('member_left', (m) => { if (m.k === viewKey) visit(S.me); else if (sideOpen && tab === 'visit') renderVisit(); }),
     net.on('house', (m) => {
       if (m.k !== viewKey) { if (sideOpen && tab === 'visit') renderVisit(); return; }
-      if (m.k === S.me && home) {
+      if (m.k === viewKey && home && m.by === S.me) {
         if (echoes > 0) echoes -= 1;
         if (echoes > 0 || saveTimer) { home.likes = m.house.likes; renderHeader(); return; }
       }
@@ -1705,6 +1717,8 @@ export function house(stage) {
         if (!fresh && !mine()) sfx('pop', { vol: 0.4 }); // the owner is redecorating while you watch
       }
       if (newLikes) { stage.people.get(m.k)?.char.emote('heart'); if (m.k === S.me) sfx('like'); }
+      if (m.house.builders) home.builders = m.house.builders;
+      if (edit && !canEdit()) { setEdit(false); toast('Your building permission here was taken away.'); }
       renderAll();
     }),
     net.on('house_bought', (m) => {
@@ -1833,7 +1847,7 @@ export function house(stage) {
     walker.stop();
     off.forEach((f) => f());
     window.removeEventListener('keydown', onEscape, true);
-    if (saveTimer && home && mine()) net.send('house_save', payload()); // flush a pending save
+    if (saveTimer && home && canEdit()) net.send('house_save', payload()); // flush a pending save
     clearTimeout(saveTimer);
     stage.scene?.remove(room.group);
     setDims([14, 14]);

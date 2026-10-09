@@ -979,7 +979,8 @@ def clean_house(p, data):
         clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
                             **({"c": it["c"]} if can_recolor(f) and it.get("c") in CATALOG["clothColors"] else {}),
                             **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {}),
-                            **({"cp": clean_parts(it["cp"])} if can_recolor(f) and isinstance(it.get("cp"), dict) and clean_parts(it["cp"]) else {})})
+                            **({"cp": clean_parts(it["cp"])} if can_recolor(f) and isinstance(it.get("cp"), dict) and clean_parts(it["cp"]) else {}),
+                            **({"lk": 1} if kind == "door" and it.get("lk") else {})})  # (lk: a locked door, only the owner and their builders get through)
     for name, cells in door_cells:
         if not cells <= wall_cells:
             raise GameError(f"The {name} has to go in a wall.")
@@ -1042,14 +1043,14 @@ MAX_GROUND, MAX_YARD = 48, 80
 
 EXT_FACE_RE = re.compile(r"^ext:[a-z_]+:#[0-9a-fA-F]{6}$")
 MAX_ROOFS = 16
+ROOF_PITCHES = (0.6, 1, 1.4)  # a piece of roof can be made shallower or steeper
 
 
 def default_ext():
     """The outside of an empty plot: nothing built yet, just a path up from the pavement."""
-    mid = PLOT["w"] // 2
     return {"wall": {"m": "siding", "c": "#f2ead8"}, "roofs": [],
-            "ground": [{"m": "pavers", "c": "#d8cfc0", "x": mid - 1, "y": PLOT["d"] - 5, "w": 2, "d": 5}],
-            "yard": [{"id": "mailbox", "x": mid + 2, "y": PLOT["d"] - 1, "r": 0}]}
+            "ground": [],  # (a bare plot: lay your own path)
+            "yard": []}  # (the mailbox at the kerb, with the owner's name over it, comes with the plot)
 
 
 def clean_ext(data):
@@ -1082,7 +1083,8 @@ def clean_ext(data):
             w, d = grid(r["w"], 2, PLOT["w"] + 1, 4), grid(r["d"], 2, PLOT["d"] + 1, 4)
             out["roofs"].append({"s": r.get("s") if r.get("s") in ROOF_SHAPES else "gable", "m": r.get("m") if r.get("m") in ROOF_MATS else "shingle",
                                  "c": colour(r.get("c"), "#b3403a"), "ch": 1 if r.get("ch") else 0,
-                                 "x": grid(r["x"], -0.5, PLOT["w"] + 0.5 - w, 4), "y": grid(r["y"], -0.5, PLOT["d"] + 0.5 - d, 4), "w": w, "d": d})
+                                 "x": grid(r["x"], -0.5, PLOT["w"] + 0.5 - w, 4), "y": grid(r["y"], -0.5, PLOT["d"] + 0.5 - d, 4), "w": w, "d": d,
+                                 "r": int(r.get("r", 0)) % 4, "p": r.get("p") if r.get("p") in ROOF_PITCHES else 1})
         for g in ground:
             if g.get("m") not in GROUND_MATS:
                 raise GameError("That isn't a path material.")

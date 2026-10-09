@@ -7,32 +7,33 @@
 // over the network. Each plot has its own tile grid (0..PLOT.w across, 0..PLOT.d back to front, the
 // street at the front); plots on the far side of the street are turned round to face it.
 import * as THREE from 'three';
-import { toon, canvasTexture } from '../three/materials.js';
+import { toon, canvasTexture, glowTexture } from '../three/materials.js';
+import { dayPhase } from '../three/daynight.js';
 import { S } from '../state.js';
 import { PLOT, YARD_ITEMS, buildRoofs, buildGround, buildYard, defaultExt, extMaterial } from '../three/exterior.js';
 import { buildShell } from './house.js';
 
 export const T = 1.6;                 // world units per tile
-const ROAD = 13, WALK = 3.4;          // the road's width, and each pavement's
+const ROAD = 15, VERGE = 2.6, WALK = 3; // the road's width, the grass strip beside it, and the pavement
 const PW = PLOT.w * T, PD = PLOT.d * T;
-const EDGE = ROAD / 2 + WALK;         // from the middle of the road to the front of the plots
+const EDGE = ROAD / 2 + VERGE + WALK; // from the middle of the road to the front of the plots
 const MIN_PLOTS = 6;
-const HEDGE = 0.3;                    // half the width of the hedge between two plots (tiles)
 
 function prng(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
-const signTex = new Map();
-function nameSign(text, mine) {
+const tagTex = new Map();
+/** A name floating over a mailbox (yours in gold). */
+function nameTag(text, mine) {
   const key = `${text}|${mine}`;
-  if (!signTex.has(key)) signTex.set(key, canvasTexture(256, 96, (c) => {
-    c.fillStyle = mine ? '#ffd84d' : '#fff8e8'; c.beginPath(); c.roundRect(4, 4, 248, 88, 14); c.fill();
-    c.lineWidth = 6; c.strokeStyle = '#6b4226'; c.stroke();
-    c.fillStyle = '#3a2416'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    let size = 38;
-    do { c.font = `bold ${size}px system-ui, sans-serif`; size -= 2; } while (c.measureText(text).width > 228 && size > 14);
-    c.fillText(text, 128, 50);
+  if (!tagTex.has(key)) tagTex.set(key, canvasTexture(512, 128, (c) => {
+    c.clearRect(0, 0, 512, 128);
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    let size = 76;
+    do { c.font = `800 ${size}px system-ui, sans-serif`; size -= 3; } while (c.measureText(text).width > 480 && size > 20);
+    c.lineJoin = 'round'; c.lineWidth = 12; c.strokeStyle = 'rgba(20,22,30,.9)'; c.strokeText(text, 256, 66);
+    c.fillStyle = mine ? '#ffd84d' : '#ffffff'; c.fillText(text, 256, 66);
   }));
-  return signTex.get(key);
+  return tagTex.get(key);
 }
 // grass: soft blades and mottling, so big lawns aren't one flat green; lawns are mown in stripes
 let grassTex = null, lawnTex = null;
@@ -59,7 +60,53 @@ export function createHood() {
   const group = new THREE.Group();
   const plots = new Map(); // plot number -> { i, key, frame, group, house (what's built on it), roofs, active }
   const houses = {};       // member key -> their house data (from the server, or as it's being built here)
-  let count = 0, street = null, clouds = [];
+  let count = 0, street = null, clouds = [], lamps = [];
+  // ---- day and night (the same clock as the town, so it's evening here when it's evening there)
+  const cloudMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, fog: false });
+  const bulbMat = new THREE.MeshToonMaterial({ color: '#fff3b8', emissive: '#ffd27a', emissiveIntensity: 0.2, gradientMap: toon('#fff').gradientMap });
+  const poolMat = new THREE.MeshBasicMaterial({ map: glowTexture, color: '#ffcf8a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const sky = new THREE.Color('#9fd4ff');
+  // stars: a dome of points far overhead, faded in after dusk
+  const starGeo = new THREE.BufferGeometry(), starPos = [], srnd = prng(99);
+  for (let i = 0; i < 700; i++) { const a = srnd() * Math.PI * 2, e = 0.12 + srnd() * 1.4, r = 430; starPos.push(Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r); }
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: '#ffffff', size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
+  group.add(stars);
+  // a few real lights that sit on whichever street lamps are nearest you
+  const lampLights = Array.from({ length: 5 }, () => { const l = new THREE.PointLight('#ffd9a0', 0, 34, 1.5); group.add(l); return l; });
+  const SKY = { day: new THREE.Color('#9fd4ff'), dusk: new THREE.Color('#f3a57c'), night: new THREE.Color('#0a1130') };
+  const LIGHT = { sunDay: new THREE.Color('#fff1d6'), sunDusk: new THREE.Color('#ffb070'), moon: new THREE.Color('#9fb4ff'), hemiDay: new THREE.Color('#fff6ea'), hemiNight: new THREE.Color('#7f93d6'), groundDay: new THREE.Color('#7a8f6a'), groundNight: new THREE.Color('#1d2540'), cloudNight: new THREE.Color('#34416b'), white: new THREE.Color('#ffffff') };
+  const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  /**
+   * Set the light for the time of day. at: { scene, sun, hemi, x, z (where you are, in the scene's own
+   * units), hx, hz (the same spot in hood units), flip }. Returns how much daylight there is (0..1).
+   */
+  function applyTime(at, phase = dayPhase()) {
+    const a = phase * Math.PI * 2, up = Math.sin(a), day = smooth(-0.14, 0.2, up), dusk = (1 - smooth(0.02, 0.5, Math.abs(up))) * 0.75, night = 1 - day;
+    sky.copy(SKY.night).lerp(SKY.day, day).lerp(SKY.dusk, dusk * (0.35 + 0.65 * day));
+    at.scene.background = sky;
+    at.scene.fog?.color.copy(sky);
+    at.hemi.intensity = 0.52 + 0.73 * day;
+    at.hemi.color.copy(LIGHT.hemiNight).lerp(LIGHT.hemiDay, day);
+    at.hemi.groundColor.copy(LIGHT.groundNight).lerp(LIGHT.groundDay, day);
+    at.sun.intensity = 0.3 + 1.6 * day;
+    at.sun.color.copy(LIGHT.moon).lerp(LIGHT.sunDay, day).lerp(LIGHT.sunDusk, dusk * day);
+    // the sun crosses the sky by day; by night the moon does the same from the other side
+    const b = up >= -0.05 ? a : a - Math.PI, dx = Math.cos(b) * 0.85, dy = Math.max(0.3, Math.sin(b)), dz = 0.45, n = 46 / Math.hypot(dx, dy, dz);
+    at.sun.position.set(at.x + at.flip * dx * n, dy * n, at.z + at.flip * dz * n);
+    at.sun.target.position.set(at.x, 0, at.z);
+    stars.material.opacity = night * 0.95;
+    cloudMat.color.copy(LIGHT.cloudNight).lerp(LIGHT.white, day).lerp(SKY.dusk, dusk * day * 0.5);
+    cloudMat.opacity = 0.55 + 0.35 * day;
+    bulbMat.emissiveIntensity = 0.15 + 1.9 * night;
+    poolMat.opacity = night * 0.55;
+    if (night > 0.02 && lamps.length) {
+      const near = [...lamps].sort((p, q) => Math.hypot(p.x - at.hx, p.z - at.hz) - Math.hypot(q.x - at.hx, q.z - at.hz));
+      lampLights.forEach((l, i) => { const lp = near[i]; l.intensity = lp ? night * 90 : 0; if (lp) l.position.set(lp.x, 4.9, lp.z); });
+    } else for (const l of lampLights) l.intensity = 0;
+    return day;
+  }
+
 
   /** Where plot i is: the corner its tile grid starts from (hood units) and which way it faces. */
   function frameOf(i, n = count) {
@@ -77,84 +124,64 @@ export function createHood() {
   }
   const bounds = () => ({ minX: -(count / 4) * PW - 10, maxX: (count / 4) * PW + 10, minZ: -EDGE - PD, maxZ: EDGE + PD });
 
-  // ---- the street and the country round it
+  // ---- the street: a wide plain road, a kerb, a strip of grass with trees, then the pavement
   function buildStreet() {
     if (street) group.remove(street);
     street = new THREE.Group();
     clouds = [];
-    const b = bounds(), len = b.maxX - b.minX + 8, rnd = prng(count * 7 + 3);
+    lamps = [];
+    const b = bounds(), len = b.maxX - b.minX + 8, rnd = prng(count * 7 + 3), cols = count / 2;
     const flat = (w, d, x, y, z, mat) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.receiveShadow = true; street.add(m); return m; };
     const tiled = (mat, rx, rz) => { const m = mat.clone(); m.map = m.map.clone(); m.map.repeat.set(rx, rz); m.map.needsUpdate = true; return m; };
-    const field = new THREE.MeshToonMaterial({ color: '#63b257', map: grass(false) });
+    const field = new THREE.MeshToonMaterial({ color: '#5fae55', map: grass(false) });
     flat(900, 900, 0, -0.07, 0, tiled(field, 150, 150));
-    flat(len, ROAD, 0, -0.03, 0, tiled(extMaterial('asphalt', '#565960'), len / 6, ROAD / 6));
-    // a turning circle at each end of the street
+    const roadMat = extMaterial('asphalt', '#8b8d92'), walkMat = extMaterial('stucco', '#bdbec2'), kerbMat = toon('#63656a');
+    flat(len, ROAD, 0, -0.03, 0, tiled(roadMat, len / 7, ROAD / 7));
     for (const s of [-1, 1]) {
-      const end = new THREE.Mesh(new THREE.CircleGeometry(ROAD * 0.95, 40), extMaterial('asphalt', '#565960'));
+      // a turning circle at each end of the street
+      const end = new THREE.Mesh(new THREE.CircleGeometry(ROAD * 0.9, 40), roadMat);
       end.rotation.x = -Math.PI / 2; end.position.set(s * (len / 2), -0.032, 0); end.receiveShadow = true;
-      const isle = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.4, 0.3, 24), toon('#b9b5ac')); isle.position.set(s * (len / 2), 0.02, 0);
-      const bed = new THREE.Mesh(new THREE.CylinderGeometry(2.9, 2.9, 0.34, 24), toon('#5aa852')); bed.position.set(s * (len / 2), 0.03, 0);
-      street.add(end, isle, bed);
+      street.add(end);
+      // the kerb, and the pavement beyond the strip of grass
+      const kerb = new THREE.Mesh(new THREE.BoxGeometry(len, 0.2, 0.45), kerbMat);
+      kerb.position.set(0, -0.02, s * (ROAD / 2 + 0.1));
+      kerb.receiveShadow = true;
+      street.add(kerb);
+      flat(len, WALK, 0, -0.012, s * (ROAD / 2 + VERGE + WALK / 2), tiled(walkMat, len / 4, WALK / 4));
     }
-    for (const s of [-1, 1]) {
-      flat(len, WALK, 0, -0.012, s * (ROAD / 2 + WALK / 2), tiled(extMaterial('pavers', '#d2ccc0'), len / 3.2, WALK / 3.2));
-      const curb = new THREE.Mesh(new THREE.BoxGeometry(len, 0.16, 0.34), toon('#b9b5ac'));
-      curb.position.set(0, -0.02, s * (ROAD / 2 + 0.05));
-      curb.receiveShadow = true;
-      street.add(curb);
-      flat(len, 0.16, 0, -0.022, s * (ROAD / 2 - 0.7), toon('#e9e4d4')); // the white line along the kerb
-    }
-    // the dashed line down the middle, and a zebra crossing between every pair of houses
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), one = new THREE.Vector3(1, 1, 1);
-    const dashes = Math.floor(len / 6), dash = new THREE.InstancedMesh(new THREE.PlaneGeometry(2.6, 0.26), toon('#f4e9c0'), dashes);
-    for (let k = 0; k < dashes; k++) dash.setMatrixAt(k, m4.compose(new THREE.Vector3(-len / 2 + 3 + k * 6, -0.02, 0), q, one));
-    street.add(dash);
-    const cols = count / 2, bars = 9, zebra = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.7, ROAD - 2.2), toon('#f1ede2'), cols * bars);
-    for (let c = 0; c < cols; c++) for (let k = 0; k < bars; k++) zebra.setMatrixAt(c * bars + k, m4.compose(new THREE.Vector3((c - cols / 2 + 0.5) * PW - 5.6 + k * 1.4, -0.018, 0), q, one));
-    street.add(zebra);
-    // street lamps at every plot boundary (alternate sides), a hydrant and a bench here and there
-    const pole = toon('#2a2d36'), bulb = toon('#fff3b8', { emissive: '#ffd27a', emissiveIntensity: 1 });
-    for (let c = 0; c <= cols; c++) {
-      const x = (c - cols / 2) * PW, side = c % 2 ? 1 : -1, z = side * (ROAD / 2 + 0.75);
-      const lamp = new THREE.Group();
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.13, 5.4, 8), pole); post.position.y = 2.7; post.castShadow = true;
-      const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.5, 8), pole); foot.position.y = 0.25;
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 1.7), pole); arm.position.set(0, 5.35, -side * 0.7);
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.8), pole); head.position.set(0, 5.3, -side * 1.3);
-      const light = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.62), bulb); light.position.set(0, 5.21, -side * 1.3);
-      lamp.add(post, foot, arm, head, light);
-      lamp.position.set(x, 0, z);
-      street.add(lamp);
-      if (c % 2 === 0) {
-        const hy = new THREE.Group(), red = toon('#d8443a');
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.6, 10), red); body.position.y = 0.3;
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), red); cap.position.y = 0.62;
-        const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.44, 8), red); nose.rotation.z = Math.PI / 2; nose.position.y = 0.4;
-        hy.add(body, cap, nose); hy.position.set(x + 4, 0, -z); hy.traverse((o) => { o.castShadow = true; });
-        street.add(hy);
-      }
-    }
-    // trees: a row behind each line of back gardens, a wood past both ends, and hills on the horizon
-    const trunk = toon('#7a4a28'), greens = [toon('#3f9a4a'), toon('#57b35a'), toon('#2f7a4a'), toon('#6cbf5f')], pink = toon('#ffb3d0');
+    // street lamps and trees along the grass strips, one of each per plot
+    const pole = toon('#2a2d36'), bulb = bulbMat;
+    const trunk = toon('#5a3a26'), greens = [toon('#4f9a45', { flatShading: true }), toon('#5fae55', { flatShading: true }), toon('#3f8a4a', { flatShading: true }), toon('#7ab648', { flatShading: true })];
+    /** A tree the Bloxburg way: a tall thin trunk under one big chunky crown. */
     const tree = (x, z, s) => {
-      const t = new THREE.Group(), kind = rnd();
-      if (kind < 0.3) {
-        const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.6, 7), trunk); tr.position.y = 0.8;
-        t.add(tr);
-        for (let i = 0; i < 3; i++) { const cone = new THREE.Mesh(new THREE.ConeGeometry(1.9 - i * 0.45, 2.4, 9), greens[2 - (i % 2) * 2]); cone.position.y = 2.4 + i * 1.3; cone.castShadow = true; t.add(cone); }
-      } else {
-        const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.38, 2.6, 7), trunk); tr.position.y = 1.3;
-        const leaf = kind > 0.92 ? pink : greens[Math.floor(rnd() * 4)];
-        const a = new THREE.Mesh(new THREE.IcosahedronGeometry(2, 1), leaf); a.position.y = 3.9; a.castShadow = true;
-        const b2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.35, 1), leaf); b2.position.set(1.1, 3.2, 0.5);
-        const c2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.25, 1), leaf); c2.position.set(-1, 3.4, -0.6);
-        t.add(tr, a, b2, c2);
-      }
-      t.position.set(x, 0, z); t.rotation.y = rnd() * 6; t.scale.setScalar(s);
+      const t = new THREE.Group();
+      const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 4.6, 6), trunk); tr.position.y = 2.3; tr.castShadow = true;
+      const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(2.7, 0), greens[Math.floor(rnd() * greens.length)]);
+      crown.position.y = 5.6; crown.scale.set(1, 0.82 + rnd() * 0.2, 1); crown.rotation.set(rnd() * 3, rnd() * 3, 0); crown.castShadow = true;
+      t.add(tr, crown);
+      t.position.set(x, 0, z); t.scale.setScalar(s);
       street.add(t);
     };
-    for (let x = b.minX - 30; x <= b.maxX + 30; x += 7) for (const s of [-1, 1]) for (let row = 0; row < 3; row++) tree(x + rnd() * 5, s * (EDGE + PD + 5 + row * 9 + rnd() * 5), 0.9 + rnd() * 0.6);
-    for (const s of [-1, 1]) for (let i = 0; i < 46; i++) { const z = (rnd() - 0.5) * 2 * (EDGE + PD + 20); if (Math.abs(z) > ROAD + 4) tree(s * (b.maxX + 14 + rnd() * 34), z, 0.9 + rnd() * 0.7); }
+    for (let c = 0; c <= cols; c++) {
+      const x = (c - cols / 2) * PW, side = c % 2 ? 1 : -1, z = side * (ROAD / 2 + VERGE / 2);
+      const lamp = new THREE.Group();
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.13, 5.4, 8), pole); post.position.y = 2.7; post.castShadow = true;
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 2.2), pole); arm.position.set(0, 5.35, -side * 1);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.8), pole); head.position.set(0, 5.3, -side * 1.9);
+      const light = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.62), bulb); light.position.set(0, 5.21, -side * 1.9);
+      lamp.add(post, arm, head, light);
+      lamp.position.set(x, 0, z);
+      street.add(lamp);
+      // (after dark: a pool of light on the road under it)
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(17, 17), poolMat);
+      pool.rotation.x = -Math.PI / 2; pool.position.set(x, 0.03, z - side * 1.9);
+      street.add(pool);
+      lamps.push({ x, z: z - side * 1.9 });
+    }
+    for (let c = 0; c < cols; c++) for (const s of [-1, 1]) tree((c - cols / 2 + 0.5) * PW + (s > 0 ? 9 : -9), s * (ROAD / 2 + VERGE / 2), 0.9 + rnd() * 0.25);
+    // more trees behind the back gardens and past both ends, and hills on the horizon
+    for (let x = b.minX - 30; x <= b.maxX + 30; x += 11) for (const s of [-1, 1]) for (let row = 0; row < 2; row++) tree(x + rnd() * 7, s * (EDGE + PD + 7 + row * 12 + rnd() * 6), 1 + rnd() * 0.7);
+    for (const s of [-1, 1]) for (let i = 0; i < 26; i++) { const z = (rnd() - 0.5) * 2 * (EDGE + PD + 20); if (Math.abs(z) > ROAD + 6) tree(s * (b.maxX + 16 + rnd() * 36), z, 1 + rnd() * 0.7); }
     const hillCols = ['#6fae6a', '#7fb878', '#8fc48a', '#9cc7a8'];
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * Math.PI * 2 + rnd() * 0.2, r = 300 + rnd() * 120, h = 28 + rnd() * 50;
@@ -163,18 +190,7 @@ export function createHood() {
       hill.position.set(Math.cos(a) * r, -1, Math.sin(a) * r);
       street.add(hill);
     }
-    // flowers along the verges
-    const bloom = ['#ff8fc7', '#ffd84d', '#ffffff', '#b77bff', '#ff7a59'];
-    const n = Math.floor(len / 1.4), heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.13, 6, 5), new THREE.MeshToonMaterial({ color: '#ffffff', gradientMap: toon('#fff').gradientMap }), n * 2);
-    const col = new THREE.Color();
-    for (let k = 0; k < n * 2; k++) {
-      const s = k % 2 ? 1 : -1;
-      heads.setMatrixAt(k, m4.compose(new THREE.Vector3(-len / 2 + Math.floor(k / 2) * 1.4 + rnd(), 0.16, s * (EDGE + PD + 1.2 + rnd() * 2.5)), q, one));
-      heads.setColorAt(k, col.set(bloom[Math.floor(rnd() * bloom.length)]));
-    }
-    street.add(heads);
     // clouds, drifting
-    const cloudMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, fog: false });
     for (let i = 0; i < 14; i++) {
       const c = new THREE.Group();
       for (let k = 0; k < 5; k++) { const puff = new THREE.Mesh(new THREE.SphereGeometry(6 + rnd() * 6, 10, 8), cloudMat); puff.position.set(k * 7 - 14 + rnd() * 3, rnd() * 3, rnd() * 5); puff.scale.y = 0.55; c.add(puff); }
@@ -186,42 +202,31 @@ export function createHood() {
     group.add(street);
   }
 
-  // ---- one plot: its lawn, hedges and sign, and whatever its owner has built on it
+  // ---- one plot: a plain flat piece of land (no fences: it's yours to build on), with the owner's
+  // mailbox at the kerb and their name over it
   function buildPlot(i, key) {
     const p = S.players[key], f = frameOf(i);
     const g = new THREE.Group();
     g.position.set(f.cx, 0, f.cz);
     g.rotation.y = f.flip < 0 ? Math.PI : 0;
     g.scale.setScalar(T);
-    const lawnMat = new THREE.MeshToonMaterial({ color: i % 4 < 2 ? '#69ba5e' : '#5fb055', map: grass(true) });
+    const lawnMat = new THREE.MeshToonMaterial({ color: '#66b65b', map: grass(false) });
     lawnMat.map = lawnMat.map.clone(); lawnMat.map.repeat.set(PLOT.w / 4, PLOT.d / 4); lawnMat.map.needsUpdate = true;
-    const lawn = new THREE.Mesh(new THREE.PlaneGeometry(PLOT.w, PLOT.d), lawnMat);
+    const lawn = new THREE.Mesh(new THREE.PlaneGeometry(PLOT.w - 0.06, PLOT.d - 0.06), lawnMat);
     lawn.rotation.x = -Math.PI / 2; lawn.position.set(PLOT.w / 2, -0.008, PLOT.d / 2); lawn.receiveShadow = true;
     g.add(lawn);
-    // hedges down both sides and along the back: where one property stops and the next starts
-    const hedge = toon('#3a8546'), top = toon('#55ad58');
-    for (const [w, d, x, z] of [[HEDGE, PLOT.d - 2, HEDGE / 2, PLOT.d / 2 - 1], [HEDGE, PLOT.d - 2, PLOT.w - HEDGE / 2, PLOT.d / 2 - 1], [PLOT.w, HEDGE, PLOT.w / 2, HEDGE / 2]]) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.7, d), hedge); m.position.set(x, 0.35, z); m.castShadow = true;
-      const t = new THREE.Mesh(new THREE.BoxGeometry(w * 0.86, 0.1, d - 0.04), top); t.position.set(x, 0.73, z);
-      g.add(m, t);
+    if (p) {
+      const mine = key === S.me, mx = PLOT.w / 2 + 2, mz = PLOT.d - 0.55, steel = toon('#8d9199'), dark = toon('#2a2d36');
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.95, 0.09), dark); post.position.set(mx, 0.475, mz);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.26, 0.52), steel); box.position.set(mx, 1.06, mz);
+      const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.52, 10, 1, false, 0, Math.PI), steel); lid.rotation.set(Math.PI / 2, 0, Math.PI / 2); lid.position.set(mx, 1.19, mz);
+      const flag = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.1), toon('#e0463c')); flag.position.set(mx + 0.19, 1.22, mz + 0.12);
+      for (const m of [post, box, lid, flag]) { m.castShadow = true; g.add(m); }
+      const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameTag(p.name, mine), transparent: true, depthWrite: false }));
+      tag.position.set(mx, 2.0, mz);
+      tag.scale.set(2.6, 0.65, 1);
+      g.add(tag);
     }
-    // stone posts where the hedges meet the pavement
-    for (const x of [HEDGE / 2, PLOT.w - HEDGE / 2]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1, 0.42), toon('#c9c3b8')); post.position.set(x, 0.5, PLOT.d - 1.9); post.castShadow = true;
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.1, 0.52), toon('#e3ded4')); cap.position.set(x, 1.05, PLOT.d - 1.9);
-      g.add(post, cap);
-    }
-    // the sign by the pavement: whose plot it is (yours is gold), or that it's free
-    const mine = key === S.me, post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.2, 0.1), toon('#6b4226'));
-    post.position.set(PLOT.w / 2 - 3, 0.6, PLOT.d - 0.6);
-    const signMat = new THREE.MeshBasicMaterial({ map: nameSign(p ? (mine ? '★ My House' : `${p.name}'s House`) : 'For Sale', mine) });
-    for (const s of [1, -1]) { // (the name on both faces, so it reads the right way round from the garden too)
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.72), signMat);
-      sign.position.set(PLOT.w / 2 - 3, 1.35, PLOT.d - 0.6 + s * 0.06);
-      sign.rotation.y = s > 0 ? 0 : Math.PI;
-      g.add(sign);
-    }
-    g.add(post);
     const plot = { i, key: p ? key : null, frame: f, group: g, built: null, roofs: null, yard: [], active: false, roofsOn: true };
     group.add(g);
     if (plot.key) dress(plot);
@@ -236,6 +241,8 @@ export function createHood() {
     if (!h) return;
     const ext = { ...defaultExt(), ...(h.ext ?? {}) };
     const g = new THREE.Group();
+    // (plots used to come with a mailbox of their own in the yard: the one at the kerb has replaced it)
+    ext.yard = (ext.yard ?? []).filter((y) => !(y.id === 'mailbox' && y.x === Math.floor(PLOT.w / 2) + 2 && y.y === PLOT.d - 1));
     const roofs = buildRoofs(ext.roofs, ext.wall), ground = buildGround(ext.ground), yard = buildYard(ext.yard);
     roofs.visible = plot.roofsOn;
     g.add(ground, yard, roofs);
@@ -294,8 +301,6 @@ export function createHood() {
     const pl = plots.get(plotAt(hx, hz));
     if (!pl) return false;
     const p = toPlot(pl.frame, hx, hz), R = r / T;
-    if (p.z < PLOT.d - 2 && (p.x < HEDGE + R || p.x > PLOT.w - HEDGE - R)) return true;
-    if (p.z < HEDGE + R) return true;
     for (const y of pl.yard) { const rr = YARD_ITEMS[y.id]?.r; if (rr && Math.hypot(p.x - y.x, p.z - y.y) < rr + R) return true; }
     return false;
   }
@@ -336,5 +341,5 @@ export function createHood() {
   const missing = () => [...plots.values()].filter((p) => p.key && !houses[p.key]).map((p) => p.key);
 
   sync();
-  return { group, sync, setHouse, setActive, showRoofs, plotOf, viewFrom, arrival, ownerAt, blocked, update, bounds, missing, houses, T };
+  return { group, applyTime, sync, setHouse, setActive, showRoofs, plotOf, viewFrom, arrival, ownerAt, blocked, update, bounds, missing, houses, T };
 }

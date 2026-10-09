@@ -1123,6 +1123,8 @@
     { "id": "gambrel", "name": "Barn (Gambrel)", "emoji": "🌾" },
     { "id": "mansard", "name": "Mansard", "emoji": "🏛️" },
     { "id": "shed", "name": "Shed (Mono-pitch)", "emoji": "📐" },
+    { "id": "saltbox", "name": "Saltbox", "emoji": "🏚️" },
+    { "id": "butterfly", "name": "Butterfly", "emoji": "🦋" },
     { "id": "flat", "name": "Flat + Parapet", "emoji": "⬜" }
   ],
   "roofMats": [
@@ -1143,7 +1145,9 @@
     { "id": "deck", "name": "Wood Decking", "c": "#b07a48" },
     { "id": "flag", "name": "Flagstone", "c": "#a8a090" },
     { "id": "sand", "name": "Sand", "c": "#e6d3a0" },
-    { "id": "mulch", "name": "Mulch / Soil", "c": "#6b4a2e" }
+    { "id": "mulch", "name": "Mulch / Soil", "c": "#6b4a2e" },
+    { "id": "stepping", "name": "Stepping Stones", "c": "#b9b6ae" },
+    { "id": "dirt", "name": "Worn Dirt Path", "c": "#a07a52" }
   ],
   "extColors": ["#ffffff", "#f4f1ea", "#f2ead8", "#ead9bf", "#d8cfc0", "#c9c9c9", "#b8bcc0", "#8e949c", "#5a6470", "#3c4250", "#2a2d36", "#16141f",
     "#f7d9d0", "#e9a79a", "#b5533c", "#8a2f25", "#b3403a", "#c8643a", "#e0a25a", "#f0d28a", "#fff3b8", "#c9a85a", "#b07a48", "#8a5a32", "#5a3a22",
@@ -1158,6 +1162,8 @@
     { "id": "fence_picket", "name": "Picket Fence", "emoji": "🤍", "r": 0.45 },
     { "id": "fence_wood", "name": "Wooden Fence", "emoji": "🪵", "r": 0.45 },
     { "id": "fence_iron", "name": "Iron Fence", "emoji": "⚫", "r": 0.45 },
+    { "id": "fence_farm", "name": "Farm Fence", "emoji": "🐄", "r": 0.45 },
+    { "id": "fence_stone", "name": "Low Stone Wall", "emoji": "🧱", "r": 0.45 },
     { "id": "gate", "name": "Garden Gate", "emoji": "🚪" },
     { "id": "column", "name": "Porch Column", "emoji": "🏛️", "r": 0.25 },
     { "id": "lamp_post", "name": "Garden Lamp", "emoji": "💡", "r": 0.2 },
@@ -1166,7 +1172,13 @@
     { "id": "rock", "name": "Boulder", "emoji": "🪨", "r": 0.45 },
     { "id": "birdbath", "name": "Bird Bath", "emoji": "🐦", "r": 0.3 },
     { "id": "gnome", "name": "Garden Gnome", "emoji": "🧙" },
-    { "id": "planter", "name": "Planter Box", "emoji": "🪴", "r": 0.4 }
+    { "id": "planter", "name": "Planter Box", "emoji": "🪴", "r": 0.4 },
+    { "id": "grass_tuft", "name": "Tall Grass", "emoji": "🌾" },
+    { "id": "fern", "name": "Fern", "emoji": "🌿" },
+    { "id": "wildflowers", "name": "Wildflowers", "emoji": "🌼" },
+    { "id": "pebbles", "name": "Pebbles", "emoji": "🪨" },
+    { "id": "log", "name": "Fallen Log", "emoji": "🪵", "r": 0.4 },
+    { "id": "stump", "name": "Tree Stump", "emoji": "🪓", "r": 0.35 }
   ],
   "houseSizes": [
     { "id": "size_cozy", "name": "Cozy", "w": 14, "d": 14, "free": true },

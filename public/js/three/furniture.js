@@ -626,9 +626,9 @@ export const FURNITURE = {
   },
   window(g, A) {
     const frame = toon('#ffffff');
-    add(g, plane(1.5, 0.95), outdoorGlass(), { p: [0, 0, 0.01], outline: false, cast: false }); // (looks outside)
-    for (const [w, h, x, y] of [[1.64, 0.08, 0, 0.5], [1.64, 0.08, 0, -0.5], [0.08, 1.08, -0.78, 0], [0.08, 1.08, 0.78, 0], [0.05, 1, 0, 0], [1.5, 0.05, 0, 0]]) {
-      add(g, box(w, h, 0.06), frame, { p: [x, y, 0.03], outline: false });
+    throughWall(g, 1.5, 0.95, frame); // (a real hole in the wall: you see straight through)
+    for (const z of [0.03, -ROOM_T - 0.03]) for (const [w, h, x, y] of [[1.64, 0.08, 0, 0.5], [1.64, 0.08, 0, -0.5], [0.08, 1.08, -0.78, 0], [0.08, 1.08, 0.78, 0], [0.05, 1, 0, 0], [1.5, 0.05, 0, 0]]) {
+      add(g, box(w, h, 0.06), frame, { p: [x, y, z], outline: false });
     }
     add(g, box(1.7, 0.08, 0.2), frame, { p: [0, -0.56, 0.1] });
     return { use: () => floatEmoji(g, A, '🐦', 0.2, 1) };
@@ -2402,11 +2402,12 @@ function archBand(r, rise, inner, outer, depth) {
 }
 /** A papered face: the wallpaper repeats every 2 tiles across, and is pinned to the floor going up
  *  (y0: how high its bottom edge is), so it lines up with the room's own walls. */
-function papered(w, h, y0 = 0) {
-  return geo(`paper${w},${h},${y0}`, () => {
+function papered(w, h, y0 = 0, x0 = 0) {
+  return geo(`paper${w},${h},${y0},${x0}`, () => {
     const pg = new THREE.PlaneGeometry(w, h);
     const uv = pg.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 2, (y0 + uv.getY(i) * h) / 2);
+    // (x0: how far along the wall this piece starts, so the pattern carries on across doors and windows)
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (x0 + uv.getX(i) * w) / 2, (y0 + uv.getY(i) * h) / 2);
     return pg;
   });
 }
@@ -2428,18 +2429,23 @@ function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = 
     if (pw < 0.01) return;
     add(g, box(pw, ph, ROOM_T - 0.004), core, { p: [cx, cy, 0], outline: false });
     for (const s of [-1, 1]) {
-      paperAt(papered(pw, ph, y0), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI, s > 0 ? 0 : 2);
+      paperAt(papered(pw, ph, y0, s > 0 ? x0 + w / 2 : w / 2 - x1), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI, s > 0 ? 0 : 2);
       if (y0 === 0) add(g, box(pw, 0.16, 0.05), trim, { p: [cx, 0.08, s * (ROOM_T / 2 + 0.02)], outline: false });
     }
   };
-  const gaps = openings.map(([a, b]) => [Math.max(-w / 2, a), Math.min(w / 2, b)]).filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]);
-  let x = -w / 2;
-  for (const [a, b] of gaps) {
-    piece(x, a, bottom, top);
-    if (top > DOOR_H) piece(a, b, Math.max(bottom, DOOR_H), top); // the wall above the door
-    x = b;
+  // holes: a door is [a, b] (from the floor up to door height), a window [a, b, y0, y1]. The wall is
+  // built in columns between the holes' edges, each column solid except where a hole crosses it.
+  const holes = openings.map(([a, b, y0 = bottom, y1 = DOOR_H]) => ({ a: Math.max(-w / 2, a), b: Math.min(w / 2, b), y0: Math.max(bottom, y0), y1: Math.min(top, y1) })).filter((h) => h.b > h.a && h.y1 > h.y0);
+  const xs = [...new Set([-w / 2, w / 2, ...holes.flatMap((h) => [h.a, h.b])])].sort((p, q) => p - q);
+  for (let i = 0; i < xs.length - 1; i++) {
+    const mid = (xs[i] + xs[i + 1]) / 2;
+    let y = bottom;
+    for (const h of holes.filter((o) => o.a < mid && o.b > mid).sort((p, q) => p.y0 - q.y0)) {
+      if (h.y0 > y) piece(xs[i], xs[i + 1], y, h.y0);
+      y = Math.max(y, h.y1);
+    }
+    if (top > y) piece(xs[i], xs[i + 1], y, top);
   }
-  piece(x, w / 2, bottom, top);
   // a half wall's open edge gets a cap in the trim colour (a top rail with a little lip under it)
   for (const [y, dir] of [[top, 1], [bottom, -1]]) {
     if (dir > 0 ? top >= ROOM_H : bottom <= 0) continue;
@@ -2960,6 +2966,30 @@ export function outdoorPanorama() {
   panoTex.mapping = THREE.EquirectangularReflectionMapping;
   return panoTex;
 }
+/** How big each window's pane is (width, height): the hole it makes in the wall it hangs on. */
+export const WINDOW_PANES = { window: [1.5, 0.95], window_big: [2.6, 1.3], window_tall: [0.8, 1.7], window_round: [0.8, 0.8], window_wood: [1.5, 1.0] };
+const clearGlass = new THREE.MeshBasicMaterial({ color: '#d6efff', transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide });
+/**
+ * A window is a real hole through the wall it hangs on (house.js cuts it): this is what sits in the
+ * hole. A sheet of clear glass in the middle of the wall, and boards lining the opening so you don't
+ * see into the wall itself. (The group's origin is on the wall's face; the wall goes back to -ROOM_T.)
+ */
+function throughWall(g, w, h, fm, round = false) {
+  add(g, round ? geo(`clearPane${w}`, () => new THREE.CircleGeometry(w / 2, 40)) : plane(w, h), clearGlass, { p: [0, 0, -ROOM_T / 2], outline: false, cast: false });
+  const d = ROOM_T + 0.02, z = -ROOM_T / 2;
+  if (round) {
+    // a square hole with a round window in it: a plate fills the corners, right through the wall
+    const plate = geo(`roundPlate${w}`, () => {
+      const s = new THREE.Shape();
+      s.moveTo(-w / 2 - 0.01, -w / 2 - 0.01); s.lineTo(w / 2 + 0.01, -w / 2 - 0.01); s.lineTo(w / 2 + 0.01, w / 2 + 0.01); s.lineTo(-w / 2 - 0.01, w / 2 + 0.01); s.closePath();
+      const hole = new THREE.Path(); hole.absarc(0, 0, w / 2 - 0.02, 0, TAU, true); s.holes.push(hole);
+      return new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false, curveSegments: 28 });
+    });
+    add(g, plate, fm, { p: [0, 0, -ROOM_T - 0.01], outline: false });
+    return;
+  }
+  for (const [bw, bh, x, y] of [[w, 0.03, 0, h / 2 - 0.015], [w, 0.03, 0, -h / 2 + 0.015], [0.03, h, -w / 2 + 0.015, 0], [0.03, h, w / 2 - 0.015, 0]]) add(g, box(bw, bh, d), fm, { p: [x, y, z], outline: false });
+}
 /** Glass that shows the outdoor panorama in whatever direction you look through it. */
 function outdoorGlass() {
   return new THREE.ShaderMaterial({
@@ -2980,16 +3010,21 @@ function outdoorGlass() {
 function windowFrame(g, w, h, { frame = '#ffffff', bars = [1, 1], sill = true, round = false } = {}) {
   const fm = toon(frame);
   if (round) {
-    add(g, geo(`roundPane${w}`, () => new THREE.CircleGeometry(w / 2, 40)), outdoorGlass(), { p: [0, 0, 0.012], outline: false, cast: false });
-    add(g, geo(`roundFrame${w}`, () => new THREE.TorusGeometry(w / 2, 0.06, 10, 40)), fm, { p: [0, 0, 0.04] });
-    add(g, box(w, 0.04, 0.04), fm, { p: [0, 0, 0.04], outline: false });
-    add(g, box(0.04, w, 0.04), fm, { p: [0, 0, 0.04], outline: false });
+    throughWall(g, w, w, fm, true);
+    for (const z of [0.04, -ROOM_T - 0.04]) { // (the frame on both faces of the wall)
+      for (const [bw, bh, x, y] of [[w + 0.16, 0.07, 0, w / 2 + 0.035], [w + 0.16, 0.07, 0, -w / 2 - 0.035], [0.07, w + 0.02, -w / 2 - 0.045, 0], [0.07, w + 0.02, w / 2 + 0.045, 0]]) add(g, box(bw, bh, 0.06), fm, { p: [x, y, z * 0.8], outline: false });
+      add(g, geo(`roundFrame${w}`, () => new THREE.TorusGeometry(w / 2, 0.06, 10, 40)), fm, { p: [0, 0, z], outline: z > 0 });
+      add(g, box(w, 0.04, 0.04), fm, { p: [0, 0, z], outline: false });
+      add(g, box(0.04, w, 0.04), fm, { p: [0, 0, z], outline: false });
+    }
     return;
   }
-  add(g, plane(w, h), outdoorGlass(), { p: [0, 0, 0.012], outline: false, cast: false });
-  for (const [bw, bh, x, y] of [[w + 0.14, 0.08, 0, h / 2 + 0.03], [w + 0.14, 0.08, 0, -h / 2 - 0.03], [0.08, h + 0.12, -w / 2 - 0.03, 0], [0.08, h + 0.12, w / 2 + 0.03, 0]]) add(g, box(bw, bh, 0.07), fm, { p: [x, y, 0.035], outline: false });
-  for (let i = 1; i <= bars[0]; i++) add(g, box(0.04, h, 0.05), fm, { p: [-w / 2 + (i * w) / (bars[0] + 1), 0, 0.03], outline: false });
-  for (let i = 1; i <= bars[1]; i++) add(g, box(w, 0.04, 0.05), fm, { p: [0, -h / 2 + (i * h) / (bars[1] + 1), 0.03], outline: false });
+  throughWall(g, w, h, fm);
+  for (const z of [0.035, -ROOM_T - 0.035]) { // (the frame on both faces of the wall)
+    for (const [bw, bh, x, y] of [[w + 0.14, 0.08, 0, h / 2 + 0.03], [w + 0.14, 0.08, 0, -h / 2 - 0.03], [0.08, h + 0.12, -w / 2 - 0.03, 0], [0.08, h + 0.12, w / 2 + 0.03, 0]]) add(g, box(bw, bh, 0.07), fm, { p: [x, y, z], outline: false });
+    for (let i = 1; i <= bars[0]; i++) add(g, box(0.04, h, 0.05), fm, { p: [-w / 2 + (i * w) / (bars[0] + 1), 0, z], outline: false });
+    for (let i = 1; i <= bars[1]; i++) add(g, box(w, 0.04, 0.05), fm, { p: [0, -h / 2 + (i * h) / (bars[1] + 1), z], outline: false });
+  }
   if (sill) add(g, box(w + 0.24, 0.07, 0.2), fm, { p: [0, -h / 2 - 0.1, 0.1] });
 }
 

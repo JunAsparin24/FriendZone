@@ -332,11 +332,17 @@ const HOP = {
   init(G) {
     G.px = W / 2; G.py = H - 80; G.vy = -600; G.vx = 0; G.cam = 0; G.top = 0;
     G.plats = [{ x: W / 2 - 40, y: H - 40, w: 80, kind: 'n' }];
-    for (let y = H - 110; y > -H; y -= rnd(55, 85)) G.plats.push(this.plat(y, 0));
+    G.lastY = H - 40; G.lastKind = 'n';
+    while (G.lastY > -H) G.plats.push(this.plat(G, 0));
   },
-  plat(y, height) {
-    const r = Math.random(), hard = Math.min(0.4, height / 20000);
-    return { x: rnd(10, W - 90), y, w: 80, kind: r < 0.12 + hard ? 'm' : r < 0.2 + hard ? 'b' : 'n', dx: rnd(60, 120) * (Math.random() < 0.5 ? -1 : 1) };
+  /** The next cloud up. A bounce carries you about 155 px, and a crumbling cloud ('b') can't be bounced
+   *  on, so the cloud after one is always a solid one close above it: no gap is ever out of reach. */
+  plat(G, height) {
+    const r = Math.random(), hard = Math.min(0.4, height / 20000), afterCrumble = G.lastKind === 'b';
+    const kind = r < 0.12 + hard ? 'm' : r < 0.2 + hard && !afterCrumble ? 'b' : 'n';
+    const y = G.lastY - (afterCrumble ? rnd(30, 45) : rnd(60, 92));
+    G.lastY = y; G.lastKind = kind;
+    return { x: rnd(10, W - 90), y, w: 80, kind, dx: rnd(60, 120) * (Math.random() < 0.5 ? -1 : 1) };
   },
   update(G, dt) {
     const k = G.keys;
@@ -359,8 +365,7 @@ const HOP = {
     if (G.py < line) G.cam = G.py - H * 0.4;
     G.top = Math.max(G.top, -(G.cam));
     G.score = Math.floor(G.top / 3);
-    const highest = Math.min(...G.plats.map((p) => p.y));
-    if (highest > G.cam - 60) G.plats.push(this.plat(highest - rnd(60, 95), G.top));
+    if (G.lastY > G.cam - 60) G.plats.push(this.plat(G, G.top));
     G.plats = G.plats.filter((p) => p.y < G.cam + H + 40);
     if (G.py > G.cam + H + 40) G.over();
   },

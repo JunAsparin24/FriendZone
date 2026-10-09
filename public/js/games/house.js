@@ -11,14 +11,15 @@ import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
 import { toon, basic } from '../three/materials.js';
-import { buildFurniture, furnitureParts, TRIM_MAT, outdoorPanorama, floorTexture, wallTexture, ceilingTexture, wallIsTall, surfaceSpan, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
+import { WINDOW_PANES, buildFurniture, furnitureParts, TRIM_MAT, outdoorPanorama, floorTexture, wallTexture, ceilingTexture, wallIsTall, surfaceSpan, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
 import { settings } from '../settings.js';
 import { buildDoor, doorImage } from '../three/doors.js';
 import { iconSvg } from '../icons.js';
 import { createHood } from './hood.js';
-import { PLOT, extSwatch, extMaterial, buildYardItem } from '../three/exterior.js';
+import { PLOT, extSwatch, extMaterial, buildYardItem, buildRoofs } from '../three/exterior.js';
 import { mountSpeed, MOUNT_SOUND } from '../three/mounts.js';
+import { timeOfDay } from '../three/daynight.js';
 
 let NX = PLOT.w, NZ = PLOT.d;  // the plot in tiles (width x depth): you can build anywhere on it
 const T = 1.6;        // world units per tile, so furniture is people-sized
@@ -262,7 +263,15 @@ function wallLayout(it, items) {
     .map((o) => { const a = horiz ? o.x : o.y; return [a, a + FURN[o.id].w]; })
     .filter(([a, b]) => a >= start - 1e-6 && b <= start + l + 1e-6)
     .sort((p, q) => p[0] - q[0]);
-  const openings = gaps.map(([a, b]) => [sign * (a - mid), sign * (b - mid)].sort((p, q) => p - q));
+  // windows hung on this wall (on either face) are holes right through it: [from, to, bottom, top]
+  const panes = FURN[it.id].wallH ? [] : items.filter((o) => o.iw && WINDOW_PANES[o.id] && o.r % 2 === it.r % 2).map((o) => {
+    const face = horiz ? o.y : o.x;
+    if (Math.abs(face - perp) > 1e-6 && Math.abs(face - perp - 0.25) > 1e-6) return null;
+    const [pw, ph] = WINDOW_PANES[o.id], c = (horiz ? o.x : o.y) + FURN[o.id].w / 2, h = o.h ?? WALL_Y;
+    if (c - pw / 2 < start - 1e-6 || c + pw / 2 > start + l + 1e-6) return null;
+    return [...[sign * (c - pw / 2 - mid), sign * (c + pw / 2 - mid)].sort((p, q) => p - q), h - ph / 2, h + ph / 2];
+  }).filter(Boolean);
+  const openings = [...gaps.map(([a, b]) => [sign * (a - mid), sign * (b - mid)].sort((p, q) => p - q)), ...panes];
   // an end is open unless another wall carries on from it (or it runs into the house's own walls). A full
   // wall that meets a half wall (or a hanging one) shows its end above (or below) it.
   const N = horiz ? NX : NZ, q = 1 / SNAP;
@@ -484,7 +493,9 @@ export function house(stage) {
   let view = hood.viewFrom(S.me);
   view.apply();
   const sun = stage.lights({ background: '#9fd4ff', sky: 0xfff6ea, ground: 0x7a8f6a, hemi: 1.25, sun: 1.9, sunColor: 0xfff1d6, box: 38, fog: ['#cfe6f7', 130, 520] });
-  stage.scene.background = outdoorPanorama(); // (the same view the windows look out onto)
+  const hemi = stage.scene.children.find((o) => o.isHemisphereLight);
+  let clockTick = 0;
+  const clockText = () => { const t = timeOfDay(); return `${t.icon} ${t.clock}`; };
   sun.position.set(WX() / 2 + 6, 40, WZ() / 2 + 12); // high overhead so the walls don't shade the floor
   sun.target.position.set(WX() / 2, 0, WZ() / 2);
   let room = buildRoom();
@@ -505,7 +516,7 @@ export function house(stage) {
     orbit: { yaw: 0, pitch: 0.5, dist: 11, minDist: 5, maxDist: 26 },
     ceiling: WALL_H * T - 0.3,
     // hedges, house walls (yours and everyone else's), trees and fences
-    blockedAt: (x, z) => { const h = view.toHood(x, z); return hood.blocked(h.x, h.z); },
+    blockedAt: (x, z) => { const h = view.toHood(x, z), o = hood.ownerAt(h.x, h.z); return (o && siteClosed(o)) || hood.blocked(h.x, h.z); },
     // over the network everyone is on the street's coordinates (while you build, your body is tucked away)
     wire: {
       out: (x, z, h) => (edit ? { x: 2500, z: 2500, h: 0 } : { ...view.toHood(x, z), h: h + view.turn }),
@@ -520,6 +531,7 @@ export function house(stage) {
   stage.hud.innerHTML = `
     <div class="hud-panel house-bar"><div class="house-title"></div><div class="house-actions"></div></div>
     <div class="hud-panel house-side hidden"><div class="tabs house-tabs"></div><div class="house-panel"></div></div>
+    <div class="place-bar hidden"></div>
     <p class="hud-panel arena-help house-hint"></p>`;
   const $h = (sel) => stage.hud.querySelector(sel);
   const titleEl = $h('.house-title'), actions = $h('.house-actions'), side = $h('.house-side');
@@ -547,7 +559,7 @@ export function house(stage) {
   const payload = () => ({
     k: viewKey,
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
-    items: home.items.map(({ id, x, y, r, h, l, iw, dg, c, t, cp }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}) })),
+    items: home.items.map(({ id, x, y, r, h, l, iw, dg, c, t, cp, lk }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}), ...(lk && isDoor(id) ? { lk: 1 } : {}) })),
     areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT, trimp: home.trimp ?? {},
     ext: home.ext,
   });
@@ -625,6 +637,22 @@ export function house(stage) {
       if (isDoor(it.id)) {
         // a door in a wall: you walk through it (it opens for you); an archway's curve is papered like the wall
         built.group.traverse((o) => { if (o.userData.wallpaper) o.material = room.wallMat; });
+        if (built.A.open !== undefined) {
+          // a door with a leaf can be locked by the owner and anyone they let build: then it only opens
+          // for them, and everyone else finds it shut
+          const mayLock = canEdit();
+          if (it.lk) {
+            built.group.add(padlock());
+            if (!mayLock) solids.push({ x: cx * T, z: cz * T, w: w * T + 0.1, d: d * T + 0.1 });
+          }
+          if (mayLock || it.lk) {
+            entry.inter = stage.interactable({
+              x: cx * T, z: cz * T, r: 1.9, label: mayLock ? (it.lk ? '🔓 unlock this door' : '🔒 lock this door') : '🔒 locked',
+              use: () => { if (edit) return; if (mayLock) toggleLock(index); else { sfx('error'); toast('🔒 That door is locked.'); } },
+            });
+            entry.inter.house = true;
+          }
+        }
       } else if (f0.room) {
         // walls you build inside: papered like the room, and solid right up to their ends (but not
         // through the doors in them)
@@ -654,6 +682,25 @@ export function house(stage) {
       entry.inter.house = true;
       return entry;
     }
+  }
+  /** A little brass padlock over a locked door (on both faces of the wall). */
+  function padlock() {
+    const g = new THREE.Group(), brass = toon('#e0b23a'), steel = toon('#b9c0cc');
+    for (const s of [1, -1]) {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.16, 0.05), brass); body.position.set(0, 2.42, s * 0.17);
+      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.065, 0.018, 8, 16, Math.PI), steel); loop.position.set(0, 2.5, s * 0.17);
+      g.add(body, loop);
+    }
+    return g;
+  }
+  /** Lock or unlock a door (the owner, or someone they let build). */
+  function toggleLock(index) {
+    const it = { ...home.items[index] };
+    if (!canEdit() || !isDoor(it.id)) return;
+    if (it.lk) delete it.lk; else it.lk = 1;
+    home.items[index] = it;
+    toast(it.lk ? '🔒 Locked: only you and the people you let build can get through.' : '🔓 Unlocked: anyone can walk in.');
+    commit('click');
   }
   function afterBuild() {
     // keep the light count sane: only the first few lamps really light the room
@@ -1110,6 +1157,7 @@ export function house(stage) {
     if (isDragWall(placing.id)) it.l = placing.l;
     if (placing.iw) it.iw = 1;
     if (placing.from >= 0 && home.items[placing.from].c) it.c = home.items[placing.from].c;
+    if (placing.from >= 0 && home.items[placing.from].lk) it.lk = 1;
     if (placing.from >= 0) home.items[placing.from] = it;
     else home.items.push(it);
     selected = placing.from >= 0 ? placing.from : home.items.length - 1;
@@ -1252,6 +1300,7 @@ export function house(stage) {
     if (!edit) { walkPointer?.(type, e, d); return; }
     if (!home || !canEdit()) return;
     if (tab === 'outside') { outsidePointer(type, e, d); return; }
+    if (tab === 'paint') { paintPointer(type, e, d); return; }
     // drawing a wall: press where it starts and drag to where it ends (or click the start, then the end).
     // The camera holds still while you drag.
     if (placing && isDragWall(placing.id) && placing.from < 0) {
@@ -1269,8 +1318,9 @@ export function house(stage) {
         placing.pressed = false;
         orbit.fixed = placing.wasFixed;
         aimPlacement(); updateGhost();
-        if (d?.moved) placeWall(false);
-        else if (placing.armed) placeWall(true);
+        // (each wall is its own, unless Chain Placement is on: then the next one starts where this one ended)
+        if (d?.moved) placeWall(chainWalls);
+        else if (placing.armed) placeWall(chainWalls);
         else placing.armed = true;
         return;
       }
@@ -1315,6 +1365,7 @@ export function house(stage) {
     if (k === 'g' && !e.repeat && !edit && !e.target?.closest?.('input, textarea')) { setRiding(!riding); return; }
     if (edit && canEdit() && !e.target?.closest?.('input, textarea')) { // (builders too; never while you're typing)
       if (k === 'r') { stage.keys.delete('r'); if (!e.repeat) rotate(); } // R turns furniture instead of the camera
+      else if (k === 't' && !e.repeat && placing && isDragWall(placing.id)) { chainWalls = !chainWalls; sfx('click'); renderAll(); }
       else if (k === ']' || k === 'pageup') nudgeHeight(1);
       else if (k === '[' || k === 'pagedown') nudgeHeight(-1);
       else if ((k === 'delete' || k === 'backspace') && selected >= 0 && tab !== 'outside') { e.preventDefault(); storeSelected(); }
@@ -1337,22 +1388,40 @@ export function house(stage) {
   function renderAll() {
     renderHeader();
     // while you're placing something the panels get out of the way, so you can see the whole room
-    side.classList.toggle('hidden', !sideOpen || !!placing);
+    side.classList.toggle('hidden', !sideOpen || !!placing || roofing());
     $h('.house-bar').classList.toggle('hidden', !!placing);
+    // what you're holding, a big Cancel, and (for walls) whether the next one carries on from this one
+    const holding = placing ? FURN[placing.id]?.name : roofing() ? `${CATALOG.roofShapes.find((x) => x.id === roofBrush.s)?.name ?? ''} Roof` : edit && tab === 'outside' && extPage === 'yard' && yardPick && !yardErase ? CATALOG.yardItems.find((y) => y.id === yardPick)?.name : null;
+    const pb = $h('.place-bar');
+    pb.classList.toggle('hidden', !holding);
+    if (holding) pb.innerHTML = `<small>${esc(holding)}</small><div><button class="pb-cancel" data-cancel>Cancel</button>${placing && isDragWall(placing.id) && placing.from < 0 ? `<button class="pb-chain ${chainWalls ? 'on' : ''}" data-chain>Chain<br>Placement (T)</button>` : ''}</div>`;
     side.classList.toggle('wide', sideOpen && tab !== 'visit');
     if (sideOpen) { renderTabs(); renderPanel(); }
     hint.innerHTML = !home ? 'Knocking on the door…'
+      : edit && tab === 'paint' ? '🎨 <b>Click</b> anything to pick it (a wall, a roof, a path, furniture), then choose a colour or a material in the menu · drag to look around'
       : edit && tab === 'outside' ? outsideHint()
       : placing && isDragWall(placing.id) && placing.from < 0 ? (placing.start
-        ? `Drag (or move and click) to where the wall ends · walls join up flush at corners · <kbd>Esc</kbd> to let go`
-        : `Press on the floor where the wall starts and drag it out to any length (or click the start, then the end) · <kbd>Esc</kbd> when you're done`)
+        ? `Drag (or move and click) to where the wall ends · walls that meet join up flush · <kbd>Esc</kbd> to let go`
+        : `Press on your plot where the wall starts and drag it out to any length (or click the start, then the end) · each wall is its own, so start the next one wherever you like · <kbd>Esc</kbd> when you're done`)
       : paintMode && brush && tab === 'style' && PAINTABLE.has(stylePage) ? `🪣 Click ${stylePage === 'wall' ? 'a wall' : 'inside a room'} to paint it · <kbd>Esc</kbd> to stop`
       : placing && isDoor(placing.id) ? 'Point at a wall you\'ve built and click to put the door in it · <kbd>Esc</kbd> to cancel'
       : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point anywhere on a wall (the house\'s or either side of one you\'ve built), as high or low as you like' : kindOf(placing.id) === 'ceiling' ? ' · it hangs above the green square · <kbd>[</kbd> <kbd>]</kbd> lower / raise it' : ''}`
         : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
           : mine() && !home.items.length ? '🏗️ This is your plot. Press <b>Build mode</b> and draw some walls to start your house!'
             : 'Walk around with <kbd>WASD</kbd> · doors open as you walk up · <kbd>E</kbd> uses furniture · <kbd>G</kbd> rides your mount · stroll down the street to visit the neighbours';
+    // the tips bar can be closed (✕) and brought back with the ❔ button up top; it stays how you left it
+    hint.insertAdjacentHTML('beforeend', '<button class="hint-x" data-hint="0" title="Hide these tips">✕</button>');
+    hint.classList.toggle('hidden', hintOff);
   }
+  let hintOff = false;
+  try { hintOff = localStorage.getItem('fz.houseHint') === 'off'; } catch { /* no storage */ }
+  stage.hud.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-hint]');
+    if (!t) return;
+    hintOff = t.dataset.hint === '0';
+    try { localStorage.setItem('fz.houseHint', hintOff ? 'off' : 'on'); } catch { /* no storage */ }
+    renderAll();
+  });
 
   function renderHeader() {
     const p = S.players[viewKey];
@@ -1363,19 +1432,21 @@ export function house(stage) {
     const likes = home?.likes ?? [];
     const liked = likes.includes(S.me);
     actions.innerHTML = [
+      `<span class="pill" data-clock title="The same clock as the town: night falls here too">${clockText()}</span>`,
       `<span class="pill">❤️ ${likes.length}</span>`,
       !mine() ? `<button class="btn small ${liked ? '' : 'primary'}" data-like ${liked ? 'disabled' : ''}>${liked ? '❤️ Liked' : '🤍 Like'}</button>` : '',
       canEdit() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : mine() ? '🔨 Build mode' : '🔨 Build here'}</button>` : '',
       edit ? `<button class="btn small" data-menu title="Tab">${sideOpen ? '⬅ Hide menu' : '📋 Menu'}</button>` : '',
       `<button class="btn small ${sideOpen && tab === 'visit' ? 'primary' : ''}" data-visits>🏘️ Neighbours</button>`,
       !mine() ? '<button class="btn small" data-home>🏡 My house</button>' : '',
+      hintOff ? '<button class="btn small" data-hint="1" title="Show the tips again">❔</button>' : '',
       !edit && (S.players[S.me]?.look?.mount ?? 'mount_none') !== 'mount_none' ? `<button class="btn small ${riding ? 'primary' : ''}" data-ride title="G">🐴 ${riding ? 'Get off' : 'Ride'}</button>` : '',
     ].join('');
   }
 
   function renderTabs() {
     // (building in a friend's house: their items and styles, but buying is up to them)
-    const list = [['visit', '🏘️ Neighbours'], ...(mine() ? [['items', '🛋️ Build'], ['style', '🎨 Inside'], ['outside', '🏡 Outside'], ['shop', '🛒 Shop'], ['plots', '💾 Houses']] : canEdit() ? [['items', '🛋️ Build'], ['style', '🎨 Inside'], ['outside', '🏡 Outside'], ['shop', '🛒 Shop']] : [])]; // (builders: everything but your saved houses)
+    const list = [['visit', '🏘️ Neighbours'], ...(mine() ? [['items', '🛋️ Build'], ['paint', '🎨 Paint'], ['style', '🖼️ Inside'], ['outside', '🏡 Outside'], ['shop', '🛒 Shop'], ['plots', '💾 Houses']] : canEdit() ? [['items', '🛋️ Build'], ['paint', '🎨 Paint'], ['style', '🖼️ Inside'], ['outside', '🏡 Outside'], ['shop', '🛒 Shop']] : [])]; // (builders: everything but your saved houses)
     if (!list.some(([id]) => id === tab)) tab = 'visit';
     tabsEl.innerHTML = list.map(([id, label]) => `<button data-tab="${id}" class="${tab === id ? 'on' : ''}">${label}</button>`).join('');
   }
@@ -1387,6 +1458,7 @@ export function house(stage) {
     if (tab === 'shop') return renderShop();
     if (tab === 'plots') return renderPlots();
     if (tab === 'outside') return renderOutside();
+    if (tab === 'paint') return renderPaint();
     return renderStyle();
   }
   /** Saved houses: save the one you're in as a design, swap another one in, rename or delete them. */
@@ -1720,7 +1792,7 @@ export function house(stage) {
 
   const EXT_PAGES = [['walls', '🧱 Outside walls'], ['roof', '🏠 Roofs'], ['paths', '🛣️ Paths & driveways'], ['yard', '🌳 Yard']];
   const MAX_ROOFS = 16;
-  let roofBrush = { s: 'gable', m: 'shingle', c: '#b3403a', ch: 0 }, roofErase = false;
+  let roofBrush = { s: 'gable', m: 'shingle', c: '#b3403a', ch: 0, r: 0, p: 1 }, roofSel = -1; // (roofSel: the piece you've clicked to change)
   const MAX_GROUND = 48, MAX_YARD = 80; // (as on the server)
   let extPage = 'walls', extOne = false, extBrush = { m: 'brick', c: '#b5533c' };
   let pathBrush = { m: 'concrete', c: '#c9c9c9' }, pathErase = false, pathDrag = null, pathGhost = null;
@@ -1743,8 +1815,8 @@ export function house(stage) {
   function clearOutsideTools() {
     if (pathDrag) orbit.fixed = pathDrag.wasFixed;
     pathDrag = null;
-    for (const g of [pathGhost, yardGhost]) if (g) room.group.remove(g);
-    pathGhost = yardGhost = null;
+    for (const g of [pathGhost, yardGhost, roofMark, roofPrev, roofPin]) if (g) room.group.remove(g);
+    pathGhost = yardGhost = roofMark = roofPrev = roofPin = null;
   }
   /** The stretch being dragged out for a path: from where you pressed to the pointer, on the half-tile grid. */
   function pathRect() {
@@ -1791,27 +1863,33 @@ export function house(stage) {
       if (click && extOne) paintFaceAt(`ext:${extBrush.m}:${extBrush.c}`);
     } else if (extPage === 'roof') {
       const roofs = home.ext.roofs ?? [];
-      if (roofErase) {
+      if (!roofPlacing) {
+        // not holding a roof: a click on a piece picks it, so you can change or remove it
         if (!click) return;
         const hit = stage.pick([hood.plotOf(viewKey)?.roofs].filter(Boolean)).find((h) => h.object.userData.roof != null);
-        if (!hit) { sfx('error'); return; }
-        setExt({ roofs: roofs.filter((_, k) => k !== hit.object.userData.roof) }, 'store');
+        roofSel = hit ? hit.object.userData.roof : -1;
+        if (hit) { roofBrush = { ...roofBrush, ...roofs[roofSel] }; sfx('pickup', { vol: 0.5 }); }
+        renderAll();
         return;
       }
-      // lay a piece of roof: press at one corner and drag to the other
-      if (type === 'down' && e.button === 0) {
+      // holding a roof: click one corner, move (the roof itself shows, see-through, at the size it'll be),
+      // then click the opposite corner. Pressing, dragging and letting go does the same.
+      if (type === 'move') { moveRoofPreview(); return; }
+      if (type === 'down' && e.button === 0 && !pathDrag) {
         const q = plotPoint();
         if (!q || q.x < -1 || q.x > PLOT.w + 1 || q.z < -1 || q.z > PLOT.d + 1) return;
-        pathDrag = { x: q.x, z: q.z, wasFixed: orbit.fixed };
+        pathDrag = { x: half(q.x), z: half(q.z), wasFixed: orbit.fixed, fresh: true };
         orbit.fixed = true;
-        showPathGhost();
-      } else if (type === 'move' && pathDrag) showPathGhost();
-      else if (type === 'up' && pathDrag) {
-        const r = pathRect(), dragged = d?.moved;
+        sfx('click');
+        moveRoofPreview();
+        renderAll();
+      } else if (type === 'up' && pathDrag && (d?.button ?? 0) === 0) {
+        if (pathDrag.fresh && !d?.moved) { pathDrag.fresh = false; return; } // (the first corner is down: now the second)
+        const r = pathRect();
         clearOutsideTools();
-        if (!r || !dragged || r.w < 2 || r.d < 2) { if (dragged) toast('A piece of roof has to be at least 2 tiles each way.', 'error'); return; }
-        if (roofs.length >= MAX_ROOFS) { toast(`A house can have up to ${MAX_ROOFS} pieces of roof.`, 'error'); return; }
-        setExt({ roofs: [...roofs, { s: roofBrush.s, m: roofBrush.m, c: roofBrush.c, ch: roofBrush.ch, ...r }] }, 'place');
+        if (!r || r.w < 2 || r.d < 2) { toast('A piece of roof has to be at least 2 tiles each way.', 'error'); renderAll(); return; }
+        if (roofs.length >= MAX_ROOFS) { toast(`A house can have up to ${MAX_ROOFS} pieces of roof.`, 'error'); renderAll(); return; }
+        setExt({ roofs: [...roofs, roofPiece(roofBrush, r)] }, 'place'); // (and you're still holding the roof, for the next piece)
       }
     } else if (extPage === 'paths') {
       if (pathErase) {
@@ -1838,9 +1916,33 @@ export function house(stage) {
         setExt({ ground: [...(home.ext.ground ?? []), { m: pathBrush.m, c: pathBrush.c, ...r }] }, 'place');
       }
     } else if (extPage === 'yard') {
+      const q = plotPoint(), list = home.ext.yard ?? [];
+      const runs = yardPick && !yardErase && /^(fence|hedge)/.test(yardPick); // (laid in a line: press and drag)
+      if (runs && type === 'down' && e.button === 0 && q) { pathDrag = { x: half(q.x), z: half(q.z), wasFixed: orbit.fixed, run: true }; orbit.fixed = true; return; }
+      if (runs && pathDrag?.run && (type === 'move' || type === 'up') && q) {
+        // a run of pieces from where you pressed to the pointer, along whichever way you've dragged further
+        const dx = half(q.x) - pathDrag.x, dz = half(q.z) - pathDrag.z, along = Math.abs(dx) >= Math.abs(dz), n = Math.round(Math.abs(along ? dx : dz)), dir = Math.sign(along ? dx : dz) || 1;
+        const run = [];
+        for (let k = 0; k <= n; k++) { const x = pathDrag.x + (along ? k * dir : 0), z = pathDrag.z + (along ? 0 : k * dir); if (x >= 0.5 && x <= PLOT.w - 0.5 && z >= 0.5 && z <= PLOT.d - 0.5 && !inHouse(x, z)) run.push({ id: yardPick, x, y: z, r: along ? 0 : 1 }); }
+        if (type === 'move') {
+          if (!pathGhost) { pathGhost = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), ghostOk); pathGhost.rotation.x = -Math.PI / 2; room.group.add(pathGhost); }
+          pathGhost.position.set(pathDrag.x + (along ? dx / 2 : 0), 0.05, pathDrag.z + (along ? 0 : dz / 2));
+          pathGhost.scale.set(along ? Math.abs(dx) + 1 : 0.5, along ? 0.5 : Math.abs(dz) + 1, 1);
+          if (yardGhost) yardGhost.visible = false;
+          return;
+        }
+        const dragged = d?.moved && n > 0;
+        orbit.fixed = pathDrag.wasFixed; pathDrag = null;
+        if (pathGhost) { room.group.remove(pathGhost); pathGhost = null; }
+        if (dragged) {
+          const fresh = run.filter((a) => !list.some((y) => y.id === a.id && y.x === a.x && y.y === a.y));
+          if (list.length + fresh.length > MAX_YARD) { toast(`A yard can hold up to ${MAX_YARD} things.`, 'error'); return; }
+          if (fresh.length) setExt({ yard: [...list, ...fresh] }, 'place');
+          return;
+        }
+      }
       if (type === 'move') { moveYardGhost(); return; }
       if (!click) return;
-      const q = plotPoint(), list = home.ext.yard ?? [];
       if (!q) return;
       if (yardErase || !yardPick) {
         // put away whatever's nearest the click
@@ -1857,19 +1959,57 @@ export function house(stage) {
       setExt({ yard: [...list, { id: yardPick, x: at.x, y: at.z, r: yardTurn }] }, 'place');
     }
   }
-  /** One roof over the whole house: a rectangle round every room, with the walls under its eaves. */
-  function roofWholeHouse() {
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (let z = 0; z < grid.D; z++) for (let x = 0; x < grid.W; x++) if (grid.cell(x, z) === 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
-    if (x1 < x0) { toast('Build a room first: close a space off with walls, then roof it.', 'error'); return; }
-    const q = (v) => Math.round(v * 4) / 4;
-    const r = { x: q(x0 / SNAP - 0.25), y: q(z0 / SNAP - 0.25), w: q((x1 + 1 - x0) / SNAP + 0.5), d: q((z1 + 1 - z0) / SNAP + 0.5) };
-    setExt({ roofs: [{ s: roofBrush.s, m: roofBrush.m, c: roofBrush.c, ch: roofBrush.ch, ...r }] }, 'place');
+  /** A piece of roof's data, with the keys in the order the server keeps them. */
+  const roofPiece = (st, at) => ({ s: st.s, m: st.m, c: st.c, ch: st.ch ? 1 : 0, x: at.x, y: at.y, w: at.w, d: at.d, r: st.r ?? 0, p: st.p ?? 1 });
+  /** Change the shape, material, colour… of the piece you've picked (or, with none picked, of the next one you lay). */
+  function styleRoof(change) {
+    roofBrush = { ...roofBrush, ...change };
+    const roofs = home.ext.roofs ?? [], cur = roofs[roofSel];
+    if (!cur) { sfx('click'); renderAll(); return; }
+    setExt({ roofs: roofs.map((r, k) => (k === roofSel ? roofPiece({ ...r, ...change }, r) : r)) });
   }
-  const outsideHint = () => (extPage === 'roof' ? (roofErase ? '🧽 Click a piece of roof to take it off' : '🏠 Press on the plot and drag to lay a piece of roof (the green sheet shows where) · lay several for an L-shaped house')
+  /** A frame over the piece of roof you've picked, so you can see which one it is. */
+  let roofMark = null;
+  // holding a roof to place: a white pin where the pointer is, and the roof itself (see-through) once a corner is down
+  let roofPlacing = false, roofPrev = null, roofPin = null;
+  const roofGhost = basic('#ffffff', { transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+  const roofing = () => edit && tab === 'outside' && extPage === 'roof' && roofPlacing;
+  function moveRoofPreview() {
+    const q = plotPoint();
+    if (!roofPin) {
+      roofPin = new THREE.Group();
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.2, 6), basic('#ffffff')); stick.position.y = 1.1;
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), basic('#ffffff')); ball.position.y = 2.3;
+      roofPin.add(stick, ball);
+      room.group.add(roofPin);
+    }
+    roofPin.visible = !!q;
+    if (q) roofPin.position.set(half(q.x), 0, half(q.z));
+    const r = pathDrag ? pathRect() : null, sig = r ? JSON.stringify([r, roofBrush]) : '';
+    if (sig === (roofPrev?.userData.sig ?? '')) return;
+    if (roofPrev) room.group.remove(roofPrev);
+    roofPrev = null;
+    if (!r) return;
+    roofPrev = buildRoofs([roofPiece(roofBrush, r)], home.ext.wall);
+    const mat = r.w >= 2 && r.d >= 2 ? roofGhost : ghostBad;
+    roofPrev.traverse((o) => { if (o.isMesh) { o.material = mat; o.castShadow = false; } });
+    roofPrev.userData.sig = sig;
+    room.group.add(roofPrev);
+  }
+  function markRoof() {
+    const r = edit && tab === 'outside' && extPage === 'roof' ? home?.ext?.roofs?.[roofSel] : null;
+    if (!r) { if (roofMark) { room.group.remove(roofMark); roofMark = null; } return; }
+    if (!roofMark) {
+      roofMark = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: '#ffd84d' }));
+      room.group.add(roofMark);
+    }
+    roofMark.position.set(r.x + r.w / 2, WALL_H + 2.6, r.y + r.d / 2);
+    roofMark.scale.set(r.w + 1.3, 5.6, r.d + 1.3);
+  }
+  const outsideHint = () => (extPage === 'roof' ? (roofSel >= 0 ? '🏠 This piece is picked (yellow frame): change its shape, material, colour, pitch or turn it in the menu · click another piece to pick that one' : (roofPlacing ? (pathDrag ? '🏠 Move to size the roof · <b>click</b> to place it · <b>Cancel</b> to stop' : '🏠 <b>Click</b> where one corner of the roof goes · <b>Cancel</b> to stop') : '🏠 Pick a roof in the menu to place it · click a piece that\'s up to change it'))
     : extPage === 'walls' ? (extOne ? '🖌️ Click an outside wall to give it this finish · drag to look around · <kbd>WASD</kbd> fly, <kbd>Space</kbd> up, <kbd>Shift</kbd> down' : 'Pick a finish and a colour for the outside walls · <kbd>WASD</kbd> fly, <kbd>Space</kbd> up, <kbd>Shift</kbd> down')
     : extPage === 'paths' ? (pathErase ? '🧽 Click a path or driveway to rub it out' : '🛣️ Press on the lawn and drag to lay a path or driveway (a click lays one tile) · later pieces go over earlier ones')
-      : extPage === 'yard' ? (yardErase || !yardPick ? '🧽 Click something in the yard to put it away' : '🌳 Click the lawn to put it down · <kbd>R</kbd>/right-click to turn it')
+      : extPage === 'yard' ? (yardErase || !yardPick ? '🧽 Click something in the yard to put it away' : (/^(fence|hedge)/.test(yardPick) ? '🌳 Press and drag to lay a whole run of it (or click for one piece) · <kbd>R</kbd> turns a single piece' : '🌳 Click the lawn to put it down · <kbd>R</kbd>/right-click to turn it'))
         : 'Fly round your house with <kbd>WASD</kbd>, <kbd>Space</kbd> and <kbd>Shift</kbd> · drag to look');
 
   function renderOutside() {
@@ -1887,13 +2027,13 @@ export function house(stage) {
         <div class="wd-label">Finish</div><div class="style-grid">${CATALOG.extWalls.map((w) => tile(cur.m === w.id, `wallm:${w.id}`, sw(w.id, cur.m === w.id ? cur.c : w.c), w.name)).join('')}</div>
         <div class="wd-label">Colour</div>${cols(cur.c, 'wallc')}`;
     } else if (extPage === 'roof') {
-      const r = roofBrush, n = (e.roofs ?? []).length;
-      body = `${bar(['rerase:0', '🏠 Lay roof', !roofErase], ['rerase:1', '🧽 Take off', roofErase], ['roofauto', '✨ Roof the whole house', false], n ? ['roofall', '🎨 Restyle every piece', false] : null, n ? ['clearroofs', `✕ Clear all ${n}`, false] : null)}
-        <p class="muted small">${roofErase ? 'Click a piece of roof to take it off.' : 'Pick a shape, material and colour, then <b>press on your plot and drag</b> to lay that piece of roof over your walls. Lay several pieces for an L-shaped house, a porch or a garage, or use ✨ to put one roof over every room.'} <span class="muted">${n}/${MAX_ROOFS}</span></p>
+      const n = (e.roofs ?? []).length, sel = (e.roofs ?? [])[roofSel], r = sel ?? roofBrush;
+      body = `${bar(['roofnew', '➕ New piece', !sel], sel ? ['roofdel', '🗑️ Remove this piece', false] : null, n ? ['clearroofs', `✕ Clear all ${n}`, false] : null)}
+        <p class="muted small">${sel ? `<b>Piece ${roofSel + 1} of ${n}</b> is picked (yellow frame). Everything below changes just this piece.` : '<b>Pick a roof</b> below and you\'re holding it: <b>click one corner</b> on your plot, move the pointer (the roof shows as you go) and <b>click the opposite corner</b>. Set its material, colour and pitch here first. To change one that\'s already up, <b>click it</b>.'} <span class="muted">${n}/${MAX_ROOFS}</span></p>
         <div class="wd-label">Shape</div><div class="style-grid">${CATALOG.roofShapes.map((x) => tile(r.s === x.id, `roofs:${x.id}`, 'background:#2b3050;display:grid;place-items:center;font-size:26px', x.name, x.emoji)).join('')}</div>
+        ${bar(['roofturn', `⟳ Turn it (${['front', 'left', 'back', 'right'][(r.r ?? 0) % 4]})`, false], ['roofpitch:0.6', '◣ Shallow', (r.p ?? 1) === 0.6], ['roofpitch:1', '◢ Normal', (r.p ?? 1) === 1], ['roofpitch:1.4', '▲ Steep', (r.p ?? 1) === 1.4], ['chimney', r.ch ? '🧱 Chimney: on' : '🧱 Chimney: off', !!r.ch])}
         <div class="wd-label">Material</div><div class="style-grid">${CATALOG.roofMats.map((x) => tile(r.m === x.id, `roofm:${x.id}`, sw(x.id, r.m === x.id ? r.c : x.c), x.name)).join('')}</div>
-        <div class="wd-label">Colour</div>${cols(r.c, 'roofc')}
-        ${bar(['chimney', r.ch ? '🧱 Chimney: on' : '🧱 Chimney: off', !!r.ch])}`;
+        <div class="wd-label">Colour</div>${cols(r.c, 'roofc')}`;
     } else if (extPage === 'paths') {
       const n = (e.ground ?? []).length;
       body = `${bar(['perase:0', '🛣️ Lay', !pathErase], ['perase:1', '🧽 Rub out', pathErase], n ? ['clearpaths', `✕ Clear all ${n}`, false] : null)}
@@ -1907,6 +2047,7 @@ export function house(stage) {
         <div class="furni-grid">${CATALOG.yardItems.map((y) => `<button class="furni ${yardPick === y.id && !yardErase ? 'confirm' : ''}" data-x="yard:${y.id}"><span class="fem size-em">${y.emoji}</span><span class="fname">${esc(y.name)}</span></button>`).join('')}</div>`;
     }
     panel.innerHTML = `${pageStrip(EXT_PAGES, extPage, 'x-page')}${body}`;
+    markRoof();
   }
 
   stage.hud.addEventListener('click', (ev) => {
@@ -1915,24 +2056,25 @@ export function house(stage) {
     if (t.dataset.tab) {
       // over to the Outside tab: step back onto the front lawn and look at the house
       if (tab === 'outside' && edit) { fly = { x: WX() / 2, y: 17, z: WZ() + 4 }; orbit.yaw = 0; orbit.pitch = 0.5; }
-      else clearOutsideTools();
+      else { roofPlacing = false; clearOutsideTools(); }
       return;
     }
-    if (t.dataset.xPage) { extPage = t.dataset.xPage; clearOutsideTools(); sfx('click'); renderAll(); panel.scrollTop = 0; return; }
+    if (t.dataset.xPage) { extPage = t.dataset.xPage; roofSel = -1; roofPlacing = false; clearOutsideTools(); sfx('click'); renderAll(); panel.scrollTop = 0; return; }
     const [op, ...rest] = t.dataset.x.split(':'), v = rest.join(':'), e = home.ext;
     const def = (list, id) => list.find((x) => x.id === id)?.c;
     if (op === 'one') { extOne = v === '1'; if (extOne) extBrush = { ...e.wall }; renderAll(); }
     else if (op === 'clearwalls') { home.wallp = Object.fromEntries(Object.entries(home.wallp ?? {}).filter(([, f]) => !f.startsWith('ext:'))); commit('paint'); }
     else if (op === 'wallm') { if (extOne) { extBrush = { m: v, c: def(CATALOG.extWalls, v) }; sfx('click'); renderPanel(); } else setExt({ wall: { m: v, c: def(CATALOG.extWalls, v) } }); }
     else if (op === 'wallc') { if (extOne) { extBrush = { ...extBrush, c: v }; sfx('click'); renderPanel(); } else setExt({ wall: { m: e.wall.m, c: v } }); }
-    else if (op === 'roofs') { roofBrush = { ...roofBrush, s: v }; roofErase = false; sfx('click'); renderAll(); }
-    else if (op === 'roofm') { roofBrush = { ...roofBrush, m: v, c: def(CATALOG.roofMats, v) }; roofErase = false; sfx('click'); renderAll(); }
-    else if (op === 'roofc') { roofBrush = { ...roofBrush, c: v }; roofErase = false; sfx('click'); renderAll(); }
-    else if (op === 'chimney') { roofBrush = { ...roofBrush, ch: roofBrush.ch ? 0 : 1 }; sfx('click'); renderAll(); }
-    else if (op === 'rerase') { roofErase = v === '1'; clearOutsideTools(); renderAll(); }
-    else if (op === 'roofauto') roofWholeHouse();
-    else if (op === 'roofall') setExt({ roofs: (e.roofs ?? []).map((r) => ({ ...r, s: roofBrush.s, m: roofBrush.m, c: roofBrush.c, ch: roofBrush.ch })) });
-    else if (op === 'clearroofs') setExt({ roofs: [] }, 'store');
+    else if (op === 'roofs') { if (e.roofs?.[roofSel]) styleRoof({ s: v }); else { roofBrush = { ...roofBrush, s: v }; roofPlacing = true; sfx('pickup'); renderAll(); } } // (no piece picked: you're now holding this roof)
+    else if (op === 'roofm') styleRoof({ m: v, c: def(CATALOG.roofMats, v) });
+    else if (op === 'roofc') styleRoof({ c: v });
+    else if (op === 'chimney') styleRoof({ ch: (e.roofs?.[roofSel] ?? roofBrush).ch ? 0 : 1 });
+    else if (op === 'roofturn') styleRoof({ r: (((e.roofs?.[roofSel] ?? roofBrush).r ?? 0) + 1) % 4 });
+    else if (op === 'roofpitch') styleRoof({ p: +v });
+    else if (op === 'roofnew') { roofSel = -1; roofPlacing = true; sfx('pickup'); renderAll(); }
+    else if (op === 'roofdel') { const i = roofSel; roofSel = -1; setExt({ roofs: (e.roofs ?? []).filter((_, k) => k !== i) }, 'store'); }
+    else if (op === 'clearroofs') { roofSel = -1; setExt({ roofs: [] }, 'store'); }
     else if (op === 'bulldoze') {
       if (!confirm('Clear the whole plot? Every wall, roof, path and piece of furniture goes back in your inventory. (Save the house first if you want to keep it.)')) return;
       Object.assign(home, { items: [], areas: [], careas: [], wallp: {}, trimp: {} });
@@ -1950,7 +2092,11 @@ export function house(stage) {
 
   // ---- mounts: ride yours along the street and round the gardens (G) ---------------------------------
 
-  let riding = false;
+  const building = new Map(); // who's in build mode right now -> whose plot they're building on
+  let kickedAt = 0;
+  /** A plot is closed to you while someone builds on it, unless you may build there too. */
+  const siteClosed = (k) => k !== S.me && !(hood.houses[k]?.builders ?? []).includes(S.me) && [...building.values()].includes(k);
+  let riding = false, chainWalls = false; // (chainWalls: Chain Placement, off unless you turn it on)
   function setRiding(on) {
     const p = walker.me;
     if (on === riding) return;
@@ -1971,13 +2117,98 @@ export function house(stage) {
   }
   /** Someone else got on or off their mount. */
   function showRide(k, pose) {
+    if (pose?.p === 'build') building.set(k, pose.v); else building.delete(k);
     const p = stage.people.get(k);
     if (!p || k === S.me || p.sitting) return;
     const on = pose?.p === 'ride';
     if (on === !!p.char.riding) return;
     p.char.setPose(p.char.setRiding(on) ? 'ride' : 'idle');
   }
-  stage.hud.addEventListener('click', (ev) => { if (ev.target.closest('[data-ride]')) setRiding(!riding); });
+  stage.hud.addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-ride]')) setRiding(!riding);
+    else if (ev.target.closest('[data-chain]')) { chainWalls = !chainWalls; sfx('click'); renderAll(); }
+    else if (ev.target.closest('[data-cancel]')) { if (placing) stopPlacing(); else { yardPick = null; roofPlacing = false; clearOutsideTools(); renderAll(); } }
+  });
+
+  // ---- the paint tool: click anything on the plot, then give it a colour or a material -------------
+
+  let paintSel = null, paintPage = 'material';
+  function paintPointer(type, e, d) {
+    if (!(type === 'up' && d && !d.moved && d.button === 0)) return;
+    stage.raycaster.setFromCamera(stage.mouse, stage.camera);
+    const roofs = hood.plotOf(viewKey)?.roofs;
+    const hit = stage.raycaster.intersectObjects([room.items, ...(roofs ? [roofs] : [])], true).find((h) => h.object.visible && !h.object.userData.outline && !h.object.isSprite);
+    paintSel = null;
+    selected = -1;
+    if (hit?.object.userData.roof != null) paintSel = { kind: 'roof', i: hit.object.userData.roof };
+    else if (hit) {
+      let index = -1;
+      for (let o = hit.object; o; o = o.parent) if (o.userData.index != null) { index = o.userData.index; break; }
+      const it = home.items[index];
+      if (it && entries[index]?.roomWall && hit.object.userData.wallpaper && hit.object.userData.face != null) paintSel = { kind: 'face', key: faceKey(it, hit.object.userData.face) };
+      else if (it && !entries[index]?.roomWall && canRecolor(FURN[it.id])) { paintSel = { kind: 'item', index }; selected = index; }
+    }
+    if (!paintSel) {
+      // nothing standing there: the path or driveway under the pointer
+      const q = plotPoint(), list = home.ext.ground ?? [];
+      for (let i = list.length - 1; i >= 0 && q; i--) { const g = list[i]; if (q.x >= g.x && q.x <= g.x + g.w && q.z >= g.y && q.z <= g.y + g.d) { paintSel = { kind: 'ground', i }; break; } }
+    }
+    sfx(paintSel ? 'pickup' : 'error', { vol: 0.5 });
+    renderSelection();
+    renderAll();
+  }
+  function renderPaint() {
+    const s = paintSel, e = home?.ext;
+    const tabs = `<div class="shop-pages paint-bar"><button data-p="page:material" class="${paintPage === 'material' ? 'on' : ''}">🧱 Material</button><button data-p="page:color" class="${paintPage === 'color' ? 'on' : ''}">🎨 Colour</button>${s ? '<button data-p="reset">↺ Back to how it was</button>' : ''}</div>`;
+    const what = s && e ? (s.kind === 'face' ? { name: 'This side of the wall' } : s.kind === 'roof' ? e.roofs?.[s.i] && { name: 'This piece of roof' } : s.kind === 'ground' ? e.ground?.[s.i] && { name: 'This path' } : home.items[s.index] && { name: FURN[home.items[s.index].id].name }) : null;
+    if (!what) { paintSel = null; panel.innerHTML = `${tabs}<p class="muted">🎨 <b>Click anything</b> on your plot to paint it: a wall (each side on its own), a piece of roof, a path or driveway, or a piece of furniture. Then pick a material or a colour here.</p>`; return; }
+    const sw = (m, c) => `background:url(${extSwatch(m, c)}) center/cover`;
+    const tile = (on, attr, style, name) => `<button class="style-opt ${on ? 'on' : ''}" data-p="${attr}" title="${esc(name)}"><span class="style-sw" style="${style}"></span><span>${esc(name)}</span></button>`;
+    const cols = (list, cur) => `<div class="swatches palette">${list.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-p="c:${c}" style="--c:${c}"></button>`).join('')}</div>`;
+    let mats, colours;
+    if (s.kind === 'face') {
+      const cur = home.wallp?.[s.key] ?? '', [, cm, cc] = cur.startsWith('ext:') ? cur.split(':') : [];
+      mats = `<div class="style-grid">${CATALOG.extWalls.map((w) => tile(cm === w.id, `m:ext:${w.id}`, sw(w.id, cm === w.id ? cc : w.c), w.name)).join('')}${CATALOG.walls.filter(ownsDeco).map((w) => tile(cur === w.id, `m:${w.id}`, decoBg(w.id), w.name)).join('')}</div>`;
+      colours = cols(CATALOG.extColors, cc);
+    } else if (s.kind === 'roof') {
+      const r = e.roofs[s.i];
+      mats = `<div class="style-grid">${CATALOG.roofMats.map((x) => tile(r.m === x.id, `m:${x.id}`, sw(x.id, r.m === x.id ? r.c : x.c), x.name)).join('')}</div>`;
+      colours = cols(CATALOG.extColors, r.c);
+    } else if (s.kind === 'ground') {
+      const g = e.ground[s.i];
+      mats = `<div class="style-grid">${CATALOG.groundMats.map((x) => tile(g.m === x.id, `m:${x.id}`, sw(x.id, g.m === x.id ? g.c : x.c), x.name)).join('')}</div>`;
+      colours = cols(CATALOG.extColors, g.c);
+    } else {
+      mats = '<p class="muted small">Furniture keeps its own materials: give it a colour instead.</p>';
+      colours = cols(CATALOG.clothColors, home.items[s.index].c);
+    }
+    panel.innerHTML = `${tabs}<div class="wd-label">${esc(what.name)}</div>${paintPage === 'color' ? colours : mats}`;
+  }
+  stage.hud.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-p]');
+    if (!t || !home || !canEdit()) return;
+    const [op, ...rest] = t.dataset.p.split(':'), v = rest.join(':'), s = paintSel, e = home.ext;
+    if (op === 'page') { paintPage = v; sfx('click'); renderPanel(); return; }
+    if (!s) return;
+    const dflt = (list, id) => list.find((x) => x.id === id)?.c;
+    if (s.kind === 'face') {
+      const own = { ...(home.wallp ?? {}) }, cur = own[s.key] ?? '', cm = cur.startsWith('ext:') ? cur.split(':')[1] : null;
+      if (op === 'reset') delete own[s.key];
+      else if (op === 'm') own[s.key] = v.startsWith('ext:') ? `${v}:${dflt(CATALOG.extWalls, v.slice(4))}` : v;
+      else own[s.key] = `ext:${cm ?? 'paint'}:${v}`; // (a colour on a wallpapered wall makes it a painted one)
+      home.wallp = own;
+      commit('paint');
+    } else if (s.kind === 'roof') {
+      setExt({ roofs: e.roofs.map((r, k) => (k !== s.i ? r : roofPiece({ ...r, ...(op === 'reset' ? { m: 'shingle', c: '#b3403a' } : op === 'm' ? { m: v, c: dflt(CATALOG.roofMats, v) } : { c: v }) }, r))) });
+    } else if (s.kind === 'ground') {
+      setExt({ ground: e.ground.map((g, k) => { if (k !== s.i) return g; const n = op === 'reset' ? { m: g.m, c: dflt(CATALOG.groundMats, g.m) } : op === 'm' ? { m: v, c: dflt(CATALOG.groundMats, v) } : { m: g.m, c: v }; return { m: n.m, c: n.c, x: g.x, y: g.y, w: g.w, d: g.d }; }) });
+    } else if (home.items[s.index]) {
+      const it = { ...home.items[s.index] };
+      if (op === 'reset') { delete it.c; delete it.cp; } else if (op === 'c') { it.c = v; delete it.cp; } else return;
+      home.items[s.index] = it;
+      commit('paint');
+    }
+  });
 
   /** The street was laid out again (someone joined or left): keep looking at it from this house. */
   function restreet() {
@@ -2009,6 +2240,7 @@ export function house(stage) {
     if (!edit && trying()) setPreview(null);
     room.grid.visible = edit;
     if (edit) setRiding(false);
+    if (edit !== was) net.send('area_pose', { pose: edit ? { p: 'build', v: viewKey } : null }); // (everyone hears a plot is being built on)
     if (edit) { sideOpen = true; if (tab === 'visit') tab = 'items'; if (seated) standUp(); }
     else {
       if (placing) stopPlacing();
@@ -2096,6 +2328,7 @@ export function house(stage) {
     net.on('area_pose', (m) => showRide(m.k, m.pose)),
     net.on('area', (m) => {
       seatsTaken.clear();
+      building.clear();
       for (const q of m.others) if (q.seat) seatsTaken.set(q.k, q.seat);
       setTimeout(() => { applyAllSeats(); for (const q of m.others) showRide(q.k, q.pose); }, 0); // (after the walker has added everyone)
     }),
@@ -2103,7 +2336,7 @@ export function house(stage) {
       if (m.seat) seatsTaken.set(m.k, m.seat); else seatsTaken.delete(m.k);
       applyOtherSeat(m.k);
     }),
-    net.on('area_del', (m) => seatsTaken.delete(m.k)),
+    net.on('area_del', (m) => { seatsTaken.delete(m.k); building.delete(m.k); }),
     // beaten to the seat by someone else
     net.on('error', (m) => { if (m.for === 'area_sit' && seated) { const s = seated; seated = null; seatsTaken.delete(S.me); walker.me.y = 0; walker.me.char.setPose('idle'); s.at = null; } }),
     // the owner of the house you're in left the zone: back to your own
@@ -2128,7 +2361,12 @@ export function house(stage) {
         if (!fresh && !mine()) sfx('pop', { vol: 0.4 }); // the owner is redecorating while you watch
       }
       if (newLikes) { stage.people.get(m.k)?.char.emote('heart'); if (m.k === S.me) sfx('like'); }
-      if (m.house.builders) home.builders = m.house.builders;
+      if (m.house.builders) {
+        // (who may build changed: so does who the locked doors let through)
+        const was = JSON.stringify(home.builders ?? []);
+        home.builders = m.house.builders;
+        if (was !== JSON.stringify(home.builders) && home.items.some((it) => it.lk)) rebuildItems();
+      }
       if (edit && !canEdit()) { setEdit(false); toast('Your building permission here was taken away.'); }
       renderAll();
     }),
@@ -2223,7 +2461,8 @@ export function house(stage) {
       if (e.A.open === undefined) continue;
       const [w, d] = footprint(e.it);
       const cx = (e.it.x + w / 2) * T, cz = (e.it.y + d / 2) * T, h = e.it.r * (Math.PI / 2);
-      const near = walkers.find((q) => q && Math.hypot(q.x - cx, q.z - cz) < 2.2);
+      // (a locked door only opens for the owner and their builders)
+      const near = walkers.find((q) => q && Math.hypot(q.x - cx, q.z - cz) < 2.2 && (!e.it.lk || q.k === viewKey || (home.builders ?? []).includes(q.k)));
       const open = near ? 1 : 0;
       if (near) e.A.side = (near.x - cx) * Math.sin(h) + (near.z - cz) * Math.cos(h) > 0 ? 1 : -1;
       if (open !== e.A.open) sfx(open ? 'open' : 'close', { vol: Math.hypot(walker.me.x - cx, walker.me.z - cz) < 6 ? 0.5 : 0.15 });
@@ -2244,6 +2483,15 @@ export function house(stage) {
     // walls you've built inside are solid: the camera stops in front of them instead (see stage.applyOrbit)
     // out on the street: whichever house's plot you step onto becomes the house you're at
     const meH = view.toHood(p.x, p.z);
+    // a plot someone is building on is closed to everybody who can't build there: wait on the pavement
+    const here = !edit && hood.ownerAt(meH.x, meH.z);
+    if (here && siteClosed(here)) {
+      if (seated) standUp();
+      const a = hood.arrival(here), at = view.toLocal(a.x, a.z);
+      Object.assign(p, { x: at.x, z: at.z, moving: false });
+      if (now - kickedAt > 4000) { kickedAt = now; stage.banner(`<div class="big">🚧 ${esc(nameOf(here))}'s plot is being built on</div>You can go in again when they're done.`, 2600); }
+      return;
+    }
     if (!edit && !seated) {
       const owner = hood.ownerAt(meH.x, meH.z);
       if (owner && owner !== viewKey) { activate(owner); return; }
@@ -2252,7 +2500,7 @@ export function house(stage) {
     const indoors = !edit && grid.indoors(p.x / T, p.z / T);
     stage.camRoom.maxY = indoors ? WALL_H * T - 0.3 : 90;
     // building: the ceilings come off so you can see into the rooms, and the roofs too unless you're working on them
-    const roofsOn = !edit || (tab === 'outside' && extPage === 'roof');
+    const roofsOn = !edit || tab === 'paint' || (tab === 'outside' && extPage === 'roof');
     ceilGroup.visible = !edit;
     if (String(roofsOn) !== cutSig) { cutSig = String(roofsOn); hood.showRoofs(viewKey, roofsOn); }
     if (riding && (indoors || !p.char.riding)) setRiding(false); // (mounts wait outside; or you took yours off)
@@ -2260,8 +2508,10 @@ export function house(stage) {
     // the sun's shadows follow you down the street
     // (in steps, not every frame: a shadow map that slides along with you makes the shadows' edges crawl)
     const sx = Math.round((edit && fly ? fly.x : p.x) / 6) * 6, sz = Math.round((edit && fly ? fly.z : p.z) / 6) * 6;
-    sun.position.set(sx + 6, 40, sz + 12);
-    sun.target.position.set(sx, 0, sz);
+    // day and night: the sun (or moon) crosses the sky, the street lamps come on after dark
+    const sh = view.toHood(sx, sz);
+    hood.applyTime({ scene: stage.scene, sun, hemi, x: sx, z: sz, hx: sh.x, hz: sh.z, flip: view.flip });
+    if ((clockTick = (clockTick + 1) % 120) === 0) { const el = actions.querySelector('[data-clock]'); if (el) el.textContent = clockText(); }
     if (stage.camRoom) {
       stage.camRoom.blockers = entries.filter((e) => e.roomWall && e.roomWall !== 'hang').map((e) => {
         const [w, d] = footprint(e.it);

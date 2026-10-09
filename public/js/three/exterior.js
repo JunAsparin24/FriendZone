@@ -20,8 +20,7 @@ export const EXT_WALLS = byId(CATALOG.extWalls), ROOF_MATS = byId(CATALOG.roofMa
 export const houseSpot = () => ({ x: 0, z: 0 });
 
 export function defaultExt() {
-  const mid = Math.floor(PLOT.w / 2);
-  return { wall: { m: 'siding', c: '#f2ead8' }, roofs: [], ground: [{ m: 'pavers', c: '#d8cfc0', x: mid - 1, y: PLOT.d - 5, w: 2, d: 5 }], yard: [] };
+  return { wall: { m: 'siding', c: '#f2ead8' }, roofs: [], ground: [], yard: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +89,18 @@ const PATTERNS = {
   deck(c, rnd) { fill(c, 130); for (let x = 0; x < S; x += 32) { c.fillStyle = grey(205 + Math.floor(rnd() * 45)); c.fillRect(x + 1, 0, 30, S); c.fillStyle = grey(180); for (let i = 0; i < 4; i++) c.fillRect(x + 4 + rnd() * 24, 0, 1, S); } },
   flag(c, rnd) { fill(c, 130); for (let r = 0; r < 4; r++) { let x = -rnd() * 50; while (x < S) { const w = 50 + rnd() * 60; c.fillStyle = grey(180 + Math.floor(rnd() * 65)); for (const dx of [0, -S]) { c.beginPath(); c.roundRect(x + dx + 3, r * 64 + 3, w - 6, 58, 12); c.fill(); } x += w; } } },
   sand(c, rnd) { fill(c, 240); speckle(c, rnd, 2200, 205, 255, 1.6, 0.5); },
+  // stepping stones: separate slabs with the lawn showing between them (the rest of the picture is clear)
+  stepping(c, rnd) {
+    c.clearRect(0, 0, S, S);
+    for (let r = 0; r < 2; r++) for (let k = 0; k < 2; k++) {
+      c.fillStyle = grey(205 + Math.floor(rnd() * 40));
+      c.save(); c.translate(k * 128 + 64 + (rnd() - 0.5) * 10, r * 128 + 64 + (rnd() - 0.5) * 10); c.rotate((rnd() - 0.5) * 0.16);
+      c.beginPath(); c.roundRect(-50, -44, 100, 88, 16); c.fill();
+      c.fillStyle = 'rgba(0,0,0,.1)'; for (let i = 0; i < 26; i++) c.fillRect(-46 + rnd() * 92, -40 + rnd() * 80, 2 + rnd() * 3, 1.5);
+      c.restore();
+    }
+  },
+  dirt(c, rnd) { fill(c, 225); for (let i = 0; i < 700; i++) { c.fillStyle = grey(165 + Math.floor(rnd() * 90)); c.beginPath(); c.ellipse(rnd() * S, rnd() * S, 2 + rnd() * 7, 1.5 + rnd() * 4, rnd() * 3, 0, 7); c.fill(); } speckle(c, rnd, 900, 150, 250, 2, 0.4); },
   mulch(c, rnd) { fill(c, 190); for (let i = 0; i < 1100; i++) { c.fillStyle = grey(120 + Math.floor(rnd() * 130)); c.save(); c.translate(rnd() * S, rnd() * S); c.rotate(rnd() * 3); c.fillRect(-4, -1, 8, 2.4); c.restore(); } },
 };
 
@@ -108,7 +119,7 @@ const matCache = new Map();
 /** A finish in a colour: one shared material per (pattern, colour). */
 export function extMaterial(id, color) {
   const key = `${id}|${color}`;
-  if (!matCache.has(key)) matCache.set(key, new THREE.MeshToonMaterial({ map: extTexture(id), color, side: THREE.DoubleSide, gradientMap: toon('#ffffff').gradientMap }));
+  if (!matCache.has(key)) matCache.set(key, new THREE.MeshToonMaterial({ map: extTexture(id), color, side: THREE.DoubleSide, gradientMap: toon('#ffffff').gradientMap, alphaTest: id === 'stepping' ? 0.5 : 0 }));
   return matCache.get(key);
 }
 const swatches = new Map();
@@ -220,6 +231,29 @@ const ROOFS = {
       walls: {}, top: yt,
     };
   },
+  saltbox(x0, x1, z0, z1, y) {
+    // a gable with its ridge towards the back: a short steep slope behind, a long one down the front
+    const zr = z0 + (z1 - z0) * 0.32, rise = Math.max(1.6, Math.min(4.6, (z1 - z0) * 0.3)), e = OVER;
+    const kb = rise / (zr - z0), kf = rise / (z1 - zr);
+    return {
+      roof: [{ pts: [V(x0 - e, y - e * kb, z0 - e), V(x1 + e, y - e * kb, z0 - e), V(x1 + e, y + rise, zr), V(x0 - e, y + rise, zr)] }, { pts: [V(x0 - e, y - e * kf, z1 + e), V(x1 + e, y - e * kf, z1 + e), V(x1 + e, y + rise, zr), V(x0 - e, y + rise, zr)] }],
+      walls: { 1: [{ pts: [V(x0, y, z0), V(x0, y, z1), V(x0, y + rise, zr)], hint: N.left }], 3: [{ pts: [V(x1, y, z0), V(x1, y, z1), V(x1, y + rise, zr)], hint: N.right }] },
+      top: y + rise,
+    };
+  },
+  butterfly(x0, x1, z0, z1, y) {
+    // two slopes running down to a valley along the middle (a modern look)
+    const xm = (x0 + x1) / 2, rise = Math.max(1.2, Math.min(3, (x1 - x0) * 0.16)), e = OVER, yv = y + 0.18, k = (rise - 0.18) / (xm - x0);
+    return {
+      roof: [{ pts: [V(x0 - e, y + rise + e * k, z0 - e), V(x0 - e, y + rise + e * k, z1 + e), V(xm, yv, z1 + e), V(xm, yv, z0 - e)] }, { pts: [V(x1 + e, y + rise + e * k, z0 - e), V(x1 + e, y + rise + e * k, z1 + e), V(xm, yv, z1 + e), V(xm, yv, z0 - e)] }],
+      walls: {
+        0: [{ pts: [V(x0, y, z0), V(xm, y, z0), V(xm, yv, z0), V(x0, y + rise, z0)], hint: N.back }, { pts: [V(xm, y, z0), V(x1, y, z0), V(x1, y + rise, z0), V(xm, yv, z0)], hint: N.back }],
+        2: [{ pts: [V(x0, y, z1), V(xm, y, z1), V(xm, yv, z1), V(x0, y + rise, z1)], hint: N.front }, { pts: [V(xm, y, z1), V(x1, y, z1), V(x1, y + rise, z1), V(xm, yv, z1)], hint: N.front }],
+        1: [{ pts: [V(x0, y, z0), V(x0, y, z1), V(x0, y + rise, z1), V(x0, y + rise, z0)], hint: N.left }], 3: [{ pts: [V(x1, y, z0), V(x1, y, z1), V(x1, y + rise, z1), V(x1, y + rise, z0)], hint: N.right }],
+      },
+      top: y + rise,
+    };
+  },
   shed(x0, x1, z0, z1, y) {
     // one slope, high at the front (over the street), low at the back
     const e = OVER, rise = Math.max(1.3, Math.min(3.2, (z1 - z0) * 0.2)), k = rise / (z1 - z0);
@@ -261,14 +295,22 @@ export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
   const g = new THREE.Group();
   const wallMat = extMaterial(finish.m in EXT_WALLS ? finish.m : 'paint', finish.c);
   list.forEach((r, i) => {
-    const piece = new THREE.Group();
-    const x0 = r.x, x1 = r.x + r.w, z0 = r.y, z1 = r.y + r.d;
+    // a piece is built round its own middle, so it can be turned (r.r quarter turns: which way a shed
+    // roof slopes, which way a gable's ridge runs…) and made flatter or steeper (r.p)
+    const piece = new THREE.Group(), turn = (r.r ?? 0) % 4, pitch = r.p ?? 1;
+    const hw = (turn % 2 ? r.d : r.w) / 2, hd = (turn % 2 ? r.w : r.d) / 2, x0 = -hw, x1 = hw, z0 = -hd, z1 = hd;
+    piece.position.set(r.x + r.w / 2, 0, r.y + r.d / 2);
+    piece.rotation.y = turn * Math.PI / 2;
     const shape = (ROOFS[r.s] ?? ROOFS.gable)(x0, x1, z0, z1, WALL_H);
-    piece.add(mesh(shape.roof, extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a')));
-    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, wallMat); m.receiveShadow = false; piece.add(m); }
+    const body = new THREE.Group();
+    body.scale.y = pitch;
+    body.position.y = WALL_H * (1 - pitch);
+    piece.add(body);
+    body.add(mesh(shape.roof, extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a')));
+    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, wallMat); m.receiveShadow = false; body.add(m); }
     if (r.ch) {
       // a brick chimney, standing through the roof towards one end
-      const cx = x1 - Math.max(1.4, (x1 - x0) * 0.22), cz = z0 + (z1 - z0) * 0.3, top = shape.top + 0.9;
+      const cx = x1 - Math.max(1.4, (x1 - x0) * 0.22), cz = z0 + (z1 - z0) * 0.3, top = WALL_H + (shape.top - WALL_H) * pitch + 0.9;
       piece.add(boxAt(1.1, top - WALL_H, 1.1, cx, (top + WALL_H) / 2, cz, extMaterial('brick', '#a5503c')), boxAt(1.3, 0.16, 1.3, cx, top + 0.08, cz, toon('#d8d2c8')), boxAt(0.6, 0.28, 0.6, cx, top + 0.3, cz, toon('#3a3d46')));
     }
     piece.traverse((o) => { o.userData.roof = i; });
@@ -315,6 +357,14 @@ const YARD = {
   rock(g) { put(g, new THREE.DodecahedronGeometry(0.5, 0), toon('#9a968e'), 0, 0.28, 0, [1.2, 0.75, 1]); put(g, new THREE.DodecahedronGeometry(0.24, 0), toon('#b0aca4'), 0.5, 0.14, 0.25); },
   birdbath(g) { const m = toon('#c9c3b8'); put(g, cyl(0.2, 0.26, 0.1, 12), m, 0, 0.05, 0); put(g, cyl(0.08, 0.1, 0.7, 10), m, 0, 0.45, 0); put(g, cyl(0.42, 0.2, 0.14, 16), m, 0, 0.85, 0); put(g, cyl(0.36, 0.36, 0.02, 16), toon('#7fc8ff'), 0, 0.92, 0); },
   gnome(g) { put(g, cyl(0.1, 0.14, 0.26, 10), toon('#3b6fd8'), 0, 0.13, 0); put(g, new THREE.SphereGeometry(0.1, 10, 8), toon('#ffd9b3'), 0, 0.33, 0); put(g, new THREE.SphereGeometry(0.09, 10, 8), toon('#ffffff'), 0, 0.27, 0.06, [1, 1.1, 0.7]); put(g, new THREE.ConeGeometry(0.11, 0.3, 10), toon('#e0463c'), 0, 0.55, 0); },
+  fence_farm(g) { const m = toon('#5a3d28'); for (const x of [-0.5, 0.5]) put(g, new THREE.BoxGeometry(0.12, 0.95, 0.12), m, x, 0.47, 0); for (const y of [0.3, 0.55, 0.8]) put(g, new THREE.BoxGeometry(1, 0.08, 0.05), m, 0, y, 0, null, [0, 0, (y - 0.55) * 0.04]); },
+  fence_stone(g) { const cols = ['#9a968e', '#aaa59c', '#8a867e']; for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) put(g, new THREE.BoxGeometry(0.27, 0.27, 0.36 - j * 0.04), toon(cols[(i + j) % 3]), -0.375 + i * 0.25 + (j ? 0.06 : 0), 0.14 + j * 0.27, 0, null, [0, (i % 2 ? 0.08 : -0.06), 0]); put(g, new THREE.BoxGeometry(1.02, 0.07, 0.42), toon('#b8b3a8'), 0, 0.58, 0); },
+  grass_tuft(g) { for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2, lean = 0.25 + (i % 3) * 0.14; put(g, new THREE.ConeGeometry(0.045, 0.75 + (i % 4) * 0.14, 4), toon(i % 2 ? '#4f9a45' : '#6cbf5f'), Math.cos(a) * 0.12, 0.36, Math.sin(a) * 0.12, null, [Math.sin(a) * lean, 0, -Math.cos(a) * lean]); } },
+  fern(g) { for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; put(g, new THREE.SphereGeometry(0.3, 6, 4), toon(i % 2 ? '#3f8a4a' : '#4f9a45'), Math.cos(a) * 0.26, 0.2, Math.sin(a) * 0.26, [1.5, 0.18, 0.5], [0, -a, 0.45]); } },
+  wildflowers(g) { const cols = ['#ff8fc7', '#ffd84d', '#ffffff', '#b77bff', '#ff7a59', '#7fc8ff']; for (let i = 0; i < 11; i++) { const x = Math.sin(i * 2.4) * 0.38, z = Math.cos(i * 1.7) * 0.38, h = 0.22 + (i % 4) * 0.07; put(g, cyl(0.012, 0.012, h, 4), toon('#3f8a4a'), x, h / 2, z); put(g, new THREE.SphereGeometry(0.06, 6, 5), toon(cols[i % cols.length]), x, h + 0.03, z); } },
+  pebbles(g) { for (let i = 0; i < 8; i++) put(g, new THREE.DodecahedronGeometry(0.07 + (i % 3) * 0.04, 0), toon(['#9a968e', '#b0aca4', '#c4c0b6'][i % 3]), Math.sin(i * 2.1) * 0.36, 0.04, Math.cos(i * 1.3) * 0.36, [1.2, 0.6, 1]); },
+  log(g) { const bark = toon('#6b4a32'); put(g, cyl(0.2, 0.22, 1.4, 9), bark, 0, 0.21, 0, null, [0, 0, Math.PI / 2]); for (const s of [-1, 1]) put(g, cyl(0.17, 0.17, 0.02, 9), toon('#d9b98a'), s * 0.71, 0.21, 0, null, [0, 0, Math.PI / 2]); put(g, cyl(0.06, 0.08, 0.3, 6), bark, 0.2, 0.42, 0.05, null, [0.5, 0, 0.3]); },
+  stump(g) { put(g, cyl(0.3, 0.36, 0.36, 10), toon('#6b4a32'), 0, 0.18, 0); put(g, cyl(0.28, 0.28, 0.02, 10), toon('#d9b98a'), 0, 0.37, 0); },
   planter(g) { put(g, new THREE.BoxGeometry(0.9, 0.42, 0.42), toon('#7a4a28'), 0, 0.21, 0); for (let i = 0; i < 3; i++) put(g, ball(0.2), toon(i % 2 ? '#5fae55' : '#4f9a45'), -0.28 + i * 0.28, 0.5, 0); for (const [x, c] of [[-0.14, '#ff8fc7'], [0.14, '#ffd84d']]) put(g, new THREE.SphereGeometry(0.07, 8, 6), toon(c), x, 0.66, 0.08); },
 };
 /** One yard decoration, standing on its own spot (tiles). */
@@ -323,6 +373,7 @@ export function buildYardItem(id) {
   (YARD[id] ?? YARD.bush)(g);
   return g;
 }
+const ORGANIC = /^(tree|bush|flowers|rock|grass|wild|pebbles|fern|log|stump)/;
 /** Everything in a yard (plot tiles). */
 export function buildYard(list = []) {
   const g = new THREE.Group();
@@ -330,6 +381,13 @@ export function buildYard(list = []) {
     const m = buildYardItem(it.id);
     m.position.set(it.x, 0, it.y);
     m.rotation.y = (it.r ?? 0) * Math.PI / 2;
+    if (ORGANIC.test(it.id)) {
+      // growing things never stand in rows: each is turned and sized a little differently (always the
+      // same way for the same spot, so nothing jumps about when the yard is redrawn)
+      const h = (n) => { const v = Math.sin(it.x * 12.9898 * n + it.y * 78.233) * 43758.5453; return v - Math.floor(v); };
+      m.rotation.y += h(1) * Math.PI * 2;
+      m.scale.setScalar(0.86 + h(2) * 0.34);
+    }
     m.userData.yard = i;
     g.add(m);
   });

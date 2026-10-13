@@ -11,6 +11,7 @@ import { toon, basic, canvasTexture, outlineMaterial, additive, glowTexture, fla
 import { Sparks, FloatText, orb, groundRing, groundDisc } from '../three/fx.js';
 import { sfx, ambient } from '../sfx.js';
 import { listen, confetti, CROSSHAIR } from './util.js';
+import { touch } from '../touch.js';
 
 const W = 900, H = 600, K = 20, PR = 14, BULLET_SPEED = 680, BULLET_LIFE = 1.1, MOVE_SPEED = 250;
 const DASH_TIME = 0.18, DASH_SPEED = 820, DASH_COOLDOWN = 1.2;
@@ -564,6 +565,23 @@ export function boss(stage) {
   let dash = { t: 0, cd: 0, dx: 0, dy: 0 }, lagHp = 0, panelKey = '';
   const reticle = groundRing(0.35, 0.55, '#ffffff', 0.85);
   stage.scene.add(reticle);
+  // phones: while the aim stick is pushed, a see-through strip on the floor shows where your shots will go
+  // (like Brawl Stars). It's 1 long and points along +x; it's stretched and turned to the aim each frame.
+  const aimLine = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.55).translate(0.5, 0, 0), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.32, depthWrite: false }));
+  aimLine.rotation.order = 'YXZ';
+  aimLine.visible = false;
+  stage.scene.add(aimLine);
+  let tapsSeen = touch.aim.taps, tapFireUntil = 0;
+  /** The boss or minion nearest you (for a tap on the aim stick), or null. */
+  function nearestTarget(mine) {
+    let best = null, bd = Infinity;
+    for (const t of [boss, ...mobs.values()]) {
+      if (!t || !(t.hp > 0)) continue;
+      const d = Math.hypot(t.x - mine.x, t.y - mine.y);
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best;
+  }
   const bossShadow = groundDisc(1, '#000000', 0.35);
   stage.scene.add(bossShadow);
 
@@ -737,7 +755,8 @@ export function boss(stage) {
   });
 
   // ---- input -------------------------------------------------------------------
-  stage.onPointer = (type) => {
+  stage.onPointer = (type, e) => {
+    if (e?.pointerType === 'touch') return; // (on a phone the aim stick does the shooting)
     if (type === 'down') firing = true;
     if (type === 'up') firing = false;
   };
@@ -746,6 +765,8 @@ export function boss(stage) {
     if (down && (k === ' ' || k === 'shift') && !e.repeat) tryDash();
   };
   function inputDir() {
+    // the left stick on a phone: any direction, not just the eight the keys make
+    if (touch.stick.active && Math.hypot(touch.stick.x, touch.stick.y) > 0.2) { const l = Math.hypot(touch.stick.x, touch.stick.y); return { dx: touch.stick.x / l, dy: touch.stick.y / l }; }
     const keys = stage.keys;
     let dx = 0, dy = 0;
     if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
@@ -1145,11 +1166,38 @@ export function boss(stage) {
     dash.cd = Math.max(0, dash.cd - dt);
     timers = timers.filter((tm) => (tm.at <= now ? (tm.fn(), false) : true));
     const p3 = stage.pointerOnPlane(1);
-    if (p3 && stage.mouseIn) aim = { x: p3.x * K + W / 2, y: p3.z * K + H / 2 };
+    if (p3 && stage.mouseIn && !touch.enabled) aim = { x: p3.x * K + W / 2, y: p3.z * K + H / 2 };
+    // phones, twin sticks: the right stick aims (and fires while it's pushed), whichever way you're running.
+    // The camera looks straight down the arena, so the stick's directions are the arena's.
+    const mineNow = fighters.get(S.me), aiming = touch.enabled && touch.aim.active && touch.aim.push > 0.25;
+    if (touch.enabled && mineNow) {
+      if (touch.aim.taps !== tapsSeen) {
+        // a tap: a quick burst at whatever's nearest
+        tapsSeen = touch.aim.taps;
+        const t = nearestTarget(mineNow);
+        if (t) { aim = { x: t.x, y: t.y }; tapFireUntil = now + 260; }
+      }
+      if (aiming) {
+        const l = Math.hypot(touch.aim.x, touch.aim.y);
+        aim = { x: mineNow.x + (touch.aim.x / l) * 240, y: mineNow.y + (touch.aim.y / l) * 240 };
+      } else if (now > tapFireUntil) {
+        // not aiming: face the way you're running (shots still go where you last aimed until you aim again)
+        const dir = inputDir();
+        if (dir) aim = { x: mineNow.x + dir.dx * 240, y: mineNow.y + dir.dy * 240 };
+      }
+      firing = aiming || now < tapFireUntil;
+    }
+    aimLine.visible = aiming && !!mineNow && mineNow.hp > 0;
+    if (aimLine.visible) {
+      const [X, Z] = to3(mineNow.x, mineNow.y), a = Math.atan2(aim.y - mineNow.y, aim.x - mineNow.x);
+      aimLine.position.set(X, 0.07, Z);
+      aimLine.rotation.set(-Math.PI / 2, -a, 0);
+      aimLine.scale.set(9, 1, 1);
+    }
     reticle.position.set((aim.x - W / 2) / K, 0.06, (aim.y - H / 2) / K);
 
     const mine = fighters.get(S.me);
-    reticle.visible = !!mine && mine.hp > 0;
+    reticle.visible = !!mine && mine.hp > 0 && (!touch.enabled || aimLine.visible); // (phones: only while aiming)
     if (mine && mine.hp > 0) {
       let vx = 0, vy = 0;
       const dir = inputDir();

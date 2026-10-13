@@ -1,4 +1,8 @@
 :root {
+  /* how far things sit from the sides: on a phone held sideways the notch inset (~47px) is mostly the
+     rounded corners, so only part of it is kept: the sides come out about as far in as the top is */
+  --edge-l: max(12px, calc(env(safe-area-inset-left) - 34px));
+  --edge-r: max(12px, calc(env(safe-area-inset-right) - 34px));
   --bg: #0d1f4a;
   --bg-2: #14306b;
   --card: #1a3d85;
@@ -1181,7 +1185,7 @@ html.touch .arena-help, html.touch .mouselook-hint { display: none !important; }
 
 /* the round action buttons for games: bottom right, under the right thumb */
 .touch-buttons {
-  position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom));
+  position: fixed; right: calc(var(--edge-r) + 6px); bottom: max(22px, env(safe-area-inset-bottom));
   z-index: 18; display: flex; flex-direction: column-reverse; gap: 14px; pointer-events: none;
 }
 html:not(.touch) .touch-buttons { display: none; }
@@ -1671,7 +1675,7 @@ html.touch .lt-board { display: none; }
 
 /* the drawn stick (building mode: see touch.js) */
 .stick-pad {
-  position: fixed; left: max(22px, env(safe-area-inset-left)); bottom: max(22px, env(safe-area-inset-bottom)); z-index: 18;
+  position: fixed; left: calc(var(--edge-l) + 8px); bottom: max(22px, env(safe-area-inset-bottom)); z-index: 18;
   width: 132px; height: 132px; border-radius: 50%; display: grid; place-items: center; touch-action: none;
   background: radial-gradient(circle, #ffffff10 0 40%, #ffffff26 41% 100%); border: 3px solid #ffffffa8; box-shadow: 0 5px 0 #0004, inset 0 0 18px #0003;
 }
@@ -1724,13 +1728,13 @@ html.touch .house-bar .house-actions { flex-wrap: nowrap; }
 html.touch .house-bar .house-actions > * { flex: none; }
 @media (max-width: 900px), (max-height: 560px) { html.touch .house-bar .house-title { display: none; } }
 @media (orientation: landscape) and (max-height: 560px) {
-  html.touch .house-bar { top: 58px; left: max(8px, env(safe-area-inset-left)); transform: none; max-width: calc(100vw - 130px); }
+  html.touch .house-bar { top: 58px; left: var(--edge-l); transform: none; max-width: calc(100vw - 130px); }
   body.house-menu .area-hud > .house-bar { max-width: calc(44vw - 16px); } /* (clear of the menu down the right) */
 }
 /* the tips: a slim strip under the top bar (the bottom is for your thumbs) */
 html.touch .area-hud > .house-hint:not(.hidden) { display: block !important; }
 html.touch .area-hud > .house-hint { top: 176px; bottom: auto !important; font-size: 13px; max-width: min(520px, calc(100vw - 24px)); }
-@media (orientation: landscape) and (max-height: 560px) { html.touch .area-hud > .house-hint { top: 140px; left: max(8px, env(safe-area-inset-left)); transform: none; max-width: calc(44vw - 16px); } }
+@media (orientation: landscape) and (max-height: 560px) { html.touch .area-hud > .house-hint { top: 140px; left: var(--edge-l); transform: none; max-width: calc(44vw - 16px); } }
 /* what you're holding: across the top, out of the way of the pad and the round buttons */
 html.touch .place-bar { left: 50%; transform: translateX(-50%); top: 64px; bottom: auto; }
 @media (orientation: landscape) and (max-height: 560px) { html.touch .place-bar { top: max(8px, env(safe-area-inset-top)); } }
@@ -1757,7 +1761,7 @@ html.touch .shop-pages button { flex: none; white-space: nowrap; }
   body.house-menu .touch-buttons { bottom: calc(50dvh + 18px); max-height: calc(50dvh - 140px); }
 }
 @media (orientation: landscape) {
-  html.touch .house-side.wide, html.touch .house-side.wide.slim { left: auto; right: max(6px, env(safe-area-inset-right)); top: 60px; bottom: 6px; height: auto; width: min(54vw, 560px); }
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { left: auto; right: var(--edge-r); top: 60px; bottom: 6px; height: auto; width: min(54vw, 560px); }
   body.house-menu .touch-buttons { right: calc(min(54vw, 560px) + 18px); }
 }
 /* (the strips of buttons in the build menu must never be squashed flat by the list under them) */
@@ -1795,9 +1799,9 @@ html.touch .top-ctl .account-btn { width: 44px; padding: 0; }
 /* your own name tag: you know who you are (everyone else's still show) */
 html.touch .wl-actor.me .wl-tag { display: none; }
 /* keep clear of the notch and the rounded corners on a phone held sideways */
-html.touch .top-ctl { right: max(12px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); }
-html.touch .hud-top { left: max(12px, env(safe-area-inset-left)); }
-html.touch .area-top { left: max(12px, env(safe-area-inset-left)); }
+html.touch .top-ctl { right: var(--edge-r); top: max(10px, env(safe-area-inset-top)); }
+html.touch .hud-top { left: var(--edge-l); }
+html.touch .area-top { left: var(--edge-l); }
 
 /* the town on a phone: one slim badge (name, level, coins, a thin XP line), and the map tucked under the
    corner buttons instead of behind them */
@@ -1806,9 +1810,90 @@ html.touch .hud-me .zone-tag { display: none; }
 html.touch .hud-me .hud-xp { height: 6px; border-width: 1px; margin-top: 0; }
 html.touch .hud-me .hud-xp small { display: none; }
 @media (orientation: landscape) and (max-height: 560px) {
-  html.touch .minimap:not(.big) { top: 64px; right: max(12px, env(safe-area-inset-right)); width: 132px; height: 88px; }
-  html.touch .hud-clock { top: 176px; right: max(12px, env(safe-area-inset-right)); }
+  html.touch .minimap:not(.big) { top: 64px; right: var(--edge-r); width: 132px; height: 88px; }
+  html.touch .hud-clock { top: 176px; right: var(--edge-r); }
   html.touch .hud-top { padding-right: 230px; }
   html.touch .hud-me { max-width: 300px; }
   html.touch .wl-tag { font-size: 10px; padding: 1px 7px; }
+}
+
+/* ---- build mode on a phone held sideways: a slimmer menu against the right edge, so most of the screen
+   is left for the house; the Done / Hide menu bar and the round buttons stop short of it ---- */
+@media (orientation: landscape) and (max-height: 560px) {
+  html.touch { --build-w: min(38vw, 340px); }
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { width: var(--build-w); top: 60px; bottom: 12px; right: var(--edge-r); padding: 5px; gap: 5px; }
+  body.house-menu .area-hud > .house-bar { max-width: calc(100vw - var(--build-w) - var(--edge-l) - var(--edge-r) - 12px); }
+  body.house-menu .area-hud > .house-hint { max-width: calc(100vw - var(--build-w) - var(--edge-l) - var(--edge-r) - 12px); }
+  body.house-menu .touch-buttons { right: calc(var(--build-w) + var(--edge-r) + 12px); }
+  /* everything in it a size smaller (still big enough for a thumb) */
+  html.touch .house-side.wide .house-tabs button { font-size: 12px; padding: 4px 9px; min-height: 34px; }
+  html.touch .house-side.wide .house-panel { padding: 6px; gap: 6px; }
+  html.touch .house-side.wide .shop-pages { padding: 2px 0 6px; gap: 4px; }
+  html.touch .house-side.wide .shop-pages button { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+  html.touch .house-side.wide .shelf-jump button { min-height: 30px; padding: 3px 9px; font-size: 11px; }
+  html.touch .house-side.wide .item-search { padding: 5px 10px; }
+  html.touch .house-side.wide .furni-grid { grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 6px; }
+  html.touch .house-side.wide .furni { min-height: 0; padding: 6px 3px; font-size: 11px; }
+  html.touch .house-side.wide .fem-img, html.touch .house-side.wide .furni .swatch-em { width: 42px; height: 42px; }
+  html.touch .house-side.wide .style-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+  html.touch .house-side.wide .style-sw { height: 30px; }
+  html.touch .house-side .sel-box { padding: 6px; gap: 6px; }
+  html.touch .house-side.wide .muted.small { font-size: 12px; margin: 2px 0; }
+}
+
+/* ---- the wardrobe on a phone ---- */
+/* Random and Reset share the width of the character box instead of poking out to its edges */
+html.touch .wd2-tools { width: 100%; gap: 6px; }
+html.touch .wd2-tools .btn { flex: 1 1 0; min-width: 0; padding: 5px 2px; font-size: 12px; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; line-height: 1.1; }
+html.touch .wd2-tools .wd-ico { font-size: 16px; } /* (icon over the word: the box is too narrow for both side by side) */
+html.touch .wd2-stage { padding: 10px; }
+html.touch .wd2-stage #saveLook { width: 100%; }
+/* the filters along the top stay clear of the ✕ in the corner */
+html.touch #modalBody .wd2-head { padding-right: 52px; }
+
+/* the town's map and clock on a phone: both at full size (the clock alone was being shrunk, which slid
+   it up into the map), lined up on the right with a clear gap between them */
+html.touch .minimap:not(.big), html.touch .hud-clock { zoom: 1; right: var(--edge-r); }
+html.touch .minimap:not(.big) { top: 64px; width: 150px; height: 100px; }
+html.touch .hud-clock { top: 178px; }
+@media (max-height: 560px) {
+  html.touch .minimap:not(.big) { top: 62px; width: 132px; height: 88px; }
+  html.touch .hud-clock { top: 162px; font-size: 12px; padding: 3px 9px; }
+}
+
+/* ---- twin sticks (the boss cave on a phone): the aim stick, bottom right, red like a trigger, with the
+   round buttons (Dash) moved up above it ---- */
+.stick-pad.aim-pad { left: auto; right: calc(var(--edge-r) + 8px); background: radial-gradient(circle, #ff4f5a1f 0 40%, #ff4f5a40 41% 100%); border-color: #ff8a8ac0; }
+.aim-pad .stick-knob { background: radial-gradient(circle at 50% 35%, #ff8080, #d6283a); position: relative; }
+.aim-pad .stick-knob::after { content: ''; position: absolute; inset: 14px; border-radius: 50%; border: 3px solid #ffffffd0; box-shadow: 0 0 0 6px #ffffff00; }
+.stick-pad.aim-pad.on { border-color: #ffd84d; }
+body.twin-stick .touch-buttons { bottom: calc(max(22px, env(safe-area-inset-bottom)) + 150px); }
+@media (max-height: 560px) { body.twin-stick .touch-buttons { bottom: calc(max(22px, env(safe-area-inset-bottom)) + 128px); } }
+
+/* ---- racing on a phone: everything small and in its own corner, nothing on top of anything else ---- */
+@media (max-height: 560px), (max-width: 560px) {
+  /* the place's name is decoration: on a small screen the corner is better left for the game */
+  html.touch .area-title { display: none; }
+  html.touch .area-hud > .race-top { top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(300px, 38vw); gap: 8px; padding: 4px 10px; font-size: 13px; zoom: 1; }
+  html.touch .area-hud > .race-map { top: 62px; left: var(--edge-l); right: auto; bottom: auto; width: 118px; height: 90px; zoom: 1; }
+  html.touch .area-hud > .race-speed { top: 62px; right: var(--edge-r); left: auto; bottom: auto; transform: none; padding: 3px 10px; zoom: 1; }
+  html.touch .race-speed b { font-size: 22px; }
+  html.touch .race-speed small { font-size: 10px; }
+  /* the item slot only when there's something in it (the Item button fires it) */
+  html.touch .area-hud > .race-item { top: 62px; right: calc(var(--edge-r) + 86px); zoom: .8; }
+  html.touch .area-hud > .race-item:not(.has):not(.rolling) { display: none; }
+  /* Join / Ready / Garage: one slim bar along the bottom, between the stick and the round buttons */
+  html.touch .area-hud > .race-actions { bottom: max(8px, env(safe-area-inset-bottom)); max-width: calc(100vw - 2 * var(--edge-l) - 320px); padding: 5px 8px; gap: 6px; zoom: 1; }
+  html.touch .race-actions .btn { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+  html.touch .race-actions .race-ready, html.touch .race-actions .muted { font-size: 11px; line-height: 1.25; text-align: center; }
+  /* the garage: a compact card in the middle; the bar under it steps aside while it's open */
+  html.touch .race-garage { width: min(400px, 56vw); max-height: calc(100dvh - 20px); padding: 8px 10px; gap: 6px; }
+  html.touch .gar-types { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  html.touch .gar-type { font-size: 10px; padding: 4px 1px; }
+  html.touch .gar-type span { font-size: 20px; }
+  html.touch .gar-sws { gap: 5px; }
+  html.touch .gar-sw { width: 26px; height: 26px; }
+  html.touch .race-garage p.muted { display: none; }
+  html.touch .area-hud:has(.race-garage:not(.hidden)) > .race-actions,
+  html.touch .area-hud:has(.race-garage:not(.hidden)) > .race-top { display: none; }
 }

@@ -257,12 +257,13 @@ function buildRoom() {
   add(walls.front, new THREE.PlaneGeometry(4.5, 0.85), new THREE.MeshBasicMaterial({ map: welcome, transparent: true }), { p: [0, 1.1, 0.12], cast: false });
   add(g, new THREE.PlaneGeometry(2.6, 9), toon('#b3122e'), { p: [0, 0.012, RD / 2 - 4.5], r: [-Math.PI / 2, 0, 0], cast: false });
   for (const sx of [-1, 1]) add(g, new THREE.PlaneGeometry(0.12, 9), gold, { p: [sx * 1.3, 0.014, RD / 2 - 4.5], r: [-Math.PI / 2, 0, 0], cast: false });
-  for (const sx of [-1, 1]) for (let k = 0; k < 4; k++) {
+  // (just a short stretch of rope by the doors: a long roped corridor boxed you in on the way in)
+  for (const sx of [-1, 1]) for (let k = 0; k < 2; k++) {
     const z = RD / 2 - 1.5 - k * 2.4;
     add(g, new THREE.CylinderGeometry(0.06, 0.09, 1.0, 10), gold, { p: [sx * 1.7, 0.5, z] });
     add(g, new THREE.SphereGeometry(0.1, 10, 8), gold, { p: [sx * 1.7, 1.05, z] });
     add(g, new THREE.CylinderGeometry(0.2, 0.22, 0.05, 16), gold, { p: [sx * 1.7, 0.03, z], cast: false });
-    if (k < 3) add(g, new THREE.CylinderGeometry(0.035, 0.035, 2.4, 8), toon('#b3122e'), { p: [sx * 1.7, 0.85, z - 1.2], r: [Math.PI / 2, 0, 0], cast: false });
+    if (k < 1) add(g, new THREE.CylinderGeometry(0.035, 0.035, 2.4, 8), toon('#b3122e'), { p: [sx * 1.7, 0.85, z - 1.2], r: [Math.PI / 2, 0, 0], cast: false });
     solids.push({ x: sx * 1.7, z, r: 0.18 });
   }
   const neon = canvasTexture(512, 128, (c) => { c.font = '90px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.shadowColor = '#ff5dac'; c.shadowBlur = 24; c.fillStyle = '#ffe27a'; c.fillText('JACKPOT', 256, 70); });
@@ -381,7 +382,8 @@ function buildRoom() {
   cardTable(8.5, 2.5, '#1f7a47', 'blackjack', 'play blackjack');
   cardTable(14.2, 2.5, '#1f7a47', 'blackjack', 'play blackjack (VIP table)');
   cardTable(14.2, 8.6, '#1f4f9a', 'hilo', 'play High-Low');
-  for (const [x0, z0, x1, z1] of [[6.2, 0.6, 6.2, 8.4], [6.2, 8.6, 9.5, 8.6]]) {
+  // (the rope has a gap on the side facing the roulette table, so you can walk straight in to the cards)
+  for (const [x0, z0, x1, z1] of [[6.2, 0.6, 6.2, 3.4], [6.2, 6.4, 6.2, 8.6], [6.2, 8.6, 9.5, 8.6]]) {
     const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(2, Math.round(len / 2.2));
     for (let k = 0; k <= n; k++) {
       const x = x0 + ((x1 - x0) * k) / n, z = z0 + ((z1 - z0) * k) / n;
@@ -390,7 +392,7 @@ function buildRoom() {
       if (k < n) { const nx = x0 + ((x1 - x0) * (k + 1)) / n, nz = z0 + ((z1 - z0) * (k + 1)) / n; const rope = add(g, new THREE.CylinderGeometry(0.035, 0.035, Math.hypot(nx - x, nz - z), 8), toon('#b3122e'), { p: [(x + nx) / 2, 1.05, (z + nz) / 2], cast: false }); rope.rotation.set(Math.PI / 2, Math.atan2(nx - x, nz - z), 0, 'YXZ'); }
     }
   }
-  solids.push({ x: 6.2, z: 4.5, w: 0.3, d: 7.8 }, { x: 7.85, z: 8.6, w: 3.3, d: 0.3 });
+  solids.push({ x: 6.2, z: 2.0, w: 0.3, d: 2.8 }, { x: 6.2, z: 7.5, w: 0.3, d: 2.2 }, { x: 7.85, z: 8.6, w: 3.3, d: 0.3 });
 
   // ---- dice (a craps table) and the coin flip pedestal ----
   const dt = new THREE.Group();
@@ -463,6 +465,61 @@ function buildRoom() {
   bar.position.set(14, 0, -RD / 2 + 2.6);
   g.add(bar);
   solids.push({ x: 14, z: -RD / 2 + 1.6, w: 7.2, d: 3.2 });
+
+  // ---- the grand prize: a gleaming car turning slowly on a lit platform, in the corner by the doors ----
+  const prize = new THREE.Group();
+  add(prize, new THREE.CylinderGeometry(2.6, 2.75, 0.3, 40), toon('#1a1320'), { p: [0, 0.15, 0], outline: true });
+  add(prize, new THREE.TorusGeometry(2.68, 0.06, 8, 48), gold, { p: [0, 0.3, 0], r: [Math.PI / 2, 0, 0], cast: false });
+  for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU; add(prize, new THREE.SphereGeometry(0.07, 8, 6), basic(i % 2 ? '#ffd84d' : '#fff6c9'), { p: [Math.cos(a) * 2.68, 0.36, Math.sin(a) * 2.68], cast: false }); }
+  const deck = new THREE.Group();
+  deck.position.y = 0.3;
+  prize.add(deck);
+  add(deck, new THREE.CylinderGeometry(2.4, 2.4, 0.06, 40), toon('#8f1530'), { p: [0, 0.03, 0], cast: false });
+  const paint = shiny('#e0263c', { metalness: 0.5, roughness: 0.25 }), glass = toon('#1d2a44'), tyre = toon('#18161f'), chrome = shiny('#e8ecf2', { metalness: 0.8, roughness: 0.2 });
+  add(deck, new THREE.BoxGeometry(3.6, 0.55, 1.65), paint, { p: [0, 0.62, 0], outline: true });
+  add(deck, new THREE.BoxGeometry(1.8, 0.5, 1.45), paint, { p: [-0.25, 1.12, 0], outline: true });
+  for (const s of [-1, 1]) add(deck, new THREE.BoxGeometry(1.55, 0.36, 0.02), glass, { p: [-0.25, 1.14, s * 0.735], cast: false });
+  for (const s of [-1, 1]) add(deck, new THREE.BoxGeometry(0.02, 0.36, 1.25), glass, { p: [-0.25 + s * 0.91, 1.14, 0], cast: false });
+  for (const [x, z] of [[1.15, 0.8], [1.15, -0.8], [-1.2, 0.8], [-1.2, -0.8]]) {
+    add(deck, new THREE.CylinderGeometry(0.38, 0.38, 0.3, 18), tyre, { p: [x, 0.42, z], r: [Math.PI / 2, 0, 0] });
+    add(deck, new THREE.CylinderGeometry(0.2, 0.2, 0.32, 12), chrome, { p: [x, 0.42, z], r: [Math.PI / 2, 0, 0], cast: false });
+  }
+  for (const s of [-1, 1]) { add(deck, new THREE.BoxGeometry(0.06, 0.14, 0.32), basic('#fff6c9'), { p: [1.81, 0.72, s * 0.55], cast: false }); add(deck, new THREE.BoxGeometry(0.06, 0.12, 0.3), basic('#ff3b50'), { p: [-1.81, 0.72, s * 0.55], cast: false }); }
+  add(deck, new THREE.BoxGeometry(0.12, 0.08, 1.7), chrome, { p: [1.82, 0.42, 0], cast: false });
+  const winMe = canvasTexture(256, 96, (c) => { c.fillStyle = '#1a1320'; c.fillRect(0, 0, 256, 96); c.strokeStyle = '#d4af37'; c.lineWidth = 6; c.strokeRect(4, 4, 248, 88); c.font = '52px "Luckiest Guy", Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#ffd84d'; c.shadowColor = '#ffd84d'; c.shadowBlur = 12; c.fillText('WIN ME!', 128, 52); });
+  add(prize, new THREE.CylinderGeometry(0.04, 0.04, 2.4, 6), gold, { p: [2.2, 1.2, 1.6], cast: false });
+  for (const s of [-1, 1]) add(prize, new THREE.PlaneGeometry(1.5, 0.56), new THREE.MeshBasicMaterial({ map: winMe }), { p: [2.2, 2.6, 1.6 + s * 0.01], r: [0, s > 0 ? -0.6 : Math.PI - 0.6, 0], cast: false });
+  const spot = new THREE.Sprite(additive(glowTexture, 0xffe1a8, 0.35));
+  spot.scale.setScalar(6);
+  spot.position.y = 1.2;
+  prize.add(spot);
+  anim.push((t) => { deck.rotation.y = t * 0.35; });
+  prize.position.set(-13, 0, 9);
+  g.add(prize);
+  solids.push({ x: -13, z: 9, r: 2.8 });
+
+  // ---- a velvet lounge in the other front corner: two sofas round a glass table on a round rug ----
+  const sofas = new THREE.Group();
+  add(sofas, new THREE.CircleGeometry(3.1, 40), toon('#3a1450'), { p: [0, 0.015, 0], r: [-Math.PI / 2, 0, 0], cast: false });
+  add(sofas, new THREE.RingGeometry(2.9, 3.1, 40), gold, { p: [0, 0.02, 0], r: [-Math.PI / 2, 0, 0], cast: false });
+  const velvet = toon('#6a1f8a'), velvetDark = toon('#4f1468');
+  for (const s of [-1, 1]) {
+    const sofa = new THREE.Group();
+    add(sofa, new THREE.BoxGeometry(1.0, 0.45, 2.6), velvet, { p: [0, 0.32, 0], outline: true });
+    add(sofa, new THREE.BoxGeometry(0.32, 0.85, 2.6), velvetDark, { p: [-0.5, 0.7, 0], outline: true });
+    for (const z of [-1.2, 1.2]) add(sofa, new THREE.BoxGeometry(1.0, 0.65, 0.25), velvetDark, { p: [0, 0.45, z], outline: true });
+    for (const z of [-0.6, 0.6]) add(sofa, new THREE.BoxGeometry(0.75, 0.12, 1.05), velvet, { p: [0.08, 0.6, z], cast: false });
+    sofa.position.set(s * 2.0, 0, 0);
+    sofa.rotation.y = s > 0 ? Math.PI : 0;
+    sofas.add(sofa);
+  }
+  add(sofas, new THREE.CylinderGeometry(0.75, 0.75, 0.06, 32), toon('#cfefff', { transparent: true, opacity: 0.7 }), { p: [0, 0.55, 0], cast: false });
+  add(sofas, new THREE.TorusGeometry(0.75, 0.035, 6, 32), gold, { p: [0, 0.55, 0], r: [Math.PI / 2, 0, 0], cast: false });
+  add(sofas, new THREE.CylinderGeometry(0.08, 0.2, 0.52, 10), gold, { p: [0, 0.26, 0] });
+  add(sofas, new THREE.CylinderGeometry(0.1, 0.07, 0.25, 10), toon('#e0463c'), { p: [0.2, 0.7, 0.1], cast: false }); // (a bowl of chips… the eating kind)
+  sofas.position.set(11.8, 0, 12.3);
+  g.add(sofas);
+  solids.push({ x: 9.8, z: 12.3, w: 1.1, d: 2.7 }, { x: 13.8, z: 12.3, w: 1.1, d: 2.7 }, { x: 11.8, z: 12.3, r: 0.8 });
 
   // ---- palms in the corners ----
   for (const [x, z] of [[-RW / 2 + 1.2, RD / 2 - 1.3], [RW / 2 - 1.2, RD / 2 - 1.3], [3.5, RD / 2 - 1.3], [-3.5, RD / 2 - 1.3]]) {

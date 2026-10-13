@@ -66,7 +66,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
         <div class="wd-name"></div>
         <div class="wd-collection muted small"></div>
         <div class="wd2-trying"></div>
-        <div class="wd2-tools"><button class="btn small" id="wdRandom" title="Random outfit from things you own">🎲 Random</button><button class="btn small" id="wdReset" title="Undo your changes">↺ Reset</button></div>
+        <div class="wd2-tools"><button class="btn small" id="wdRandom" title="Random outfit from things you own"><span class="wd-ico">🎲</span> Random</button><button class="btn small" id="wdReset" title="Undo your changes"><span class="wd-ico">↺</span> Reset</button></div>
         <button class="btn primary wide" id="saveLook">${creating ? "Let's go!" : 'Save look'}</button>
         <div class="wd2-unsaved muted small"></div>
       </aside>

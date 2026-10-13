@@ -27,7 +27,8 @@ export const ACTIVITIES = {
   lasertag: { icon: 'arcade', emoji: '🔫', name: 'Laser Tag', place: 'Laser Tag', scene: 'lasertag', battle: true, area: lasertag, back: 'arcade',
     touch: { buttons: [{ icon: '🔫', label: 'Fire', key: 'f', code: 'KeyF', big: true }, { icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }, { icon: '🫳', label: 'Lie down', key: 'c', code: 'KeyC' }], hint: 'Left thumb: move · Right thumb: drag to look · hold <b>Fire</b> · <b>Lie down</b> behind low cover' } },
   boss: { icon: 'boss', emoji: '👾', name: 'Boss', place: 'Boss Cave', scene: 'boss', battle: true, area: boss,
-    touch: { aim: true, buttons: [{ icon: '💨', label: 'Dash', key: ' ', code: 'Space' }], hint: 'Left thumb: move · Right thumb: touch where to shoot · <b>Dash</b> to dodge' } },
+    // (twin sticks, like Brawl Stars: the left one moves you, the right one aims and fires, on its own)
+    touch: { aim: true, twin: true, buttons: [{ icon: '💨', label: 'Dash', key: ' ', code: 'Space' }], hint: 'Left stick: move · Right stick: aim and shoot (tap it to shoot the nearest) · <b>Dash</b> to dodge' } },
   arcade: { icon: 'arcade', emoji: '🕹️', name: 'Arcade', place: 'The Arcade', scene: 'arcade', area: arcadeArea,
     touch: { hint: 'Left thumb: walk · Right thumb: look around · tap a cabinet to play' } },
   archery: { icon: 'archery', emoji: '🏹', name: 'Archery', place: 'Archery Range', scene: 'archery', area: archery,

@@ -110,7 +110,7 @@ class Stage {
       root: el,
       active: () => !!this.active && !document.querySelector('#modal:not(.hidden)'),
       stick: () => this.active?.touch?.stick !== false,
-      pad: () => !!this.touchPad?.(), // (an area can ask for the drawn stick pad, see touch.js)
+      twin: () => !!this.active?.touch?.twin, // (a second stick, bottom right, to aim with: see touch.js)
       keys: this.keys,
       zoom: (f) => {
         const o = this.orbit;
@@ -215,7 +215,7 @@ class Stage {
     this.interactables = [];
     this.near = null;
     this.orbit = null;
-    this.onKey = this.onPointer = this.touchPad = null;
+    this.onKey = this.onPointer = null;
     this.onExit = onExit;
     // keep the town chat on top of the area, so you can talk in shops, games and houses too
     const chat = document.querySelector('#world .chat');

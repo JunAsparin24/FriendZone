@@ -2197,9 +2197,6 @@ export function house(stage) {
     renderHeader();
   }
   // ---- phones and tablets: the buttons down the right, for whatever you're doing ---------------------
-  // (building, the left thumb flies you about on the drawn pad, bottom left, so the rest of the screen is
-  // free for drawing walls and putting things down)
-  stage.touchPad = () => edit;
   function touchUi() {
     if (!touch.enabled) return;
     const b = [], sel = selected >= 0 && !placing ? home?.items[selected] : null;

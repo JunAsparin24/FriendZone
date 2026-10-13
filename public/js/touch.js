@@ -1,8 +1,8 @@
 // Touch controls for phones and tablets.
 import { keyOf, keyLabel } from './keybinds.js';
-//   Left half of the screen: an invisible, floating stick. Put your thumb down anywhere on the left
-//   and drag to move (push further to run). There's no joystick drawn; it follows your thumb.
-//   Right half: the camera, as before. Drag to look around, pinch to zoom, tap to walk/click/aim.
+//   The stick: a joystick drawn in the bottom-left corner, wherever you can move (push it to the edge to
+//   run). Only the pad is the stick, so the rest of the screen stays free for tapping and building.
+//   Everywhere else: the camera. Drag to look around, pinch to zoom, tap to walk/click/aim.
 //   Buttons: games that need a key (dash, boost, drift, items…) get round action buttons on the right.
 // The world and the 3D areas each register a context; whichever is active gets the touches. Games
 // keep reading their usual keys: the stick presses WASD for them, and the buttons press their keys.
@@ -11,6 +11,9 @@ export const touch = {
   enabled: false,
   /** Analog stick: x/y in -1..1 (y down = back), `run` when pushed all the way. */
   stick: { x: 0, y: 0, active: false, run: false },
+  /** The aim stick (twin-stick games, like the boss cave): x/y in -1..1 while it's held, push how far (0..1).
+   *  `taps` counts quick taps that were never pushed (a game fires those at whatever's nearest). */
+  aim: { x: 0, y: 0, active: false, push: 0, taps: 0 },
 };
 
 const STICK_RADIUS = 60;   // px of thumb travel for full speed
@@ -29,8 +32,8 @@ if (matchMedia('(hover: none) and (pointer: coarse)').matches) enable();
 const contexts = [];
 /**
  * ctx: { canvas, root (the screen it lives in), active(): bool, stick(): bool (allow the stick), keys: Set | null (press WASD into
- *        it), zoom(factor), aim(): bool (right-side drags aim instead of turning the camera), pad(): bool (use the drawn
- *        stick pad, bottom left, instead of the whole left half) }
+ *        it), zoom(factor), aim(): bool (right-side drags aim instead of turning the camera), twin(): bool (a second
+ *        stick, bottom right, aims: see touch.aim) }
  */
 export function registerTouch(ctx) {
   ctx.injected = new Set();
@@ -39,7 +42,7 @@ export function registerTouch(ctx) {
 }
 const current = () => contexts.find((c) => c.active()) ?? null;
 
-// ---- the invisible stick + pinch zoom ---------------------------------------------------------------
+// ---- the stick + pinch zoom ---------------------------------------------------------------
 
 let stickId = null, origin = null;
 const right = new Map(); // pointerId -> { x, y } for fingers on the right half
@@ -50,26 +53,42 @@ let pinchDist = 0;
 const INTERACTIVE = 'button, input, select, textarea, a, label, summary, [contenteditable], .touch-buttons, .hud-prompt, .area-prompt, .minimap, .chat, .modal, .race-actions, .top-ctl';
 const onCanvas = (e, c) => c && (e.target === c.canvas || (c.root?.contains(e.target) && !e.target.closest(INTERACTIVE)));
 
-// A drawn stick, bottom left, for screens where the whole left half can't be the stick (building a house:
-// you need to draw walls and place things there too). A context turns it on with pad(): true, and then
-// the stick only starts on the pad.
+// The stick, drawn bottom left: shown wherever you can move (a context's stick() isn't false), and the
+// stick only starts on it, so taps and drags anywhere else are the game's (building a house, aiming…).
 const pad = document.createElement('div');
 pad.className = 'stick-pad hidden';
 pad.innerHTML = '<span class="stick-knob"></span>';
 document.body.append(pad);
 const knob = pad.firstChild;
-const padOn = (c) => !!c?.pad?.();
+const padOn = (c) => !!c && c.stick?.() !== false;
 function onPad(x, y) {
   const r = pad.getBoundingClientRect(), m = 24; // (a little slack round the edge)
   return x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + m;
 }
+// the aim stick: the same, bottom right, for twin-stick games (move with the left, aim with the right)
+const aimPad = document.createElement('div');
+aimPad.className = 'stick-pad aim-pad hidden';
+aimPad.innerHTML = '<span class="stick-knob"></span>';
+document.body.append(aimPad);
+const aimKnob = aimPad.firstChild;
+const aimOn = (c) => !!c?.twin?.();
+let aimId = null, aimOrigin = null, aimDownAt = 0;
+const within = (el, x, y, m = 24) => { const r = el.getBoundingClientRect(); return x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + m; };
 function showPad() {
-  const on = touch.enabled && padOn(current());
+  const c = current(), on = touch.enabled && padOn(c), twin = touch.enabled && aimOn(c);
   pad.classList.toggle('hidden', !on);
-  if (!on) return;
-  const { x, y, active } = touch.stick;
-  knob.style.transform = active ? `translate(${x * 34}px, ${y * 34}px)` : '';
-  pad.classList.toggle('on', active);
+  aimPad.classList.toggle('hidden', !twin);
+  document.body.classList.toggle('twin-stick', twin); // (the round buttons move up out of its way)
+  if (on) {
+    const { x, y, active } = touch.stick;
+    knob.style.transform = active ? `translate(${x * 34}px, ${y * 34}px)` : '';
+    pad.classList.toggle('on', active);
+  }
+  if (twin) {
+    const { x, y, active } = touch.aim;
+    aimKnob.style.transform = active ? `translate(${x * 34}px, ${y * 34}px)` : '';
+    aimPad.classList.toggle('on', active && touch.aim.push > DEAD);
+  }
 }
 
 window.addEventListener('pointerdown', (e) => {
@@ -77,15 +96,24 @@ window.addEventListener('pointerdown', (e) => {
   enable();
   const c = current();
   if (!onCanvas(e, c) && !(padOn(c) && e.target.closest?.('.stick-pad'))) return;
-  const startsStick = padOn(c) ? onPad(e.clientX, e.clientY) : e.clientX < window.innerWidth / 2;
-  if (stickId == null && startsStick && c.stick?.() !== false) {
+  if (aimId == null && aimOn(c) && within(aimPad, e.clientX, e.clientY)) {
+    aimId = e.pointerId;
+    const r = aimPad.getBoundingClientRect();
+    aimOrigin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    aimDownAt = performance.now();
+    Object.assign(touch.aim, { x: 0, y: 0, active: true, push: 0 });
+    e.stopPropagation();
+    e.preventDefault();
+    return;
+  }
+  if (stickId == null && padOn(c) && onPad(e.clientX, e.clientY)) {
     stickId = e.pointerId;
-    // (on the pad, the middle of the pad is the stick's middle, so a push from its edge moves at once)
+    // (the middle of the pad is the stick's middle, so a push from its edge moves you at once)
     const r = pad.getBoundingClientRect();
-    origin = padOn(c) ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: e.clientX, y: e.clientY };
+    origin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     Object.assign(touch.stick, { x: 0, y: 0, active: true, run: false });
     e.stopPropagation(); // the canvas never sees the stick's finger
-    if (padOn(c)) e.preventDefault();
+    e.preventDefault();
     return;
   }
   right.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -100,15 +128,19 @@ window.addEventListener('pointerdown', (e) => {
 
 window.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'touch') return;
+  if (e.pointerId === aimId) {
+    let dx = (e.clientX - aimOrigin.x) / STICK_RADIUS, dy = (e.clientY - aimOrigin.y) / STICK_RADIUS;
+    const len = Math.hypot(dx, dy);
+    if (len > 1) { dx /= len; dy /= len; }
+    Object.assign(touch.aim, { x: dx, y: dy, push: Math.min(1, len) });
+    e.stopPropagation();
+    return;
+  }
   if (e.pointerId === stickId) {
     let dx = (e.clientX - origin.x) / STICK_RADIUS, dy = (e.clientY - origin.y) / STICK_RADIUS;
     const len = Math.hypot(dx, dy);
-    // a floating stick: if the thumb goes past the edge, the centre follows it
+    // (past the pad's edge it's simply pushed all the way)
     if (len > 1) {
-      if (!padOn(current())) { // (the drawn pad stays put)
-        origin.x = e.clientX - (dx / len) * STICK_RADIUS;
-        origin.y = e.clientY - (dy / len) * STICK_RADIUS;
-      }
       dx /= len;
       dy /= len;
     }
@@ -132,6 +164,14 @@ window.addEventListener('pointermove', (e) => {
 
 function lift(e) {
   if (e.pointerType !== 'touch') return;
+  if (e.pointerId === aimId) {
+    aimId = null;
+    // (a quick tap that was never pushed: the game fires it at whatever's nearest)
+    if (touch.aim.push <= DEAD && performance.now() - aimDownAt < 300) touch.aim.taps++;
+    Object.assign(touch.aim, { x: 0, y: 0, active: false, push: 0 });
+    e.stopPropagation();
+    return;
+  }
   if (e.pointerId === stickId) {
     stickId = null;
     Object.assign(touch.stick, { x: 0, y: 0, active: false, run: false });

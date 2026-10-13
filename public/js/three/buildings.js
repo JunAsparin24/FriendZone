@@ -562,20 +562,95 @@ export const BUILDERS = {
     for (const [x, y, z, r] of [[-1.5, 5.1, -0.3, 0.9], [2.6, 5.4, -1.8, 0.7], [-4, 2.8, 0.8, 0.7]]) {
       add(g, new THREE.SphereGeometry(r, 12, 8), toon('#5b8f4a'), { p: [x, y, z], s: [1.4, 0.35, 1.2] });
     }
-    // half-cylinder arch: the upper half of a cylinder lying along Z
-    add(g, new THREE.CylinderGeometry(2.1, 2.1, 1.4, 28, 1, false, -Math.PI / 2, Math.PI), basic('#0b0614'), { p: [0, 0, d / 2 - 1.2], r: [-Math.PI / 2, 0, 0], s: [1, 1, 1.25], cast: false });
-    // torches either side of the (now open) entrance
-    for (const s of [-1, 1]) {
-      add(g, new THREE.CylinderGeometry(0.08, 0.1, 1.6, 8), toon('#4a2e1c'), { p: [s * 2.6, 0.8, d / 2 - 0.4], outline: true });
-      const flame = new THREE.Sprite(additive(glowTexture, 0xff9a3a, 0.9));
-      flame.scale.setScalar(0.9);
-      flame.position.set(s * 2.6, 1.75, d / 2 - 0.4);
-      g.add(flame);
-      anim.push((t) => { flame.scale.setScalar(0.8 + Math.sin(t * 11 + s) * 0.08 + Math.sin(t * 7) * 0.06); });
+    // the way in: a dark mouth set into the rock face (not a tunnel stuck on the front), framed by an arch of
+    // boulders with stone fangs along the top, so the cave looks like it's about to bite
+    const R = 2.3, mz = 3.9; // (the mouth's half-width, and where the rock face is at the front)
+    const mouth = new THREE.Shape();
+    mouth.moveTo(-R + 0.15, 0); mouth.lineTo(-R + 0.15, 0.8); mouth.absarc(0, 0.8, R - 0.15, Math.PI, 0, true); mouth.lineTo(R - 0.15, 0); mouth.closePath();
+    add(g, new THREE.ShapeGeometry(mouth, 24), basic('#07030f'), { p: [0, 0.02, mz], cast: false });
+    const deep = new THREE.Sprite(additive(glowTexture, 0x7a2fd6, 0.55)); // (a purple glow deep inside)
+    deep.scale.set(3.4, 2.4, 1);
+    deep.position.set(0, 1.0, mz + 0.05);
+    g.add(deep);
+    const archCols = ['#6f6a80', '#7a7589', '#666178', '#827d94'];
+    const arch = [[-R, 0.25], [-R, 0.75], [R, 0.25], [R, 0.75]];
+    for (let i = 0; i <= 8; i++) { const a2 = Math.PI - (i / 8) * Math.PI; arch.push([Math.cos(a2) * R, 0.8 + Math.sin(a2) * R]); }
+    arch.forEach(([x, y], i) => add(g, faceted(new THREE.DodecahedronGeometry(0.5 + (i % 3) * 0.1, 0)), toon(archCols[i % 4]), { p: [x, y, mz + 0.2], r: [i, i * 1.7, 0], outline: true }));
+    const bone = toon('#efe6d0');
+    for (let i = 0; i < 5; i++) { // fangs hanging from the top of the arch…
+      const a2 = Math.PI * (0.3 + i * 0.1), big = i === 1 || i === 3;
+      add(g, new THREE.ConeGeometry(big ? 0.2 : 0.14, big ? 0.75 : 0.5, 6), bone, { p: [Math.cos(a2) * (R - 0.35), 0.8 + Math.sin(a2) * (R - 0.35) - (big ? 0.42 : 0.3), mz + 0.3], r: [Math.PI, 0, 0], outline: true });
     }
+    for (const s2 of [-1, 1]) add(g, new THREE.ConeGeometry(0.16, 0.6, 6), bone, { p: [s2 * (R - 0.45), 0.3, mz + 0.3], outline: true }); // …and two from the floor
+    // glowing crystals growing out of the rocks
+    const crystals = [];
+    for (const [x, y, z, ry] of [[-4.3, 2.4, 1.9, 0.3], [4.6, 2.2, 1.7, -0.4], [2.0, 5.4, -0.2, 0.8], [-1.6, 4.9, 0.6, -0.6], [-5.6, 0.5, 2.0, 0.1], [5.8, 0.6, 1.9, 0]]) {
+      const c = new THREE.Group();
+      c.position.set(x, y, z);
+      c.rotation.set(0.25, ry, ry * 0.5);
+      for (const [cx, cy, cz, sz, tilt] of [[0, 0, 0, 0.5, 0], [0.32, -0.15, 0.1, 0.32, 0.5], [-0.3, -0.12, -0.05, 0.36, -0.45], [0.05, -0.2, 0.32, 0.26, 0.3]]) {
+        add(c, new THREE.OctahedronGeometry(sz, 0), basic('#c08cff'), { p: [cx, cy + sz, cz], s: [0.55, 1.7, 0.55], r: [tilt, 0, tilt * 0.6], cast: false });
+      }
+      const glow = new THREE.Sprite(additive(glowTexture, 0xb06bff, 0.6));
+      glow.scale.setScalar(2.2);
+      glow.position.y = 0.5;
+      c.add(glow);
+      g.add(c);
+      crystals.push(glow);
+    }
+    // braziers either side of the way in: an iron bowl of fire on three legs
+    for (const s2 of [-1, 1]) {
+      const iron = toon('#2b2730');
+      for (let k = 0; k < 3; k++) { const a2 = (k / 3) * TAU; add(g, new THREE.CylinderGeometry(0.04, 0.05, 1.3, 6), iron, { p: [s2 * 3.3 + Math.cos(a2) * 0.22, 0.62, d / 2 - 0.5 + Math.sin(a2) * 0.22], r: [Math.sin(a2) * 0.25, 0, -Math.cos(a2) * 0.25] }); }
+      add(g, new THREE.CylinderGeometry(0.42, 0.22, 0.32, 12), iron, { p: [s2 * 3.3, 1.35, d / 2 - 0.5], outline: true });
+      add(g, new THREE.CylinderGeometry(0.36, 0.36, 0.04, 12), basic('#ff7a2e'), { p: [s2 * 3.3, 1.5, d / 2 - 0.5], cast: false });
+      const flame = new THREE.Sprite(additive(glowTexture, 0xff9a3a, 0.95));
+      flame.scale.setScalar(1.2);
+      flame.position.set(s2 * 3.3, 1.95, d / 2 - 0.5);
+      g.add(flame);
+      const core = new THREE.Sprite(additive(glowTexture, 0xfff0a0, 0.9));
+      core.scale.setScalar(0.5);
+      core.position.set(s2 * 3.3, 1.75, d / 2 - 0.5);
+      g.add(core);
+      anim.push((t) => { flame.scale.set(1.1 + Math.sin(t * 11 + s2) * 0.1, 1.3 + Math.sin(t * 7 + s2) * 0.15, 1); core.position.y = 1.75 + Math.sin(t * 13 + s2) * 0.04; });
+    }
+    // a skull and a couple of bones by the door (someone didn't make it out)
+    const skull = new THREE.Group();
+    add(skull, new THREE.SphereGeometry(0.3, 12, 10), bone, { p: [0, 0.3, 0], s: [1, 0.95, 1.05], outline: true });
+    add(skull, new THREE.BoxGeometry(0.34, 0.14, 0.3), bone, { p: [0, 0.1, 0.06] });
+    for (const s2 of [-1, 1]) add(skull, new THREE.SphereGeometry(0.08, 8, 6), basic('#1a1020'), { p: [s2 * 0.11, 0.33, 0.25], cast: false });
+    skull.position.set(1.9, 0, d / 2 - 0.9);
+    skull.rotation.y = -0.5;
+    g.add(skull);
+    for (const [x, z, ry] of [[2.6, d / 2 - 0.4, 0.9], [-2.3, d / 2 - 1.0, -0.3]]) {
+      const b2 = new THREE.Group();
+      add(b2, new THREE.CylinderGeometry(0.05, 0.05, 0.8, 6), bone, { r: [0, 0, Math.PI / 2] });
+      for (const e of [-1, 1]) for (const f of [-1, 1]) add(b2, new THREE.SphereGeometry(0.08, 8, 6), bone, { p: [e * 0.42, 0, f * 0.06] });
+      b2.position.set(x, 0.08, z);
+      b2.rotation.y = ry;
+      g.add(b2);
+    }
+    // purple mist drifting out of the mouth along the ground
+    const mist = [];
+    for (let i = 0; i < 5; i++) {
+      const m = new THREE.Sprite(additive(glowTexture, 0x8a4dff, 0.28));
+      m.scale.set(2.6, 1.1, 1);
+      g.add(m);
+      mist.push({ m, k: i / 5 });
+    }
+    anim.push((t) => {
+      for (const p2 of mist) {
+        const f = (t * 0.12 + p2.k) % 1;
+        p2.m.position.set(Math.sin(p2.k * 9 + t * 0.4) * 1.4, 0.35 + f * 0.3, mz + 0.3 + f * 2.6);
+        p2.m.material.opacity = 0.3 * Math.sin(f * Math.PI);
+      }
+      const c = 0.45 + Math.sin(t * 1.7) * 0.2;
+      crystals.forEach((gl, i) => { gl.material.opacity = c + Math.sin(t * 2.3 + i) * 0.12; });
+      deep.material.opacity = 0.45 + Math.sin(t * 1.3) * 0.15;
+    });
     const eyes = [];
     for (const s of [-1, 1]) {
-      const eye = add(g, new THREE.SphereGeometry(0.16, 12, 8), basic('#e07bff'), { p: [s * 0.55, 1.15, d / 2 - 1.3], s: [1.3, 0.7, 0.5], cast: false });
+      const eye = add(g, new THREE.SphereGeometry(0.16, 12, 8), basic('#e07bff'), { p: [s * 0.55, 1.15, mz + 0.06], s: [1.3, 0.7, 0.5], cast: false });
       const glow = new THREE.Sprite(additive(glowTexture, 0xc04dff, 0.8));
       glow.scale.setScalar(1.1);
       eye.add(glow);

@@ -859,7 +859,7 @@ export function racing(stage) {
       joined && r.state === 'waiting' ? `<button class="btn ${imReady ? '' : 'primary'}" data-a="ready">${imReady ? '✋ Not ready' : '✅ Ready!'}</button>` : '',
       r.state === 'waiting' || r.state === 'idle' ? '<button class="btn" data-a="garage">🔧 Garage</button>' : '',
       joined && r.state === 'waiting' ? '<button class="btn ghost" data-a="leave">Leave grid</button>' : '',
-      r.state === 'waiting' ? `<span class="muted race-ready">${n < 2 ? 'A race needs at least 2 racers. Practice laps until someone joins!'
+      r.state === 'waiting' ? `<span class="muted race-ready">${n < 2 ? 'Practice laps until a 2nd racer joins'
         : `<b>${ready.length}/${n} ready.</b> It starts when everyone is! ${racers().map((k) => `<span class="${ready.includes(k) ? 'win' : ''}">${ready.includes(k) ? '✅' : '⏳'} ${esc(nameOf(k))}</span>`).join(' ')}`}</span>` : '',
       !joined && !canJoin ? '<span class="muted">Race in progress. You\'re up next!</span>' : '',
     ].join('');

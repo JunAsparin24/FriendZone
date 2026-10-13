@@ -9,9 +9,11 @@
 import * as THREE from 'three';
 import { toon, canvasTexture, glowTexture } from '../three/materials.js';
 import { dayPhase } from '../three/daynight.js';
-import { S } from '../state.js';
+import { S, toast } from '../state.js';
 import { PLOT, YARD_ITEMS, buildRoofs, buildGround, buildYard, buildYardItem, defaultExt, extMaterial } from '../three/exterior.js';
-import { buildShell } from './house.js';
+import { buildShell, nightWindows } from './house.js';
+import { sfx } from '../sfx.js';
+import { lowGfx } from '../settings.js';
 
 export const T = 1.6;                 // world units per tile
 const ROAD = 15, VERGE = 2.6, WALK = 3; // the road's width, the grass strip beside it, and the pavement
@@ -101,6 +103,15 @@ function streetSign() {
     c.fillText('MAPLE LANE', 256, 68);
   }));
 }
+let mailTex = null;
+/** A little love letter, for the mailbox when your house has new likes. */
+function letterTex() {
+  return (mailTex ??= canvasTexture(128, 128, (c) => {
+    c.clearRect(0, 0, 128, 128);
+    c.font = '96px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('💌', 64, 72);
+  }));
+}
 let saleTex = null;
 /** A plot nobody's moved onto yet. */
 function saleSign() {
@@ -116,7 +127,7 @@ export function createHood() {
   const group = new THREE.Group();
   const plots = new Map(); // plot number -> { i, key, frame, group, house (what's built on it), roofs, active }
   const houses = {};       // member key -> their house data (from the server, or as it's being built here)
-  let count = 0, street = null, clouds = [], lamps = [], solids = []; // (solids: the street's trees, bushes, posts… { x, z, r })
+  let count = 0, street = null, clouds = [], lamps = [], solids = [], butterflies = [], dayLevel = 1, myMail = null; // (solids: the street's trees, bushes, posts… { x, z, r })
   // ---- day and night (the same clock as the town, so it's evening here when it's evening there)
   const cloudMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, fog: false });
   const bulbMat = new THREE.MeshToonMaterial({ color: '#fff3b8', emissive: '#ffd27a', emissiveIntensity: 0.2, gradientMap: toon('#fff').gradientMap });
@@ -156,6 +167,8 @@ export function createHood() {
     cloudMat.opacity = 0.55 + 0.35 * day;
     bulbMat.emissiveIntensity = 0.15 + 1.9 * night;
     poolMat.opacity = night * 0.55;
+    nightWindows.opacity = night * 0.85; // (everyone's lights come on)
+    dayLevel = day;
     if (night > 0.02 && lamps.length) {
       const near = [...lamps].sort((p, q) => Math.hypot(p.x - at.hx, p.z - at.hz) - Math.hypot(q.x - at.hx, q.z - at.hz));
       lampLights.forEach((l, i) => { const lp = near[i]; l.intensity = lp ? night * 90 : 0; if (lp) l.position.set(lp.x, 4.9, lp.z); });
@@ -250,7 +263,7 @@ export function createHood() {
     const shape = (geo, x, y, z, color) => { const m = new THREE.Mesh(geo, toon(color)); m.position.set(x, y, z); decor.add(m); return m; };
     const box = (w, h, d, x, y, z, color) => shape(new THREE.BoxGeometry(w, h, d), x, y, z, color);
     const paint = (w, d, x, z, color) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), toon(color)); m.rotation.x = -Math.PI / 2; m.position.set(x, -0.016, z); decor.add(m); };
-    const ends = len / 2;
+    const ends = len / 2, beds = [];
     // the road: a dashed line down the middle, white lines along the edges, a zebra crossing near each end
     for (let x = -ends + 18; x < ends - 18; x += 6) paint(3, 0.28, x, 0, '#f2c94c');
     for (const s of [-1, 1]) paint(len - 30, 0.2, 0, s * (ROAD / 2 - 0.7), '#eef0f2');
@@ -266,6 +279,7 @@ export function createHood() {
       const mid = (c - cols / 2 + 0.5) * PW, z = s * (ROAD / 2 + VERGE / 2), treeX = mid + (s > 0 ? 9 : -9);
       yardAt('flowers', 2 * mid - treeX, z, T * 1.35, s > 0 ? 0 : Math.PI);
       yardAt('flowers', mid, z, T * 1.35, s > 0 ? Math.PI : 0);
+      beds.push([2 * mid - treeX, z], [mid, z]);
       for (const bx of [mid - 17, mid + 17]) { yardAt('bush', bx, z, T * 1.4, rnd() * 6); solids.push({ x: bx, z, r: 0.8 }); }
       if ((c + (s > 0 ? 1 : 0)) % 2 === 0) {
         const hx = mid + (s > 0 ? -21 : 21), hz = z + s * 0.6, red = '#d6342c';
@@ -299,6 +313,16 @@ export function createHood() {
     for (let x = b.minX - 30; x <= b.maxX + 30; x += 11) for (const s of [-1, 1]) for (let row = 0; row < 2; row++) wood(x + rnd() * 7, s * (EDGE + PD + 7 + row * 12 + rnd() * 6), 1 + rnd() * 0.7);
     for (const s of [-1, 1]) for (let i = 0; i < 26; i++) { const z = (rnd() - 0.5) * 2 * (EDGE + PD + 20); if (Math.abs(z) > ROAD + 6) wood(s * (b.maxX + 16 + rnd() * 36), z, 1 + rnd() * 0.7); }
     street.add(bake(decor));
+    // butterflies over the flower beds (by day): a pair of little wings each, fluttering round a bed
+    butterflies = [];
+    const wingCols = ['#ff8fc7', '#ffd84d', '#7fc8ff', '#ffffff', '#b77bff', '#ff9f43'];
+    beds.filter((_, i) => i % (lowGfx() ? 4 : 2) === 0).slice(0, 18).forEach(([bx, bz], i) => {
+      const b = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: wingCols[i % wingCols.length], side: THREE.DoubleSide });
+      const wings = [-1, 1].map((sd) => { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.2).translate(sd * 0.12, 0, 0), mat); w.rotation.x = -Math.PI / 2; b.add(w); return w; });
+      b.userData = { bx, bz, ph: rnd() * 10, wings };
+      street.add(b);
+      butterflies.push(b);
+    });
     const hillCols = ['#6fae6a', '#7fb878', '#8fc48a', '#9cc7a8'];
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * Math.PI * 2 + rnd() * 0.2, r = 300 + rnd() * 120, h = 28 + rnd() * 50;
@@ -337,8 +361,19 @@ export function createHood() {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.95, 0.09), dark); post.position.set(mx, 0.475, mz);
       const box = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.26, 0.52), steel); box.position.set(mx, 1.06, mz);
       const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.52, 10, 1, false, 0, Math.PI), steel); lid.rotation.set(Math.PI / 2, 0, Math.PI / 2); lid.position.set(mx, 1.19, mz);
-      const flag = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.1), toon('#e0463c')); flag.position.set(mx + 0.19, 1.22, mz + 0.12);
+      const flag = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.1).translate(0, 0.09, 0), toon('#e0463c')); flag.position.set(mx + 0.19, 1.12, mz + 0.12);
+      flag.rotation.x = Math.PI / 2; // (down: no post)
       for (const m of [post, box, lid, flag]) { m.castShadow = true; g.add(m); }
+      if (mine) {
+        // your own mailbox: the flag goes up and a little letter bobs over it when someone has liked your
+        // house since you last came by (walk up to it to read them)
+        const letter = new THREE.Sprite(new THREE.SpriteMaterial({ map: letterTex(), transparent: true, depthWrite: false }));
+        letter.position.set(mx, 1.85, mz);
+        letter.scale.setScalar(0.7);
+        letter.visible = false;
+        g.add(letter);
+        myMail = { flag, letter, at: toHood(f, mx, mz), y: 1.85, checkAt: 0 };
+      }
       const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameTag(p.name, mine), transparent: true, depthWrite: false }));
       tag.position.set(mx, 2.0, mz);
       tag.scale.set(2.6, 0.65, 1);
@@ -433,9 +468,60 @@ export function createHood() {
     return false;
   }
 
-  /** Per frame: the clouds drift. */
-  function update(dt) {
+  // ---- a bit of life: birds wheeling over the street by day ----
+  const birds = [], birdMat = toon('#2a2d36');
+  for (let i = 0; i < (lowGfx() ? 4 : 7); i++) {
+    const b = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), birdMat);
+    body.scale.set(0.9, 0.7, 1.9);
+    b.add(body);
+    const wings = [-1, 1].map((sd) => { const w = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.04, 0.34).translate(sd * 0.5, 0, 0), birdMat); b.add(w); return w; });
+    b.userData = { r: 22 + i * 6, h: 17 + (i % 3) * 3.5, sp: (0.1 + (i % 4) * 0.03) * (i % 2 ? 1 : -1), ph: i * 1.7, cx: (i - 3) * 14, wings };
+    group.add(b);
+    birds.push(b);
+  }
+
+  /** Per frame: the clouds drift, birds wheel, butterflies flutter, and your mailbox keeps an eye out for
+   *  likes. me: where you are (hood units), for walking up to your mailbox. */
+  function update(dt, me = null) {
     for (const c of clouds) { c.position.x += c.userData.v * dt; if (c.position.x > 300) c.position.x = -300; }
+    const t = performance.now() / 1000, awake = dayLevel > 0.3; // (birds and butterflies turn in after dark)
+    for (const b of birds) {
+      b.visible = awake;
+      if (!awake) continue;
+      const u = b.userData, a = t * u.sp + u.ph;
+      b.position.set(u.cx + Math.cos(a) * u.r, u.h + Math.sin(t * 0.6 + u.ph) * 1.5, Math.sin(a) * u.r * 0.55);
+      b.rotation.y = Math.atan2(-Math.sin(a) * u.sp, Math.cos(a) * 0.55 * u.sp);
+      const flap = Math.sin(t * 9 + u.ph) * 0.55;
+      u.wings[0].rotation.z = -flap; u.wings[1].rotation.z = flap;
+    }
+    for (const b of butterflies) {
+      b.visible = awake;
+      if (!awake) continue;
+      const u = b.userData, x = u.bx + Math.sin(t * 0.8 + u.ph) * 1.3, z = u.bz + Math.cos(t * 1.1 + u.ph * 2) * 0.55;
+      b.rotation.y = Math.atan2(x - b.position.x, z - b.position.z);
+      b.position.set(x, 0.75 + Math.sin(t * 2.1 + u.ph) * 0.35, z);
+      const flap = 0.25 + Math.abs(Math.sin(t * 16 + u.ph)) * 1.1;
+      u.wings[0].rotation.z = flap; u.wings[1].rotation.z = -flap;
+    }
+    // your mailbox
+    if (myMail) {
+      const likes = houses[S.me]?.likes?.length ?? 0, key = `fz.likesSeen.${S.me}`;
+      let seen = 0;
+      try { seen = Number(localStorage.getItem(key) ?? 0); } catch { /* no storage */ }
+      if (likes < seen) { seen = likes; try { localStorage.setItem(key, String(likes)); } catch { /* no storage */ } }
+      const fresh = likes - seen;
+      myMail.flag.rotation.x += ((fresh > 0 ? 0 : Math.PI / 2) - myMail.flag.rotation.x) * Math.min(1, dt * 4);
+      myMail.letter.visible = fresh > 0;
+      if (fresh > 0) {
+        myMail.letter.position.y = myMail.y + Math.sin(t * 3) * 0.1;
+        if (me && Math.hypot(me.x - myMail.at.x, me.z - myMail.at.z) < 3.2) {
+          try { localStorage.setItem(key, String(likes)); } catch { /* no storage */ }
+          toast(`💌 ${fresh} new like${fresh > 1 ? 's' : ''} on your house! (${likes} in all)`);
+          sfx('like');
+        }
+      }
+    }
   }
 
   /**

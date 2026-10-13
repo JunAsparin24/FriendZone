@@ -11,7 +11,7 @@ export const DEFAULTS = {
   zoomSens: 1,      // scroll-wheel zoom sensitivity
   keyTurn: 1,       // Q / R camera turn speed
   invertY: false,
-  quality: 'high',  // 'low' | 'medium' | 'high'
+  quality: 'high',  // 'saver' | 'low' | 'medium' | 'high' (saver: Low, plus fewer pixels and 30 frames a second)
   shake: true,      // screen shake in the action games
   names: true,      // name tags over players in the world
   dayNight: true,   // the world goes through day and night (off: always daytime)
@@ -67,5 +67,10 @@ export const shakeScale = () => (settings.shake ? 1 : 0);
 export const pixelRatio = () => {
   const dpr = window.devicePixelRatio || 1;
   // (low draws far less scenery instead of rendering fewer pixels, so it still looks sharp)
-  return settings.quality === 'low' ? Math.min(1, dpr) : settings.quality === 'medium' ? Math.min(1.5, dpr) : Math.min(2, dpr);
+  return settings.quality === 'saver' ? Math.min(0.75, dpr) : settings.quality === 'low' ? Math.min(1, dpr) : settings.quality === 'medium' ? Math.min(1.5, dpr) : Math.min(2, dpr);
 };
+
+/** Low graphics or lower: no shadows, less scenery, the town let go while you're in an area… */
+export const lowGfx = () => settings.quality === 'low' || settings.quality === 'saver';
+/** Battery saver: the least time to wait between frames (ms), so the game draws 30 a second, not 60+. */
+export const frameGap = () => (settings.quality === 'saver' ? 1000 / 30 - 3 : 0);

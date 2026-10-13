@@ -8,7 +8,7 @@ import { registerLook, mouseLooking } from './mouselook.js';
 import { net } from './net.js';
 import { S, esc, isTyping } from './state.js';
 import { Character } from './three/character.js';
-import { settings, onSettings, pixelRatio, shakeScale } from './settings.js';
+import { settings, onSettings, pixelRatio, shakeScale, lowGfx, frameGap } from './settings.js';
 import { iconSvg } from './icons.js';
 import { sfx } from './sfx.js';
 import { touch, registerTouch, setTouchButtons, actionHint, fitFov } from './touch.js';
@@ -83,7 +83,7 @@ class Stage {
     this.fade = el.querySelector('.area-fade');
     el.querySelector('.area-exit').onclick = () => (this.town ? window.dispatchEvent(new CustomEvent('fz:lobby')) : this.onExit?.());
 
-    const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: settings.quality !== 'low', powerPreference: settings.quality === 'low' ? 'default' : 'high-performance' });
+    const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: !lowGfx(), powerPreference: lowGfx() ? 'default' : 'high-performance' });
     watchContext(this.canvas);
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.shadowMap.enabled = true;
@@ -246,6 +246,8 @@ class Stage {
     const frame = (now) => {
       if (!this.active) return;
       this.raf = requestAnimationFrame(frame);
+      if (now - (this.drawnAt ?? 0) < frameGap()) return; // (battery saver: 30 frames a second)
+      this.drawnAt = now;
       this.frame(now);
     };
     this.raf = requestAnimationFrame(frame);
@@ -345,7 +347,7 @@ class Stage {
     s.add(new THREE.HemisphereLight(sky, ground, hemi));
     const light = new THREE.DirectionalLight(sunColor, sun);
     light.position.set(...sunPos);
-    light.castShadow = settings.quality !== 'low';
+    light.castShadow = !lowGfx();
     light.shadow.mapSize.set(settings.quality === 'high' ? 2048 : 1024, settings.quality === 'high' ? 2048 : 1024);
     Object.assign(light.shadow.camera, { left: -box, right: box, top: box, bottom: -box, near: 1, far: 200 });
     light.shadow.bias = -0.0004;
@@ -478,7 +480,9 @@ class Stage {
       }
       t = Math.max(0.12, t);
       dx *= t; dz *= t;
-      dy = Math.min(dy, room.maxY - o.cur.y); // stay under the ceiling (just flatter, not closer)
+      // (a wall behind you brings the camera in closer at the same angle: shortening only the sideways part
+      // left it hovering right over your head, looking straight down. Under the ceiling it just flattens.)
+      dy = Math.min(dy * t, room.maxY - o.cur.y);
     }
     this.camera.position.set(o.cur.x + dx, Math.max(0.5, o.cur.y + dy), o.cur.z + dz);
     this.camera.lookAt(o.cur.x, o.cur.y + Math.max(0, LOW - o.pitch) * o.dist * 1.1, o.cur.z);

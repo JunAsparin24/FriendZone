@@ -10,7 +10,7 @@ import { net } from '../net.js';
 import { S, esc, fmt, me, nameOf, toast } from '../state.js';
 import { CATALOG } from '../catalog.js';
 import { portraitInto } from '../avatar.js';
-import { toon, basic } from '../three/materials.js';
+import { toon, basic, glowTexture } from '../three/materials.js';
 import { WINDOW_PANES, buildFurniture, furnitureParts, TRIM_MAT, outdoorPanorama, floorTexture, wallTexture, ceilingTexture, wallIsTall, surfaceSpan, SWATCH, surfaceImage, furnitureThumb } from '../three/furniture.js';
 import { sfx } from '../sfx.js';
 import { settings } from '../settings.js';
@@ -423,6 +423,10 @@ function paintWall(group, it, h, grid, wallId = h.wall) {
  * and the floors of its rooms (no furniture, nothing to use). In plot tiles. hood.js adds the roofs,
  * paths and yard.
  */
+/** The warm glow in the windows of the houses along the street: one material, so the neighbourhood fades
+ *  every window in together after dark (hood.js sets its opacity with the time of day). */
+export const nightWindows = new THREE.SpriteMaterial({ map: glowTexture, color: 0xffc56b, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+
 export function buildShell(h) {
   const g = new THREE.Group(), items = h.items ?? [], grid = plotGrid(items);
   for (const it of items) {
@@ -437,6 +441,11 @@ export function buildShell(h) {
         const r = it.r % 4;
         built.position.set(r % 2 === 0 ? it.x + f.w / 2 : it.x, it.h ?? WALL_Y, r % 2 === 0 ? it.y : it.y + f.w / 2);
         built.rotation.y = [0, Math.PI / 2, Math.PI, -Math.PI / 2][r];
+        // (someone's home after dark: the lights are on)
+        const glow = new THREE.Sprite(nightWindows);
+        glow.scale.set(f.w * 1.5, (FURN[it.id].wh ?? 1) * 1.6, 1);
+        glow.position.copy(built.position);
+        g.add(glow);
       } else {
         const [w, d] = footprint(it);
         built.position.set(it.x + w / 2, 0, it.y + d / 2);
@@ -536,12 +545,15 @@ export function house(stage) {
     <div class="hud-panel house-bar"><div class="house-title"></div><div class="house-actions"></div></div>
     <div class="hud-panel house-side hidden"><div class="tabs house-tabs"></div><div class="house-panel"></div></div>
     <div class="place-bar hidden"></div>
+    <div class="look-strip hidden"><span>👁️<br>drag here<br>to look</span></div>
     <p class="hud-panel arena-help house-hint"></p>`;
   const $h = (sel) => stage.hud.querySelector(sel);
   const titleEl = $h('.house-title'), actions = $h('.house-actions'), side = $h('.house-side');
   const tabsEl = $h('.house-tabs'), panel = $h('.house-panel'), hint = $h('.house-hint');
 
   let viewKey = null, home = null, edit = false, placing = null, selected = -1, tab = 'visit', sideOpen = false;
+  const LOOK_STRIP = 0.24; // (phones, placing: how much of the screen's right side turns the camera, see onPointer)
+  let lookDrag = false;
   let fly = null; // (where the decorating camera is floating)
   let grab = null; // (pressed on a piece: dragging it moves it)
   let trimMode = false, trimBrush = null; // (trim, one wall at a time)
@@ -996,6 +1008,11 @@ export function house(stage) {
     ghost.traverse((o) => { if (o.isMesh && !o.userData.outline) o.material = mat; });
     ghost.visible = true;
     placeGroup(ghost, it);
+    // drawing a wall: how long it is, in what you're holding (handy on a phone, where your finger's on it)
+    if (isDragWall(placing.id) && placing.from < 0) {
+      const lab = $h('.place-bar small');
+      if (lab) lab.textContent = placing.start ? `${FURN[placing.id].name} · ${placing.l} tile${placing.l === 1 ? '' : 's'} long` : FURN[placing.id].name;
+    }
     const f = FURN[placing.id];
     const m = room.marker;
     m.material.color.set(placing.valid ? '#6ee7a0' : '#ff5d73');
@@ -1184,6 +1201,7 @@ export function house(stage) {
   }
 
   function stopPlacing() {
+    lookDrag = false; // (a finger that was turning the camera when the piece went down doesn't carry over)
     if (placing?.pressed) orbit.fixed = placing.wasFixed;
     if (placing?.from >= 0 && entries[placing.from]) entries[placing.from].group.visible = true;
     const reopen = movingWindow();
@@ -1205,6 +1223,7 @@ export function house(stage) {
     else home.items.push(it);
     selected = placing.from >= 0 ? placing.from : home.items.length - 1;
     placing = null;
+    lookDrag = false;
     buildGhost();
     commit('place');
     if (entries[selected]) entries[selected].bounce = 0;
@@ -1300,8 +1319,27 @@ export function house(stage) {
   }
 
   /** Apply a local change: rebuild, save (debounced) and refresh the side panel. */
-  function commit(sound) {
+  // ---- undo: the house as it was before each change, newest last (Ctrl+Z, or ↶ Undo up top) ----
+  let undoStack = [], lastState = null;
+  const UNDO_MAX = 40;
+  /** Everything a change in build mode can touch, as one string. */
+  const stateOf = () => (home ? JSON.stringify({ floor: home.floor, wall: home.wall, ceiling: home.ceiling, door: home.door, items: home.items, areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim, trimp: home.trimp ?? {}, ext: home.ext }) : null);
+  /** Start the history afresh from the house as it is (a house just loaded, or changed by someone else). */
+  function resetUndo() { undoStack = []; lastState = stateOf(); }
+  function undo() {
+    if (!home || !canEdit()) return;
+    if (!undoStack.length) { sfx('error'); toast('Nothing to undo.'); return; }
+    if (placing) stopPlacing();
+    Object.assign(home, JSON.parse(undoStack.pop()));
+    selected = -1; paintSel = null; roofSel = -1;
+    commit('rotate', { undoing: true });
+    toast('↶ Undone');
+  }
+
+  function commit(sound, { undoing = false } = {}) {
     if (sound) sfx(sound);
+    // (what it was like before this change goes on the undo pile; undoing doesn't add to it)
+    const before = lastState;
     const walls = roomWallCells(home.items);
     const orphans = home.items.filter((it) => (isDoor(it.id) && !inWall(it, walls)) || (it.iw && wallHost(it, home.items) < 0));
     if (orphans.length) {
@@ -1311,6 +1349,8 @@ export function house(stage) {
       toast(`📦 Put away ${orphans.length > 1 ? `${orphans.length} things` : 'something'} that wasn't on or in a wall any more.`);
     }
     if (seated) standUp();
+    lastState = stateOf();
+    if (!undoing && before && before !== lastState) { undoStack.push(before); if (undoStack.length > UNDO_MAX) undoStack.shift(); }
     rebuildItems();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -1356,6 +1396,12 @@ export function house(stage) {
     if (!home || !canEdit()) return;
     if (tab === 'outside') { outsidePointer(type, e, d); return; }
     if (tab === 'paint') { paintPointer(type, e, d); return; }
+    // phones, holding something: a drag that starts in the strip down the right-hand edge turns the camera
+    // (anywhere else your finger draws the wall or moves the piece, so it couldn't turn it)
+    if (e?.pointerType === 'touch' && placing) {
+      if (type === 'down' && e.clientX > window.innerWidth * (1 - LOOK_STRIP)) { lookDrag = true; return; }
+      if (lookDrag) { if (type === 'up') lookDrag = false; return; }
+    }
     // drawing a wall: press where it starts and drag to where it ends (or click the start, then the end).
     // The camera holds still while you drag.
     if (placing && isDragWall(placing.id) && placing.from < 0) {
@@ -1380,6 +1426,9 @@ export function house(stage) {
         return;
       }
       if (type === 'up' && d && !d.moved && d.button === 2) { cancelWall(); return; }
+      // the wall stretches after the pointer while you drag (a mouse also shows it before you press; a
+      // finger dragging with nothing pressed is turning the camera, so that's left alone)
+      if (type === 'move') { if (placing.pressed || e?.pointerType !== 'touch') { aimPlacement(); updateGhost(); } return; }
     }
     // a finger has no hover, so a tap can't both show where something goes and put it there: holding a
     // piece, a tap moves it to that spot, a drag that starts on it slides it about (a drag anywhere else
@@ -1435,6 +1484,7 @@ export function house(stage) {
       else if (k === 't' && !e.repeat && placing && isDragWall(placing.id)) { chainWalls = !chainWalls; sfx('click'); renderAll(); }
       else if (k === ']' || k === 'pageup') nudgeHeight(1);
       else if (k === '[' || k === 'pagedown') nudgeHeight(-1);
+      else if (k === 'z' && (e.ctrlKey || e.metaKey) && !e.repeat) { e.preventDefault?.(); undo(); }
       else if ((k === 'delete' || k === 'backspace') && selected >= 0 && tab !== 'outside') { e.preventDefault(); storeSelected(); }
     }
   };
@@ -1496,6 +1546,7 @@ export function house(stage) {
   }
   let hintOff = false;
   try { hintOff = localStorage.getItem('fz.houseHint') === 'off'; } catch { /* no storage */ }
+  stage.hud.addEventListener('click', (ev) => { if (ev.target.closest('[data-undo]')) undo(); });
   stage.hud.addEventListener('click', (ev) => {
     const t = ev.target.closest('[data-hint]');
     if (!t) return;
@@ -1517,6 +1568,7 @@ export function house(stage) {
       `<span class="pill">❤️ ${likes.length}</span>`,
       !mine() ? `<button class="btn small ${liked ? '' : 'primary'}" data-like ${liked ? 'disabled' : ''}>${liked ? '❤️ Liked' : '🤍 Like'}</button>` : '',
       canEdit() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : mine() ? '🔨 Build mode' : '🔨 Build here'}</button>` : '',
+      edit ? `<button class="btn small" data-undo title="Undo (Ctrl+Z)" ${undoStack.length ? '' : 'disabled'}>↶ Undo</button>` : '',
       edit ? `<button class="btn small" data-menu title="Tab">${sideOpen ? '⬅ Hide menu' : '📋 Menu'}</button>` : '',
       `<button class="btn small ${sideOpen && tab === 'visit' ? 'primary' : ''}" data-visits>🏘️ Neighbours</button>`,
       !mine() ? '<button class="btn small" data-home>🏡 My house</button>' : '',
@@ -2217,6 +2269,7 @@ export function house(stage) {
       b.push({ icon: '📦', label: 'Put away', fn: storeSelected, tone: 'stop' });
     } else if (!roofing()) b.push({ icon: '⬆', label: 'Fly up', key: ' ', code: 'Space' }, { icon: '⬇', label: 'Fly down', key: 'Shift', code: 'ShiftLeft' });
     setTouchButtons(b);
+    $h('.look-strip').classList.toggle('hidden', !placing || !edit);
   }
 
   /** Someone else got on or off their mount. */
@@ -2391,6 +2444,7 @@ export function house(stage) {
     home = null;
     selected = -1;
     echoes = sentAt = 0;
+    undoStack = []; lastState = null;
     outsideSig = cutSig = '';
     while (room.items.children.length) room.items.remove(room.items.children[0]);
     stage.interactables = stage.interactables.filter((i) => !i.house);
@@ -2466,6 +2520,8 @@ export function house(stage) {
       else {
         if (seated) standUp();
         home = { ...m.house, size: m.house.size ?? [NX, NZ], items: m.house.items.map((it) => ({ ...it })) };
+        // (the server tidied our own save: carry on; anyone else's change or a refused save: start afresh)
+        if (m.by === S.me && !fresh) lastState = stateOf(); else resetUndo();
         outsideSig = ''; // (the street gets this copy too, not the one it was holding)
         rebuildItems();
         if (fresh) hood.setActive(viewKey);
@@ -2616,7 +2672,7 @@ export function house(stage) {
     ceilGroup.visible = !edit;
     if (String(roofsOn) !== cutSig) { cutSig = String(roofsOn); hood.showRoofs(viewKey, roofsOn); }
     if (riding && (indoors || !p.char.riding)) setRiding(false); // (mounts wait outside; or you took yours off)
-    hood.update(dt);
+    hood.update(dt, meH); // (meH: where you are, for walking up to your mailbox)
     // the sun's shadows follow you down the street
     // (in steps, not every frame: a shadow map that slides along with you makes the shadows' edges crawl)
     const sx = Math.round((edit && fly ? fly.x : p.x) / 6) * 6, sz = Math.round((edit && fly ? fly.z : p.z) / 6) * 6;

@@ -17,7 +17,7 @@ import { Fishing } from '../games/fishing.js';
 import { sfx, ambient } from '../sfx.js';
 import { listen, onKeys } from '../games/util.js';
 import { touch, setTouchButtons } from '../touch.js';
-import { settings } from '../settings.js';
+import { settings, lowGfx } from '../settings.js';
 import { add, box, cyl, sph, group, merge, tf, instanced, plank, stripeMat, nightLights, lamp, flushLamps, windowMat, seeded } from './beach/common.js';
 import { buildPier, pierHeight, onPierFootprint, PIER_Y, PIER_DX, PIER_OPEN } from './beach/pier.js';
 import { buildPark, Balls, Golf, COURTS, HOLES, PONDS } from './beach/park.js';
@@ -575,7 +575,7 @@ export function beachArea(stage) {
   S3.fog = new THREE.Fog('#cfe4fb', 140, 420);
   const hemi = new THREE.HemisphereLight(0xe8f7ff, 0xf2d9a0, 1.2);
   const sun = new THREE.DirectionalLight(0xfff0d4, 2.3);
-  sun.castShadow = settings.quality !== 'low'; // (no shadows on Low, like everywhere else: phones)
+  sun.castShadow = !lowGfx(); // (no shadows on Low, like everywhere else: phones)
   sun.shadow.mapSize.setScalar(settings.quality === 'high' ? 1536 : 1024);
   Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 220 });
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;

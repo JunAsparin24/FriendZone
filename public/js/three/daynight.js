@@ -3,7 +3,7 @@
 // where the lamps light up the paths.
 import * as THREE from 'three';
 import { additive, glowTexture, TAU } from './materials.js';
-import { settings } from '../settings.js';
+import { settings, lowGfx } from '../settings.js';
 import { wind, weatherState, WEATHER_LOOK } from './wind.js';
 import { sfx } from '../sfx.js';
 
@@ -188,7 +188,7 @@ export class DayNight {
     u.bottom.value.copy(t.bottom);
     this.scene.fog.color.copy(t.fog);
     // (low graphics: closer fog, and the world stops drawing things beyond it)
-    const reach = settings.quality === 'low' ? 0.42 : 1;
+    const reach = lowGfx() ? 0.42 : 1;
     this.scene.fog.far = (380 - storm * 170) * reach;
     this.scene.fog.near = (120 - storm * 70) * reach;
     this.hemi.color.copy(t.hemiSky);

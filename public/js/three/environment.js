@@ -5,12 +5,12 @@ import { TAU, toon, basic, shiny, canvasTexture, additive, glowTexture, puffText
 import { buildBuilding } from './buildings.js';
 import { buildLamps, buildFences, buildTown } from './town.js';
 import * as M from '../map.js';
-import { settings } from '../settings.js';
+import { settings, lowGfx } from '../settings.js';
 
 // How much scenery to build for the chosen graphics quality (phones can't draw a million blades of
 // grass). It's read once when the world is built, so a change shows after a reload.
-const DETAIL = { high: 1, medium: 0.55, low: 0.25 }[settings.quality] ?? 1;
-const LOW = settings.quality === 'low';
+const DETAIL = { high: 1, medium: 0.55, low: 0.25, saver: 0.18 }[settings.quality] ?? 1;
+const LOW = lowGfx();
 
 const U = (px) => px / M.PX;
 const pos3 = (x, y) => M.to3(x, y);

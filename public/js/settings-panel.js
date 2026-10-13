@@ -58,9 +58,9 @@ function render() {
           <h3>🎮 Controls</h3>
           ${slider('camSens')}${slider('zoomSens')}${slider('keyTurn')}${toggle('invertY')}
           <h3>🖥️ Graphics</h3>
-          <div class="set-row"><span>Quality</span><div class="seg">${['low', 'medium', 'high'].map((q) =>
-            `<button data-quality="${q}" class="${settings.quality === q ? 'on' : ''}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div></div>
-          <p class="muted small">Lower quality turns off shadows, renders fewer pixels and builds less grass and fewer trees (the scenery changes next time you load the game). Use Low on phones.</p>
+          <div class="set-row"><span>Quality</span><div class="seg">${[['saver', '🔋 Battery saver'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']].map(([q, label]) =>
+            `<button data-quality="${q}" class="${settings.quality === q ? 'on' : ''}">${label}</button>`).join('')}</div></div>
+          <p class="muted small">Lower quality turns off shadows, renders fewer pixels and builds less grass and fewer trees (the scenery changes next time you load the game). Use Low on phones. <b>Battery saver</b> is Low plus fewer pixels and 30 frames a second: your phone stays cooler and lasts longer.</p>
           ${toggle('shake')}${toggle('names')}${toggle('dayNight')}
         </section>
       </div>

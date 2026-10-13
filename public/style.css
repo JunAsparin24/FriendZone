@@ -1897,3 +1897,16 @@ body.twin-stick .touch-buttons { bottom: calc(max(22px, env(safe-area-inset-bott
   html.touch .area-hud:has(.race-garage:not(.hidden)) > .race-actions,
   html.touch .area-hud:has(.race-garage:not(.hidden)) > .race-top { display: none; }
 }
+
+/* phones, placing something: the strip down the right edge you drag to turn the camera (see house.js) */
+.look-strip {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 24vw; pointer-events: none; z-index: 1;
+  background: linear-gradient(90deg, transparent, #0d1f4a33 35%, #0d1f4a55); border-left: 2px dashed #ffffff40;
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 112px;
+}
+.look-strip span { font: 700 12px/1.3 var(--body); color: #ffffffcc; text-align: center; text-shadow: 0 1px 2px #0008; }
+html:not(.touch) .look-strip { display: none; }
+@media (max-height: 560px) { .look-strip { padding-top: 104px; } }
+
+/* the arena on a phone: hearts and the slide meter along the bottom middle, clear of the joystick */
+html.touch .area-hud > .ar-bottom { left: 50%; transform: translateX(-50%); bottom: max(8px, env(safe-area-inset-bottom)); }

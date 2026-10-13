@@ -14,7 +14,7 @@ import { music } from './music.js';
 import { DayNight, timeOfDay, dayPhase } from './three/daynight.js';
 import { puffTexture, basic } from './three/materials.js';
 import { sfx, ambient, engine } from './sfx.js';
-import { settings, onSettings, pixelRatio } from './settings.js';
+import { settings, onSettings, pixelRatio, lowGfx, frameGap } from './settings.js';
 import { iconSvg, iconImage } from './icons.js';
 import { Fishing, Line } from './games/fishing.js';
 import { Sparks } from './three/fx.js';
@@ -79,7 +79,7 @@ export class World {
   // ---- setup -------------------------------------------------------------------
 
   init() {
-    const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: settings.quality !== 'low', powerPreference: settings.quality === 'low' ? 'default' : 'high-performance' });
+    const r = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: !lowGfx(), powerPreference: lowGfx() ? 'default' : 'high-performance' });
     watchContext(this.canvas);
     r.setPixelRatio(pixelRatio());
     r.outputColorSpace = THREE.SRGBColorSpace;
@@ -621,7 +621,7 @@ export class World {
    * one place is on it at a time. Everything is sent back the next time the town is drawn.
    */
   releaseGpu() {
-    if (settings.quality !== 'low' || !this.scene) return;
+    if (!lowGfx() || !this.scene) return;
     const texs = new Set();
     this.scene.traverse((o) => {
       o.geometry?.dispose();
@@ -636,7 +636,7 @@ export class World {
     if (!this.renderer) return;
     const q = settings.quality;
     this.renderer.setPixelRatio(pixelRatio());
-    this.sun.castShadow = q !== 'low';
+    this.sun.castShadow = !lowGfx();
     const size = q === 'high' ? 2048 : 1024;
     if (this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size);
@@ -1038,7 +1038,7 @@ export class World {
 
   /** Low graphics: hide what's beyond the fog (checked a few times a second, not every frame). */
   cullFar(now) {
-    if (settings.quality !== 'low' || !this.cullables) return;
+    if (!lowGfx() || !this.cullables) return;
     if (this.cullAt && now - this.cullAt < 250) return;
     this.cullAt = now;
     const cam = this.camera.position, far = this.scene.fog ? this.scene.fog.far + 10 : 200;
@@ -1047,6 +1047,8 @@ export class World {
 
   frame = (now) => {
     if (!this.running) return;
+    if (now - (this.drawnAt ?? 0) < frameGap()) { requestAnimationFrame(this.frame); return; } // (battery saver: 30 a second)
+    this.drawnAt = now;
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     if (this.hidden) { requestAnimationFrame(this.frame); return; } // a 3D area is covering the world

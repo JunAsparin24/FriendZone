@@ -376,7 +376,17 @@ export const BOARD_SPOTS = [['dungeon', 'boss', 1], ['archery', 'archery', -1], 
       if (clear(cx, cy)) { x = cx; y = cy; break search; }
     }
   }
-  const tx = door.x + dx * 420, ty = door.y + dy * 420; // where visitors come from
+  let tx = door.x + dx * 420, ty = door.y + dy * 420; // where visitors come from
+  // (the dungeon's road bends in from the side, so straight out from the door the board stood edge-on to
+  // everyone walking up: it faces a spot back along the road instead, where they're coming from)
+  if (id === 'dungeon') {
+    const road = PATHS.find((r) => { const end = r.pts[r.pts.length - 1]; return Math.hypot(end.x - door.x, end.y - door.y) < 40; });
+    if (road) {
+      let back = 0, q = road.pts[road.pts.length - 1];
+      for (let i = road.pts.length - 2; i >= 0 && back < 520; i--) { back += Math.hypot(road.pts[i].x - q.x, road.pts[i].y - q.y); q = road.pts[i]; }
+      tx = q.x; ty = q.y;
+    }
+  }
   return { id, x, y, dx, dy, tx, ty, face: Math.atan2(tx - x, ty - y) };
 });
 

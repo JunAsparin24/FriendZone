@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { toon, canvasTexture, glowTexture } from '../three/materials.js';
 import { dayPhase } from '../three/daynight.js';
 import { S } from '../state.js';
-import { PLOT, YARD_ITEMS, buildRoofs, buildGround, buildYard, defaultExt, extMaterial } from '../three/exterior.js';
+import { PLOT, YARD_ITEMS, buildRoofs, buildGround, buildYard, buildYardItem, defaultExt, extMaterial } from '../three/exterior.js';
 import { buildShell } from './house.js';
 
 export const T = 1.6;                 // world units per tile
@@ -56,11 +56,67 @@ function grass(stripes) {
   return (grassTex ??= make());
 }
 
+/**
+ * Still things (trees, flower beds, hedges, road markings…) baked into one mesh coloured per vertex: a
+ * whole street of them is then one draw call rather than hundreds, which is what keeps phones smooth.
+ */
+function bake(group) {
+  group.updateMatrixWorld(true);
+  const parts = [], c = new THREE.Color();
+  let n = 0;
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    let g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    if (g.index) g = g.toNonIndexed();
+    if (!g.attributes.normal) g.computeVertexNormals();
+    parts.push({ g, color: c.copy(o.material.color).toArray() });
+    n += g.attributes.position.count;
+  });
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  let at = 0;
+  for (const { g, color } of parts) {
+    const k = g.attributes.position.count;
+    pos.set(g.attributes.position.array, at * 3);
+    nor.set(g.attributes.normal.array, at * 3);
+    for (let i = 0; i < k; i++) col.set(color, (at + i) * 3);
+    at += k;
+    g.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const m = new THREE.Mesh(out, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toon('#ffffff').gradientMap }));
+  m.castShadow = m.receiveShadow = true;
+  return m;
+}
+let signTex = null;
+/** The street's name, white on green like a real street sign. */
+function streetSign() {
+  return (signTex ??= canvasTexture(512, 128, (c) => {
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, 512, 128);
+    c.fillStyle = '#1f7a45'; c.fillRect(6, 6, 500, 116);
+    c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.strokeRect(16, 16, 480, 96);
+    c.fillStyle = '#ffffff'; c.font = '800 64px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('MAPLE LANE', 256, 68);
+  }));
+}
+let saleTex = null;
+/** A plot nobody's moved onto yet. */
+function saleSign() {
+  return (saleTex ??= canvasTexture(256, 160, (c) => {
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, 256, 160);
+    c.strokeStyle = '#d6342c'; c.lineWidth = 10; c.strokeRect(8, 8, 240, 144);
+    c.fillStyle = '#d6342c'; c.font = '800 46px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('PLOT', 128, 58); c.font = '700 30px system-ui, sans-serif'; c.fillText('available', 128, 108);
+  }));
+}
+
 export function createHood() {
   const group = new THREE.Group();
   const plots = new Map(); // plot number -> { i, key, frame, group, house (what's built on it), roofs, active }
   const houses = {};       // member key -> their house data (from the server, or as it's being built here)
-  let count = 0, street = null, clouds = [], lamps = [];
+  let count = 0, street = null, clouds = [], lamps = [], solids = []; // (solids: the street's trees, bushes, posts… { x, z, r })
   // ---- day and night (the same clock as the town, so it's evening here when it's evening there)
   const cloudMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, fog: false });
   const bulbMat = new THREE.MeshToonMaterial({ color: '#fff3b8', emissive: '#ffd27a', emissiveIntensity: 0.2, gradientMap: toon('#fff').gradientMap });
@@ -128,6 +184,7 @@ export function createHood() {
   function buildStreet() {
     if (street) group.remove(street);
     street = new THREE.Group();
+    const decor = new THREE.Group(); // (everything that stands still: baked into one mesh at the end, see bake)
     clouds = [];
     lamps = [];
     const b = bounds(), len = b.maxX - b.minX + 8, rnd = prng(count * 7 + 3), cols = count / 2;
@@ -151,7 +208,7 @@ export function createHood() {
     }
     // street lamps and trees along the grass strips, one of each per plot
     const pole = toon('#2a2d36'), bulb = bulbMat;
-    const trunk = toon('#5a3a26'), greens = [toon('#4f9a45', { flatShading: true }), toon('#5fae55', { flatShading: true }), toon('#3f8a4a', { flatShading: true }), toon('#7ab648', { flatShading: true })];
+    const trunk = toon('#5a3a26'), greens = [toon('#4f9a45'), toon('#5fae55'), toon('#3f8a4a'), toon('#7ab648')];
     /** A tree the Bloxburg way: a tall thin trunk under one big chunky crown. */
     const tree = (x, z, s) => {
       const t = new THREE.Group();
@@ -160,7 +217,7 @@ export function createHood() {
       crown.position.y = 5.6; crown.scale.set(1, 0.82 + rnd() * 0.2, 1); crown.rotation.set(rnd() * 3, rnd() * 3, 0); crown.castShadow = true;
       t.add(tr, crown);
       t.position.set(x, 0, z); t.scale.setScalar(s);
-      street.add(t);
+      decor.add(t);
     };
     for (let c = 0; c <= cols; c++) {
       const x = (c - cols / 2) * PW, side = c % 2 ? 1 : -1, z = side * (ROAD / 2 + VERGE / 2);
@@ -178,10 +235,70 @@ export function createHood() {
       street.add(pool);
       lamps.push({ x, z: z - side * 1.9 });
     }
-    for (let c = 0; c < cols; c++) for (const s of [-1, 1]) tree((c - cols / 2 + 0.5) * PW + (s > 0 ? 9 : -9), s * (ROAD / 2 + VERGE / 2), 0.9 + rnd() * 0.25);
-    // more trees behind the back gardens and past both ends, and hills on the horizon
-    for (let x = b.minX - 30; x <= b.maxX + 30; x += 11) for (const s of [-1, 1]) for (let row = 0; row < 2; row++) tree(x + rnd() * 7, s * (EDGE + PD + 7 + row * 12 + rnd() * 6), 1 + rnd() * 0.7);
-    for (const s of [-1, 1]) for (let i = 0; i < 26; i++) { const z = (rnd() - 0.5) * 2 * (EDGE + PD + 20); if (Math.abs(z) > ROAD + 6) tree(s * (b.maxX + 16 + rnd() * 36), z, 1 + rnd() * 0.7); }
+    solids = [];
+    for (let c = 0; c <= cols; c++) solids.push({ x: (c - cols / 2) * PW, z: (c % 2 ? 1 : -1) * (ROAD / 2 + VERGE / 2), r: 0.3 }); // (the lamp posts)
+    for (let c = 0; c < cols; c++) for (const s of [-1, 1]) {
+      const x = (c - cols / 2 + 0.5) * PW + (s > 0 ? 9 : -9), z = s * (ROAD / 2 + VERGE / 2);
+      tree(x, z, 0.9 + rnd() * 0.25);
+      solids.push({ x, z, r: 0.5 });
+    }
+    // ---- making the street a nicer place: markings on the road, flower beds and bushes along the grass,
+    // a hedge behind the back gardens, planted islands in the turning circles, and the street's name.
+    // All of it stands still (no lights, nothing moving), so it's baked into one mesh: on a phone, hundreds
+    // of little flowers would otherwise each cost a draw call.
+    const yardAt = (id, x, z, s = T, ry = 0, y = 0) => { const m = buildYardItem(id); m.position.set(x, y, z); m.scale.setScalar(s); m.rotation.y = ry; decor.add(m); return m; };
+    const shape = (geo, x, y, z, color) => { const m = new THREE.Mesh(geo, toon(color)); m.position.set(x, y, z); decor.add(m); return m; };
+    const box = (w, h, d, x, y, z, color) => shape(new THREE.BoxGeometry(w, h, d), x, y, z, color);
+    const paint = (w, d, x, z, color) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), toon(color)); m.rotation.x = -Math.PI / 2; m.position.set(x, -0.016, z); decor.add(m); };
+    const ends = len / 2;
+    // the road: a dashed line down the middle, white lines along the edges, a zebra crossing near each end
+    for (let x = -ends + 18; x < ends - 18; x += 6) paint(3, 0.28, x, 0, '#f2c94c');
+    for (const s of [-1, 1]) paint(len - 30, 0.2, 0, s * (ROAD / 2 - 0.7), '#eef0f2');
+    for (const e of [-1, 1]) for (let k = -4; k <= 4; k++) paint(2.4, 0.72, e * (ends - 17), k * 1.3, '#f4f4f4');
+    for (const s of [-1, 1]) {
+      // a low stone edging where the pavement meets the gardens, and a tall clipped hedge behind them all
+      box(len, 0.1, 0.22, 0, 0.03, s * (EDGE - 0.11), '#b8b3a8');
+      box(len + 40, 1.6, 1.2, 0, 0.8, s * (EDGE + PD + 1), '#3f8a4a');
+      box(len + 40, 0.12, 1.1, 0, 1.64, s * (EDGE + PD + 1), '#57b35a');
+    }
+    // along the grass strips, between the trees and the lamps: flower beds, bushes and the odd fire hydrant
+    for (let c = 0; c < cols; c++) for (const s of [-1, 1]) {
+      const mid = (c - cols / 2 + 0.5) * PW, z = s * (ROAD / 2 + VERGE / 2), treeX = mid + (s > 0 ? 9 : -9);
+      yardAt('flowers', 2 * mid - treeX, z, T * 1.35, s > 0 ? 0 : Math.PI);
+      yardAt('flowers', mid, z, T * 1.35, s > 0 ? Math.PI : 0);
+      for (const bx of [mid - 17, mid + 17]) { yardAt('bush', bx, z, T * 1.4, rnd() * 6); solids.push({ x: bx, z, r: 0.8 }); }
+      if ((c + (s > 0 ? 1 : 0)) % 2 === 0) {
+        const hx = mid + (s > 0 ? -21 : 21), hz = z + s * 0.6, red = '#d6342c';
+        shape(new THREE.CylinderGeometry(0.24, 0.28, 0.9, 10), hx, 0.45, hz, red);
+        shape(new THREE.SphereGeometry(0.27, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), hx, 0.9, hz, red);
+        box(0.84, 0.16, 0.16, hx, 0.62, hz, '#b02a24');
+        solids.push({ x: hx, z: hz, r: 0.35 });
+      }
+    }
+    // the turning circles: a raised island of grass in each, with a blossom tree in a ring of flowers
+    for (const e of [-1, 1]) {
+      const cx = e * ends;
+      shape(new THREE.CylinderGeometry(4.7, 4.9, 0.24, 36), cx, 0.1, 0, '#9a9ca2');
+      shape(new THREE.CylinderGeometry(4.4, 4.4, 0.05, 36), cx, 0.24, 0, '#5fae55');
+      yardAt('tree_blossom', cx, 0, T * 2.3, rnd() * 6, 0.26);
+      for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; yardAt('flowers', cx + Math.cos(a) * 3.3, Math.sin(a) * 3.3, T * 0.95, -a + Math.PI / 2, 0.26); }
+      solids.push({ x: cx, z: 0, r: 5 });
+      // the street's name on a sign at each end
+      const sx = e * (ends - 22), sz = -(ROAD / 2 + VERGE / 2) * e;
+      box(0.14, 3.4, 0.14, sx, 1.7, sz, '#2a2d36');
+      solids.push({ x: sx, z: sz, r: 0.25 });
+      // (two faces back to back, so it reads the right way round from both directions)
+      for (const f of [1, -1]) {
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.9), new THREE.MeshBasicMaterial({ map: streetSign(), fog: true }));
+        sign.position.set(sx + f * 0.02, 3.15, sz); sign.rotation.y = f * Math.PI / 2;
+        street.add(sign);
+      }
+    }
+    // the trees behind the back gardens and past both ends: oaks, pines and the odd blossom, not one kind
+    const wood = (x, z, s) => { const k = rnd(); if (k < 0.5) tree(x, z, s); else yardAt(k < 0.85 ? 'tree_pine' : 'tree_blossom', x, z, T * s * (k < 0.85 ? 2.6 : 2.2), rnd() * 6); };
+    for (let x = b.minX - 30; x <= b.maxX + 30; x += 11) for (const s of [-1, 1]) for (let row = 0; row < 2; row++) wood(x + rnd() * 7, s * (EDGE + PD + 7 + row * 12 + rnd() * 6), 1 + rnd() * 0.7);
+    for (const s of [-1, 1]) for (let i = 0; i < 26; i++) { const z = (rnd() - 0.5) * 2 * (EDGE + PD + 20); if (Math.abs(z) > ROAD + 6) wood(s * (b.maxX + 16 + rnd() * 36), z, 1 + rnd() * 0.7); }
+    street.add(bake(decor));
     const hillCols = ['#6fae6a', '#7fb878', '#8fc48a', '#9cc7a8'];
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * Math.PI * 2 + rnd() * 0.2, r = 300 + rnd() * 120, h = 28 + rnd() * 50;
@@ -204,13 +321,13 @@ export function createHood() {
 
   // ---- one plot: a plain flat piece of land (no fences: it's yours to build on), with the owner's
   // mailbox at the kerb and their name over it
-  function buildPlot(i, key) {
+  function buildPlot(i, key, keep = null) {
     const p = S.players[key], f = frameOf(i);
     const g = new THREE.Group();
     g.position.set(f.cx, 0, f.cz);
     g.rotation.y = f.flip < 0 ? Math.PI : 0;
     g.scale.setScalar(T);
-    const lawnMat = new THREE.MeshToonMaterial({ color: '#66b65b', map: grass(false) });
+    const lawnMat = new THREE.MeshToonMaterial({ color: '#66b65b', map: grass(true) }); // (mown in stripes)
     lawnMat.map = lawnMat.map.clone(); lawnMat.map.repeat.set(PLOT.w / 4, PLOT.d / 4); lawnMat.map.needsUpdate = true;
     const lawn = new THREE.Mesh(new THREE.PlaneGeometry(PLOT.w - 0.06, PLOT.d - 0.06), lawnMat);
     lawn.rotation.x = -Math.PI / 2; lawn.position.set(PLOT.w / 2, -0.008, PLOT.d / 2); lawn.receiveShadow = true;
@@ -226,8 +343,15 @@ export function createHood() {
       tag.position.set(mx, 2.0, mz);
       tag.scale.set(2.6, 0.65, 1);
       g.add(tag);
+    } else {
+      // nobody lives here yet: a sign at the front, so it reads as a plot waiting for someone, not a gap
+      const sx = PLOT.w / 2 + 3, sz = PLOT.d - 1.2, wood = toon('#8a5a32');
+      for (const x of [-0.7, 0.7]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 0.1), wood); post.position.set(sx + x, 0.75, sz); post.castShadow = true; g.add(post); }
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.06), new THREE.MeshToonMaterial({ map: saleSign() }));
+      board.position.set(sx, 1.15, sz + 0.06);
+      g.add(board);
     }
-    const plot = { i, key: p ? key : null, frame: f, group: g, built: null, roofs: null, yard: [], active: false, roofsOn: true };
+    const plot = { i, key: p ? key : null, frame: f, group: g, built: null, roofs: null, yard: [], active: false, roofsOn: true, ...(p && keep) };
     group.add(g);
     if (plot.key) dress(plot);
     return plot;
@@ -257,6 +381,9 @@ export function createHood() {
     const top = Math.max(-1, ...members.map((p) => p.plot ?? 0));
     const n = Math.max(MIN_PLOTS, Math.ceil((top + 1) / 2) * 2 + 2); // (always a couple of plots free at the end)
     const byPlot = new Map(members.map((p) => [p.plot ?? 0, p.key]));
+    // (the house you're at stays the active one through all this: otherwise its plot would draw the walls
+    // from its own copy of the house over the ones house.js has built)
+    const was = new Map([...plots.values()].filter((pl) => pl.key).map((pl) => [pl.key, pl]));
     if (n !== count) {
       // the street got longer: everything moves along, so lay it all out again
       for (const pl of plots.values()) group.remove(pl.group);
@@ -268,8 +395,8 @@ export function createHood() {
       const key = byPlot.get(i) ?? null, pl = plots.get(i);
       if (pl && pl.key === key) continue;
       if (pl) group.remove(pl.group);
-      const fresh = buildPlot(i, key);
-      if (pl && key && pl.key === key) { fresh.active = pl.active; fresh.roofsOn = pl.roofsOn; }
+      const old = key && was.get(key);
+      const fresh = buildPlot(i, key, old ? { active: old.active, roofsOn: old.roofsOn } : null);
       plots.set(i, fresh);
     }
   }
@@ -298,6 +425,7 @@ export function createHood() {
   /** Is there something solid here (hood units; r: your radius)? Hedges, and trees and fences in yards.
    *  (The walls of the house you're at are house.js's business.) */
   function blocked(hx, hz, r = 0.4) {
+    for (const s of solids) if (Math.abs(hx - s.x) < s.r + r && Math.hypot(hx - s.x, hz - s.z) < s.r + r) return true; // (the street's own trees and posts)
     const pl = plots.get(plotAt(hx, hz));
     if (!pl) return false;
     const p = toPlot(pl.frame, hx, hz), R = r / T;

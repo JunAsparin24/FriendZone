@@ -20,6 +20,7 @@ import { createHood } from './hood.js';
 import { PLOT, extSwatch, extMaterial, buildYardItem, buildRoofs } from '../three/exterior.js';
 import { mountSpeed, MOUNT_SOUND } from '../three/mounts.js';
 import { timeOfDay } from '../three/daynight.js';
+import { touch, setTouchButtons } from '../touch.js';
 
 let NX = PLOT.w, NZ = PLOT.d;  // the plot in tiles (width x depth): you can build anywhere on it
 const T = 1.6;        // world units per tile, so furniture is people-sized
@@ -32,7 +33,9 @@ const wallH = (id) => FURN[id]?.wh ?? 1; // how tall a wall decoration is (tiles
 /** Wall decorations: how high (their middle); hanging things: how far below the ceiling. */
 const heightOf = (it) => it.h ?? (kindOf(it.id) === 'wall' ? WALL_Y : 0);
 function clampHeight(it, h) {
-  if (kindOf(it.id) === 'wall') { const wh = wallH(it.id); return Math.max(wh / 2, Math.min(WALL_H - wh / 2, snap(h))); }
+  // (the limits are rounded inwards to the eighth-tile grid the server keeps heights on: a window pushed
+  // right down to wh / 2 = 0.55 came back from the server as 0.5, off the wall, and the save was refused)
+  if (kindOf(it.id) === 'wall') { const wh = wallH(it.id); return Math.max(Math.ceil((wh / 2) * SNAP) / SNAP, Math.min(Math.floor((WALL_H - wh / 2) * SNAP) / SNAP, snap(h))); }
   return Math.max(0, Math.min(MAX_DROP, snap(h)));
 }
 let DOOR = { x0: NX / 2 - 1, x1: NX / 2 + 1, h: 2.2 }; // the front door, in tiles (middle of the front wall)
@@ -55,6 +58,7 @@ const canRecolor = (f) => !!f && (f.recolor || (f.kind === 'door' && !f.drag) ||
 // free things (plain walls) never run out: you can put up as many as the limit
 // (building in someone else's house: their things, not yours; see invOf in houseArea)
 let invOf = () => me();
+let unsaved = null; // (a save the connection dropped before it got to the server: { save, at }, see keepUnsaved)
 const owned = (id) => (FURN[id]?.free ? FURN[id].max ?? 99 : invOf()?.furni?.[id] ?? 0);
 const ownsDeco = (d) => d.free || owned(d.id) > 0;
 const MIN_SIZE = 6; // (HOUSE_MIN on the server)
@@ -123,7 +127,7 @@ function surfTop(id) {
 // furniture snaps to quarter tiles, so things can go almost anywhere
 const SNAP = 8; // (eighth tiles: furniture and wall decorations line up nicely, easy to centre)
 const snap = (v) => Math.round(v * SNAP) / SNAP;
-const snapQ = (v) => Math.round(v * 4) / 4; // (room walls and doors stay on quarter tiles)
+const snapQ = (v) => Math.round(v * 4) / 4; // (room walls stay on quarter tiles)
 
 /** Footprint cells (on the quarter-tile grid) of a placed item, keyed by layer so rugs can sit under furniture. */
 function cellsOf(it, check = false) {
@@ -542,7 +546,7 @@ export function house(stage) {
   let grab = null; // (pressed on a piece: dragging it moves it)
   let trimMode = false, trimBrush = null; // (trim, one wall at a time)
   let partSel = null; // (colouring one part of the selected piece)
-  let confirmBuy = null, saveTimer = 0, echoes = 0, ghost = null, seated = null;
+  let confirmBuy = null, saveTimer = 0, echoes = 0, sentAt = 0, ghost = null, seated = null; // (sentAt: when the last save went, until the server answers)
   let preview = {};        // { floor?, wall? }: ones you're trying on before buying
   let outsideSig = '', cutSig = ''; // (what the street is showing of this house, and which walls are cut away)
   let paintMode = false, brush = null; // painting a room's floor / ceiling or one wall: on, and with what
@@ -619,9 +623,12 @@ export function house(stage) {
     } });
     afterBuild();
   }
+  /** A window you've picked up to move leaves no hole behind (or you'd be pointing through the hole
+   *  instead of at the wall, and couldn't put it back in the same place). */
+  const movingWindow = () => placing?.from >= 0 && !!WINDOW_PANES[placing.id] && !!home.items[placing.from]?.iw;
   function buildEntry(it, index, walls) {
     {
-      const layout = isDragWall(it.id) ? wallLayout(it, home.items) : null;
+      const layout = isDragWall(it.id) ? wallLayout(it, movingWindow() ? home.items.filter((_, i) => i !== placing.from) : home.items) : null;
       const built = buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null, text: it.t ?? null, parts: it.cp ?? null });
       built.group.userData.index = index;
       placeGroup(built.group, it);
@@ -1046,6 +1053,21 @@ export function house(stage) {
     placing.x = s.x; placing.y = s.y;
   }
 
+  /** Aim a little above the finger, so the piece you're sliding about isn't hidden under your thumb. */
+  function aimAbove() {
+    const was = stage.mouse.y;
+    stage.mouse.y += 140 / Math.max(1, stage.canvas.clientHeight); // (70px, in the -1..1 the pointer's kept in)
+    aimPlacement();
+    stage.mouse.y = was;
+  }
+  /** Did this press land on (or right by) the piece you're holding? */
+  function nearGhost(e) {
+    if (!ghost?.visible) return false;
+    const c = new THREE.Box3().setFromObject(ghost).getCenter(new THREE.Vector3()).project(stage.camera);
+    const r = stage.canvas.getBoundingClientRect();
+    return Math.hypot(e.clientX - (r.left + ((c.x + 1) / 2) * r.width), e.clientY - (r.top + ((1 - c.y) / 2) * r.height)) < 90;
+  }
+
   /** Hanging something on one of your own walls: which side you're pointing at, and how high and far along. */
   function aimOwnWall(hit, f) {
     let index = -1;
@@ -1084,9 +1106,20 @@ export function house(stage) {
       Object.assign(placing, { x: Math.max(0, Math.min(NX - fw, snapQ(px - fw / 2))), y: Math.max(0, Math.min(NZ - 0.25, snapQ(pz))), r: 0 });
       return;
     }
-    const l = lenOf(best), horiz = best.r % 2 === 0, start = horiz ? best.x : best.y;
-    const a = Math.max(start, Math.min(start + l - fw, snapQ((horiz ? px : pz) - fw / 2)));
-    Object.assign(placing, horiz ? { x: a, y: best.y, r: 0 } : { x: best.x, y: a, r: 1 });
+    const l = lenOf(best), horiz = best.r % 2 === 0, start = horiz ? best.x : best.y, perp = horiz ? best.y : best.x;
+    // eighth tiles (a 1¼-tile door in the middle of a wall sits on an eighth), and it pulls into the middle
+    // of the wall, either side of the middle (a pair of doors), or right up against a door already there
+    let a = Math.max(start, Math.min(start + l - fw, snap((horiz ? px : pz) - fw / 2)));
+    const mid = start + l / 2, pulls = [mid - fw / 2, mid - fw, mid];
+    home.items.forEach((o, i) => {
+      if (i === placing.from || !isDoor(o.id) || o.r % 2 !== best.r % 2 || (horiz ? o.y : o.x) !== perp) return;
+      const oa = horiz ? o.x : o.y;
+      pulls.push(oa - fw, oa + FURN[o.id].w);
+    });
+    let near = 0.3;
+    for (const c of pulls.map(snap)) if (c >= start - 1e-6 && c + fw <= start + l + 1e-6 && Math.abs(c - a) < near) { near = Math.abs(c - a); a = c; }
+    const r = (horiz ? 0 : 1) + (placing.flip ? 2 : 0); // (flipped: the hinge on the other end, see rotate)
+    Object.assign(placing, horiz ? { x: a, y: best.y, r } : { x: best.x, y: a, r });
   }
 
   /** The quarter-tile grid point under the pointer (in tiles), or null off the floor. */
@@ -1135,9 +1168,17 @@ export function house(stage) {
     placing = { id, r: from >= 0 ? home.items[from].r : 0, dg: from >= 0 ? home.items[from].dg : undefined, from, x: -1, y: -1, valid: false, h: from >= 0 ? heightOf(home.items[from]) : kindOf(id) === 'ceiling' ? 0.4 : WALL_Y };
     if (isDragWall(id)) Object.assign(placing, { l: from >= 0 ? lenOf(home.items[from]) : 0.25, start: null, armed: false });
     if (kindOf(id) === 'wall' && from < 0) placing.r = 0;
+    if (isDoor(id)) placing.flip = from >= 0 && home.items[from].r >= 2; // (which end the hinge is on, see rotate)
     selected = -1;
     buildGhost();
+    if (movingWindow()) rebuildItems(); // (the wall closes up while the window is in your hand)
     if (from >= 0) entries[from].group.visible = false;
+    if (touch.enabled && !(isDragWall(id) && from < 0)) {
+      // (nothing hovers on a touchscreen: the piece shows where it was, or in the middle of the view)
+      if (from >= 0) { const it = home.items[from]; Object.assign(placing, { x: it.x, y: it.y, ...(it.iw ? { iw: 1 } : {}) }); }
+      else { stage.mouse.set(0, -0.15); aimPlacement(); }
+      updateGhost();
+    }
     sfx('pickup');
     renderAll();
   }
@@ -1145,8 +1186,10 @@ export function house(stage) {
   function stopPlacing() {
     if (placing?.pressed) orbit.fixed = placing.wasFixed;
     if (placing?.from >= 0 && entries[placing.from]) entries[placing.from].group.visible = true;
+    const reopen = movingWindow();
     placing = null;
     buildGhost();
+    if (reopen) rebuildItems(); // (put down where it was: its hole opens again)
     renderAll();
   }
 
@@ -1196,13 +1239,17 @@ export function house(stage) {
   function rotate() {
     if (edit && tab === 'outside') { if (extPage === 'yard' && yardPick) { yardTurn = (yardTurn + 1) % 4; sfx('rotate'); moveYardGhost(); } return; }
     if (placing) {
-      if ((isDragWall(placing.id) && placing.from < 0) || isDoor(placing.id)) return; // (drawn walls go whichever way you drag; doors go along their wall)
+      // a door goes along its wall, so turning it flips it end for end: the hinge moves to the other side
+      // (two doors side by side, one flipped, are a pair of double doors). It still opens away from you.
+      if (isDoor(placing.id)) { placing.flip = !placing.flip; sfx('rotate'); aimPlacement(); updateGhost(); return; }
+      if (isDragWall(placing.id) && placing.from < 0) return; // (drawn walls go whichever way you drag)
       if (kindOf(placing.id) !== 'wall') { Object.assign(placing, nextTurn(placing)); sfx('rotate'); updateGhost(); }
       return;
     }
     if (selected < 0) return;
     const it = home.items[selected];
     if (kindOf(it.id) === 'wall') return;
+    if (isDoor(it.id)) { home.items[selected] = { ...it, r: (it.r + 2) % 4 }; commit('rotate'); return; } // (flipped, in the same spot)
     const next = { ...it, ...nextTurn(it) };
     if (!next.dg) delete next.dg;
     const taken = new Set();
@@ -1214,7 +1261,7 @@ export function house(stage) {
 
   /** Move a wall decoration up/down the wall, or let a hanging thing down further / pull it up. */
   function nudgeHeight(dir) {
-    const step = 0.25;
+    const step = 1 / SNAP; // (an eighth of a tile: the finest a height is kept to)
     if (placing) {
       if (kindOf(placing.id) === 'floor' || kindOf(placing.id) === 'rug') return;
       placing.h = clampHeight(placing, heightOf(placing) + (kindOf(placing.id) === 'ceiling' ? -dir : dir) * step);
@@ -1269,9 +1316,17 @@ export function house(stage) {
     saveTimer = setTimeout(() => {
       saveTimer = 0;
       echoes += 1;
+      sentAt = performance.now();
       net.send('house_save', payload());
     }, 350);
     renderAll();
+  }
+  /** Leaving the house (or losing the connection): a save that's still waiting, or that the server hasn't
+   *  answered yet, is kept and sent again when the house opens next, so the build isn't lost. */
+  function keepUnsaved() {
+    if (!home || !canEdit()) return;
+    if (net.connected) { if (saveTimer) net.send('house_save', payload()); return; }
+    if (saveTimer || (sentAt && performance.now() - sentAt < 8000)) unsaved = { save: payload(), at: Date.now() };
   }
 
   const SELECT_OUT = new THREE.MeshBasicMaterial({ color: '#ffd84d', side: THREE.BackSide });
@@ -1325,6 +1380,18 @@ export function house(stage) {
         return;
       }
       if (type === 'up' && d && !d.moved && d.button === 2) { cancelWall(); return; }
+    }
+    // a finger has no hover, so a tap can't both show where something goes and put it there: holding a
+    // piece, a tap moves it to that spot, a drag that starts on it slides it about (a drag anywhere else
+    // turns the camera), and the ✔ Place button puts it down
+    if (e?.pointerType === 'touch' && placing && !placing.dragging) {
+      if (type === 'down') { if (nearGhost(e)) { placing.touchDrag = { wasFixed: orbit.fixed }; orbit.fixed = true; } return; }
+      if (type === 'move') { if (placing.touchDrag) { aimAbove(); updateGhost(); } return; }
+      if (type === 'up') {
+        if (placing.touchDrag) { orbit.fixed = placing.touchDrag.wasFixed; placing.touchDrag = null; }
+        else if (d && !d.moved) { aimPlacement(); updateGhost(); sfx('click', { vol: 0.4 }); }
+        return;
+      }
     }
     if (type === 'down' && e.button === 0 && !placing && !paintMode) {
       const idx = pickItem();
@@ -1396,6 +1463,8 @@ export function house(stage) {
     pb.classList.toggle('hidden', !holding);
     if (holding) pb.innerHTML = `<small>${esc(holding)}</small><div><button class="pb-cancel" data-cancel>Cancel</button>${placing && isDragWall(placing.id) && placing.from < 0 ? `<button class="pb-chain ${chainWalls ? 'on' : ''}" data-chain>Chain<br>Placement (T)</button>` : ''}</div>`;
     side.classList.toggle('wide', sideOpen && tab !== 'visit');
+    // (the stick pad and the round buttons move out of the build menu's way on a phone)
+    document.body.classList.toggle('house-menu', !side.classList.contains('hidden') && side.classList.contains('wide'));
     if (sideOpen) { renderTabs(); renderPanel(); }
     hint.innerHTML = !home ? 'Knocking on the door…'
       : edit && tab === 'paint' ? '🎨 <b>Click</b> anything to pick it (a wall, a roof, a path, furniture), then choose a colour or a material in the menu · drag to look around'
@@ -1404,14 +1473,26 @@ export function house(stage) {
         ? `Drag (or move and click) to where the wall ends · walls that meet join up flush · <kbd>Esc</kbd> to let go`
         : `Press on your plot where the wall starts and drag it out to any length (or click the start, then the end) · each wall is its own, so start the next one wherever you like · <kbd>Esc</kbd> when you're done`)
       : paintMode && brush && tab === 'style' && PAINTABLE.has(stylePage) ? `🪣 Click ${stylePage === 'wall' ? 'a wall' : 'inside a room'} to paint it · <kbd>Esc</kbd> to stop`
-      : placing && isDoor(placing.id) ? 'Point at a wall you\'ve built and click to put the door in it · <kbd>Esc</kbd> to cancel'
+      : placing && isDoor(placing.id) ? 'Point at a wall you\'ve built and click to put the door in it (it snaps to the middle of the wall, and up against other doors) · <kbd>R</kbd>/right-click flips the hinge to the other side: two doors side by side, one flipped, make double doors · <kbd>Esc</kbd> to cancel'
       : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point anywhere on a wall (the house\'s or either side of one you\'ve built), as high or low as you like' : kindOf(placing.id) === 'ceiling' ? ' · it hangs above the green square · <kbd>[</kbd> <kbd>]</kbd> lower / raise it' : ''}`
         : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
           : mine() && !home.items.length ? '🏗️ This is your plot. Press <b>Build mode</b> and draw some walls to start your house!'
             : 'Walk around with <kbd>WASD</kbd> · doors open as you walk up · <kbd>E</kbd> uses furniture · <kbd>G</kbd> rides your mount · stroll down the street to visit the neighbours';
+    if (touch.enabled && home) hint.innerHTML = touchHint();
+    const said = hint.textContent.trim(); // (before the ✕ goes on: a touchscreen hides the bar when there's nothing to say)
     // the tips bar can be closed (✕) and brought back with the ❔ button up top; it stays how you left it
     hint.insertAdjacentHTML('beforeend', '<button class="hint-x" data-hint="0" title="Hide these tips">✕</button>');
-    hint.classList.toggle('hidden', hintOff);
+    hint.classList.toggle('hidden', hintOff || (touch.enabled && !said));
+  }
+  /** The tips on a touchscreen: short, and about thumbs and buttons rather than keys. */
+  function touchHint() {
+    if (!edit) return mine() && !home.items.length ? '🏗️ Your plot! Tap <b>Build mode</b> and draw some walls.' : '';
+    if (tab === 'paint') return '🎨 Tap a wall, roof, path or piece of furniture, then pick a colour';
+    if (tab === 'outside') return extPage === 'roof' ? (roofPlacing ? '🏠 Tap one corner, then the opposite corner' : '🏠 Pick a roof below, or tap one that\'s up to change it') : extPage === 'paths' ? '🛣️ Press and drag on the lawn to lay it' : extPage === 'yard' ? '🌳 Tap the lawn to put it down' : '';
+    if (placing && isDragWall(placing.id) && placing.from < 0) return placing.start ? 'Tap (or drag to) where the wall ends' : '🧱 Press where the wall starts and drag to where it ends';
+    if (placing) return isDoor(placing.id) ? 'Tap a wall to move the door there · <b>✔ Place</b> to put it in' : 'Tap to move it there, or drag it about · <b>✔ Place</b> to put it down';
+    if (paintMode && brush && tab === 'style' && PAINTABLE.has(stylePage)) return `🪣 Tap ${stylePage === 'wall' ? 'a wall' : 'inside a room'} to paint it`;
+    return sideOpen ? '' : 'Fly with the pad · drag to look · tap a piece to pick it';
   }
   let hintOff = false;
   try { hintOff = localStorage.getItem('fz.houseHint') === 'off'; } catch { /* no storage */ }
@@ -1519,7 +1600,7 @@ export function house(stage) {
     if (itemSet !== 'all' && !sets.includes(itemSet)) itemSet = 'all';
     panel.innerHTML = `
       ${sel ? `<div class="sel-box"><span class="sel-em">${furniImg(sel.id)}</span><b>${esc(FURN[sel.id].name)}</b>
-        <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''}>⟳ Rotate</button>
+        <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''} ${isDoor(sel.id) ? 'title="Hinge on the other side (two doors side by side, one flipped: double doors)"' : ''}>${isDoor(sel.id) ? '⇄ Flip' : '⟳ Rotate'}</button>
         ${kindOf(sel.id) === 'wall' || kindOf(sel.id) === 'ceiling' ? '<button class="btn small" data-act="up" title="[ ]">▲ Up</button><button class="btn small" data-act="down" title="[ ]">▼ Down</button>' : ''}
         ${isDragWall(sel.id) ? `<button class="btn small" data-act="shorter">− Shorter</button><button class="btn small" data-act="longer">＋ Longer</button><span class="muted small">${lenOf(sel)} tiles</span>` : ''}
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div>
@@ -2115,6 +2196,32 @@ export function house(stage) {
     net.send('area_pose', { pose: riding ? { p: 'ride' } : null });
     renderHeader();
   }
+  // ---- phones and tablets: the buttons down the right, for whatever you're doing ---------------------
+  // (building, the left thumb flies you about on the drawn pad, bottom left, so the rest of the screen is
+  // free for drawing walls and putting things down)
+  stage.touchPad = () => edit;
+  function touchUi() {
+    if (!touch.enabled) return;
+    const b = [], sel = selected >= 0 && !placing ? home?.items[selected] : null;
+    const upDown = (id) => kindOf(id) === 'wall' || kindOf(id) === 'ceiling';
+    const heights = (id) => (upDown(id) ? [{ icon: '▲', label: kindOf(id) === 'ceiling' ? 'Raise' : 'Up', fn: () => nudgeHeight(1), repeat: true }, { icon: '▼', label: kindOf(id) === 'ceiling' ? 'Lower' : 'Down', fn: () => nudgeHeight(-1), repeat: true }] : []);
+    if (!edit) {
+      if (seated) b.push({ icon: '🧍', label: 'Get up', fn: standUp });
+      else if ((S.players[S.me]?.look?.mount ?? 'mount_none') !== 'mount_none') b.push({ icon: '🐴', label: riding ? 'Get off' : 'Ride', fn: () => setRiding(!riding) });
+    } else if (placing) {
+      const drawing = isDragWall(placing.id) && placing.from < 0;
+      if (!drawing) b.push({ icon: '✔', label: 'Place', fn: place, big: true, tone: 'go' });
+      if (!drawing && kindOf(placing.id) !== 'wall') b.push({ icon: isDoor(placing.id) ? '⇄' : '⟳', label: isDoor(placing.id) ? 'Flip' : 'Turn', fn: rotate });
+      b.push(...heights(placing.id));
+      b.push({ icon: '✕', label: drawing && placing.start ? 'Let go' : 'Cancel', fn: cancelWall, tone: 'stop' });
+    } else if (sel && tab !== 'outside') {
+      if (kindOf(sel.id) !== 'wall') b.push({ icon: isDoor(sel.id) ? '⇄' : '⟳', label: isDoor(sel.id) ? 'Flip' : 'Turn', fn: rotate });
+      b.push({ icon: '✥', label: 'Move', fn: () => startPlacing(sel.id, selected) }, ...heights(sel.id));
+      b.push({ icon: '📦', label: 'Put away', fn: storeSelected, tone: 'stop' });
+    } else if (!roofing()) b.push({ icon: '⬆', label: 'Fly up', key: ' ', code: 'Space' }, { icon: '⬇', label: 'Fly down', key: 'Shift', code: 'ShiftLeft' });
+    setTouchButtons(b);
+  }
+
   /** Someone else got on or off their mount. */
   function showRide(k, pose) {
     if (pose?.p === 'build') building.set(k, pose.v); else building.delete(k);
@@ -2228,6 +2335,9 @@ export function house(stage) {
       // building: the camera floats from where you were, and your body is tucked away out of the house, so
       // nobody sees it standing about and it can't end up stuck inside something you build
       fly = { x: p.x, y: Math.min(WALL_H * T - 0.4, 2.4), z: p.z };
+      // (on a phone, start up high and a step back, looking down: a small screen right up against a wall
+      // shows nothing but the wall, and flying up and back with the buttons is slow going)
+      if (touch.enabled) { Object.assign(fly, { x: p.x + Math.sin(orbit.yaw) * 7, y: 10, z: p.z + Math.cos(orbit.yaw) * 7 }); orbit.pitch = 0.8; }
       Object.assign(p, { x: -200, z: -200, moving: false });
     } else if (!edit && was) {
       // done: you're standing where you were floating (or back on the pavement, if that's inside something)
@@ -2273,11 +2383,9 @@ export function house(stage) {
   /** The house you're at becomes the one the world is built around: its rooms and furniture appear. */
   function activate(k) {
     if (!hood.plotOf(k)) return;
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = 0;
-      if (home && canEdit()) net.send('house_save', payload());
-    }
+    keepUnsaved();
+    clearTimeout(saveTimer);
+    saveTimer = 0;
     if (placing) stopPlacing();
     if (seated) standUp();
     setEdit(false);
@@ -2285,7 +2393,7 @@ export function house(stage) {
     viewKey = k;
     home = null;
     selected = -1;
-    echoes = 0;
+    echoes = sentAt = 0;
     outsideSig = cutSig = '';
     while (room.items.children.length) room.items.remove(room.items.children[0]);
     stage.interactables = stage.interactables.filter((i) => !i.house);
@@ -2345,8 +2453,13 @@ export function house(stage) {
       if (m.k !== viewKey) { hood.setHouse(m.k, m.house); if (sideOpen && tab === 'visit') renderVisit(); return; }
       if (m.k === viewKey && home && m.by === S.me) {
         if (echoes > 0) echoes -= 1;
-        if (echoes > 0 || saveTimer) { home.likes = m.house.likes; renderHeader(); return; }
+        if (!echoes) sentAt = 0; // (everything sent is saved)
       }
+      // while changes of ours are still on their way, what the server had a moment ago (someone liking the
+      // house sends it too) mustn't overwrite them: only the likes. The server putting us right after a
+      // save it refused (sync) always goes through.
+      if (home && (echoes > 0 || saveTimer) && !m.sync && (!m.by || m.by === S.me)) { home.likes = m.house.likes; if (m.house.builders) home.builders = m.house.builders; renderHeader(); return; }
+      if (m.sync) echoes = sentAt = 0; // (a refused save never comes back, so stop waiting for it)
       const fresh = !home;
       const { k: _k, trim: _t, trimp: _tp, ...mineNow } = home ? payload() : {};
       const trimSame = (home?.trim ?? TRIM_DEFAULT) === (m.house.trim ?? TRIM_DEFAULT) && JSON.stringify(home?.trimp ?? {}) === JSON.stringify(m.house.trimp ?? {});
@@ -2356,6 +2469,7 @@ export function house(stage) {
       else {
         if (seated) standUp();
         home = { ...m.house, size: m.house.size ?? [NX, NZ], items: m.house.items.map((it) => ({ ...it })) };
+        outsideSig = ''; // (the street gets this copy too, not the one it was holding)
         rebuildItems();
         if (fresh) hood.setActive(viewKey);
         if (!fresh && !mine()) sfx('pop', { vol: 0.4 }); // the owner is redecorating while you watch
@@ -2394,6 +2508,7 @@ export function house(stage) {
   const coreFade = basic('#e8d6b8', { transparent: true, opacity: 0.18, depthWrite: false });
   const baseHeight = orbit.height;
   stage.onFrame((dt, now) => {
+    touchUi();
     const t = now / 1000;
     const p = walker.me;
     if (seated) {
@@ -2520,6 +2635,9 @@ export function house(stage) {
     }
   });
 
+  // what was built just before the connection dropped goes up first, so the house comes back as you left it
+  if (unsaved && Date.now() - unsaved.at < 120000) net.send('house_save', unsaved.save);
+  unsaved = null;
   net.send('house_all');
   visit(S.me);
   renderAll();
@@ -2527,8 +2645,9 @@ export function house(stage) {
     walker.stop();
     off.forEach((f) => f());
     window.removeEventListener('keydown', onEscape, true);
-    if (saveTimer && home && canEdit()) net.send('house_save', payload()); // flush a pending save
+    keepUnsaved(); // flush a pending save (or keep it, if the connection's gone)
     clearTimeout(saveTimer);
+    document.body.classList.remove('house-menu');
     stage.scene?.remove(room.group);
     stage.scene?.remove(hood.group);
   };

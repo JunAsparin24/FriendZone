@@ -29,7 +29,8 @@ if (matchMedia('(hover: none) and (pointer: coarse)').matches) enable();
 const contexts = [];
 /**
  * ctx: { canvas, root (the screen it lives in), active(): bool, stick(): bool (allow the stick), keys: Set | null (press WASD into
- *        it), zoom(factor), aim(): bool (right-side drags aim instead of turning the camera) }
+ *        it), zoom(factor), aim(): bool (right-side drags aim instead of turning the camera), pad(): bool (use the drawn
+ *        stick pad, bottom left, instead of the whole left half) }
  */
 export function registerTouch(ctx) {
   ctx.injected = new Set();
@@ -49,16 +50,42 @@ let pinchDist = 0;
 const INTERACTIVE = 'button, input, select, textarea, a, label, summary, [contenteditable], .touch-buttons, .hud-prompt, .area-prompt, .minimap, .chat, .modal, .race-actions, .top-ctl';
 const onCanvas = (e, c) => c && (e.target === c.canvas || (c.root?.contains(e.target) && !e.target.closest(INTERACTIVE)));
 
+// A drawn stick, bottom left, for screens where the whole left half can't be the stick (building a house:
+// you need to draw walls and place things there too). A context turns it on with pad(): true, and then
+// the stick only starts on the pad.
+const pad = document.createElement('div');
+pad.className = 'stick-pad hidden';
+pad.innerHTML = '<span class="stick-knob"></span>';
+document.body.append(pad);
+const knob = pad.firstChild;
+const padOn = (c) => !!c?.pad?.();
+function onPad(x, y) {
+  const r = pad.getBoundingClientRect(), m = 24; // (a little slack round the edge)
+  return x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + m;
+}
+function showPad() {
+  const on = touch.enabled && padOn(current());
+  pad.classList.toggle('hidden', !on);
+  if (!on) return;
+  const { x, y, active } = touch.stick;
+  knob.style.transform = active ? `translate(${x * 34}px, ${y * 34}px)` : '';
+  pad.classList.toggle('on', active);
+}
+
 window.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
   enable();
   const c = current();
-  if (!onCanvas(e, c)) return;
-  if (stickId == null && e.clientX < window.innerWidth / 2 && c.stick?.() !== false) {
+  if (!onCanvas(e, c) && !(padOn(c) && e.target.closest?.('.stick-pad'))) return;
+  const startsStick = padOn(c) ? onPad(e.clientX, e.clientY) : e.clientX < window.innerWidth / 2;
+  if (stickId == null && startsStick && c.stick?.() !== false) {
     stickId = e.pointerId;
-    origin = { x: e.clientX, y: e.clientY };
+    // (on the pad, the middle of the pad is the stick's middle, so a push from its edge moves at once)
+    const r = pad.getBoundingClientRect();
+    origin = padOn(c) ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: e.clientX, y: e.clientY };
     Object.assign(touch.stick, { x: 0, y: 0, active: true, run: false });
     e.stopPropagation(); // the canvas never sees the stick's finger
+    if (padOn(c)) e.preventDefault();
     return;
   }
   right.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -78,8 +105,10 @@ window.addEventListener('pointermove', (e) => {
     const len = Math.hypot(dx, dy);
     // a floating stick: if the thumb goes past the edge, the centre follows it
     if (len > 1) {
-      origin.x = e.clientX - (dx / len) * STICK_RADIUS;
-      origin.y = e.clientY - (dy / len) * STICK_RADIUS;
+      if (!padOn(current())) { // (the drawn pad stays put)
+        origin.x = e.clientX - (dx / len) * STICK_RADIUS;
+        origin.y = e.clientY - (dy / len) * STICK_RADIUS;
+      }
       dx /= len;
       dy /= len;
     }
@@ -138,6 +167,7 @@ function syncKeys() {
 function everyFrame() {
   requestAnimationFrame(everyFrame);
   syncKeys();
+  showPad();
 }
 requestAnimationFrame(everyFrame);
 
@@ -149,20 +179,33 @@ document.body.append(bar);
 
 const sendKey = (type, key, code) => window.dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true }));
 
-/** buttons: [{ label, icon (emoji), key, code }] — each one holds its key down while pressed. */
+let barSig = '';
+/** buttons: [{ label, icon (emoji), key, code, big, tone }] — each one holds its key down while pressed;
+ *  or { fn } instead of a key: a tap calls it. (Setting the same buttons again leaves them be, so a
+ *  button that's being held isn't swapped out from under the thumb.) */
 export function setTouchButtons(buttons = []) {
-  bar.innerHTML = buttons.map((b, i) => `<button type="button" data-i="${i}" class="${b.big ? 'big' : ''}"><span>${b.icon ?? ''}</span><small>${b.label}</small></button>`).join('');
+  const sig = JSON.stringify(buttons.map((b) => [b.icon, b.label, b.key, b.big, b.tone, !!b.fn]));
+  if (sig === barSig) { bar.fns = buttons.map((b) => b.fn); return; }
+  barSig = sig;
+  (bar.ups ?? []).forEach((up) => up()); // (let go of anything held on the old buttons: no key left stuck down)
+  bar.ups = [];
+  bar.fns = buttons.map((b) => b.fn);
+  bar.innerHTML = buttons.map((b, i) => `<button type="button" data-i="${i}" class="${b.big ? 'big' : ''} ${b.tone ?? ''}"><span>${b.icon ?? ''}</span><small>${b.label}</small></button>`).join('');
   bar.querySelectorAll('button').forEach((el) => {
-    const b = buttons[+el.dataset.i];
-    let held = false;
-    const up = () => { if (!held) return; held = false; el.classList.remove('down'); sendKey('keyup', b.key, b.code); };
+    const i = +el.dataset.i, b = buttons[i];
+    let held = false, again = 0;
+    const up = () => { if (!held) return; held = false; clearTimeout(again); el.classList.remove('down'); if (!bar.fns[i]) sendKey('keyup', b.key, b.code); };
+    // (repeat: held down, it keeps going, like a key does)
+    const tick = (wait) => { again = setTimeout(() => { if (!held) return; bar.fns[i]?.(); tick(90); }, wait); };
+    bar.ups.push(up);
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
       held = true;
       el.classList.add('down');
       el.setPointerCapture?.(e.pointerId);
-      sendKey('keydown', b.key, b.code);
+      if (bar.fns[i]) { bar.fns[i](); if (b.repeat) tick(380); }
+      else sendKey('keydown', b.key, b.code);
     });
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);

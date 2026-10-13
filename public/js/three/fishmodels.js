@@ -2,6 +2,7 @@
 // fish is about 1 unit long, nose pointing +X, sitting on its belly line at y = 0 (centre y ≈ 0.25).
 // `model` comes from cosmetics.json (shape + colours + extras). fishThumb() renders a side-on picture.
 import * as THREE from 'three';
+import { snapRenderer } from './snapshot.js';
 import { toon, basic, shiny, outlineMaterial, canvasTexture, additive, glowTexture, TAU } from './materials.js';
 
 const OUT = outlineMaterial(0.012);
@@ -204,19 +205,15 @@ let rig = null;
 export function fishThumb(fish) {
   if (thumbs.has(fish.name)) return thumbs.get(fish.name);
   if (!rig) {
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(1);
-    renderer.setSize(200, 140, false);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setClearColor(0x000000, 0);
     const scene = new THREE.Scene();
     scene.add(new THREE.HemisphereLight(0xffffff, 0x6a7aa8, 2.2));
     const key = new THREE.DirectionalLight(0xfff4e0, 2.2);
     key.position.set(2, 4, 5);
     scene.add(key);
-    rig = { renderer, scene, camera: new THREE.PerspectiveCamera(28, 200 / 140, 0.05, 50) };
+    rig = { scene, camera: new THREE.PerspectiveCamera(28, 200 / 140, 0.05, 50) };
   }
-  const { renderer, scene, camera } = rig;
+  const { scene, camera } = rig, renderer = snapRenderer(); // (shared, and let go when idle: see snapshot.js)
+  renderer.setSize(200, 140, false);
   const g = buildFishModel(fish);
   g.rotation.y = -0.35;
   if (['ray', 'crab', 'octopus'].includes(fish.model?.shape)) g.rotation.x = fish.model.shape === 'ray' ? 0.95 : 0.3; // flat ones tilt up to the camera

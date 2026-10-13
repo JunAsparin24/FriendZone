@@ -3,6 +3,7 @@
 // front facing +Z (wall items: centred on the wall surface, facing out). Builders may push
 // per-frame animations into `A.anim` (return true to finish) and return { use } for clicks.
 import * as THREE from 'three';
+import { snapRenderer } from './snapshot.js';
 import { TAU, toon, basic, shiny, outlineMaterial, canvasTexture, additive, glowTexture, flameTexture } from './materials.js';
 import { CATALOG } from '../catalog.js';
 
@@ -4388,19 +4389,15 @@ let thumbRig = null;
 export function furnitureThumb(id) {
   if (thumbs.has(id)) return thumbs.get(id);
   if (!thumbRig) {
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(1);
-    renderer.setSize(160, 160, false);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setClearColor(0x000000, 0);
     const scene = new THREE.Scene();
     scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7aa8, 2.2));
     const key = new THREE.DirectionalLight(0xfff4e0, 2.2);
     key.position.set(3, 5, 4);
     scene.add(key);
-    thumbRig = { renderer, scene, camera: new THREE.PerspectiveCamera(30, 1, 0.05, 50) };
+    thumbRig = { scene, camera: new THREE.PerspectiveCamera(30, 1, 0.05, 50) };
   }
-  const { renderer, scene, camera } = thumbRig;
+  const { scene, camera } = thumbRig, renderer = snapRenderer(); // (shared, and let go when idle: see snapshot.js)
+  renderer.setSize(160, 160, false);
   const item = buildFurniture(id);
   const g = item.group;
   g.traverse((o) => { if (o.isPointLight) o.visible = false; });

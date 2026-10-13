@@ -84,7 +84,7 @@ function refreshAccount() {
 
 function renderAccount() {
   const btn = $('#accountBtn');
-  btn.innerHTML = account ? `👤 ${esc(account.name)}` : '👤 Sign in';
+  btn.innerHTML = `👤<span class="acct-name"> ${account ? esc(account.name) : 'Sign in'}</span>`; // (phones show just the 👤)
   btn.title = account ? 'Your account' : 'Sign in to your account';
   btn.classList.toggle('on', !!account);
   $('#accountBar').innerHTML = account
@@ -165,6 +165,10 @@ function show(id) {
   $('#versionTag').hidden = $('#feedbackBtn').hidden = id === 'world'; // (menus only)
   $('#chatBtn').hidden = $('#rideBtn').hidden = id !== 'world';
   $('#accountBtn').hidden = id === 'world'; // (menus only)
+  // playing: the page can't be scrolled or bounced about (on a phone that slid the game under the
+  // browser's bar), and the browser's own bars go the game's dark blue instead of standing out
+  document.body.classList.toggle('in-game', id === 'world');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', id === 'world' ? '#0d1f4a' : '#2463cc');
   $('.chat').classList.remove('open');
   if (id === 'home') { renderHome(); if (account) refreshAccount(); }
   if (id === 'lobby') renderLobby();
@@ -550,6 +554,7 @@ function openArea(activity) {
   showPrompt(null);
   if (activity.scene) net.send('scene', { scene: activity.scene });
   music.setContext(activity.scene ?? 'main'); // (games have their own themes)
+  world.releaseGpu(); // (on Low graphics, phones: the town makes room for the area on the graphics card)
   stage.open(activity, { onExit: closeArea });
 }
 

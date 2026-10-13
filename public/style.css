@@ -1664,3 +1664,151 @@ html.touch .lt-board { display: none; }
 .house-hint.hidden { display: none; }
 .house-hint .hint-x { position: absolute; top: 4px; right: 6px; border: 0; background: none; color: #cfd8ff; font: 700 14px var(--body); cursor: pointer; padding: 2px 5px; border-radius: 6px; }
 .house-hint .hint-x:hover { background: #ffffff22; color: #fff; }
+
+/* ======================================================================================================
+   phones & tablets, round two: thumb-sized controls everywhere, and building a house with your fingers
+   ====================================================================================================== */
+
+/* the drawn stick (building mode: see touch.js) */
+.stick-pad {
+  position: fixed; left: max(22px, env(safe-area-inset-left)); bottom: max(22px, env(safe-area-inset-bottom)); z-index: 18;
+  width: 132px; height: 132px; border-radius: 50%; display: grid; place-items: center; touch-action: none;
+  background: radial-gradient(circle, #ffffff10 0 40%, #ffffff26 41% 100%); border: 3px solid #ffffffa8; box-shadow: 0 5px 0 #0004, inset 0 0 18px #0003;
+}
+.stick-pad.hidden { display: none; }
+.stick-knob { width: 58px; height: 58px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #ffffff, #c9d6ff); box-shadow: 0 4px 0 #0005; transition: transform .12s; pointer-events: none; }
+.stick-pad.on .stick-knob { transition: none; }
+.stick-pad.on { border-color: #ffd84d; }
+
+/* the round buttons wrap into a second column instead of running off a short screen */
+.touch-buttons { flex-wrap: wrap-reverse; align-content: flex-start; max-height: calc(100dvh - 120px); }
+.touch-buttons button.go { background: radial-gradient(circle at 50% 35%, #4be08a, #12924c); }
+.touch-buttons button.stop { background: radial-gradient(circle at 50% 35%, #ff6a6a, #b71c2c); }
+.touch-buttons button.big { width: 86px; height: 86px; }
+.touch-buttons button.big span { font-size: 32px; }
+
+/* fingers need bigger targets than a mouse does (44px is the usual rule of thumb) */
+html.touch .btn.small { min-height: 42px; padding: 8px 14px; font-size: 14px; }
+html.touch .btn { min-height: 46px; }
+html.touch .tabs button { min-height: 42px; }
+html.touch .shop-pages button { min-height: 40px; padding: 8px 14px; font-size: 14px; }
+html.touch .shelf-jump button { min-height: 34px; padding: 5px 12px; font-size: 13px; }
+html.touch .part-chip { min-height: 34px; padding: 5px 10px; font-size: 13px; }
+html.touch .swatches.palette { grid-template-columns: repeat(auto-fill, 38px); gap: 8px; }
+html.touch .swatches.palette .swatch, html.touch .swatches.palette button { width: 38px; height: 38px; }
+html.touch .modal-close { width: 44px; height: 44px; font-size: 18px; top: 8px; right: 8px; }
+html.touch .top-ctl button { min-width: 44px; }
+html.touch .item-search, html.touch input, html.touch select, html.touch textarea { font-size: 16px; } /* (under 16px, iPhones zoom in on the box) */
+html.touch .furni { min-height: 92px; }
+html.touch .style-opt { min-height: 48px; }
+/* panels used to shrink to 72% on small screens, which made their buttons too fiddly to hit: 85% keeps
+   the view clear and the buttons usable; the menus you work in (modals, the build menu) stay full size */
+@media (max-height: 560px), (max-width: 560px) {
+  html.touch .area-hud > .hud-panel, html.touch .area-hud > .race-item, html.touch .area-hud > .race-map, html.touch .area-hud > .race-count,
+  html.touch #world .hud-panel, html.touch .area-title, html.touch .top-ctl { zoom: .85; }
+  html.touch .hud-me, html.touch #hud .minimap:not(.big), html.touch .hud-clock, html.touch .hud-town, html.touch .toasts { zoom: .85; }
+  html.touch .modal-box { zoom: 1; }
+  html.touch .area-hud > .house-side, html.touch .area-hud > .house-bar { zoom: 1; }
+  html.touch .touch-buttons button { width: 62px; height: 62px; }
+  html.touch .touch-buttons button.big { width: 74px; height: 74px; }
+  html.touch .stick-pad { width: 116px; height: 116px; }
+  html.touch .stick-knob { width: 50px; height: 50px; }
+}
+html.touch .modal { padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+html.touch .modal-box { max-height: calc(100dvh - 16px); padding: 18px 14px; }
+
+/* ---- the neighbourhood on a phone ---- */
+/* the bar along the top: one row that scrolls sideways, no title (it's in the corner already) */
+html.touch .house-bar { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior: contain; gap: 6px; padding: 6px 8px; max-width: calc(100vw - 24px); }
+html.touch .house-bar .house-actions { flex-wrap: nowrap; }
+html.touch .house-bar .house-actions > * { flex: none; }
+@media (max-width: 900px), (max-height: 560px) { html.touch .house-bar .house-title { display: none; } }
+@media (orientation: landscape) and (max-height: 560px) {
+  html.touch .house-bar { top: 58px; left: max(8px, env(safe-area-inset-left)); transform: none; max-width: calc(100vw - 130px); }
+  body.house-menu .area-hud > .house-bar { max-width: calc(44vw - 16px); } /* (clear of the menu down the right) */
+}
+/* the tips: a slim strip under the top bar (the bottom is for your thumbs) */
+html.touch .area-hud > .house-hint:not(.hidden) { display: block !important; }
+html.touch .area-hud > .house-hint { top: 176px; bottom: auto !important; font-size: 13px; max-width: min(520px, calc(100vw - 24px)); }
+@media (orientation: landscape) and (max-height: 560px) { html.touch .area-hud > .house-hint { top: 140px; left: max(8px, env(safe-area-inset-left)); transform: none; max-width: calc(44vw - 16px); } }
+/* what you're holding: across the top, out of the way of the pad and the round buttons */
+html.touch .place-bar { left: 50%; transform: translateX(-50%); top: 64px; bottom: auto; }
+@media (orientation: landscape) and (max-height: 560px) { html.touch .place-bar { top: max(8px, env(safe-area-inset-top)); } }
+html.touch .place-bar .pb-cancel { display: none; } /* (✕ Cancel is a round button on the right) */
+html.touch .place-bar button { min-height: 42px; }
+
+/* the build menu: a sheet up from the bottom when the phone's upright, a panel down the right side when
+   it's on its side, so there's always some house left to see */
+html.touch .house-side.wide, html.touch .house-side.wide.slim { flex-direction: column; gap: 6px; padding: 6px; }
+html.touch .house-side.wide .house-tabs {
+  flex-direction: row; width: auto; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior: contain; flex: none; scrollbar-width: none;
+}
+html.touch .house-side.wide .house-tabs button { flex: none; white-space: nowrap; font-size: 14px; padding: 8px 12px; min-height: 42px; }
+html.touch .house-side.wide .house-panel { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+html.touch .house-side.wide .furni-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+html.touch .house-side.wide .fem-img, html.touch .house-side.wide .furni .swatch-em { width: 58px; height: 58px; }
+html.touch .house-side.wide .style-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+html.touch .house-side .sel-box .row { flex-wrap: wrap; gap: 6px; }
+html.touch .shop-pages { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+html.touch .shop-pages button { flex: none; white-space: nowrap; }
+@media (orientation: portrait) {
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { left: 6px; right: 6px; bottom: max(6px, env(safe-area-inset-bottom)); top: auto; height: 50dvh; }
+  body.house-menu .stick-pad { bottom: calc(50dvh + 18px); }
+  body.house-menu .touch-buttons { bottom: calc(50dvh + 18px); max-height: calc(50dvh - 140px); }
+}
+@media (orientation: landscape) {
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { left: auto; right: max(6px, env(safe-area-inset-right)); top: 60px; bottom: 6px; height: auto; width: min(54vw, 560px); }
+  body.house-menu .touch-buttons { right: calc(min(54vw, 560px) + 18px); }
+}
+/* (the strips of buttons in the build menu must never be squashed flat by the list under them) */
+html.touch .house-panel > *, html.touch .house-side > * { flex-shrink: 0; }
+html.touch .house-side .house-panel { flex-shrink: 1; }
+/* an upright phone has no room for the place's name next to Leave and the corner buttons */
+@media (orientation: portrait) and (max-width: 520px) { html.touch .area-title { display: none; } }
+/* (a `hidden` button in the corner stays hidden: display: grid above would otherwise show it) */
+.top-ctl button[hidden] { display: none; }
+
+/* ---- the games on a phone ---- */
+/* roulette: the board keeps fingertip-sized numbers and scrolls sideways, rather than squeezing 13
+   columns into the width of a phone */
+@media (max-width: 640px) { html.touch .rl-table { grid-template-columns: 40px repeat(12, 42px); overflow-x: auto; overscroll-behavior-x: contain; } }
+html.touch .rl-chips button { min-height: 42px; min-width: 42px; }
+/* doodle: colours and brush sizes you can hit with a finger */
+html.touch .dd-colors { gap: 6px; }
+html.touch .dd-colors button { width: 34px; height: 34px; }
+html.touch .dd-sizes button { width: 42px; height: 42px; }
+html.touch .dd-rounds button { width: 42px; height: 42px; }
+/* trading: the item chips */
+html.touch .tr-chip { min-height: 64px; }
+@media (max-height: 560px), (max-width: 560px) { html.touch .house-bar [data-clock] { display: none; } } /* (room for the buttons that matter) */
+
+/* ======================================================================================================
+   phones, round three: less clutter, and the game filling the screen
+   ====================================================================================================== */
+/* playing: a fixed, unscrollable page in the game's own dark blue, so nothing slides under the browser's
+   bars and any strip the browser leaves round the game matches it */
+body.in-game { background: #0d1f4a; overscroll-behavior: none; }
+html.touch body.in-game { position: fixed; inset: 0; overflow: hidden; }
+/* the corner buttons: just the 👤, not your name next to it */
+html.touch .top-ctl .acct-name { display: none; }
+html.touch .top-ctl .account-btn { width: 44px; padding: 0; }
+/* your own name tag: you know who you are (everyone else's still show) */
+html.touch .wl-actor.me .wl-tag { display: none; }
+/* keep clear of the notch and the rounded corners on a phone held sideways */
+html.touch .top-ctl { right: max(12px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); }
+html.touch .hud-top { left: max(12px, env(safe-area-inset-left)); }
+html.touch .area-top { left: max(12px, env(safe-area-inset-left)); }
+
+/* the town on a phone: one slim badge (name, level, coins, a thin XP line), and the map tucked under the
+   corner buttons instead of behind them */
+html.touch .hud-me { flex-wrap: wrap; gap: 6px; padding: 5px 10px 6px; row-gap: 4px; }
+html.touch .hud-me .zone-tag { display: none; }
+html.touch .hud-me .hud-xp { height: 6px; border-width: 1px; margin-top: 0; }
+html.touch .hud-me .hud-xp small { display: none; }
+@media (orientation: landscape) and (max-height: 560px) {
+  html.touch .minimap:not(.big) { top: 64px; right: max(12px, env(safe-area-inset-right)); width: 132px; height: 88px; }
+  html.touch .hud-clock { top: 176px; right: max(12px, env(safe-area-inset-right)); }
+  html.touch .hud-top { padding-right: 230px; }
+  html.touch .hud-me { max-width: 300px; }
+  html.touch .wl-tag { font-size: 10px; padding: 1px 7px; }
+}

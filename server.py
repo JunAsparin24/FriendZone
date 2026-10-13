@@ -1213,6 +1213,7 @@ class Client:
         self.pose = None  # e.g. fishing at the pond, sitting on a bench
         self.pose_extra = {}
         self.cooldowns = {}
+        self.house_next = None  # a house save waiting for the cooldown (see on_house_save)
         self.failed_pins = 0
         self.account = None  # the signed-in account's username, if any
         self.admin = False
@@ -4715,8 +4716,14 @@ class Game:
         c.ws.send({"t": "houses", "houses": {k: house_view(p) for k, p in c.room.zone["players"].items()}})
 
     def on_house_save(self, c, m):
+        # every save is the whole house, so one that comes too soon after the last isn't thrown away (it's
+        # the newest): it waits its turn instead, and anything newer that arrives meanwhile replaces it
         if not c.ready("house_save", 0.2):
+            if c.house_next is None:
+                asyncio.get_running_loop().call_later(0.21, self.house_save_later, c)
+            c.house_next = m
             return
+        c.house_next = None  # (this one's newer than any that was waiting)
         # your own house, or someone else's that they've given you permission to build in (with their things)
         key = str(m.get("k") or c.key).lower()
         p = c.room.zone["players"].get(key)
@@ -4726,12 +4733,20 @@ class Game:
             builders = p["house"].get("builders", [])
             p["house"].update(clean_house(p, m))
             p["house"]["builders"] = builders  # (only the owner changes who can build)
-        except GameError:
-            c.ws.send({"t": "house", "k": key, "house": house_view(p)})  # put the client back in sync
-            raise
+        except (GameError, TypeError, ValueError, KeyError, AttributeError) as e:
+            # put the client back in sync straight away (sync: this one always replaces what it's showing),
+            # so a refused change is undone there and then, not left on screen to vanish later
+            c.ws.send({"t": "house", "k": key, "house": house_view(p), "sync": 1})
+            raise e if isinstance(e, GameError) else GameError("That couldn't be saved, so it's been undone.")
         self.store.mark()
         c.room.broadcast({"t": "house", "k": key, "house": house_view(p), "by": c.key})
         self.push_player(c.room, key)
+
+    def house_save_later(self, c):
+        """A save that had to wait (see on_house_save): handle it now, if they're still here."""
+        m, c.house_next = c.house_next, None
+        if m is not None and c.room and not c.ws.closed:
+            self.dispatch(c, m)
 
     # ---- saved houses: keep several designs and swap which one is your house ----
     def slots_view(self, p):

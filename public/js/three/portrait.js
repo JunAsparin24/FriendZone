@@ -1,15 +1,13 @@
 // Offscreen renderer that snapshots 3D characters for UI portraits and 2D mini-game sprites.
 import * as THREE from 'three';
 import { Character, DEFAULT_LOOK } from './character.js';
+import { snapRenderer } from './snapshot.js';
 
 let renderer, scene, persp, ortho, char;
 
 function setup() {
-  if (renderer) return;
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(1);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.setClearColor(0x000000, 0);
+  renderer = snapRenderer(); // (shared with the furniture and fish pictures, and let go when idle: see snapshot.js)
+  if (scene) return;
   scene = new THREE.Scene();
   scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x6a5a8a, 1.9));
   const key = new THREE.DirectionalLight(0xfff4e0, 2.4);

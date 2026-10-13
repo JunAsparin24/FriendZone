@@ -14,6 +14,27 @@ import { sfx } from './sfx.js';
 import { touch, registerTouch, setTouchButtons, actionHint, fitFov } from './touch.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+/**
+ * Leaving an area gives back the graphics memory its scene was using (its shapes and pictures). Without
+ * this every place you visited stayed on the graphics card, and after enough of them a phone ran out.
+ * (Materials are left alone: freeing them would make the town recompile its shaders, a visible stutter,
+ * and they take little room. A shape or picture that's used again is simply sent to the card again.)
+ */
+function gpuOf(scene) { // (notes what the scene has on the card; the function it returns frees it)
+  const geos = new Set(), texs = new Set(), lights = [];
+  scene?.traverse((o) => {
+    if (o.geometry) geos.add(o.geometry);
+    for (const m of [].concat(o.material ?? [])) for (const v of Object.values(m)) if (v?.isTexture) texs.add(v);
+    if (o.isLight && o.shadow) lights.push(o);
+  });
+  for (const t of [scene?.background, scene?.environment]) if (t?.isTexture) texs.add(t);
+  return () => {
+    geos.forEach((g) => g.dispose());
+    texs.forEach((t) => t.dispose());
+    for (const l of lights) { l.shadow.map?.dispose(); l.shadow.map = null; }
+  };
+}
 const TALL_HATS = new Set(['hat_party', 'hat_tophat', 'hat_wizard', 'hat_halo', 'hat_viking', 'hat_crown', 'hat_horns']);
 
 class Stage {
@@ -89,6 +110,7 @@ class Stage {
       root: el,
       active: () => !!this.active && !document.querySelector('#modal:not(.hidden)'),
       stick: () => this.active?.touch?.stick !== false,
+      pad: () => !!this.touchPad?.(), // (an area can ask for the drawn stick pad, see touch.js)
       keys: this.keys,
       zoom: (f) => {
         const o = this.orbit;
@@ -131,7 +153,7 @@ class Stage {
         d.x = e.clientX;
         d.y = e.clientY;
       }
-      this.onPointer?.('move', e);
+      this.onPointer?.('move', e, d); // (d: the drag in progress, if any)
     });
     this.canvas.addEventListener('pointerdown', (e) => {
       toNdc(e);
@@ -193,7 +215,7 @@ class Stage {
     this.interactables = [];
     this.near = null;
     this.orbit = null;
-    this.onKey = this.onPointer = null;
+    this.onKey = this.onPointer = this.touchPad = null;
     this.onExit = onExit;
     // keep the town chat on top of the area, so you can talk in shops, games and houses too
     const chat = document.querySelector('#world .chat');
@@ -240,6 +262,8 @@ class Stage {
   close() {
     if (!this.active) return;
     cancelAnimationFrame(this.raf);
+    // (what the area has on the graphics card, noted before its cleanup takes things out of the scene)
+    const free = gpuOf(this.scene);
     try { this.cleanup?.(); } catch (e) { console.error(e); }
     this.cleanup = null;
     this.active = null;
@@ -252,6 +276,8 @@ class Stage {
     setTouchButtons([]);
     document.body.classList.remove('in-area');
     for (const k of [...this.people.keys()]) this.removePerson(k);
+    free();
+    this.renderer?.renderLists.dispose();
     this.scene = null;
     this.el.classList.add('hidden');
     this.promptEl.classList.add('hidden');

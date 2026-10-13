@@ -19,7 +19,7 @@ import { iconSvg, iconImage } from './icons.js';
 import { Fishing, Line } from './games/fishing.js';
 import { Sparks } from './three/fx.js';
 import { registerLook, mouseLooking } from './mouselook.js';
-import { touch, registerTouch, fitFov } from './touch.js';
+import { touch, registerTouch, fitFov, setTouchButtons } from './touch.js';
 import { guardKeys } from './keyguard.js';
 const PITCH_MIN = -0.55, PITCH_LOW = 0.08; // how far you can look up; where the orbit stops dropping
 const FP_DIST = 0.3; // zoomed all the way in: first person
@@ -236,6 +236,7 @@ export class World {
   stop() {
     if (this.riding) this.toggleRide(false);
     this.running = false;
+    setTouchButtons([]); // (back to the menus: no Jump button over the lobby)
     this.off.forEach((fn) => fn());
     this.off = [];
     window.removeEventListener('keydown', this.onKeyDown);
@@ -613,6 +614,21 @@ export class World {
     const px = p.x * M.PX + M.CENTER.x, py = p.z * M.PX + M.CENTER.y;
     const pond = SPOTS.find((s) => s.kind === 'pond');
     if (M.inLake(px, py) && this.near === pond) this.hooks.onActivity(pond.id);
+  }
+
+  /**
+   * Low graphics (phones): while a 3D area covers the town, take the town off the graphics card, so only
+   * one place is on it at a time. Everything is sent back the next time the town is drawn.
+   */
+  releaseGpu() {
+    if (settings.quality !== 'low' || !this.scene) return;
+    const texs = new Set();
+    this.scene.traverse((o) => {
+      o.geometry?.dispose();
+      for (const m of [].concat(o.material ?? [])) for (const v of Object.values(m)) if (v?.isTexture) texs.add(v);
+    });
+    texs.forEach((t) => t.dispose());
+    this.renderer?.renderLists.dispose();
   }
 
   /** Pixel ratio + shadows for the chosen graphics quality. */
@@ -1035,6 +1051,11 @@ export class World {
     this.last = now;
     if (this.hidden) { requestAnimationFrame(this.frame); return; } // a 3D area is covering the world
     this.update(dt, now);
+    // phones: a round button for whatever Space / E does right now (jump, get up off the bench, stop fishing)
+    if (touch.enabled) {
+      setTouchButtons(this.paused ? [] : this.fishing ? [{ icon: '↩️', label: 'Stop', fn: () => this.stopActivity() }]
+        : this.seated ? [{ icon: '🧍', label: 'Get up', fn: () => this.standUp() }] : [{ icon: '⤴️', label: 'Jump', key: ' ', code: 'Space' }]);
+    }
     this.frameNo++;
     // behind an activity panel the world only needs an occasional redraw
     if (!this.paused || this.frameNo % 4 === 0) {

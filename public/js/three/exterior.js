@@ -136,69 +136,69 @@ const PATTERNS = {
 // ---- finishes in two colours: a main one (plaster, paper, boards) and a second for the wood (posts, beams,
 // lattices, battens). Drawn in their real colours rather than tinted, so each can be picked on its own.
 const shade = (hex, k) => { const col = new THREE.Color(hex); if (k < 1) col.multiplyScalar(k); else col.lerp(new THREE.Color('#ffffff'), k - 1); return `#${col.getHexString()}`; };
-/** Specks of a colour's lighter and darker shades over a surface (plaster, paper). */
-function grain(c, rnd, col, n = 700, spread = 0.06) {
-  for (let i = 0; i < n; i++) { c.fillStyle = shade(col, 1 - spread + rnd() * spread * 2); c.fillRect(rnd() * S, rnd() * S, 1.5, 1.5); }
+/** Vertical boards in solid wood, only thin dark joints between them (no streaks or shine). */
+function boards(c, col, x0, y0, w, h, width = 22) {
+  c.fillStyle = col; c.fillRect(x0, y0, w, h);
+  c.fillStyle = shade(col, 0.68);
+  for (let x = x0; x < x0 + w; x += width) c.fillRect(x, y0, 2, h);
 }
-/** Vertical boards of a colour, each a slightly different shade, with dark gaps and a little grain. */
-function boards(c, rnd, col, x0, y0, w, h, width = 22) {
-  for (let x = x0; x < x0 + w; x += width) {
-    c.fillStyle = shade(col, 0.88 + rnd() * 0.22); c.fillRect(x, y0, Math.min(width, x0 + w - x), h);
-    c.fillStyle = shade(col, 0.6); c.fillRect(x, y0, 2, h);
-    c.fillStyle = shade(col, 0.82); for (let i = 0; i < 3; i++) c.fillRect(x + 4 + rnd() * (width - 8), y0, 1, h);
+/** Framed wooden panels in a row (a door's kick panels): solid wood, each panel a shade darker, set in its frame. */
+function panels(c, col, x0, y0, w, h, n) {
+  c.fillStyle = col; c.fillRect(x0, y0, w, h);
+  const pw = w / n;
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * pw + 6, y = y0 + 8, iw = pw - 12, ih = h - 16;
+    c.fillStyle = shade(col, 0.86); c.fillRect(x, y, iw, ih);
+    c.fillStyle = shade(col, 0.62); c.fillRect(x, y, iw, 2); c.fillRect(x, y, 2, ih);
   }
 }
 export const TWO_TONE = {
   wafu(c, rnd, main, wood) {
-    // white plaster between timber posts, a beam across it and a dark skirting board
-    c.fillStyle = main; c.fillRect(0, 0, S, S); grain(c, rnd, main);
+    // plaster between timber posts, a beam across it and a skirting board, all in plain flat colour
+    c.fillStyle = main; c.fillRect(0, 0, S, S);
     c.fillStyle = wood; for (const x of [0, 128]) c.fillRect(x, 0, 16, S); c.fillRect(0, 40, S, 12); c.fillRect(0, 226, S, 30);
-    c.fillStyle = shade(wood, 1.3); for (const x of [3, 131]) c.fillRect(x, 0, 2, S);
   },
   tudor(c, rnd, main, wood) {
-    c.fillStyle = main; c.fillRect(0, 0, S, S); grain(c, rnd, main, 900);
+    c.fillStyle = main; c.fillRect(0, 0, S, S);
     c.fillStyle = wood; for (const x of [0, 128]) c.fillRect(x, 0, 14, S); for (const y of [0, 128]) c.fillRect(0, y, S, 14);
     c.lineWidth = 12; c.strokeStyle = wood; c.beginPath(); c.moveTo(14, 128); c.lineTo(128, 14); c.moveTo(142, 14); c.lineTo(256, 128); c.stroke();
   },
   shoji_wall(c, rnd, main, wood) {
-    // paper panels in a fine wooden lattice, over a low wooden kick panel: the sliding screens of a veranda
-    c.fillStyle = main; c.fillRect(0, 0, S, S); grain(c, rnd, main, 400, 0.04);
+    // the sliding screens: plain paper panes in a wooden lattice, solid wooden kick panels along the bottom
+    // and a stout frame round each screen
+    c.fillStyle = main; c.fillRect(0, 0, S, S);
     c.fillStyle = wood;
     for (let x = 0; x < S; x += 32) c.fillRect(x, 0, 4, 186);
     for (let y = 0; y < 186; y += 46) c.fillRect(0, y, S, 4);
-    boards(c, rnd, wood, 0, 186, S, 70, 32);
-    c.fillStyle = shade(wood, 0.7); c.fillRect(0, 184, S, 6);
-    for (const x of [0, 128]) { c.fillStyle = shade(wood, 0.85); c.fillRect(x, 0, 10, S); }
+    panels(c, wood, 0, 186, 128, 70, 3); panels(c, wood, 128, 186, 128, 70, 3);
+    c.fillStyle = wood; c.fillRect(0, 182, S, 8);
+    for (const x of [0, 128]) c.fillRect(x, 0, 10, S);
   },
   koshiita(c, rnd, main, wood) {
-    // plaster above, a wainscot of dark vertical boards below, a beam between, posts at the panels' edges
-    c.fillStyle = main; c.fillRect(0, 0, S, 150); grain(c, rnd, main);
-    boards(c, rnd, wood, 0, 160, S, 96, 20);
+    // plaster above, a wainscot of solid wooden boards below, a beam between, posts at the panels' edges
+    c.fillStyle = main; c.fillRect(0, 0, S, 150);
+    boards(c, wood, 0, 160, S, 96, 20);
     c.fillStyle = shade(wood, 0.8); c.fillRect(0, 148, S, 14);
     c.fillStyle = wood; for (const x of [0, 128]) c.fillRect(x, 0, 14, S);
-    c.fillStyle = shade(wood, 1.25); for (const x of [2, 130]) c.fillRect(x, 0, 2, S);
   },
   yakisugi(c, rnd, main, wood) {
-    // charred cedar: wide black-brown planks with a crackled, scorched grain and narrow battens over the joins
+    // charred cedar: wide black-brown planks, scorched a little darker here and there, battens over the joins
     for (let x = 0; x < S; x += 32) {
-      c.fillStyle = shade(main, 0.85 + rnd() * 0.3); c.fillRect(x, 0, 32, S);
-      c.fillStyle = shade(main, 0.6); for (let y = rnd() * 12; y < S; y += 8 + rnd() * 10) c.fillRect(x + 2 + rnd() * 6, y, 10 + rnd() * 16, 1.5);
-      c.fillStyle = shade(main, 1.25); for (let i = 0; i < 3; i++) c.fillRect(x + 3 + rnd() * 26, 0, 1, S);
+      c.fillStyle = shade(main, 0.88 + rnd() * 0.12); c.fillRect(x, 0, 32, S);
+      c.fillStyle = shade(main, 0.65); for (let y = rnd() * 12; y < S; y += 10 + rnd() * 12) c.fillRect(x + 2 + rnd() * 6, y, 10 + rnd() * 16, 1.5);
     }
     c.fillStyle = wood; for (let x = 0; x < S; x += 32) c.fillRect(x - 3, 0, 6, S);
   },
   itabari(c, rnd, main, wood) {
     // cedar boards running up and down, a batten over every other join
-    boards(c, rnd, main, 0, 0, S, S, 32);
+    boards(c, main, 0, 0, S, S, 32);
     c.fillStyle = wood; for (let x = 0; x < S; x += 64) c.fillRect(x - 4, 0, 8, S);
-    c.fillStyle = shade(wood, 1.3); for (let x = 0; x < S; x += 64) c.fillRect(x - 3, 0, 2, S);
   },
   namako(c, rnd, main, wood) {
     // namako: dark square tiles set on the diagonal, joined by raised rounded lines of white plaster
     c.fillStyle = main; c.fillRect(0, 0, S, S);
-    for (let i = 0; i < 300; i++) { c.fillStyle = shade(main, 0.85 + rnd() * 0.3); c.fillRect(rnd() * S, rnd() * S, 3, 3); }
     c.save(); c.lineCap = 'round';
-    for (const [w, col] of [[14, shade(wood, 0.8)], [9, wood], [3, shade(wood, 1.15)]]) {
+    for (const [w, col] of [[14, shade(wood, 0.8)], [9, wood]]) {
       c.lineWidth = w; c.strokeStyle = col; c.beginPath();
       for (let k = -S; k <= S * 2; k += 64) { c.moveTo(k, 0); c.lineTo(k + S, S); c.moveTo(k, S); c.lineTo(k + S, 0); }
       c.stroke();

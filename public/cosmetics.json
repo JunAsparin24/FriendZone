@@ -208,6 +208,7 @@
     { "id": "outfit_tux", "slot": "outfit", "name": "Tuxedo", "rarity": "legendary", "price": 18000, "crate": true, "tint": true, "accent": true },
     { "id": "outfit_wedding", "slot": "outfit", "name": "Wedding Dress", "rarity": "legendary", "crate": true, "tint": true },
     { "id": "outfit_astronaut", "slot": "outfit", "name": "Astronaut Suit", "rarity": "legendary", "crate": true, "tint": true, "accent": true },
+    { "id": "outfit_pirate", "slot": "outfit", "name": "Pirate Captain", "rarity": "epic", "price": 7000, "crate": true, "tint": true, "accent": true },
 
     { "id": "hat_none", "slot": "hat", "name": "No Hat", "rarity": "common", "free": true },
     { "id": "hat_cap", "slot": "hat", "name": "Cap", "rarity": "common", "free": true, "tint": true, "accents": ["Brim", "Button"] },
@@ -236,6 +237,7 @@
     { "id": "hat_beret", "slot": "hat", "name": "Beret", "rarity": "rare", "price": 900, "crate": true, "tint": true, "accents": ["Band & stalk"] },
     { "id": "hat_sunhat", "slot": "hat", "name": "Sun Hat", "rarity": "rare", "price": 1200, "crate": true, "tint": true, "accents": ["Ribbon"] },
     { "id": "hat_flowercrown", "slot": "hat", "name": "Flower Crown", "rarity": "epic", "price": 3000, "crate": true },
+    { "id": "hat_pirate", "slot": "hat", "name": "Pirate Hat", "rarity": "epic", "price": 5000, "crate": true, "tint": true, "accents": ["Gold braid", "Skull & bones"] },
 
     { "id": "face_none", "slot": "face", "name": "Nothing", "rarity": "common", "free": true },
     { "id": "face_glasses", "slot": "face", "name": "Glasses", "rarity": "common", "free": true, "tint": true },
@@ -473,6 +475,9 @@
     { "id": "trophy_lich", "name": "Bone Lich Statue", "emoji": "💀", "w": 1, "d": 1, "max": 1, "drop": "Bone Lich", "use": "slam" },
     { "id": "trophy_dragon", "name": "Shadow Dragon Statue", "emoji": "🐉", "w": 1, "d": 1, "max": 1, "drop": "Shadow Dragon", "use": "roar" },
     { "id": "room_wall", "name": "Wall", "emoji": "🧱", "w": 2, "d": 0.25, "free": true, "drag": true, "max": 200, "set": "Rooms", "room": true },
+    { "id": "floor_slab", "name": "Floor", "emoji": "⬜", "w": 1, "d": 1, "kind": "slab", "free": true, "slab": true, "max": 200, "set": "Rooms" },
+    { "id": "house_stairs", "name": "Staircase", "emoji": "🪜", "w": 1.5, "d": 4, "free": true, "stairs": true, "max": 12, "set": "Rooms" },
+    {"id": "house_steps", "name": "Wooden Steps", "emoji": "🪜", "w": 1.5, "d": 1, "free": true, "stairs": true, "rise": 0.5, "max": 24, "set": "Rooms"},
     { "id": "room_wall_short", "name": "Short Room Wall", "emoji": "🧱", "w": 1, "d": 0.25, "free": true, "drag": true, "max": 40, "set": "Rooms", "room": true, "retired": true },
     { "id": "room_doorway", "name": "Doorway", "emoji": "🚪", "w": 2, "d": 0.25, "free": true, "max": 12, "set": "Rooms", "room": true, "doorway": true, "retired": true },
     { "id": "room_door", "name": "Wooden Door", "emoji": "🚪", "w": 2, "d": 0.25, "price": 200, "max": 12, "set": "Rooms", "room": true, "doorway": true, "retired": true },
@@ -746,6 +751,11 @@
     { "id": "plant_fern", "name": "Fern", "emoji": "🌿", "w": 1, "d": 1, "price": 90, "set": "Plants", "use": "rustle" },
     { "id": "plant_succulents", "name": "Succulent Planter", "emoji": "🪴", "w": 1, "d": 1, "price": 80, "set": "Plants", "use": "rustle" },
     { "id": "plant_bonsai", "name": "Bonsai", "emoji": "🌳", "w": 1, "d": 1, "price": 260, "set": "Plants", "use": "rustle" },
+    {"id": "chabudai", "name": "Low Table", "emoji": "🍵", "w": 1, "d": 1, "price": 180, "set": "Japanese", "desk": true, "use": "thud"},
+    {"id": "zabuton", "name": "Floor Cushion", "emoji": "🟥", "w": 1, "d": 1, "price": 60, "set": "Japanese", "tuck": true, "use": "squish", "recolor": true, "recolorFrom": "#c2185b"},
+    {"id": "lantern_hanging", "name": "Hanging Lantern", "emoji": "🏮", "w": 1, "d": 1, "kind": "ceiling", "price": 220, "set": "Japanese", "use": "switch"},
+    {"id": "window_shoji", "name": "Shoji Window", "emoji": "🪟", "w": 2, "d": 1, "kind": "wall", "price": 160, "set": "Japanese", "wh": 1.2},
+    {"id": "screen_shoji", "name": "Folding Shoji Screen", "emoji": "🎎", "w": 2, "d": 0.5, "price": 240, "set": "Japanese", "use": "rustle"},
     { "id": "hanging_plant_short", "name": "Hanging Plant (Short)", "emoji": "🪴", "w": 1, "d": 1, "kind": "ceiling", "price": 150, "set": "Plants", "use": "rustle", "retired": true },
     { "id": "hanging_plant_long", "name": "Hanging Plant (Long)", "emoji": "🪴", "w": 1, "d": 1, "kind": "ceiling", "price": 150, "set": "Plants", "use": "rustle", "retired": true },
     { "id": "gaming_desk", "name": "Gaming Desk", "emoji": "🖥️", "w": 2, "d": 1, "price": 1200, "set": "Gamer", "use": "arcade", "desk": true },
@@ -871,6 +881,7 @@
     { "id": "wall_mint", "name": "Mint", "free": true, "group": "Solid colours" },
     { "id": "wall_stripes", "name": "Candy Stripes", "price": 150, "group": "Stripes" },
     { "id": "wall_brick", "name": "Brick", "price": 300, "group": "Patterns" },
+    {"id": "wall_shoji", "name": "Shoji Paper", "price": 250, "group": "Wainscoting & panels"},
     { "id": "wall_stars", "name": "Starry Night", "price": 500, "group": "Patterns" },
     {"id": "wall_void_black", "name": "Void Black", "price": 120, "group": "Solid colours"},
     {"id": "wall_pitch_black", "name": "Pitch Black", "price": 120, "group": "Solid colours"},
@@ -1107,7 +1118,8 @@
     { "id": "shake", "name": "Cedar Shake", "c": "#9c6b43" },
     { "id": "panel", "name": "Modern Panels", "c": "#3c4250" },
     { "id": "logs", "name": "Log Cabin", "c": "#8a5a32" },
-    { "id": "tudor", "name": "Half-Timber", "c": "#f3ecdc" }
+    { "id": "tudor", "name": "Half-Timber", "c": "#f3ecdc" },
+    {"id": "wafu", "name": "Wood & Plaster", "c": "#f1ece0"}
   ],
   "extTrims": [
     { "id": "none", "name": "No trim" },
@@ -1133,6 +1145,7 @@
     { "id": "metal", "name": "Standing Seam Metal", "c": "#4a5560" },
     { "id": "slate", "name": "Slate", "c": "#5a6470" },
     { "id": "thatch", "name": "Thatch", "c": "#c9a85a" },
+    {"id": "kawara", "name": "Japanese Kawara", "c": "#5d6670"},
     { "id": "smooth", "name": "Smooth", "c": "#3a3d46" }
   ],
   "groundMats": [
@@ -1173,6 +1186,12 @@
     { "id": "birdbath", "name": "Bird Bath", "emoji": "🐦", "r": 0.3 },
     { "id": "gnome", "name": "Garden Gnome", "emoji": "🧙" },
     { "id": "planter", "name": "Planter Box", "emoji": "🪴", "r": 0.4 },
+    {"id": "stone_lantern", "name": "Stone Lantern", "emoji": "🏮", "r": 0.3},
+    {"id": "pine_japanese", "name": "Japanese Pine", "emoji": "🌲", "r": 0.35},
+    {"id": "fence_japanese", "name": "Japanese Garden Wall", "emoji": "🧱", "r": 0.45},
+    {"id": "bridge_red", "name": "Red Garden Bridge", "emoji": "🌉", "r": 0},
+    {"id": "shrub_round", "name": "Clipped Shrubs", "emoji": "🌳", "r": 0.4},
+    {"id": "post_wood", "name": "Wooden Post", "emoji": "🪵", "r": 0.2},
     { "id": "grass_tuft", "name": "Tall Grass", "emoji": "🌾" },
     { "id": "fern", "name": "Fern", "emoji": "🌿" },
     { "id": "wildflowers", "name": "Wildflowers", "emoji": "🌼" },

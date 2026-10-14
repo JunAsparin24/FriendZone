@@ -378,9 +378,9 @@ export function createHood() {
     roam = { lo: ROAD / 2 + 0.6, hi: EDGE - 0.4, span: ends - 20 };
     critters = [];
     const kinds = ['rabbit', 'bird', 'squirrel', 'bird', 'cat', 'rabbit', 'bird', 'squirrel', 'bird', 'rabbit', 'cat', 'bird', 'squirrel', 'rabbit', 'bird', 'bird'];
-    const herd = lowGfx() ? 7 : Math.min(kinds.length, Math.max(14, cols * 4));
+    const herd = lowGfx() ? 4 : 7; // (just a few: the odd rabbit or bird to come across, not a zoo)
     for (let i = 0; i < herd; i++) {
-      const kind = kinds[i], m = bake(critterModel(kind, Math.floor(i / 2))), side = i % 2 ? 1 : -1;
+      const kind = kinds[i % kinds.length], m = bake(critterModel(kind, Math.floor(i / 2))), side = i % 2 ? 1 : -1;
       m.scale.setScalar(kind === 'bird' ? 1.5 : 1.35); // (a little larger than life, so you can spot them from across the road)
       const x = (rnd() * 2 - 1) * roam.span, z = side * (roam.lo + rnd() * (roam.hi - roam.lo));
       m.userData = { kind, side, x, z, tx: x, tz: z, wait: rnd() * 3, ph: rnd() * 10, yaw: rnd() * 6, scare: 0, fly: 0, flyLen: 1 };

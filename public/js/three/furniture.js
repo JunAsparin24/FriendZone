@@ -2062,6 +2062,35 @@ Object.assign(FURNITURE, {
   // (in its own frame, -len/2..len/2) where a door has been put in it; caps: [left end, right end]
   // papered (an open end), or left bare (it butts up against another wall)
   room_wall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps }); },
+  // a floor you lay yourself (the house draws the real thing at whatever size it's laid: this is its picture)
+  floor_slab(g) {
+    add(g, box(1, 0.14, 1), toon('#c99a62'), { p: [0, -0.05, 0] });
+    for (const x of [-0.25, 0.25]) add(g, box(0.02, 0.005, 1), toon('#a87b48'), { p: [x, 0.023, 0], outline: false });
+  },
+  // two wooden steps up onto a raised floor (half a tile high: a floor raised two notches)
+  house_steps(g) {
+    const wood = toon('#a0703c'), tread = toon('#c99a62');
+    for (let i = 0; i < 2; i++) {
+      const h = (i + 1) * 0.25, z = 0.5 - (i + 0.5) * 0.5;
+      add(g, box(1.5, h, 0.5), wood, { p: [0, h / 2, z] });
+      add(g, box(1.52, 0.03, 0.52), tread, { p: [0, h, z], outline: false });
+    }
+  },
+  // a straight flight of stairs up to the next storey: in from the front, climbing towards the back
+  house_stairs(g) {
+    const n = 16, run = 4 / n, rise = 3.2 / n, wood = toon('#a0703c'), tread = toon('#c99a62'), rail = toon('#5a3a26');
+    for (let i = 0; i < n; i++) {
+      const z = 2 - (i + 0.5) * run, h = (i + 1) * rise;
+      add(g, box(1.5, h, run), wood, { p: [0, h / 2, z] });
+      add(g, box(1.52, 0.04, run + 0.02), tread, { p: [0, h, z], outline: false });
+    }
+    // a handrail up one side, on posts
+    for (let i = 0; i <= n; i += 4) add(g, cyl(0.03, 0.03, 0.9, 6), rail, { p: [0.7, Math.min(i + 1, n) * rise + 0.45, 2 - (i + 0.5) * run] });
+    const top = new THREE.Vector3(0.7, 3.2 + 0.9, -1.9), foot = new THREE.Vector3(0.7, rise + 0.9, 1.9);
+    const len = top.distanceTo(foot);
+    const r = add(g, cyl(0.035, 0.035, len, 6), rail, { p: [0.7, (top.y + foot.y) / 2, (top.z + foot.z) / 2] });
+    r.rotation.x = Math.atan2(top.z - foot.z, top.y - foot.y);
+  },
   room_wall_short(g, A, { len = 1, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps }); },
   // doors go into a wall like a picture goes on one: the wall opens up around them
   wdoor_arch(g, A, { len = 1.25 } = {}) { doorFrame(g, len); },
@@ -2613,6 +2642,59 @@ function gojoTex(back) {
 }
 
 // hanging things that make their own strings longer when let down (the rest get a cord to the ceiling)
+// ---- the Japanese set: a low table and floor cushions, a bronze lantern, shoji windows and a screen ----
+Object.assign(FURNITURE, {
+  chabudai(g) {
+    const wood = toon('#8a5a32'), dark = toon('#5a3a22');
+    add(g, cyl(0.46, 0.46, 0.05, 32), wood, { p: [0, 0.33, 0] });
+    add(g, cyl(0.42, 0.42, 0.04, 32), dark, { p: [0, 0.29, 0], outline: false });
+    for (const [x, z] of [[0.27, 0.27], [-0.27, 0.27], [0.27, -0.27], [-0.27, -0.27]]) add(g, box(0.06, 0.28, 0.06), dark, { p: [x, 0.14, z] });
+  },
+  zabuton(g) {
+    add(g, box(0.62, 0.09, 0.62), toon('#c2185b'), { p: [0, 0.055, 0] });
+    for (const [x, z] of [[0.31, 0.31], [-0.31, 0.31], [0.31, -0.31], [-0.31, -0.31]]) add(g, sph(0.035, 8, 6), toon('#f4d27a'), { p: [x, 0.06, z], outline: false });
+    add(g, sph(0.03, 8, 6), toon('#f4d27a'), { p: [0, 0.1, 0], s: [1, 0.5, 1], outline: false });
+  },
+  lantern_hanging(g) {
+    // a bronze bell lantern on a chain, glowing warm through its paper sides
+    const metal = toon('#4a3f35');
+    add(g, cyl(0.008, 0.008, 0.6, 4), metal, { p: [0, -0.3, 0], outline: false });
+    add(g, cone(0.27, 0.16, 16), metal, { p: [0, -0.68, 0] });
+    const glow = toon('#fff1c9').clone();
+    glow.emissive = new THREE.Color('#ffc66b');
+    glow.emissiveIntensity = 0.7;
+    add(g, cyl(0.15, 0.17, 0.26, 16), glow, { p: [0, -0.89, 0] });
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; add(g, box(0.02, 0.27, 0.02), metal, { p: [Math.sin(a) * 0.16, -0.89, Math.cos(a) * 0.16], outline: false }); }
+    add(g, cyl(0.19, 0.19, 0.03, 16), metal, { p: [0, -1.03, 0] });
+    const light = new THREE.PointLight(0xffc77a, 1.2, 5, 1.6);
+    light.position.y = -0.9;
+    g.add(light);
+    let on = true;
+    return { use: () => { on = !on; light.visible = on; glow.emissiveIntensity = on ? 0.7 : 0; } };
+  },
+  window_shoji(g) {
+    // a dark wooden lattice over paper that glows softly with the light behind it
+    windowFrame(g, 1.5, 1.0, { frame: '#4a3020', bars: [5, 3], sill: false });
+    const paper = new THREE.MeshToonMaterial({ color: '#fbf5e6', emissive: '#3a3020', transparent: true, opacity: 0.86, side: THREE.DoubleSide });
+    add(g, plane(1.5, 1.0), paper, { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+  },
+  screen_shoji(g) {
+    // a folding screen: three paper panels in dark frames, standing in a zigzag
+    const wood = toon('#4a3020'), paper = toon('#fbf5e6');
+    for (let i = 0; i < 3; i++) {
+      const p = new THREE.Group();
+      p.position.set((i - 1) * 0.62, 0, 0);
+      p.rotation.y = i % 2 ? -0.35 : 0.35;
+      g.add(p);
+      add(p, box(0.62, 1.66, 0.02), paper, { p: [0, 0.91, 0] });
+      for (const y of [0.06, 1.76]) add(p, box(0.68, 0.05, 0.05), wood, { p: [0, y, 0] });
+      for (const x of [-0.32, 0.32]) add(p, box(0.05, 1.74, 0.05), wood, { p: [x, 0.9, 0] });
+      for (const x of [-0.105, 0.105]) add(p, box(0.02, 1.66, 0.03), wood, { p: [x, 0.91, 0], outline: false });
+      for (const y of [0.5, 0.9, 1.3]) add(p, box(0.62, 0.02, 0.03), wood, { p: [0, y, 0], outline: false });
+    }
+  },
+});
+
 const OWN_DROP = new Set(['hanging_plant', 'hanging_plant_short', 'hanging_plant_long', 'hanging_vines']);
 
 /** Build a piece of furniture. Returns { group, use, anim }. `drop`: how far below the ceiling a
@@ -2968,7 +3050,7 @@ export function outdoorPanorama() {
   return panoTex;
 }
 /** How big each window's pane is (width, height): the hole it makes in the wall it hangs on. */
-export const WINDOW_PANES = { window: [1.5, 0.95], window_big: [2.6, 1.3], window_tall: [0.8, 1.7], window_round: [0.8, 0.8], window_wood: [1.5, 1.0] };
+export const WINDOW_PANES = { window: [1.5, 0.95], window_big: [2.6, 1.3], window_tall: [0.8, 1.7], window_round: [0.8, 0.8], window_wood: [1.5, 1.0], window_shoji: [1.5, 1.0] };
 const clearGlass = new THREE.MeshBasicMaterial({ color: '#d6efff', transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide });
 /**
  * A window is a real hole through the wall it hangs on (house.js cuts it): this is what sits in the
@@ -3883,6 +3965,17 @@ const WALL_DRAW = {
     }
   },
   wall_cream(ctx) { plainWall(ctx, '#fff1d6'); },
+  wall_shoji(ctx) {
+    // paper screens in a dark wooden lattice, over a low wooden skirting
+    ctx.fillStyle = '#f6efdc'; ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = 'rgba(160,140,100,.12)';
+    for (let i = 0; i < 400; i++) ctx.fillRect((i * 97) % 256, (i * 57) % 256, 2, 2);
+    ctx.fillStyle = '#4a3020';
+    for (let x = 0; x < 256; x += 64) ctx.fillRect(x, 0, 6, 256);
+    for (let y = 0; y < 224; y += 48) ctx.fillRect(0, y, 256, 5);
+    ctx.fillStyle = '#6b4226'; ctx.fillRect(0, 224, 256, 32);
+    ctx.fillStyle = '#4a3020'; ctx.fillRect(0, 222, 256, 4);
+  },
   wall_mint(ctx) { plainWall(ctx, '#c9f5e3'); },
   wall_stripes(ctx) {
     for (let i = 0; i < 8; i++) {
@@ -4423,7 +4516,7 @@ export function furnitureThumb(id) {
 }
 /** Colour swatch for the style picker (CSS background). */
 export const SWATCH = {
-  floor_wood: '#c28a52', floor_checker: 'repeating-conic-gradient(#2b2f4a 0 25%, #f4f0ff 0 50%) 0 0/16px 16px',
+  wall_shoji: '#f6efdc', floor_wood: '#c28a52', floor_checker: 'repeating-conic-gradient(#2b2f4a 0 25%, #f4f0ff 0 50%) 0 0/16px 16px',
   floor_carpet: '#3b6fd0', floor_grass: '#5fae55', floor_marble: '#ece8e2',
   wall_cream: '#fff1d6', wall_mint: '#c9f5e3', wall_stripes: 'repeating-linear-gradient(90deg,#ffc2d6 0 8px,#fff 8px 16px)',
   wall_brick: '#b5654a', wall_stars: 'radial-gradient(#ffd84d 1px, #1a2456 1.5px) 0 0/10px 10px',

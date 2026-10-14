@@ -1982,3 +1982,9 @@ html:not(.touch) body.house-menu .house-hint { max-width: min(760px, calc(100vw 
   html.touch .place-bar { padding: 4px 6px 5px; }
   html.touch .place-bar button { min-height: 34px; font-size: 12px; }
 }
+
+/* building: which storey you're working on (Ground / Floor 2 / Floor 3), in the bar along the top */
+.storeys { display: inline-flex; gap: 3px; padding: 2px; border-radius: 10px; background: #0003; }
+.storeys small { align-self: center; padding: 0 4px 0 6px; font-weight: 800; font-size: 12px; color: var(--muted); }
+.storeys .btn { padding-left: 10px; padding-right: 10px; min-width: 32px; }
+.house-bar.building .house-title { display: none; }

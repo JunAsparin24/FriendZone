@@ -74,7 +74,26 @@ const PATTERNS = {
   panel(c) { fill(c, 235); c.fillStyle = grey(120); for (const p of [0, 128]) { c.fillRect(p, 0, 3, S); c.fillRect(0, p, S, 3); } c.fillStyle = grey(250); for (const p of [3, 131]) { c.fillRect(p, 0, 2, S); c.fillRect(0, p, S, 2); } },
   logs(c) { for (let y = 0; y < S; y += 64) { const g = c.createLinearGradient(0, y, 0, y + 64); g.addColorStop(0, grey(120)); g.addColorStop(0.3, grey(250)); g.addColorStop(0.75, grey(190)); g.addColorStop(1, grey(95)); c.fillStyle = g; c.fillRect(0, y, S, 64); c.fillStyle = 'rgba(0,0,0,.12)'; for (const k of [18, 30, 44]) c.fillRect(0, y + k, S, 1); } },
   tudor(c, rnd) { fill(c, 240); speckle(c, rnd, 900, 215, 255, 2, 0.4); c.fillStyle = '#2e2018'; for (const x of [0, 128]) c.fillRect(x, 0, 14, S); for (const y of [0, 128]) c.fillRect(0, y, S, 14); c.lineWidth = 12; c.strokeStyle = '#2e2018'; c.beginPath(); c.moveTo(14, 128); c.lineTo(128, 14); c.moveTo(142, 256); c.lineTo(256, 142); c.stroke(); },
+  // Japanese: white plaster between dark timber posts, a beam across it and a dark skirting board
+  wafu(c, rnd) {
+    fill(c, 242); speckle(c, rnd, 900, 220, 255, 2, 0.35);
+    c.fillStyle = '#3a2618';
+    for (const x of [0, 128]) c.fillRect(x, 0, 16, S);
+    c.fillRect(0, 40, S, 12);
+    c.fillRect(0, 226, S, 30);
+    c.fillStyle = 'rgba(255,255,255,.12)'; for (const x of [3, 131]) c.fillRect(x, 0, 2, S);
+  },
   // ---- roofs
+  // Japanese kawara: rows of rounded clay tiles running down the slope, a shadow under each course
+  kawara(c) {
+    fill(c, 110);
+    for (let x = 0; x < S; x += 32) {
+      const g = c.createLinearGradient(x, 0, x + 32, 0);
+      g.addColorStop(0, grey(120)); g.addColorStop(0.45, grey(245)); g.addColorStop(0.75, grey(200)); g.addColorStop(1, grey(110));
+      c.fillStyle = g; c.fillRect(x + 2, 0, 28, S);
+    }
+    for (let y = 0; y < S; y += 64) { c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(0, y + 56, S, 8); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(0, y, S, 3); }
+  },
   shingle(c, rnd) { courses(c, rnd, { rows: 8, cols: 6, gap: 2, mortar: 110, lo: 190, hi: 245 }); c.fillStyle = 'rgba(0,0,0,.25)'; for (let y = 0; y < S; y += 32) c.fillRect(0, y + 28, S, 4); },
   tile(c) { fill(c, 130); for (let r = 0; r < 8; r++) for (let k = -1; k < 8; k++) { const x = (k + (r % 2) * 0.5) * 32, y = r * 32; const g = c.createLinearGradient(x, 0, x + 32, 0); g.addColorStop(0, grey(150)); g.addColorStop(0.5, grey(250)); g.addColorStop(1, grey(150)); c.fillStyle = g; c.beginPath(); c.roundRect(x + 1, y - 6, 30, 36, [0, 0, 15, 15]); c.fill(); } },
   metal(c) { fill(c, 228); for (let x = 0; x < S; x += 64) { c.fillStyle = grey(250); c.fillRect(x + 28, 0, 8, S); c.fillStyle = grey(150); c.fillRect(x + 36, 0, 3, S); c.fillStyle = grey(190); c.fillRect(x + 25, 0, 3, S); } },
@@ -299,7 +318,7 @@ export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
     // roof slopes, which way a gable's ridge runs…) and made flatter or steeper (r.p)
     const piece = new THREE.Group(), turn = (r.r ?? 0) % 4, pitch = r.p ?? 1;
     const hw = (turn % 2 ? r.d : r.w) / 2, hd = (turn % 2 ? r.w : r.d) / 2, x0 = -hw, x1 = hw, z0 = -hd, z1 = hd;
-    piece.position.set(r.x + r.w / 2, 0, r.y + r.d / 2);
+    piece.position.set(r.x + r.w / 2, (r.lv ?? 0) * WALL_H, r.y + r.d / 2); // (lv: on top of an upper storey)
     piece.rotation.y = turn * Math.PI / 2;
     const shape = (ROOFS[r.s] ?? ROOFS.gable)(x0, x1, z0, z1, WALL_H);
     const body = new THREE.Group();
@@ -365,6 +384,66 @@ const YARD = {
   pebbles(g) { for (let i = 0; i < 8; i++) put(g, new THREE.DodecahedronGeometry(0.07 + (i % 3) * 0.04, 0), toon(['#9a968e', '#b0aca4', '#c4c0b6'][i % 3]), Math.sin(i * 2.1) * 0.36, 0.04, Math.cos(i * 1.3) * 0.36, [1.2, 0.6, 1]); },
   log(g) { const bark = toon('#6b4a32'); put(g, cyl(0.2, 0.22, 1.4, 9), bark, 0, 0.21, 0, null, [0, 0, Math.PI / 2]); for (const s of [-1, 1]) put(g, cyl(0.17, 0.17, 0.02, 9), toon('#d9b98a'), s * 0.71, 0.21, 0, null, [0, 0, Math.PI / 2]); put(g, cyl(0.06, 0.08, 0.3, 6), bark, 0.2, 0.42, 0.05, null, [0.5, 0, 0.3]); },
   stump(g) { put(g, cyl(0.3, 0.36, 0.36, 10), toon('#6b4a32'), 0, 0.18, 0); put(g, cyl(0.28, 0.28, 0.02, 10), toon('#d9b98a'), 0, 0.37, 0); },
+  // ---- a Japanese garden ----
+  stone_lantern(g) {
+    // a tōrō: a stone post with a little firebox lit up inside it, under a wide six-sided cap
+    const s = toon('#a19d94'), d = toon('#8c887f'), glow = new THREE.MeshBasicMaterial({ color: '#ffd27a' });
+    put(g, cyl(0.32, 0.36, 0.12, 6), d, 0, 0.06, 0);
+    put(g, cyl(0.1, 0.13, 0.55, 8), s, 0, 0.395, 0);
+    put(g, cyl(0.26, 0.2, 0.1, 6), d, 0, 0.72, 0);
+    put(g, new THREE.BoxGeometry(0.3, 0.26, 0.3), s, 0, 0.9, 0);
+    put(g, new THREE.BoxGeometry(0.16, 0.14, 0.32), glow, 0, 0.9, 0);
+    put(g, new THREE.BoxGeometry(0.32, 0.14, 0.16), glow, 0, 0.9, 0);
+    put(g, new THREE.ConeGeometry(0.44, 0.24, 6), d, 0, 1.15, 0);
+    put(g, ball(0.07), s, 0, 1.3, 0);
+  },
+  pine_japanese(g) {
+    // a garden pine: a trunk that leans and twists, and flat clouds of needles at the ends of its branches
+    const bark = toon('#5a4232'), needles = [toon('#2f6b3a'), toon('#3a7d43'), toon('#2a5e35')], up = new THREE.Vector3(0, 1, 0);
+    const limb = (a, b, r0, r1) => {
+      const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), dir = B.clone().sub(A);
+      const m = put(g, cyl(r1, r0, dir.length(), 7), bark, (A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+      m.quaternion.setFromUnitVectors(up, dir.normalize());
+    };
+    const trunk = [[0, 0, 0], [0.28, 0.8, 0.05], [-0.12, 1.6, 0], [0.22, 2.3, -0.05], [0.05, 2.85, 0]];
+    for (let i = 0; i < trunk.length - 1; i++) limb(trunk[i], trunk[i + 1], 0.2 - i * 0.035, 0.2 - (i + 1) * 0.035);
+    limb(trunk[2], [-1.0, 1.75, 0.2], 0.08, 0.04);
+    limb(trunk[3], [0.95, 2.45, -0.1], 0.07, 0.035);
+    limb(trunk[1], [0.75, 1.25, 0.35], 0.06, 0.03);
+    [[-1.05, 1.85, 0.2, 1.25], [0.98, 2.55, -0.1, 1.05], [0.05, 3.0, 0, 1.0], [0.78, 1.35, 0.35, 0.7], [-0.35, 2.4, -0.2, 0.75]].forEach(([x, y, z, s], i) => {
+      put(g, ball(0.55 * s), needles[i % 3], x, y, z, [1.3, 0.42, 1.05]);
+      put(g, ball(0.38 * s), needles[(i + 1) % 3], x + 0.12 * s, y + 0.1, z - 0.1 * s, [1.2, 0.4, 1]);
+    });
+  },
+  fence_japanese(g) {
+    // a white plaster garden wall on a stone footing, with a little tiled roof along its top
+    const plaster = toon('#f1ece0'), tiles = toon('#5d6670'), stone = toon('#8c887f');
+    put(g, new THREE.BoxGeometry(1.0, 0.3, 0.34), stone, 0, 0.15, 0);
+    put(g, new THREE.BoxGeometry(1.0, 1.25, 0.28), plaster, 0, 0.92, 0);
+    for (const s of [-1, 1]) put(g, new THREE.BoxGeometry(1.02, 0.05, 0.3), tiles, 0, 1.6, s * 0.12, null, [s * 0.45, 0, 0]);
+    put(g, new THREE.BoxGeometry(1.04, 0.08, 0.08), toon('#4a525b'), 0, 1.68, 0);
+  },
+  bridge_red(g) {
+    // a little arched bridge in red lacquer, with gold caps on its posts
+    const red = toon('#c0392b'), wood = toon('#8a5a32'), gold = toon('#e0b23c'), L = 2.6, n = 13;
+    const yAt = (x) => 0.1 + 0.32 * Math.cos((Math.PI * x) / L), slope = (x) => -0.32 * (Math.PI / L) * Math.sin((Math.PI * x) / L);
+    for (let i = 0; i < n; i++) { const x = -L / 2 + ((i + 0.5) * L) / n; put(g, new THREE.BoxGeometry(L / n + 0.01, 0.06, 0.9), wood, x, yAt(x), 0, null, [0, 0, Math.atan(slope(x))]); }
+    for (const z of [-0.45, 0.45]) {
+      for (const x of [-1.2, -0.45, 0.45, 1.2]) { put(g, cyl(0.04, 0.04, 0.62, 8), red, x, yAt(x) + 0.31, z); put(g, ball(0.055), gold, x, yAt(x) + 0.65, z); }
+      for (let i = 0; i < n; i++) { const x = -L / 2 + 0.1 + ((i + 0.5) * (L - 0.2)) / n; put(g, new THREE.BoxGeometry((L - 0.2) / n + 0.02, 0.05, 0.05), red, x, yAt(x) + 0.55, z, null, [0, 0, Math.atan(slope(x))]); }
+    }
+  },
+  shrub_round(g) {
+    // azaleas clipped into soft mounds, the way they're kept in a Japanese garden
+    put(g, ball(0.42), toon('#356e3c'), 0, 0.27, 0, [1.25, 0.7, 1.1]);
+    put(g, ball(0.3), toon('#3f7d45'), 0.48, 0.2, 0.2, [1.2, 0.7, 1.1]);
+    put(g, ball(0.26), toon('#4a8a4a'), -0.42, 0.18, 0.25, [1.2, 0.7, 1.1]);
+  },
+  post_wood(g) {
+    // a square timber post on a stone, as tall as a storey: for holding up a veranda's roof
+    put(g, new THREE.BoxGeometry(0.34, 0.12, 0.34), toon('#8c887f'), 0, 0.06, 0);
+    put(g, new THREE.BoxGeometry(0.22, WALL_H - 0.12, 0.22), toon('#8a5a32'), 0, (WALL_H + 0.12) / 2, 0);
+  },
   planter(g) { put(g, new THREE.BoxGeometry(0.9, 0.42, 0.42), toon('#7a4a28'), 0, 0.21, 0); for (let i = 0; i < 3; i++) put(g, ball(0.2), toon(i % 2 ? '#5fae55' : '#4f9a45'), -0.28 + i * 0.28, 0.5, 0); for (const [x, c] of [[-0.14, '#ff8fc7'], [0.14, '#ffd84d']]) put(g, new THREE.SphereGeometry(0.07, 8, 6), toon(c), x, 0.66, 0.08); },
 };
 /** One yard decoration, standing on its own spot (tiles). */
@@ -373,7 +452,7 @@ export function buildYardItem(id) {
   (YARD[id] ?? YARD.bush)(g);
   return g;
 }
-const ORGANIC = /^(tree|bush|flowers|rock|grass|wild|pebbles|fern|log|stump)/;
+const ORGANIC = /^(tree|bush|flowers|rock|grass|wild|pebbles|fern|log|stump|pine|shrub)/;
 /** Everything in a yard (plot tiles). */
 export function buildYard(list = []) {
   const g = new THREE.Group();

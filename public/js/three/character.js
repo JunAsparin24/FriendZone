@@ -208,9 +208,9 @@ const numberTexture = (() => {
     return cache.get(color);
   };
 })();
-const FRINGE_HIDING_HATS = new Set(['hat_durag', 'hat_beanie', 'hat_helmet', 'hat_viking', 'hat_bucket', 'hat_cap']);
+const FRINGE_HIDING_HATS = new Set(['hat_durag', 'hat_beanie', 'hat_helmet', 'hat_viking', 'hat_bucket', 'hat_cap', 'hat_pirate']);
 const COVERING_HATS = new Set(['hat_durag', 'hat_cap', 'hat_beanie', 'hat_cowboy', 'hat_bucket', 'hat_tophat', 'hat_viking',
-  'hat_wizard', 'hat_helmet', 'hat_robin', 'hat_party', 'hat_crown', 'hat_sunhat', 'hat_bandana']);
+  'hat_wizard', 'hat_helmet', 'hat_robin', 'hat_party', 'hat_crown', 'hat_sunhat', 'hat_bandana', 'hat_pirate']);
 
 // ---------------------------------------------------------------------------
 // geometry cache + helpers
@@ -319,6 +319,7 @@ Object.assign(TOPS, {
   astro_top: { sleeve: 'long', puffy: true, color: '#f4f4f2', accent: '#39c6ff' },
   cheer_top: { sleeve: 'none', accent: '#ffffff' },
   school_top: { sleeve: 'long', shirt: '#f6f4ee', blazer: true, color: '#2b3a6b', accent: '#e0463c' },
+  pirate_coat: { sleeve: 'long', shirt: '#f6f4ee', blazer: true, coat: true, color: '#7a1f2b', accent: '#e0b23c' },
 });
 // more bottoms (and the outfits' own). skirt.len can be 'midi', 'ankle' or 'floor' as well as a length
 Object.assign(BOTTOMS, {
@@ -352,9 +353,11 @@ Object.assign(BOTTOMS, {
   skirt_cheer: { legs: 'skin', socks: true, skirt: { len: 0.18, flare: 0.42, pleats: 14, hem: true } },
   skirt_school: { legs: 'skin', socks: true, skirt: { len: 0.25, flare: 0.42, pleats: 16, pattern: 'plaid' } },
   skirt_kimono: { legs: 'skin', skirt: { len: 'ankle', flare: 0.3, pattern: 'floral', wrap: true } },
+  piratepants: { legs: 'pants', pattern: 'stripes', baggy: 1.1, cuffs: true },
 });
 // full outfits: a top and a bottom (worn instead of yours), in the outfit's colour + accent
 const OUTFITS = {
+  outfit_pirate: { top: 'pirate_coat', bottom: 'piratepants', color: '#7a1f2b', accent: '#e0b23c', pants: '#efe6d2', pantsAccent: '#2b2f4a' },
   outfit_sundress: { top: 'dress_strap', bottom: 'skirt_sun', color: '#ffd84d', accent: '#ffffff' },
   outfit_pajamas: { top: 'pj_top', bottom: 'pjpants', color: '#8fd3ff', accent: '#ffffff' },
   outfit_pinafore: { top: 'dress_pinafore', bottom: 'skirt_pinafore', color: '#c2185b', accent: '#ffd84d' },
@@ -635,11 +638,31 @@ function eyeMaterial(style, color, pupil, side) {
     const tex = canvasTexture(256, 256, (x) => {
       x.scale(2, 2);
       if (side < 0) { x.translate(128, 0); x.scale(-1, 1); } // (drawn with the outer corner on the right)
-      const big = style === 'eyes_sparkle', cx = 64, cy = 66, rx = big ? 44 : 40, ry = big ? 54 : 50;
+      const big = style === 'eyes_sparkle', cx = 64, cy = 66, rx = big ? 44 : 40, ry = big ? 53 : 48;
+      // the Animal Crossing shape, not an oval: a full round inner side, a lid that arches over and comes
+      // down to a raised outer corner, and a soft rounded bottom. Traced as a polygon so the same outline
+      // fills, clips, strokes and tells what's inside it.
+      const P = (u, v) => [cx + u * rx, cy + v * ry];
+      const segs = [
+        [P(-1, 0.05), P(-0.98, -1.08), P(0.72, -1.12), P(1, -0.28)],  // over the top to the outer corner
+        [P(1, -0.28), P(1.1, 0.5), P(0.55, 1), P(-0.05, 0.98)],       // down the outer side, round the bottom
+        [P(-0.05, 0.98), P(-0.7, 0.96), P(-1.02, 0.6), P(-1, 0.05)],  // and back up the inner side
+      ];
+      const bez = ([a, b, c, d], t) => { const m = 1 - t; return [0, 1].map((k) => m * m * m * a[k] + 3 * m * m * t * b[k] + 3 * m * t * t * c[k] + t * t * t * d[k]); };
+      const trace = (seg) => Array.from({ length: 25 }, (_, i) => bez(seg, i / 24));
+      const outline = segs.flatMap(trace), top = trace(segs[0]);
+      const inside = (px, py) => {
+        let hit = false;
+        for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+          const [xi, yi] = outline[i], [xj, yj] = outline[j];
+          if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) hit = !hit;
+        }
+        return hit;
+      };
       // a heavy lid cuts straight across the top of some eyes: its height at the inner and the outer corner
-      const cut = { eyes_sleepy: [60, 60], eyes_angry: [64, 38], eyes_sad: [40, 62] }[style];
+      const cut = { eyes_sleepy: [58, 58], eyes_angry: [62, 36], eyes_sad: [38, 60] }[style];
       const lidY = (px) => cut[0] + ((cut[1] - cut[0]) * (px - (cx - rx))) / (2 * rx);
-      const shape = () => { x.beginPath(); x.ellipse(cx, cy, rx, ry, 0, 0, TAU); };
+      const shape = () => { x.beginPath(); outline.forEach(([px, py], i) => (i ? x.lineTo(px, py) : x.moveTo(px, py))); x.closePath(); };
       const underLid = () => {
         if (!cut) return;
         x.beginPath(); x.moveTo(0, lidY(0)); x.lineTo(128, lidY(128)); x.lineTo(128, 128); x.lineTo(0, 128); x.closePath(); x.clip();
@@ -648,39 +671,47 @@ function eyeMaterial(style, color, pupil, side) {
       shape(); x.clip(); underLid();
       x.fillStyle = style === 'eyes_cat' ? '#ffe066' : '#fbf7f2'; x.fillRect(0, 0, 128, 128);
       if (style === 'eyes_cat') {
-        x.fillStyle = '#15131f'; x.beginPath(); x.ellipse(cx, cy, 8, 34, 0, 0, TAU); x.fill();
-        x.fillStyle = '#ffffff'; x.beginPath(); x.arc(cx + side * 14, cy - 18, 7, 0, TAU); x.fill();
+        x.fillStyle = '#15131f'; x.beginPath(); x.ellipse(cx - 2, cy + 2, 8, 34, 0, 0, TAU); x.fill();
+        x.fillStyle = '#ffffff'; x.beginPath(); x.arc(cx - 2 + side * 13, cy - 16, 6, 0, TAU); x.fill();
       } else {
-        const ir = big ? 42 : style === 'eyes_surprised' ? 16 : 36, iy = style === 'eyes_surprised' ? cy : cy + (cut ? 8 : -4);
+        // a big iris sitting a little towards the nose, its top tucked under the lid, white showing round
+        // the outer side and below: the soft Animal Crossing look
+        const sup = style === 'eyes_surprised';
+        const ir = big ? 41 : sup ? 16 : 37, ix = sup ? cx : cx - rx * 0.07, iy = sup ? cy : cy + (cut ? 9 : 3);
         const g = x.createLinearGradient(0, iy - ir, 0, iy + ir);
         g.addColorStop(0, tone(0.35)); g.addColorStop(0.55, tone(0.8)); g.addColorStop(1, tone(1));
-        x.fillStyle = g; x.beginPath(); x.arc(cx, iy, ir, 0, TAU); x.fill();
-        x.fillStyle = 'rgba(255,255,255,.16)'; x.beginPath(); x.ellipse(cx, iy + ir * 0.6, ir * 0.5, ir * 0.2, 0, 0, TAU); x.fill();
-        x.fillStyle = pupil; x.beginPath(); x.ellipse(cx, iy - ir * 0.05, ir * 0.45, ir * 0.52, 0, 0, TAU); x.fill();
-        x.strokeStyle = tone(0.25); x.lineWidth = 3; x.beginPath(); x.arc(cx, iy, ir - 1.5, 0, TAU); x.stroke();
+        x.fillStyle = g; x.beginPath(); x.arc(ix, iy, ir, 0, TAU); x.fill();
+        x.fillStyle = 'rgba(255,255,255,.16)'; x.beginPath(); x.ellipse(ix, iy + ir * 0.6, ir * 0.5, ir * 0.2, 0, 0, TAU); x.fill();
+        x.fillStyle = pupil; x.beginPath(); x.arc(ix, iy, ir * 0.52, 0, TAU); x.fill();
+        x.strokeStyle = tone(0.25); x.lineWidth = 3; x.beginPath(); x.arc(ix, iy, ir - 1.5, 0, TAU); x.stroke();
         // the glint sits on the same side in both eyes, as if lit from one place
         x.fillStyle = '#ffffff';
-        x.beginPath(); x.arc(cx + side * ir * 0.36, iy - ir * 0.4, ir * 0.25, 0, TAU); x.fill();
-        if (big) { x.beginPath(); x.arc(cx - side * ir * 0.4, iy + ir * 0.42, ir * 0.13, 0, TAU); x.fill(); }
+        x.beginPath(); x.arc(ix + side * ir * 0.34, iy - ir * 0.36, ir * 0.22, 0, TAU); x.fill();
+        if (big) { x.beginPath(); x.arc(ix - side * ir * 0.4, iy + ir * 0.42, ir * 0.12, 0, TAU); x.fill(); }
       }
       x.restore();
-      // a fine line round the eye, and a thick dark upper lid so it looks soft, not staring
+      // a fine line round the eye, and a thick dark upper lid (with a little flick at the outer corner) so it
+      // looks soft, not staring
       x.save(); underLid(); shape(); x.strokeStyle = '#3a2a26'; x.lineWidth = 2.5; x.stroke(); x.restore();
-      x.strokeStyle = '#15131f'; x.lineWidth = 9; x.lineCap = 'round';
+      x.strokeStyle = '#15131f'; x.lineWidth = 11; x.lineCap = 'round'; x.lineJoin = 'round';
       x.beginPath();
       if (cut) {
-        const inside = (px) => ((px - cx) / rx) ** 2 + ((lidY(px) - cy) / ry) ** 2 <= 1;
         let a = cx - rx, b = cx + rx;
-        while (a < cx && !inside(a)) a++;
-        while (b > cx && !inside(b)) b--;
+        while (a < cx && !inside(a, lidY(a))) a++;
+        while (b > cx && !inside(b, lidY(b))) b--;
         x.moveTo(a, lidY(a)); x.lineTo(b + 4, lidY(b + 4));
-      } else x.ellipse(cx, cy, rx, ry, 0, Math.PI * 0.98, Math.PI * 2.08);
+      } else {
+        top.slice(3).forEach(([px, py], i) => (i ? x.lineTo(px, py) : x.moveTo(px, py)));
+        const [ox, oy] = top[top.length - 1];
+        x.quadraticCurveTo(ox + 5, oy - 2, ox + 9, oy - 7);
+      }
       x.stroke();
       if (style === 'eyes_lashes') {
         x.lineWidth = 5;
-        for (const [a, len] of [[-0.62, 15], [-0.3, 15], [0.02, 12]]) {
-          const px = cx + Math.cos(a) * rx, py = cy + Math.sin(a) * ry;
-          x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a - 0.35) * len, py + Math.sin(a - 0.35) * len); x.stroke();
+        for (const [k, len] of [[14, 13], [19, 14], [24, 12]]) {
+          const [px, py] = top[k], [qx, qy] = top[Math.min(24, k + 1)], d = Math.hypot(qx - px, qy - py) || 1;
+          const nx = (qy - py) / d, ny = -(qx - px) / d; // (outwards from the lid)
+          x.beginPath(); x.moveTo(px, py); x.lineTo(px + (nx + 0.5) * len * 0.8, py + ny * len * 0.8); x.stroke();
         }
       }
     });
@@ -2058,6 +2089,43 @@ const HATS = {
       const a = (i - 1) * 0.6;
       part(head, sphere(0.04, 12, 10), shiny(c, { metalness: 0.2 }), { p: [Math.sin(a) * 0.31, 0.4, Math.cos(a) * 0.31], outline: null });
     });
+  },
+
+  hat_pirate(head, L) {
+    // a captain's tricorn: a low crown and a brim cocked up into three panels (one over the face) with
+    // points between them, gold braid round the edge and a skull and crossbones on the front
+    const c = hatCol(L, '#1d1b22'), felt = toon(c, { side: THREE.DoubleSide });
+    part(head, dome(R + 0.05, 1.1), toon(c), { p: [0, 0.04, 0], s: [1, 0.95, 1] });
+    const prof = [[0.38, 0], [0.5, 0.03], [0.58, 0.14], [0.6, 0.26]];
+    const brimAt = (t, a) => {
+      // t: 0 (inner edge) .. 3 (outer edge); the panels rise at the front and the two back sides
+      const i = Math.min(2, Math.floor(t)), f = t - i, k = (1 + Math.cos(3 * a)) / 2, u = t / 3;
+      const r = prof[i][0] + (prof[i + 1][0] - prof[i][0]) * f, y = prof[i][1] + (prof[i + 1][1] - prof[i][1]) * f;
+      const rr = r * (1 + 0.13 * (1 - k) * u), yy = y * (0.45 + 0.95 * k);
+      return new THREE.Vector3(Math.sin(a) * rr, 0.24 + yy, Math.cos(a) * rr);
+    };
+    const brim = geo('pirateBrim', () => {
+      const A = 72, U = 12, pos = [], idx = [];
+      for (let j = 0; j <= A; j++) for (let i = 0; i <= U; i++) pos.push(...brimAt((i / U) * 3, (j / A) * TAU).toArray());
+      for (let j = 0; j < A; j++) for (let i = 0; i < U; i++) { const a = j * (U + 1) + i, b = a + U + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      return g;
+    });
+    part(head, brim, felt, { outline: OUT_THIN });
+    const braid = geo('pirateBraid', () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(Array.from({ length: 72 }, (_, j) => brimAt(3, (j / 72) * TAU)), true), 144, 0.016, 6, true));
+    part(head, braid, shiny(hatAcc(L, '#e0b23c'), { metalness: 0.6, roughness: 0.3 }), { outline: null });
+    // the skull and crossbones, on the front panel
+    const bone = toon(hatAcc(L, '#f4f1ea', 2)), em = new THREE.Group();
+    em.position.copy(brimAt(2.3, 0)).add(new THREE.Vector3(0, 0, 0.035));
+    em.rotation.x = -0.25;
+    head.add(em);
+    for (const r of [0.75, -0.75]) part(em, box(0.2, 0.026, 0.012), bone, { r: [0, 0, r], outline: null });
+    part(em, circle(0.055), bone, { p: [0, 0.012, 0.008], outline: null });
+    part(em, box(0.06, 0.035, 0.01), bone, { p: [0, -0.04, 0.008], outline: null });
+    for (const sx of [-1, 1]) part(em, circle(0.016), basic('#1d1b22'), { p: [sx * 0.022, 0.016, 0.012], outline: null, shadow: false });
   },
 
   // ---- hair accessories ----
@@ -3819,6 +3887,12 @@ export class Character {
       part(torso, hemGeo, doubleSided(topMat), { s: [1.02, 1, 0.82], outline: OUT_THIN });
       part(torso, torus(0.3, 0.014, TAU, 6, 32), toon(accent), { p: [0, -0.62, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.82, 1], outline: null });
     }
+    if (top.coat) {
+      // a long coat: its skirts carry on down past the hips to the knees, open at the front, edged in braid
+      const tails = geo('coatTails', () => new THREE.LatheGeometry([new THREE.Vector2(0.33, -0.74), new THREE.Vector2(0.3, -0.45), new THREE.Vector2(0.27, -0.24), new THREE.Vector2(0.258, -0.08)], 32, 0.55, TAU - 1.1));
+      part(torso, tails, doubleSided(topMat), { s: [1.02, 1, 0.82], outline: OUT_THIN });
+      part(torso, torus(0.33, 0.014, TAU - 1.1, 6, 32), toon(accent), { p: [0, -0.74, 0], r: [Math.PI / 2, 0, Math.PI / 2 + 0.55], s: [1.02, 0.82, 1], outline: null });
+    }
     const sewnOn = torso.children.length;
     this.decorateTop(torso, L, top, topColor, accent);
     if (bottom.overalls || top.bib) {
@@ -4298,6 +4372,26 @@ export class Character {
           const pts = [new THREE.Vector3(...front(0.02, -0.07, 0.03)), new THREE.Vector3(...front(0.08, -0.11, 0.03)), new THREE.Vector3(...front(0.14, -0.07, 0.025))];
           taper(torso, pts, 0.006, 0.006, shiny(accent, { metalness: 0.8 }));
         }
+        break;
+      }
+      case 'pirate_coat': {
+        // a captain's coat over a white shirt: a frilly jabot at the throat, wide lapels, gold braid down
+        // both front edges with a row of gold buttons, a leather belt with a big buckle and a red sash
+        const gold = shiny(accent, { metalness: 0.6, roughness: 0.3 });
+        vneck(white, 0.16, 0.16);
+        collar(white);
+        for (let i = 0; i < 4; i++) part(torso, sphere(0.035, 10, 8), white, { p: front(0, 0.2 - i * 0.045, 0.03), s: [1.5, 0.75, 0.6], outline: OUT_THIN });
+        lapels(toon(tint(color, 0.7)), 0.085);
+        for (const sx of [-1, 1]) {
+          part(torso, box(0.022, 0.42, 0.016), gold, { p: front(sx * 0.105, -0.05, 0.022), outline: null });
+          buttons(gold, [0.08, 0, -0.08, -0.16], sx * 0.15);
+        }
+        ring(-0.24, toon('#3a2416'), 0.032);
+        part(torso, box(0.11, 0.085, 0.02), gold, { p: front(0, -0.24, 0.05), outline: OUT_THIN });
+        part(torso, box(0.06, 0.04, 0.025), toon('#3a2416'), { p: front(0, -0.24, 0.055), outline: null });
+        ring(-0.16, toon('#c62828'), 0.03);
+        part(torso, sphere(0.045, 10, 8), toon('#c62828'), { p: around(1.2, -0.16, 0.03), outline: OUT_THIN });
+        for (const k of [0, 1]) part(torso, box(0.05, 0.22, 0.015), toon('#c62828'), { p: around(1.2 + k * 0.18, -0.28, 0.03), r: [0, 1.2, k ? 0.15 : -0.1], outline: OUT_THIN });
         break;
       }
       case 'top_corset':

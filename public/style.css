@@ -1910,3 +1910,75 @@ html:not(.touch) .look-strip { display: none; }
 
 /* the arena on a phone: hearts and the slide meter along the bottom middle, clear of the joystick */
 html.touch .area-hud > .ar-bottom { left: 50%; transform: translateX(-50%); bottom: max(8px, env(safe-area-inset-bottom)); }
+
+/* ======================================================================================================
+   the chat keeps clear of the build menu, and phones get everything a size smaller
+   ====================================================================================================== */
+/* building on a computer: the chat sits just above the dock (or above what you're holding), never on top
+   of the dock's own buttons, and the tips strip makes room for it */
+html:not(.touch) body.house-menu .chat.chat-float { bottom: calc(min(292px, 40vh) + 22px); width: min(280px, calc(100% - 24px)); }
+html:not(.touch) body:has(.place-bar:not(.hidden)) .chat.chat-float { bottom: 104px; }
+html:not(.touch) body.house-menu .house-hint { max-width: min(760px, calc(100vw - 640px)); }
+@media (max-width: 1100px) { html:not(.touch) body.house-menu .house-hint { display: none; } }
+
+/* how much of a phone the build menu takes: a narrower panel down the side (landscape), a shorter sheet
+   up from the bottom (portrait) */
+:root { --menu-w: min(54vw, 560px); --menu-h: 50dvh; }
+@media (max-height: 560px), (max-width: 560px) { :root { --menu-w: min(40vw, 380px); --menu-h: 40dvh; } }
+@media (orientation: portrait) {
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { height: var(--menu-h); }
+  body.house-menu .stick-pad { bottom: calc(var(--menu-h) + 18px); }
+  body.house-menu .touch-buttons { bottom: calc(var(--menu-h) + 18px); max-height: calc(100dvh - var(--menu-h) - 140px); }
+}
+@media (orientation: landscape) {
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { width: var(--menu-w); }
+  body.house-menu .touch-buttons { right: calc(var(--menu-w) + 18px); }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  body.house-menu .area-hud > .house-bar { max-width: calc(100vw - var(--menu-w) - 40px); }
+  html.touch .area-hud > .house-hint { max-width: calc(100vw - var(--menu-w) - 40px); }
+}
+/* small screens: the game comes first, so every panel, button and menu is drawn smaller (still big
+   enough for a thumb: nothing you tap goes under about 34px) */
+@media (max-height: 560px), (max-width: 560px) {
+  html.touch .area-hud > .hud-panel, html.touch .area-hud > .race-item, html.touch .area-hud > .race-map, html.touch .area-hud > .race-count,
+  html.touch #world .hud-panel, html.touch .area-title, html.touch .top-ctl { zoom: .76; }
+  html.touch .hud-me, html.touch #hud .minimap:not(.big), html.touch .hud-clock, html.touch .hud-town, html.touch .toasts { zoom: .76; }
+  html.touch .area-hud > .house-side, html.touch .area-hud > .house-bar { zoom: 1; } /* (sized by hand below) */
+  html.touch .modal-box { zoom: .9; }
+  html.touch .btn { min-height: 38px; }
+  html.touch .btn.small { min-height: 34px; padding: 5px 10px; font-size: 12px; }
+  html.touch .touch-buttons button { width: 54px; height: 54px; }
+  html.touch .touch-buttons button span { font-size: 19px; }
+  html.touch .touch-buttons button small { font-size: 9px; }
+  html.touch .touch-buttons button.big { width: 66px; height: 66px; }
+  html.touch .touch-buttons button.big span { font-size: 26px; }
+  html.touch .stick-pad { width: 98px; height: 98px; }
+  html.touch .stick-knob { width: 42px; height: 42px; }
+  html.touch .area-prompt, html.touch .hud-prompt { font-size: 13px; padding: 7px 12px; }
+  html.touch .area-banner { font-size: 12px; padding: 6px 10px; }
+  html.touch .area-banner .big { font-size: 17px; }
+  /* the bar along the top of the neighbourhood */
+  html.touch .house-bar { gap: 4px; padding: 4px 6px; }
+  html.touch .house-bar .house-actions { gap: 4px; }
+  html.touch .house-bar .pill { font-size: 12px; padding: 3px 8px; }
+  /* the build menu */
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { gap: 4px; padding: 5px; font-size: 12px; }
+  html.touch .house-side.wide .house-tabs { gap: 4px; }
+  html.touch .house-side.wide .house-tabs button { font-size: 12px; padding: 5px 9px; min-height: 34px; }
+  html.touch .house-side.wide .house-panel { padding: 6px; gap: 6px; }
+  html.touch .house-side .shop-pages { gap: 4px; padding: 4px 0 6px; }
+  html.touch .house-side .shop-pages button { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+  html.touch .house-side .shelf-jump button { min-height: 30px; padding: 3px 9px; font-size: 12px; }
+  html.touch .house-side .part-chip { min-height: 30px; padding: 3px 8px; font-size: 12px; }
+  html.touch .house-side .item-search { padding: 4px 8px; }
+  html.touch .house-side.wide .furni-grid { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 5px; }
+  html.touch .house-side .furni { min-height: 0; padding: 5px 3px; font-size: 11px; }
+  html.touch .house-side.wide .fem-img, html.touch .house-side.wide .furni .swatch-em { width: 40px; height: 40px; }
+  html.touch .house-side.wide .style-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; }
+  html.touch .house-side .style-opt { min-height: 38px; font-size: 12px; }
+  html.touch .house-side.wide .style-sw { height: 30px; }
+  html.touch .house-side h3, html.touch .house-side .shelf-label { font-size: 13px; margin: 2px 0; }
+  html.touch .place-bar { padding: 4px 6px 5px; }
+  html.touch .place-bar button { min-height: 34px; font-size: 12px; }
+}

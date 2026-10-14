@@ -149,7 +149,9 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
       `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-field="${field}" data-color="${c}" style="--c:${c}" title="${c}"></button>`).join('')}</div></div>`;
   }
   // items marked "tint" can be recoloured from the full palette (each accessory slot has its own colour)
-  const tintPicker = (key, label) => (ITEMS[draft[key]]?.tint ? swatches(`${label} (${esc(ITEMS[draft[key]].name)})`, colorKey(key), CATALOG.clothColors, { original: true }) : '');
+  // and their smaller parts (an item's "accents": a beanie's cuff and pom-pom, a cape's clasps) each get a colour too
+  const tintPicker = (key, label) => (ITEMS[draft[key]]?.tint ? swatches(`${label} (${esc(ITEMS[draft[key]].name)})`, colorKey(key), CATALOG.clothColors, { original: true }) : '')
+    + (ITEMS[draft[key]]?.accents ?? []).map((part, i) => swatches(`${esc(part)} color`, `${key}Accent${i ? i + 1 : ''}`, CATALOG.clothColors, { original: true })).join('');
 
   // tops: the main colour (tops with their own look, like suits, can be recoloured or kept original)
   // plus an accent for the tie / stripes / trim

@@ -397,7 +397,9 @@ LOOK_SLOTS = ("hair", "top", "bottom", "outfit", "hat", "face", "back", "hand", 
 EXTRA_SLOTS = {"hat2": "hat", "hat3": "hat", "face2": "face", "face3": "face", "hand2": "hand"}
 # optional recolours: a top's own colour + trim, hair ties, and each accessory slot's colour
 LOOK_TINTS = ("hatColor", "hat2Color", "hat3Color", "faceColor", "face2Color", "face3Color", "backColor", "handColor", "hand2Color",
-              "topTint", "topAccent", "outfitColor", "outfitAccent", "hairTie", "auraColor")
+              "topTint", "topAccent", "outfitColor", "outfitAccent", "hairTie", "auraColor",
+              # the smaller parts of an accessory (an item's "accents" in the catalog: a beanie's cuff and pom-pom…)
+              *(f"{slot}Accent{n}" for slot in ("hat", "hat2", "hat3", "face", "face2", "face3", "back") for n in ("", "2")))
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
                "shoeColor": "clothColors", "eyeColor": "eyeColors", "sockColor": "clothColors", "pupilColor": "pupilColors"}
 LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds", "shoes": "shoeStyles", "socks": "sockStyles"}

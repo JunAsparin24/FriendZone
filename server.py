@@ -995,7 +995,7 @@ def clean_house(p, data):
         if kind != "floor" and cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth, **({"st": it["st"]} if it.get("st") in (1, 2) else {})} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
                             **({"c": it["c"]} if can_recolor(f) and it.get("c") in CATALOG["clothColors"] else {}),
                             **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {}),
                             **({"cp": clean_parts(it["cp"])} if can_recolor(f) and isinstance(it.get("cp"), dict) and clean_parts(it["cp"]) else {}),

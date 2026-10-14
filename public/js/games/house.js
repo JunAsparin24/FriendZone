@@ -496,18 +496,38 @@ export function buildShell(h) {
 const slabEdge = new THREE.MeshToonMaterial({ color: '#e6dfd2' }), slabSkirt = new THREE.MeshToonMaterial({ color: '#9c6b43' }); // (a raised floor's sides: wood)
 /** A floor you've laid: a slab with the house's floor on top, its top just above the storey's floor
  *  (in its own frame, centred; the caller puts it in place). */
+/** Where the posts go under a floor laid on posts (its own tiles): round the edge, no more than 2 apart. */
+function slabPosts(it) {
+  const [w, d] = footprint(it), along = (len) => { const n = Math.max(1, Math.ceil((len - 0.3) / 2)); return Array.from({ length: n + 1 }, (_, i) => 0.15 + (i * (len - 0.3)) / n); };
+  const out = [];
+  for (const x of along(w)) for (const z of along(d)) if (x <= 0.16 || x >= w - 0.16 || z <= 0.16 || z >= d - 0.16) out.push([x, z]);
+  return out;
+}
+const postWood = new THREE.MeshToonMaterial({ color: '#6b4a32' }), postFoot = new THREE.MeshToonMaterial({ color: '#8c887f' });
 function slabGroup(it, floorId) {
-  const g = new THREE.Group(), [w, d] = footprint(it), raise = it.h ?? 0, thick = 0.14 + raise; // (raised: solid down to what it stands on)
+  // underneath (st): 0 solid down to what it stands on, 1 on posts (down to the ground, even from upstairs), 2 nothing
+  const g = new THREE.Group(), [w, d] = footprint(it), raise = it.h ?? 0, st = it.st ?? 0, thick = 0.14 + (st ? 0 : raise);
   const top = new THREE.PlaneGeometry(w, d), uv = top.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * w) / 2, (uv.getY(i) * d) / 2);
   const face = new THREE.Mesh(top, surfMat(floorTexture(floorId), true));
   face.rotation.x = -Math.PI / 2;
   face.position.y = raise + 0.014;
   face.receiveShadow = true;
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, thick, d), raise ? slabSkirt : slabEdge);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, thick, d), raise || st ? slabSkirt : slabEdge);
   body.position.y = raise + 0.012 - thick / 2;
   body.castShadow = body.receiveShadow = true;
   g.add(body, face);
+  const drop = raise - 0.13 + baseY(it.lv ?? 0); // (from under the floor to the ground)
+  if (st === 1 && drop > 0.05) {
+    for (const [px, pz] of slabPosts(it)) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, drop, 0.2), postWood);
+      post.position.set(px - w / 2, raise - 0.13 - drop / 2, pz - d / 2);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.3), postFoot);
+      foot.position.set(px - w / 2, raise - 0.13 - drop + 0.06, pz - d / 2);
+      post.castShadow = foot.castShadow = true;
+      g.add(post, foot);
+    }
+  }
   return g;
 }
 
@@ -629,7 +649,7 @@ export function house(stage) {
   const payload = () => ({
     k: viewKey,
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
-    items: home.items.map(({ id, x, y, r, h, l, m, lv, iw, dg, c, t, cp, lk }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(m == null ? {} : { m }), ...(lv ? { lv } : {}), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}), ...(lk && isDoor(id) ? { lk: 1 } : {}) })),
+    items: home.items.map(({ id, x, y, r, h, l, m, lv, st, iw, dg, c, t, cp, lk }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(m == null ? {} : { m }), ...(lv ? { lv } : {}), ...(st ? { st } : {}), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}), ...(lk && isDoor(id) ? { lk: 1 } : {}) })),
     areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT, trimp: home.trimp ?? {},
     ext: home.ext,
   });
@@ -695,7 +715,7 @@ export function house(stage) {
   /** Build one piece. What's solid and what you can use belongs to its storey. */
   function buildEntry(it, index, walls) {
     const from = solids.length, entry = buildPiece(it, index, walls);
-    for (let k = from; k < solids.length; k++) solids[k].lv = lvOf(it);
+    for (let k = from; k < solids.length; k++) solids[k].lv ??= lvOf(it);
     if (entry.inter) entry.inter.when = () => myLv === lvOf(it);
     return entry;
   }
@@ -751,6 +771,9 @@ export function house(stage) {
           if (w >= d) for (const px of [it.x + post / 2, it.x + w - post / 2]) solids.push({ x: px * T, z: cz * T, w: post * T, d: d * T + 0.1 });
           else for (const pz of [it.y + post / 2, it.y + d - post / 2]) solids.push({ x: cx * T, z: pz * T, w: w * T + 0.1, d: post * T });
         } else solids.push({ x: cx * T, z: cz * T, w: w * T + 0.1, d: d * T + 0.1 });
+      } else if (isSlab(it.id) && it.st === 1 && lvOf(it) > 0) {
+        // a balcony on posts: the posts stand in the way down on the ground floor
+        for (const [px, pz] of slabPosts(it)) solids.push({ x: (it.x + px) * T, z: (it.y + pz) * T, w: 0.3 * T, d: 0.3 * T, lv: 0 });
       } else if (kind === 'floor' && !isStairs(it.id)) solids.push({ x: cx * T, z: cz * T, w: w * T - 0.15, d: d * T - 0.15 }); // (stairs: you walk up them)
       const f = FURN[it.id];
       const seat = SEATS[it.id] != null;
@@ -884,9 +907,14 @@ export function house(stage) {
       if (!isStairs(it.id)) continue;
       const [w, d] = footprint(it);
       if (tx < it.x - 0.05 || tz < it.y - 0.05 || tx > it.x + w + 0.05 || tz > it.y + d + 0.05) continue;
-      // how far up the flight you are: in at the front, the top at the back
-      const a = angleOf(it), ux = -Math.sin(a), uz = -Math.cos(a);
-      const t = Math.max(0, Math.min(1, 0.5 + ((tx - (it.x + w / 2)) * ux + (tz - (it.y + d / 2)) * uz) / FURN[it.id].d));
+      // how far up the flight you are: in at the front, the top at the back (round a spiral: how far round)
+      const a = angleOf(it), dx = tx - (it.x + w / 2), dz = tz - (it.y + d / 2);
+      let t;
+      if (FURN[it.id].spiral) {
+        const lx = dx * Math.cos(a) - dz * Math.sin(a), lz = dx * Math.sin(a) + dz * Math.cos(a);
+        if (Math.hypot(lx, lz) > FURN[it.id].w / 2 + 0.05) continue;
+        t = Math.max(0, Math.min(1, ((Math.atan2(lx, lz) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2 * 0.9)));
+      } else t = Math.max(0, Math.min(1, 0.5 + (dx * -Math.sin(a) + dz * -Math.cos(a)) / FURN[it.id].d));
       take(baseY(lvOf(it)) + t * (FURN[it.id].rise ?? WALL_H)); // (steps rise a little way, stairs a whole storey)
     }
     return best * T;
@@ -1364,7 +1392,7 @@ export function house(stage) {
     const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r, ...(placing.dg ? { dg: 1 } : {}), ...(plv() ? { lv: plv() } : {}) };
     if (kindOf(placing.id) !== 'floor' && kindOf(placing.id) !== 'rug' && !isSlab(placing.id)) it.h = placing.h;
     if (isDragWall(placing.id)) it.l = placing.l;
-    if (isSlab(placing.id)) { it.l = placing.l; it.m = placing.m; if (placing.h) it.h = placing.h; }
+    if (isSlab(placing.id)) { it.l = placing.l; it.m = placing.m; if (placing.h) it.h = placing.h; if (placing.from >= 0 && home.items[placing.from].st) it.st = home.items[placing.from].st; }
     if (placing.iw) it.iw = 1;
     if (placing.from >= 0 && home.items[placing.from].c) it.c = home.items[placing.from].c;
     if (placing.from >= 0 && home.items[placing.from].lk) it.lk = 1;
@@ -1456,6 +1484,16 @@ export function house(stage) {
     if (!isDragWall(it.id)) return;
     const next = { ...it, l: Math.max(0.25, lenOf(it) + dir / 4) };
     if (next.l === lenOf(it) || !fits(next) || cellsOf(next, true).some((c) => takenCells(selected).has(c)) || blocksDoor(next)) { sfx('error'); return; }
+    home.items[selected] = next;
+    commit('rotate');
+  }
+
+  /** What's under a floor you've laid: 0 solid, 1 posts, 2 nothing (it floats). */
+  function setSlabStyle(st) {
+    const it = home.items[selected];
+    if (!it || !isSlab(it.id)) return;
+    const next = { ...it };
+    if (st) next.st = st; else delete next.st;
     home.items[selected] = next;
     commit('rotate');
   }
@@ -1809,6 +1847,7 @@ export function house(stage) {
       ${sel ? `<div class="sel-box"><span class="sel-em">${furniImg(sel.id)}</span><b>${esc(FURN[sel.id].name)}</b>
         <div class="row"><button class="btn small" data-act="rotate" ${kindOf(sel.id) === 'wall' ? 'disabled' : ''} ${isDoor(sel.id) ? 'title="Hinge on the other side (two doors side by side, one flipped: double doors)"' : ''}>${isDoor(sel.id) ? '⇄ Flip' : '⟳ Rotate'}</button>
         ${kindOf(sel.id) === 'wall' || kindOf(sel.id) === 'ceiling' ? '<button class="btn small" data-act="up" title="[ ]">▲ Up</button><button class="btn small" data-act="down" title="[ ]">▼ Down</button>' : ''}
+        ${isSlab(sel.id) ? `<div class="row"><span class="muted small">Underneath:</span>${[['Solid', 0], ['Posts', 1], ['Open', 2]].map(([n, v]) => `<button class="btn small ${(sel.st ?? 0) === v ? 'primary' : ''}" data-act="st:${v}">${n}</button>`).join('')}</div>` : ''}
         ${isSlab(sel.id) ? `<button class="btn small" data-act="up" title="] raises it">▲ Raise</button><button class="btn small" data-act="down" title="[ lowers it">▼ Lower</button><span class="muted small">${sel.h ? `${sel.h} up · add Wooden Steps to climb it` : 'on the ground'}</span>` : ''}
         ${isDragWall(sel.id) ? `<button class="btn small" data-act="shorter">− Shorter</button><button class="btn small" data-act="longer">＋ Longer</button><span class="muted small">${lenOf(sel)} tiles</span>` : ''}
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div>
@@ -2054,6 +2093,7 @@ export function house(stage) {
       if (ds.act === 'up') nudgeHeight(1);
       if (ds.act === 'down') nudgeHeight(-1);
       if (ds.act === 'store') storeSelected();
+      if (ds.act.startsWith('st:')) setSlabStyle(+ds.act.slice(3));
       if (ds.act === 'longer') resizeWall(1);
       if (ds.act === 'shorter') resizeWall(-1);
       if (ds.act === 'move' && selected >= 0) startPlacing(home.items[selected].id, selected);

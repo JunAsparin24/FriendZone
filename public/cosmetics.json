@@ -61,7 +61,7 @@
     { "id": "shoes_platform", "name": "Platforms" }, { "id": "shoes_sandals", "name": "Sandals" },
     { "id": "shoes_slides", "name": "Slides" }, { "id": "shoes_heels", "name": "Heels" },
     { "id": "shoes_flats", "name": "Ballet Flats" }, { "id": "shoes_maryjanes", "name": "Mary Janes" },
-    { "id": "shoes_loafers", "name": "Loafers" }, { "id": "shoes_rainboots", "name": "Rain Boots" }
+    { "id": "shoes_loafers", "name": "Loafers" }, { "id": "shoes_rainboots", "name": "Rain Boots" }, { "id": "shoes_pirate", "name": "Pirate Boots" }
   ],
   "sockStyles": [
     { "id": "socks_none", "name": "No Socks" }, { "id": "socks_low", "name": "Low Socks" },
@@ -238,6 +238,7 @@
     { "id": "hat_sunhat", "slot": "hat", "name": "Sun Hat", "rarity": "rare", "price": 1200, "crate": true, "tint": true, "accents": ["Ribbon"] },
     { "id": "hat_flowercrown", "slot": "hat", "name": "Flower Crown", "rarity": "epic", "price": 3000, "crate": true },
     { "id": "hat_pirate", "slot": "hat", "name": "Pirate Hat", "rarity": "epic", "price": 5000, "crate": true, "tint": true, "accents": ["Gold braid", "Skull & bones"] },
+    { "id": "hat_pirate_bandana", "slot": "hat", "name": "Pirate Bandana", "rarity": "rare", "price": 1800, "crate": true, "tint": true, "accents": ["Gold beads"] },
 
     { "id": "face_none", "slot": "face", "name": "Nothing", "rarity": "common", "free": true },
     { "id": "face_glasses", "slot": "face", "name": "Glasses", "rarity": "common", "free": true, "tint": true },
@@ -478,6 +479,20 @@
     { "id": "floor_slab", "name": "Floor", "emoji": "⬜", "w": 1, "d": 1, "kind": "slab", "free": true, "slab": true, "max": 200, "set": "Rooms" },
     { "id": "house_stairs", "name": "Staircase", "emoji": "🪜", "w": 1.5, "d": 4, "free": true, "stairs": true, "max": 12, "set": "Rooms" },
     {"id": "house_steps", "name": "Wooden Steps", "emoji": "🪜", "w": 1.5, "d": 1, "free": true, "stairs": true, "rise": 0.5, "max": 24, "set": "Rooms"},
+    {"id": "stairs_white", "name": "White Staircase", "emoji": "🪜", "w": 1.5, "d": 4, "free": true, "stairs": true, "max": 12, "set": "Rooms"},
+    {"id": "stairs_stone", "name": "Stone Staircase", "emoji": "🪜", "w": 1.5, "d": 4, "free": true, "stairs": true, "max": 12, "set": "Rooms"},
+    {"id": "stairs_open", "name": "Floating Staircase", "emoji": "🪜", "w": 1.5, "d": 4, "free": true, "stairs": true, "max": 12, "set": "Rooms"},
+    {"id": "stairs_spiral", "name": "Spiral Staircase", "emoji": "🌀", "w": 2, "d": 2, "free": true, "stairs": true, "spiral": true, "max": 12, "set": "Rooms"},
+    {"id": "step_stone", "name": "Stone Step", "emoji": "🪨", "w": 1.5, "d": 0.75, "free": true, "stairs": true, "rise": 0.25, "max": 24, "set": "Rooms"},
+    {"id": "steps_stone", "name": "Stone Steps", "emoji": "🪜", "w": 1.5, "d": 1, "free": true, "stairs": true, "rise": 0.5, "max": 24, "set": "Rooms"},
+    {"id": "steps_wide", "name": "Wide Wooden Steps", "emoji": "🪜", "w": 3, "d": 1, "free": true, "stairs": true, "rise": 0.5, "max": 24, "set": "Rooms"},
+    {"id": "steps_tall", "name": "Tall Wooden Steps", "emoji": "🪜", "w": 1.5, "d": 2, "free": true, "stairs": true, "rise": 1, "max": 24, "set": "Rooms"},
+    {"id": "steps_brick", "name": "Brick Steps", "emoji": "🧱", "w": 1.5, "d": 1, "free": true, "stairs": true, "rise": 0.5, "max": 24, "set": "Rooms"},
+    {"id": "col_wood", "name": "Wooden Column", "emoji": "🪵", "w": 0.5, "d": 0.5, "free": true, "max": 40, "set": "Rooms"},
+    {"id": "col_round", "name": "White Column", "emoji": "🏛️", "w": 0.5, "d": 0.5, "free": true, "max": 40, "set": "Rooms"},
+    {"id": "col_stone", "name": "Stone Pillar", "emoji": "🪨", "w": 0.5, "d": 0.5, "price": 150, "max": 40, "set": "Rooms"},
+    {"id": "col_log", "name": "Log Post", "emoji": "🪵", "w": 0.5, "d": 0.5, "price": 120, "max": 40, "set": "Rooms"},
+    {"id": "col_marble", "name": "Marble Column", "emoji": "🏛️", "w": 0.5, "d": 0.5, "price": 400, "max": 40, "set": "Rooms"},
     { "id": "room_wall_short", "name": "Short Room Wall", "emoji": "🧱", "w": 1, "d": 0.25, "free": true, "drag": true, "max": 40, "set": "Rooms", "room": true, "retired": true },
     { "id": "room_doorway", "name": "Doorway", "emoji": "🚪", "w": 2, "d": 0.25, "free": true, "max": 12, "set": "Rooms", "room": true, "doorway": true, "retired": true },
     { "id": "room_door", "name": "Wooden Door", "emoji": "🚪", "w": 2, "d": 0.25, "price": 200, "max": 12, "set": "Rooms", "room": true, "doorway": true, "retired": true },

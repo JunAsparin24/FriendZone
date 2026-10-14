@@ -208,7 +208,7 @@ const numberTexture = (() => {
     return cache.get(color);
   };
 })();
-const FRINGE_HIDING_HATS = new Set(['hat_durag', 'hat_beanie', 'hat_helmet', 'hat_viking', 'hat_bucket', 'hat_cap', 'hat_pirate']);
+const FRINGE_HIDING_HATS = new Set(['hat_durag', 'hat_beanie', 'hat_helmet', 'hat_viking', 'hat_bucket', 'hat_cap', 'hat_pirate', 'hat_pirate_bandana']);
 const COVERING_HATS = new Set(['hat_durag', 'hat_cap', 'hat_beanie', 'hat_cowboy', 'hat_bucket', 'hat_tophat', 'hat_viking',
   'hat_wizard', 'hat_helmet', 'hat_robin', 'hat_party', 'hat_crown', 'hat_sunhat', 'hat_bandana', 'hat_pirate']);
 
@@ -319,7 +319,7 @@ Object.assign(TOPS, {
   astro_top: { sleeve: 'long', puffy: true, color: '#f4f4f2', accent: '#39c6ff' },
   cheer_top: { sleeve: 'none', accent: '#ffffff' },
   school_top: { sleeve: 'long', shirt: '#f6f4ee', blazer: true, color: '#2b3a6b', accent: '#e0463c' },
-  pirate_coat: { sleeve: 'long', shirt: '#f6f4ee', blazer: true, coat: true, color: '#7a1f2b', accent: '#e0b23c' },
+  pirate_coat: { sleeve: 'long', shirt: '#efe8da', blazer: true, coat: true, color: '#3d3128', accent: '#8a7650' },
 });
 // more bottoms (and the outfits' own). skirt.len can be 'midi', 'ankle' or 'floor' as well as a length
 Object.assign(BOTTOMS, {
@@ -353,11 +353,11 @@ Object.assign(BOTTOMS, {
   skirt_cheer: { legs: 'skin', socks: true, skirt: { len: 0.18, flare: 0.42, pleats: 14, hem: true } },
   skirt_school: { legs: 'skin', socks: true, skirt: { len: 0.25, flare: 0.42, pleats: 16, pattern: 'plaid' } },
   skirt_kimono: { legs: 'skin', skirt: { len: 'ankle', flare: 0.3, pattern: 'floral', wrap: true } },
-  piratepants: { legs: 'pants', pattern: 'stripes', baggy: 1.1, cuffs: true },
+  piratepants: { legs: 'pants', baggy: 1.1 },
 });
 // full outfits: a top and a bottom (worn instead of yours), in the outfit's colour + accent
 const OUTFITS = {
-  outfit_pirate: { top: 'pirate_coat', bottom: 'piratepants', color: '#7a1f2b', accent: '#e0b23c', pants: '#efe6d2', pantsAccent: '#2b2f4a' },
+  outfit_pirate: { top: 'pirate_coat', bottom: 'piratepants', color: '#3d3128', accent: '#8a7650', pants: '#3a332d', pantsAccent: '#2b2f4a' },
   outfit_sundress: { top: 'dress_strap', bottom: 'skirt_sun', color: '#ffd84d', accent: '#ffffff' },
   outfit_pajamas: { top: 'pj_top', bottom: 'pjpants', color: '#8fd3ff', accent: '#ffffff' },
   outfit_pinafore: { top: 'dress_pinafore', bottom: 'skirt_pinafore', color: '#c2185b', accent: '#ffd84d' },
@@ -2126,6 +2126,24 @@ const HATS = {
     part(em, circle(0.055), bone, { p: [0, 0.012, 0.008], outline: null });
     part(em, box(0.06, 0.035, 0.01), bone, { p: [0, -0.04, 0.008], outline: null });
     for (const sx of [-1, 1]) part(em, circle(0.016), basic('#1d1b22'), { p: [sx * 0.022, 0.016, 0.012], outline: null, shadow: false });
+  },
+
+  hat_pirate_bandana(head, L) {
+    // a red cloth tied round the forehead (it sits under a pirate hat too), knotted at the back with its
+    // ends hanging down, and a string of beads dangling by one temple
+    const c = hatCol(L, '#c62828'), cloth = toon(c, { side: THREE.DoubleSide });
+    const band = geo('pirateBand', () => new THREE.LatheGeometry([0.205, 0.25, 0.3, 0.35, 0.375].map((y) => new THREE.Vector2(Math.sqrt(0.47 * 0.47 - y * y), y)), 40));
+    part(head, band, cloth, { outline: OUT_THIN });
+    part(head, torus(Math.sqrt(0.47 * 0.47 - 0.29 * 0.29) + 0.004, 0.008, TAU, 6, 40), toon(tint(c, 0.75)), { p: [0, 0.29, 0], r: [Math.PI / 2, 0, 0], outline: null });
+    const knot = new THREE.Vector3(0.08, 0.3, -0.4);
+    part(head, sphere(0.065, 10, 8), cloth, { p: knot.toArray(), s: [1.2, 0.9, 0.8], outline: OUT_THIN });
+    for (const [sx, len] of [[-1, 0.42], [1, 0.34]]) {
+      const g = geo(`bandTail${len}`, () => { const pg = new THREE.PlaneGeometry(0.11, len, 1, 4); pg.translate(0, -len / 2, 0); return pg; });
+      part(head, g, cloth, { p: [knot.x + sx * 0.04, knot.y - 0.02, knot.z - 0.03], r: [0.3, 0, sx * 0.25], outline: OUT_THIN });
+    }
+    const t = onHead(1.15, 1.12, 0.475), gold = hatAcc(L, '#e0b23c');
+    part(head, cyl(0.006, 0.006, 0.27, 5), toon('#3a2a1e'), { p: [t.x, t.y - 0.135, t.z], outline: null, shadow: false });
+    [gold, '#2fa58a', gold, '#c62828', '#f4ecd8'].forEach((bc, i) => part(head, sphere(0.024, 8, 6), toon(bc), { p: [t.x, t.y - 0.05 - i * 0.05, t.z], outline: null }));
   },
 
   // ---- hair accessories ----
@@ -4375,23 +4393,29 @@ export class Character {
         break;
       }
       case 'pirate_coat': {
-        // a captain's coat over a white shirt: a frilly jabot at the throat, wide lapels, gold braid down
-        // both front edges with a row of gold buttons, a leather belt with a big buckle and a red sash
-        const gold = shiny(accent, { metalness: 0.6, roughness: 0.3 });
-        vneck(white, 0.16, 0.16);
+        // a captain's long coat, weathered, hanging open over a loose white shirt and a brown waistcoat: a
+        // leather baldric slung across the chest, a wide belt with a big buckle, a faded sash knotted at the
+        // hip and a flintlock pistol tucked in the belt
+        const metal = shiny(accent, { metalness: 0.55, roughness: 0.45 }), leather = toon('#3a2a1e'), vest = toon('#74523a'), cloth = toon('#d9cdb4');
+        vneck(white, 0.22, 0.13); // (the shirt's open at the neck)
         collar(white);
-        for (let i = 0; i < 4; i++) part(torso, sphere(0.035, 10, 8), white, { p: front(0, 0.2 - i * 0.045, 0.03), s: [1.5, 0.75, 0.6], outline: OUT_THIN });
-        lapels(toon(tint(color, 0.7)), 0.085);
-        for (const sx of [-1, 1]) {
-          part(torso, box(0.022, 0.42, 0.016), gold, { p: front(sx * 0.105, -0.05, 0.022), outline: null });
-          buttons(gold, [0.08, 0, -0.08, -0.16], sx * 0.15);
-        }
-        ring(-0.24, toon('#3a2416'), 0.032);
-        part(torso, box(0.11, 0.085, 0.02), gold, { p: front(0, -0.24, 0.05), outline: OUT_THIN });
-        part(torso, box(0.06, 0.04, 0.025), toon('#3a2416'), { p: front(0, -0.24, 0.055), outline: null });
-        ring(-0.16, toon('#c62828'), 0.03);
-        part(torso, sphere(0.045, 10, 8), toon('#c62828'), { p: around(1.2, -0.16, 0.03), outline: OUT_THIN });
-        for (const k of [0, 1]) part(torso, box(0.05, 0.22, 0.015), toon('#c62828'), { p: around(1.2 + k * 0.18, -0.28, 0.03), r: [0, 1.2, k ? 0.15 : -0.1], outline: OUT_THIN });
+        for (const sx of [-1, 1]) part(torso, box(0.09, 0.38, 0.014), vest, { p: front(sx * 0.105, -0.03, 0.014), r: [0, sx * 0.35, 0], outline: OUT_THIN });
+        buttons(metal, [0.07, 0, -0.07], 0.07);
+        lapels(toon(tint(color, 0.75)), 0.095);
+        // the baldric: a strap from the right shoulder down to the left hip, with a buckle on the chest
+        const strap = [new THREE.Vector3(...front(0.16, 0.27, 0.03)), new THREE.Vector3(...front(0.02, 0.03, 0.04)), new THREE.Vector3(...front(-0.17, -0.22, 0.04))];
+        taper(torso, strap, 0.024, 0.024, leather);
+        part(torso, box(0.05, 0.05, 0.02), metal, { p: front(0.06, 0.1, 0.06), r: [0, 0, 0.7], outline: null });
+        // the belt, its buckle, and the sash under it, knotted at one hip with the ends hanging
+        ring(-0.24, leather, 0.036);
+        part(torso, box(0.12, 0.1, 0.02), metal, { p: front(0, -0.24, 0.05), outline: OUT_THIN });
+        part(torso, box(0.07, 0.05, 0.025), leather, { p: front(0, -0.24, 0.055), outline: null });
+        ring(-0.17, cloth, 0.028);
+        part(torso, sphere(0.05, 10, 8), cloth, { p: around(-1.15, -0.18, 0.035), outline: OUT_THIN });
+        for (const k of [0, 1]) part(torso, box(0.06, 0.3, 0.015), cloth, { p: around(-1.15 - k * 0.22, -0.36, 0.04), r: [0, -1.15, k ? 0.12 : -0.08], outline: OUT_THIN });
+        // the pistol: a dark wooden grip and a brass-capped butt sticking up out of the belt
+        part(torso, box(0.04, 0.14, 0.03), toon('#2a1a12'), { p: front(-0.09, -0.17, 0.08), r: [0, 0, 0.45], outline: OUT_THIN });
+        part(torso, sphere(0.025, 8, 6), metal, { p: front(-0.12, -0.11, 0.08), outline: null });
         break;
       }
       case 'top_corset':
@@ -4549,6 +4573,15 @@ export class Character {
         part(knee, cyl(0.104, 0.11, 0.2, 16), shoe, { p: [0, -0.1 + fy, 0.005], outline: OUT_THIN });
         part(knee, torus(0.104, 0.016, TAU, 6, 18), dark, { p: [0, 0.0 + fy, 0.005], r: [Math.PI / 2, 0, 0], outline: null });
         part(knee, box(0.12, 0.012, 0.01), dark, { p: [0, -0.2 + fy, 0.14], outline: null, shadow: false });
+        break;
+      case 'shoes_pirate':
+        // tall leather boots with a wide cuff folded down at the top, a buckled strap round the ankle and a heel
+        foot(shoe, [1, 0.62, 1.45]); soleUnder(dark, 0.32);
+        part(knee, cyl(0.11, 0.114, 0.28, 18), shoe, { p: [0, -0.06 + fy, 0.005], outline: OUT_THIN });
+        part(knee, cyl(0.15, 0.124, 0.11, 18), dark, { p: [0, 0.1 + fy, 0.005], outline: OUT_THIN });
+        part(knee, torus(0.116, 0.014, TAU, 6, 18), dark, { p: [0, -0.16 + fy, 0.005], r: [Math.PI / 2, 0, 0], outline: null });
+        part(knee, box(0.045, 0.04, 0.015), shiny('#b8a070', { metalness: 0.6 }), { p: [0.04, -0.16 + fy, 0.118], outline: null, shadow: false });
+        part(knee, box(0.14, 0.06, 0.09), dark, { p: [0, G + 0.03, -0.06], outline: null });
         break;
       case 'shoes_rainboots':
         // tall glossy wellies with a chunky sole and a band at the top

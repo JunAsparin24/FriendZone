@@ -2695,6 +2695,92 @@ Object.assign(FURNITURE, {
   },
 });
 
+// ---- stairs, steps and columns: building pieces ----
+/** A flight of n steps rising `rise` over the depth d: in at the front (+z), climbing towards the back.
+ *  open: just the treads on two stringers (no risers), the modern floating kind. */
+function flight(g, { w, d, rise, n, body, tread, open = false, stringer = null }) {
+  const run = d / n, h = rise / n;
+  for (let i = 0; i < n; i++) {
+    const z = d / 2 - (i + 0.5) * run, top = (i + 1) * h;
+    if (open) add(g, box(w, 0.07, run * 0.9), tread, { p: [0, top - 0.035, z] });
+    else {
+      add(g, box(w, top, run), body, { p: [0, top / 2, z] });
+      if (tread) add(g, box(w + 0.02, 0.035, run + 0.02), tread, { p: [0, top, z], outline: false });
+    }
+  }
+  if (stringer) for (const x of [-w / 2 + 0.05, w / 2 - 0.05]) add(g, box(0.06, 0.16, Math.hypot(rise, d)), stringer, { p: [x, rise / 2 - 0.06, 0], r: [Math.atan2(rise, d), 0, 0] });
+}
+/** A handrail up one side of a flight (x): posts, and a rail along the slope. */
+function handrail(g, { x, d, rise, mat, posts = 5, glass = false }) {
+  for (let i = 0; i < posts; i++) {
+    const t = (i + 0.5) / posts, z = d / 2 - t * d, y = t * rise;
+    add(g, cyl(0.025, 0.025, 0.9, 6), mat, { p: [x, y + 0.45, z], outline: false });
+  }
+  const len = Math.hypot(rise, d), ang = Math.atan2(rise, d);
+  if (glass) add(g, box(0.02, 0.8, len), new THREE.MeshStandardMaterial({ color: '#cfeaff', transparent: true, opacity: 0.35, roughness: 0.05 }), { p: [x, rise / 2 + 0.45, 0], r: [ang, 0, 0], outline: false });
+  add(g, box(0.05, 0.05, len), mat, { p: [x, rise / 2 + 0.9, 0], r: [ang, 0, 0] });
+}
+/** A column a storey tall: a footing, a shaft and (for the classical ones) a capital. */
+function column(g, { shaft, cap = null, foot = null, round = true, r = 0.15, fluted = false }) {
+  const H = ROOM_H;
+  if (foot) add(g, box(0.42, 0.12, 0.42), foot, { p: [0, 0.06, 0] });
+  if (round) add(g, cyl(r, r * 1.12, H - (foot ? 0.12 : 0) - (cap ? 0.12 : 0), 20), shaft, { p: [0, (foot ? 0.12 : 0) + (H - (foot ? 0.12 : 0) - (cap ? 0.12 : 0)) / 2, 0] });
+  else add(g, box(r * 1.8, H - (foot ? 0.12 : 0), r * 1.8), shaft, { p: [0, (foot ? 0.12 : 0) + (H - (foot ? 0.12 : 0)) / 2, 0] });
+  if (fluted) for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; add(g, box(0.02, H - 0.4, 0.02), toon('#d9d4c8'), { p: [Math.sin(a) * r * 1.02, H / 2, Math.cos(a) * r * 1.02], outline: false }); }
+  if (cap) add(g, box(0.44, 0.12, 0.44), cap, { p: [0, H - 0.06, 0] });
+}
+Object.assign(FURNITURE, {
+  // ---- staircases (a whole storey up) ----
+  stairs_white(g) {
+    flight(g, { w: 1.5, d: 4, rise: 3.2, n: 16, body: toon('#f2f0ec'), tread: toon('#c9a77c') });
+    handrail(g, { x: 0.72, d: 4, rise: 3.2, mat: toon('#2b2f4a'), glass: true });
+  },
+  stairs_stone(g) {
+    flight(g, { w: 1.5, d: 4, rise: 3.2, n: 16, body: toon('#9a968e'), tread: toon('#b5b1a8') });
+  },
+  stairs_open(g) {
+    // floating: thick dark treads on two black stringers, nothing between them
+    flight(g, { w: 1.5, d: 4, rise: 3.2, n: 16, tread: toon('#5a3a22'), open: true, stringer: toon('#23252d') });
+    handrail(g, { x: -0.72, d: 4, rise: 3.2, mat: toon('#23252d'), posts: 4 });
+  },
+  stairs_spiral(g) {
+    // round and round a centre pole: each tread a wedge further round and a step higher (in at the front)
+    const n = 16, sweep = TAU * 0.9, metal = toon('#2b2f4a'), wood = toon('#a0703c');
+    add(g, cyl(0.08, 0.08, 3.5, 12), metal, { p: [0, 1.75, 0] });
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * sweep, y = (i + 1) * (3.2 / n);
+      const t = add(g, box(0.36, 0.06, 0.86), wood, { p: [Math.sin(a) * 0.5, y, Math.cos(a) * 0.5] });
+      t.rotation.y = a;
+      add(g, cyl(0.02, 0.02, 0.85, 6), metal, { p: [Math.sin(a) * 0.9, y + 0.45, Math.cos(a) * 0.9], outline: false });
+    }
+  },
+  // ---- steps (a little way up, onto a raised floor) ----
+  step_stone(g) {
+    // one big flat stone to step up on, like the ones in front of a Japanese veranda
+    add(g, box(1.4, 0.25, 0.68), toon('#a8a49a'), { p: [0, 0.125, 0] });
+    add(g, box(1.3, 0.03, 0.6), toon('#bdb9af'), { p: [0, 0.26, 0], outline: false });
+  },
+  steps_stone(g) { flight(g, { w: 1.5, d: 1, rise: 0.5, n: 2, body: toon('#9a968e'), tread: toon('#b5b1a8') }); },
+  steps_wide(g) { flight(g, { w: 3, d: 1, rise: 0.5, n: 2, body: toon('#a0703c'), tread: toon('#c99a62') }); },
+  steps_tall(g) { flight(g, { w: 1.5, d: 2, rise: 1, n: 4, body: toon('#a0703c'), tread: toon('#c99a62') }); },
+  steps_brick(g) { flight(g, { w: 1.5, d: 1, rise: 0.5, n: 2, body: toon('#a5503c'), tread: toon('#d8d2c8') }); },
+  // ---- columns (a storey tall: under a beam, round a porch, holding up a balcony) ----
+  col_wood(g) { column(g, { shaft: toon('#8a5a32'), foot: toon('#8c887f'), round: false, r: 0.13 }); },
+  col_round(g) {
+    column(g, { shaft: toon('#f4f1ea'), cap: toon('#e8e3d8'), foot: toon('#e8e3d8') });
+    for (const y of [0.16, ROOM_H - 0.16]) add(g, geo('colRing', () => new THREE.TorusGeometry(0.17, 0.025, 6, 24)), toon('#e8e3d8'), { p: [0, y, 0], r: [Math.PI / 2, 0, 0], outline: false });
+  },
+  col_stone(g) {
+    const greys = ['#9a968e', '#aaa59c', '#8a867e'];
+    for (let i = 0; i < 8; i++) add(g, box(0.4 - (i % 2) * 0.03, ROOM_H / 8 - 0.02, 0.4 - ((i + 1) % 2) * 0.03), toon(greys[i % 3]), { p: [0, (i + 0.5) * (ROOM_H / 8), 0] });
+  },
+  col_marble(g) { column(g, { shaft: toon('#f6f3ec'), cap: shiny('#d4af37', { metalness: 0.6 }), foot: shiny('#d4af37', { metalness: 0.6 }), fluted: true, r: 0.16 }); },
+  col_log(g) {
+    add(g, cyl(0.16, 0.19, ROOM_H, 9), toon('#6b4a32'), { p: [0, ROOM_H / 2, 0] });
+    add(g, cyl(0.15, 0.15, 0.02, 9), toon('#d9b98a'), { p: [0, ROOM_H + 0.005, 0], outline: false });
+  },
+});
+
 const OWN_DROP = new Set(['hanging_plant', 'hanging_plant_short', 'hanging_plant_long', 'hanging_vines']);
 
 /** Build a piece of furniture. Returns { group, use, anim }. `drop`: how far below the ceiling a

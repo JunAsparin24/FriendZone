@@ -537,8 +537,7 @@ class Stage {
    * synced through area_move. solids: [{ x, z, w, d }] boxes (centre + size) or [{ x, z, r }] circles.
    */
   walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {}, ceiling = 4.6, speedOf = null, frozen = null, blockedAt = null, wire = null, levelOf = null, syncY = false }) {
-    // (levelOf: the storey you're on, for places with upstairs: a solid with an `lv` only gets in the way on
-    // its own one. syncY: how high up you are goes over the network too, and everyone else's comes back)
+    // (syncY: how high up you are goes over the network too, and everyone else's comes back)
     // (wire: { out, in } turn positions into the ones sent over the network and back, for a place whose
     // own coordinates move about, like the neighbourhood, which is always centred on the house you're at)
     const wOut = (x, z, h) => (wire ? wire.out(x, z, h) : { x, z, h }), wIn = (x, z, h) => (wire ? wire.in(x, z, h) : { x, z, h });
@@ -552,8 +551,10 @@ class Stage {
     const blocked = (x, z) => {
       if (bounds && (x < bounds.minX + R || x > bounds.maxX - R || z < bounds.minZ + R || z > bounds.maxZ - R)) return true;
       if (blockedAt?.(x, z)) return true;
-      const lv = levelOf?.();
-      return solids.some((s) => (s.lv == null || lv == null || s.lv === lv) && (s.r != null ? Math.hypot(x - s.x, z - s.z) < s.r + R
+      // (a solid with a height span, y0..y1, is only in the way of someone whose feet are in it: walls up on
+      // a floor don't stop people walking about underneath)
+      const py = me.y ?? 0;
+      return solids.some((s) => (s.y0 == null || (py > s.y0 - 0.6 && py < s.y1 - 0.3)) && (s.r != null ? Math.hypot(x - s.x, z - s.z) < s.r + R
         : Math.abs(x - s.x) < s.w / 2 + R && Math.abs(z - s.z) < s.d / 2 + R));
     };
     this.walkTo = (it) => { target = { x: it.x, z: it.z, stopAt: it.r * 0.7, use: it.use }; };

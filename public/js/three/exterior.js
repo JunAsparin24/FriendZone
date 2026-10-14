@@ -318,7 +318,7 @@ export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
     // roof slopes, which way a gable's ridge runs…) and made flatter or steeper (r.p)
     const piece = new THREE.Group(), turn = (r.r ?? 0) % 4, pitch = r.p ?? 1;
     const hw = (turn % 2 ? r.d : r.w) / 2, hd = (turn % 2 ? r.w : r.d) / 2, x0 = -hw, x1 = hw, z0 = -hd, z1 = hd;
-    piece.position.set(r.x + r.w / 2, (r.lv ?? 0) * WALL_H, r.y + r.d / 2); // (lv: on top of an upper storey)
+    piece.position.set(r.x + r.w / 2, (r.lv ?? 0) * WALL_H + (r.e ?? 0), r.y + r.d / 2); // (e: on top of walls that stand that high)
     piece.rotation.y = turn * Math.PI / 2;
     const shape = (ROOFS[r.s] ?? ROOFS.gable)(x0, x1, z0, z1, WALL_H);
     const body = new THREE.Group();

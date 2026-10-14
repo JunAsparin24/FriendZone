@@ -2068,28 +2068,11 @@ Object.assign(FURNITURE, {
     for (const x of [-0.25, 0.25]) add(g, box(0.02, 0.005, 1), toon('#a87b48'), { p: [x, 0.023, 0], outline: false });
   },
   // two wooden steps up onto a raised floor (half a tile high: a floor raised two notches)
-  house_steps(g) {
-    const wood = toon('#a0703c'), tread = toon('#c99a62');
-    for (let i = 0; i < 2; i++) {
-      const h = (i + 1) * 0.25, z = 0.5 - (i + 0.5) * 0.5;
-      add(g, box(1.5, h, 0.5), wood, { p: [0, h / 2, z] });
-      add(g, box(1.52, 0.03, 0.52), tread, { p: [0, h, z], outline: false });
-    }
-  },
+  house_steps(g, A, { rise = 0.5 } = {}) { flight(g, { w: 1.5, d: 1, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') }); },
   // a straight flight of stairs up to the next storey: in from the front, climbing towards the back
-  house_stairs(g) {
-    const n = 16, run = 4 / n, rise = 3.2 / n, wood = toon('#a0703c'), tread = toon('#c99a62'), rail = toon('#5a3a26');
-    for (let i = 0; i < n; i++) {
-      const z = 2 - (i + 0.5) * run, h = (i + 1) * rise;
-      add(g, box(1.5, h, run), wood, { p: [0, h / 2, z] });
-      add(g, box(1.52, 0.04, run + 0.02), tread, { p: [0, h, z], outline: false });
-    }
-    // a handrail up one side, on posts
-    for (let i = 0; i <= n; i += 4) add(g, cyl(0.03, 0.03, 0.9, 6), rail, { p: [0.7, Math.min(i + 1, n) * rise + 0.45, 2 - (i + 0.5) * run] });
-    const top = new THREE.Vector3(0.7, 3.2 + 0.9, -1.9), foot = new THREE.Vector3(0.7, rise + 0.9, 1.9);
-    const len = top.distanceTo(foot);
-    const r = add(g, cyl(0.035, 0.035, len, 6), rail, { p: [0.7, (top.y + foot.y) / 2, (top.z + foot.z) / 2] });
-    r.rotation.x = Math.atan2(top.z - foot.z, top.y - foot.y);
+  house_stairs(g, A, { rise = 3.2 } = {}) {
+    flight(g, { w: 1.5, d: 4, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') });
+    handrail(g, { x: 0.7, d: 4, rise, mat: toon('#5a3a26') });
   },
   room_wall_short(g, A, { len = 1, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps }); },
   // doors go into a wall like a picture goes on one: the wall opens up around them
@@ -2696,6 +2679,8 @@ Object.assign(FURNITURE, {
 });
 
 // ---- stairs, steps and columns: building pieces ----
+/** How many steps a flight that climbs `rise` gets: about a fifth of a tile each. */
+const steps = (rise) => Math.max(1, Math.round(rise / 0.2));
 /** A flight of n steps rising `rise` over the depth d: in at the front (+z), climbing towards the back.
  *  open: just the treads on two stringers (no risers), the modern floating kind. */
 function flight(g, { w, d, rise, n, body, tread, open = false, stringer = null }) {
@@ -2731,39 +2716,39 @@ function column(g, { shaft, cap = null, foot = null, round = true, r = 0.15, flu
 }
 Object.assign(FURNITURE, {
   // ---- staircases (a whole storey up) ----
-  stairs_white(g) {
-    flight(g, { w: 1.5, d: 4, rise: 3.2, n: 16, body: toon('#f2f0ec'), tread: toon('#c9a77c') });
-    handrail(g, { x: 0.72, d: 4, rise: 3.2, mat: toon('#2b2f4a'), glass: true });
+  stairs_white(g, A, { rise = 3.2 } = {}) {
+    flight(g, { w: 1.5, d: 4, rise, n: steps(rise), body: toon('#f2f0ec'), tread: toon('#c9a77c') });
+    handrail(g, { x: 0.72, d: 4, rise, mat: toon('#2b2f4a'), glass: true });
   },
-  stairs_stone(g) {
-    flight(g, { w: 1.5, d: 4, rise: 3.2, n: 16, body: toon('#9a968e'), tread: toon('#b5b1a8') });
+  stairs_stone(g, A, { rise = 3.2 } = {}) {
+    flight(g, { w: 1.5, d: 4, rise, n: steps(rise), body: toon('#9a968e'), tread: toon('#b5b1a8') });
   },
-  stairs_open(g) {
+  stairs_open(g, A, { rise = 3.2 } = {}) {
     // floating: thick dark treads on two black stringers, nothing between them
-    flight(g, { w: 1.5, d: 4, rise: 3.2, n: 16, tread: toon('#5a3a22'), open: true, stringer: toon('#23252d') });
-    handrail(g, { x: -0.72, d: 4, rise: 3.2, mat: toon('#23252d'), posts: 4 });
+    flight(g, { w: 1.5, d: 4, rise, n: steps(rise), tread: toon('#5a3a22'), open: true, stringer: toon('#23252d') });
+    handrail(g, { x: -0.72, d: 4, rise, mat: toon('#23252d'), posts: 4 });
   },
-  stairs_spiral(g) {
+  stairs_spiral(g, A, { rise = 3.2 } = {}) {
     // round and round a centre pole: each tread a wedge further round and a step higher (in at the front)
-    const n = 16, sweep = TAU * 0.9, metal = toon('#2b2f4a'), wood = toon('#a0703c');
-    add(g, cyl(0.08, 0.08, 3.5, 12), metal, { p: [0, 1.75, 0] });
+    const n = Math.max(4, steps(rise)), sweep = TAU * 0.9, metal = toon('#2b2f4a'), wood = toon('#a0703c');
+    add(g, cyl(0.08, 0.08, rise + 0.3, 12), metal, { p: [0, (rise + 0.3) / 2, 0] });
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * sweep, y = (i + 1) * (3.2 / n);
+      const a = (i / n) * sweep, y = (i + 1) * (rise / n);
       const t = add(g, box(0.36, 0.06, 0.86), wood, { p: [Math.sin(a) * 0.5, y, Math.cos(a) * 0.5] });
       t.rotation.y = a;
       add(g, cyl(0.02, 0.02, 0.85, 6), metal, { p: [Math.sin(a) * 0.9, y + 0.45, Math.cos(a) * 0.9], outline: false });
     }
   },
   // ---- steps (a little way up, onto a raised floor) ----
-  step_stone(g) {
+  step_stone(g, A, { rise = 0.25 } = {}) {
     // one big flat stone to step up on, like the ones in front of a Japanese veranda
-    add(g, box(1.4, 0.25, 0.68), toon('#a8a49a'), { p: [0, 0.125, 0] });
-    add(g, box(1.3, 0.03, 0.6), toon('#bdb9af'), { p: [0, 0.26, 0], outline: false });
+    add(g, box(1.4, rise, 0.68), toon('#a8a49a'), { p: [0, rise / 2, 0] });
+    add(g, box(1.3, 0.03, 0.6), toon('#bdb9af'), { p: [0, rise + 0.01, 0], outline: false });
   },
-  steps_stone(g) { flight(g, { w: 1.5, d: 1, rise: 0.5, n: 2, body: toon('#9a968e'), tread: toon('#b5b1a8') }); },
-  steps_wide(g) { flight(g, { w: 3, d: 1, rise: 0.5, n: 2, body: toon('#a0703c'), tread: toon('#c99a62') }); },
-  steps_tall(g) { flight(g, { w: 1.5, d: 2, rise: 1, n: 4, body: toon('#a0703c'), tread: toon('#c99a62') }); },
-  steps_brick(g) { flight(g, { w: 1.5, d: 1, rise: 0.5, n: 2, body: toon('#a5503c'), tread: toon('#d8d2c8') }); },
+  steps_stone(g, A, { rise = 0.5 } = {}) { flight(g, { w: 1.5, d: 1, rise, n: steps(rise), body: toon('#9a968e'), tread: toon('#b5b1a8') }); },
+  steps_wide(g, A, { rise = 0.5 } = {}) { flight(g, { w: 3, d: 1, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') }); },
+  steps_tall(g, A, { rise = 1 } = {}) { flight(g, { w: 1.5, d: 2, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') }); },
+  steps_brick(g, A, { rise = 0.5 } = {}) { flight(g, { w: 1.5, d: 1, rise, n: steps(rise), body: toon('#a5503c'), tread: toon('#d8d2c8') }); },
   // ---- columns (a storey tall: under a beam, round a porch, holding up a balcony) ----
   col_wood(g) { column(g, { shaft: toon('#8a5a32'), foot: toon('#8c887f'), round: false, r: 0.13 }); },
   col_round(g) {
@@ -3728,9 +3713,9 @@ for (const [id, sp] of Object.entries(PLUSH)) FURNITURE[id] = (g, A) => plushie(
 export const PLUSH_IDS = Object.keys(PLUSH);
 export const plushEmoji = (id) => PLUSH_EMOJI[PLUSH[id]?.kind] ?? '🧸';
 
-export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true], color = null, text = null, parts = null } = {}) {
+export function buildFurniture(id, { drop = 0, len = 0, rise = 0, openings = [], caps = [true, true], color = null, text = null, parts = null } = {}) {
   const data = FURN_DATA[id];
-  if (data?.base) return buildFurniture(data.base, { drop, len, openings, caps, color: color ?? data.color, text, parts });
+  if (data?.base) return buildFurniture(data.base, { drop, len, rise, openings, caps, color: color ?? data.color, text, parts });
   const group = new THREE.Group();
   const A = { anim: [], text }; // (text: what's written on it, for the chalkboard menu)
   let target = group;
@@ -3740,7 +3725,7 @@ export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [t
     group.add(target);
     add(group, cyl(0.012, 0.012, drop, 5), toon('#3a3f5a'), { p: [0, -drop / 2, 0], outline: false });
   }
-  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps } : undefined) ?? {};
+  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps } : rise ? { rise } : undefined) ?? {}; // (rise: how high a flight of stairs climbs)
   if (parts && Object.keys(parts).length) applyParts(group, parts); // (each part its own colour)
   else if (color) recolor(group, color, data?.recolorFrom ?? null); // (recolorFrom: which colour is the one to change)
   return { group, use: res.use ?? null, anim: A.anim, A };

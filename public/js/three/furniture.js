@@ -2708,11 +2708,11 @@ function handrail(g, { x, d, rise, mat, posts = 5, glass = false }) {
 /** A column a storey tall: a footing, a shaft and (for the classical ones) a capital. */
 function column(g, { shaft, cap = null, foot = null, round = true, r = 0.15, fluted = false }) {
   const H = ROOM_H;
-  if (foot) add(g, box(0.42, 0.12, 0.42), foot, { p: [0, 0.06, 0] });
+  if (foot) add(g, box(0.46, 0.12, 0.46), foot, { p: [0, 0.06, 0] });
   if (round) add(g, cyl(r, r * 1.12, H - (foot ? 0.12 : 0) - (cap ? 0.12 : 0), 20), shaft, { p: [0, (foot ? 0.12 : 0) + (H - (foot ? 0.12 : 0) - (cap ? 0.12 : 0)) / 2, 0] });
   else add(g, box(r * 1.8, H - (foot ? 0.12 : 0), r * 1.8), shaft, { p: [0, (foot ? 0.12 : 0) + (H - (foot ? 0.12 : 0)) / 2, 0] });
   if (fluted) for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; add(g, box(0.02, H - 0.4, 0.02), toon('#d9d4c8'), { p: [Math.sin(a) * r * 1.02, H / 2, Math.cos(a) * r * 1.02], outline: false }); }
-  if (cap) add(g, box(0.44, 0.12, 0.44), cap, { p: [0, H - 0.06, 0] });
+  if (cap) add(g, box(0.48, 0.12, 0.48), cap, { p: [0, H - 0.06, 0] });
 }
 Object.assign(FURNITURE, {
   // ---- staircases (a whole storey up) ----
@@ -2750,16 +2750,16 @@ Object.assign(FURNITURE, {
   steps_tall(g, A, { rise = 1 } = {}) { flight(g, { w: 1.5, d: 2, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') }); },
   steps_brick(g, A, { rise = 0.5 } = {}) { flight(g, { w: 1.5, d: 1, rise, n: steps(rise), body: toon('#a5503c'), tread: toon('#d8d2c8') }); },
   // ---- columns (a storey tall: under a beam, round a porch, holding up a balcony) ----
-  col_wood(g) { column(g, { shaft: toon('#8a5a32'), foot: toon('#8c887f'), round: false, r: 0.13 }); },
+  col_wood(g) { column(g, { shaft: toon('#8a5a32'), foot: toon('#8c887f'), round: false, r: 0.19 }); }, // (a little thicker than a wall, so it stands proud of both faces)
   col_round(g) {
-    column(g, { shaft: toon('#f4f1ea'), cap: toon('#e8e3d8'), foot: toon('#e8e3d8') });
-    for (const y of [0.16, ROOM_H - 0.16]) add(g, geo('colRing', () => new THREE.TorusGeometry(0.17, 0.025, 6, 24)), toon('#e8e3d8'), { p: [0, y, 0], r: [Math.PI / 2, 0, 0], outline: false });
+    column(g, { shaft: toon('#f4f1ea'), cap: toon('#e8e3d8'), foot: toon('#e8e3d8'), r: 0.18 });
+    for (const y of [0.16, ROOM_H - 0.16]) add(g, geo('colRing', () => new THREE.TorusGeometry(0.2, 0.025, 6, 24)), toon('#e8e3d8'), { p: [0, y, 0], r: [Math.PI / 2, 0, 0], outline: false });
   },
   col_stone(g) {
     const greys = ['#9a968e', '#aaa59c', '#8a867e'];
     for (let i = 0; i < 8; i++) add(g, box(0.4 - (i % 2) * 0.03, ROOM_H / 8 - 0.02, 0.4 - ((i + 1) % 2) * 0.03), toon(greys[i % 3]), { p: [0, (i + 0.5) * (ROOM_H / 8), 0] });
   },
-  col_marble(g) { column(g, { shaft: toon('#f6f3ec'), cap: shiny('#d4af37', { metalness: 0.6 }), foot: shiny('#d4af37', { metalness: 0.6 }), fluted: true, r: 0.16 }); },
+  col_marble(g) { column(g, { shaft: toon('#f6f3ec'), cap: shiny('#d4af37', { metalness: 0.6 }), foot: shiny('#d4af37', { metalness: 0.6 }), fluted: true, r: 0.19 }); },
   col_log(g) {
     add(g, cyl(0.16, 0.19, ROOM_H, 9), toon('#6b4a32'), { p: [0, ROOM_H / 2, 0] });
     add(g, cyl(0.15, 0.15, 0.02, 9), toon('#d9b98a'), { p: [0, ROOM_H + 0.005, 0], outline: false });

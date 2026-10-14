@@ -997,6 +997,11 @@ def clean_house(p, data):
             if kind == "floor":
                 # chairs tuck in under tables and desks (the same rules as the house editor)
                 layers, check = (("chair",), ("chair", "solid")) if f.get("tuck") else (("floor",), ("floor",)) if f.get("desk") else (("floor", "solid"), ("floor", "chair"))
+                # (columns are set into walls: walls run through them, but they keep clear of furniture and each other)
+                if f["id"].startswith("col_"):
+                    layers, check = ("col",), ("col", "fur")
+                elif not f.get("room"):
+                    layers, check = layers + ("fur",), check + ("col",)
                 cells = {(l, a, b) for l in layers for a, b in spots}
                 if {(hk, l, a, b) for l in check for a, b in spots} & taken:
                     raise GameError("Things can't overlap.")
@@ -1080,7 +1085,7 @@ PLOT = CATALOG["plot"]  # every house stands on a plot this big (tiles), its fro
 MAX_GROUND, MAX_YARD = 300, 600  # (room for a big garden: paths everywhere, fences all the way round)
 
 
-EXT_FACE_RE = re.compile(r"^ext:[a-z_]+:#[0-9a-fA-F]{6}$")
+EXT_FACE_RE = re.compile(r"^ext:[a-z_]+:#[0-9a-fA-F]{6}(:#[0-9a-fA-F]{6})?$")  # (the last: a two-colour finish's wood)
 MAX_ROOFS = 48
 ROOF_PITCHES = (0.6, 1, 1.4)  # a piece of roof can be made shallower or steeper
 
@@ -1109,7 +1114,10 @@ def clean_ext(data):
 
     wall = data.get("wall") if isinstance(data.get("wall"), dict) else {}
     m = wall.get("m") if wall.get("m") in EXT_WALLS else base["wall"]["m"]
-    out = {"wall": {"m": m, "c": colour(wall.get("c"), EXT_WALLS[m]["c"])}, "roofs": [], "ground": [], "yard": []}
+    out = {"wall": {"m": m, "c": colour(wall.get("c"), EXT_WALLS[m]["c"]),
+                    **({"a": colour(wall.get("a"), EXT_WALLS[m]["a"])} if EXT_WALLS[m].get("a") else {}),  # (the wood, on a two-colour finish)
+                    **({"in": 1} if wall.get("in") else {})},  # (the same finish on the inside of the walls too)
+           "roofs": [], "ground": [], "yard": []}
     roofs, ground, yard = data.get("roofs") or [], data.get("ground") or [], data.get("yard") or []
     if not isinstance(roofs, list) or len(roofs) > MAX_ROOFS:
         raise GameError(f"A house can have up to {MAX_ROOFS} pieces of roof.")

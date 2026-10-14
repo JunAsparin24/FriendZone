@@ -17,7 +17,7 @@ import { settings } from '../settings.js';
 import { buildDoor, doorImage } from '../three/doors.js';
 import { iconSvg } from '../icons.js';
 import { createHood } from './hood.js';
-import { PLOT, extSwatch, extMaterial, buildYardItem, buildRoofs } from '../three/exterior.js';
+import { PLOT, extSwatch, extMaterial, buildYardItem, buildRoofs, woodOf, TALL_FINISH } from '../three/exterior.js';
 import { mountSpeed, MOUNT_SOUND } from '../three/mounts.js';
 import { timeOfDay } from '../three/daynight.js';
 import { touch, setTouchButtons } from '../touch.js';
@@ -154,7 +154,11 @@ function cellsOf(it, check = false) {
   // Chairs can tuck in under tables and desks: a chair takes "chair" cells and keeps clear of other
   // chairs and anything solid; a table/desk takes floor cells only (so a chair can share them); everything
   // else is solid and keeps clear of chairs too. `check`: the cells this must not overlap (vs occupies).
-  const layers = kind !== 'floor' ? [kind] : f.tuck ? (check ? ['chair', 'solid'] : ['chair']) : f.desk ? ['floor'] : (check ? ['floor', 'chair'] : ['floor', 'solid']);
+  let layers = kind !== 'floor' ? [kind] : f.tuck ? (check ? ['chair', 'solid'] : ['chair']) : f.desk ? ['floor'] : (check ? ['floor', 'chair'] : ['floor', 'solid']);
+  // columns are set into walls: a wall can run right through one (or end in it), but a column still keeps
+  // clear of other columns and of furniture
+  if (isColumn(it.id)) layers = check ? ['col', 'fur'] : ['col'];
+  else if (kind === 'floor' && !f.room) layers = check ? [...layers, 'col'] : [...layers, 'fur'];
   const out = [];
   for (let i = 0; i < w * SNAP; i++) for (let j = 0; j < d * SNAP; j++) for (const l of layers) out.push(`${ek(it)}|${l}:${x0 + i}:${y0 + j}`); // (each height is its own floor)
   return out;
@@ -352,7 +356,11 @@ const paperMats = new Map();
 function faceMat(id) {
   if (!paperMats.has(id)) {
     let mat;
-    if (id.startsWith('ext:')) { const [, m, c] = id.split(':'); mat = extMaterial(m, c).clone(); }
+    if (id.startsWith('ext:')) {
+      const [, m, c, a] = id.split(':');
+      mat = extMaterial(m, c, a || null).clone();
+      if (TALL_FINISH.has(m)) { mat.map = mat.map.clone(); mat.map.repeat.set(1, 2 / WALL_H); mat.map.needsUpdate = true; } // (once up the whole wall, skirting at the floor)
+    }
     else {
       const tex = wallTexture(id);
       tex.repeat.set(1 / surfaceSpan(id), wallIsTall(id) ? 2 / WALL_H : 1 / surfaceSpan(id));
@@ -436,7 +444,7 @@ function roomsGeometry(grid, y) {
  * outdoors. Trim "none" takes the boards off altogether.
  */
 function paintWall(group, it, h, grid, wallId = h.wall) {
-  const own = h.wallp ?? {}, ext = h.ext?.wall ?? { m: 'siding', c: '#f2ead8' }, extId = `ext:${ext.m}:${ext.c}`;
+  const own = h.wallp ?? {}, ext = h.ext?.wall ?? { m: 'siding', c: '#f2ead8' }, extId = `ext:${ext.m}:${ext.c}${ext.a ? `:${ext.a}` : ''}`;
   const [w, d] = footprint(it), cx = it.x + w / 2, cz = it.y + d / 2, a = angleOf(it), len = lenOf(it), sin = Math.sin(a), cos = Math.cos(a);
   const seen = {};
   const outdoors = (face) => {
@@ -452,7 +460,8 @@ function paintWall(group, it, h, grid, wallId = h.wall) {
     if (!o.isMesh) return;
     if (o.userData.wallpaper) {
       const face = o.userData.face;
-      o.material = faceMat(face == null ? wallId : own[faceKey(it, face)] ?? ((seen[face] ??= outdoors(face)) ? extId : wallId));
+      // (in: the outside finish on the inside too, so both sides of every wall match)
+      o.material = faceMat(face == null ? (ext.in ? extId : wallId) : own[faceKey(it, face)] ?? ((ext.in || (seen[face] ??= outdoors(face))) ? extId : wallId));
     } else if (o.material === TRIM_MAT || o.userData.isTrim) {
       o.userData.isTrim = true;
       o.visible = trim !== 'none';
@@ -2269,7 +2278,7 @@ export function house(stage) {
     if (type === 'up' && d && !d.moved && d.button === 2) { rotate(); return; }
     if (extPage === 'walls') {
       // one wall face at a time: whichever is under the pointer gets this finish
-      if (click && extOne) paintFaceAt(`ext:${extBrush.m}:${extBrush.c}`);
+      if (click && extOne) paintFaceAt(`ext:${extBrush.m}:${extBrush.c}${woodOf(extBrush.m, extBrush.a) ? `:${woodOf(extBrush.m, extBrush.a)}` : ''}`);
     } else if (extPage === 'roof') {
       const roofs = home.ext.roofs ?? [];
       if (!roofPlacing) {
@@ -2441,15 +2450,16 @@ export function house(stage) {
     if (!e) { panel.innerHTML = '<p class="muted">Loading…</p>'; return; }
     const cols = (cur, attr) => `<div class="swatches palette">${CATALOG.extColors.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-x="${attr}:${c}" style="--c:${c}"></button>`).join('')}</div>`;
     const tile = (on, attr, style, name, inner = '') => `<button class="style-opt ${on ? 'on' : ''}" data-x="${attr}" title="${esc(name)}"><span class="style-sw" style="${style}">${inner}</span><span>${esc(name)}</span></button>`;
-    const sw = (m, c) => `background:url(${extSwatch(m, c)}) center/cover`;
+    const sw = (m, c, a) => `background:url(${extSwatch(m, c, a)}) center/cover`;
     const bar = (...btns) => `<div class="shop-pages paint-bar">${btns.filter(Boolean).map(([attr, label, on]) => `<button data-x="${attr}" class="${on ? 'on' : ''}">${label}</button>`).join('')}</div>`;
     let body = '';
     if (extPage === 'walls') {
       const cur = extOne ? extBrush : e.wall, n = Object.values(home.wallp ?? {}).filter((v) => v.startsWith('ext:')).length;
-      body = `${bar(['one:0', '🏠 Every outside wall', !extOne], ['one:1', '🖌️ One wall at a time', extOne], n ? ['clearwalls', `↺ Clear ${n} painted wall${n > 1 ? 's' : ''}`, false] : null)}
+      body = `${bar(['one:0', '🏠 Every outside wall', !extOne], ['one:1', '🖌️ One wall at a time', extOne], n ? ['clearwalls', `↺ Clear ${n} painted wall${n > 1 ? 's' : ''}`, false] : null, !extOne ? ['inside', e.wall.in ? '🪟 Inside walls: same as outside' : '🪟 Inside walls: wallpaper', !!e.wall.in] : null)}
         <p class="muted small">${extOne ? 'Pick a finish and a colour, then <b>click a wall</b>: only that side of that wall changes (a brick front, dark siding down the sides…). The other side keeps its own finish.' : 'The finish for every wall face that looks outdoors. Faces that look into a room get your wallpaper instead (🎨 Inside). Walls you\'ve painted one at a time keep their own.'}</p>
-        <div class="wd-label">Finish</div><div class="style-grid">${CATALOG.extWalls.map((w) => tile(cur.m === w.id, `wallm:${w.id}`, sw(w.id, cur.m === w.id ? cur.c : w.c), w.name)).join('')}</div>
-        <div class="wd-label">Colour</div>${cols(cur.c, 'wallc')}`;
+        <div class="wd-label">Finish</div><div class="style-grid">${CATALOG.extWalls.map((w) => tile(cur.m === w.id, `wallm:${w.id}`, sw(w.id, cur.m === w.id ? cur.c : w.c, cur.m === w.id ? cur.a : w.a), w.name)).join('')}</div>
+        <div class="wd-label">${woodOf(cur.m) ? 'Main colour' : 'Colour'}</div>${cols(cur.c, 'wallc')}
+        ${woodOf(cur.m) ? `<div class="wd-label">Wood colour <small class="muted">(posts, beams, lattice)</small></div>${cols(woodOf(cur.m, cur.a), 'walla')}` : ''}`;
     } else if (extPage === 'roof') {
       const n = (e.roofs ?? []).length, sel = (e.roofs ?? [])[roofSel], r = sel ?? roofBrush;
       body = `${bar(['roofnew', '➕ New piece', !sel], sel ? ['roofdel', '🗑️ Remove this piece', false] : null, n ? ['clearroofs', `✕ Clear all ${n}`, false] : null)}
@@ -2488,8 +2498,10 @@ export function house(stage) {
     const def = (list, id) => list.find((x) => x.id === id)?.c;
     if (op === 'one') { extOne = v === '1'; if (extOne) extBrush = { ...e.wall }; renderAll(); }
     else if (op === 'clearwalls') { home.wallp = Object.fromEntries(Object.entries(home.wallp ?? {}).filter(([, f]) => !f.startsWith('ext:'))); commit('paint'); }
-    else if (op === 'wallm') { if (extOne) { extBrush = { m: v, c: def(CATALOG.extWalls, v) }; sfx('click'); renderPanel(); } else setExt({ wall: { m: v, c: def(CATALOG.extWalls, v) } }); }
-    else if (op === 'wallc') { if (extOne) { extBrush = { ...extBrush, c: v }; sfx('click'); renderPanel(); } else setExt({ wall: { m: e.wall.m, c: v } }); }
+    else if (op === 'wallm') { if (extOne) { extBrush = { m: v, c: def(CATALOG.extWalls, v) }; sfx('click'); renderPanel(); } else setExt({ wall: { ...(e.wall.in ? { in: 1 } : {}), m: v, c: def(CATALOG.extWalls, v) } }); }
+    else if (op === 'wallc') { if (extOne) { extBrush = { ...extBrush, c: v }; sfx('click'); renderPanel(); } else setExt({ wall: { ...e.wall, c: v } }); }
+    else if (op === 'walla') { if (extOne) { extBrush = { ...extBrush, a: v }; sfx('click'); renderPanel(); } else setExt({ wall: { ...e.wall, a: v } }); }
+    else if (op === 'inside') { const w = { ...e.wall }; if (w.in) delete w.in; else w.in = 1; setExt({ wall: w }); }
     else if (op === 'roofs') { if (e.roofs?.[roofSel]) styleRoof({ s: v }); else { roofBrush = { ...roofBrush, s: v }; roofPlacing = true; sfx('pickup'); renderAll(); } } // (no piece picked: you're now holding this roof)
     else if (op === 'roofm') styleRoof({ m: v, c: def(CATALOG.roofMats, v) });
     else if (op === 'roofc') styleRoof({ c: v });
@@ -2610,14 +2622,14 @@ export function house(stage) {
     const tabs = `<div class="shop-pages paint-bar"><button data-p="page:material" class="${paintPage === 'material' ? 'on' : ''}">🧱 Material</button><button data-p="page:color" class="${paintPage === 'color' ? 'on' : ''}">🎨 Colour</button>${s ? '<button data-p="reset">↺ Back to how it was</button>' : ''}</div>`;
     const what = s && e ? (s.kind === 'face' ? { name: 'This side of the wall' } : s.kind === 'roof' ? e.roofs?.[s.i] && { name: 'This piece of roof' } : s.kind === 'ground' ? e.ground?.[s.i] && { name: 'This path' } : home.items[s.index] && { name: FURN[home.items[s.index].id].name }) : null;
     if (!what) { paintSel = null; panel.innerHTML = `${tabs}<p class="muted">🎨 <b>Click anything</b> on your plot to paint it: a wall (each side on its own), a piece of roof, a path or driveway, or a piece of furniture. Then pick a material or a colour here.</p>`; return; }
-    const sw = (m, c) => `background:url(${extSwatch(m, c)}) center/cover`;
+    const sw = (m, c, a) => `background:url(${extSwatch(m, c, a)}) center/cover`;
     const tile = (on, attr, style, name) => `<button class="style-opt ${on ? 'on' : ''}" data-p="${attr}" title="${esc(name)}"><span class="style-sw" style="${style}"></span><span>${esc(name)}</span></button>`;
     const cols = (list, cur) => `<div class="swatches palette">${list.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-p="c:${c}" style="--c:${c}"></button>`).join('')}</div>`;
     let mats, colours;
     if (s.kind === 'face') {
-      const cur = home.wallp?.[s.key] ?? '', [, cm, cc] = cur.startsWith('ext:') ? cur.split(':') : [];
-      mats = `<div class="style-grid">${CATALOG.extWalls.map((w) => tile(cm === w.id, `m:ext:${w.id}`, sw(w.id, cm === w.id ? cc : w.c), w.name)).join('')}${CATALOG.walls.filter(ownsDeco).map((w) => tile(cur === w.id, `m:${w.id}`, decoBg(w.id), w.name)).join('')}</div>`;
-      colours = cols(CATALOG.extColors, cc);
+      const cur = home.wallp?.[s.key] ?? '', [, cm, cc, ca] = cur.startsWith('ext:') ? cur.split(':') : [];
+      mats = `<div class="style-grid">${CATALOG.extWalls.map((w) => tile(cm === w.id, `m:ext:${w.id}`, sw(w.id, cm === w.id ? cc : w.c, cm === w.id ? ca : w.a), w.name)).join('')}${CATALOG.walls.filter(ownsDeco).map((w) => tile(cur === w.id, `m:${w.id}`, decoBg(w.id), w.name)).join('')}</div>`;
+      colours = cols(CATALOG.extColors, cc) + (cm && woodOf(cm) ? `<div class="wd-label">Wood colour</div><div class="swatches palette">${CATALOG.extColors.map((c) => `<button type="button" class="swatch ${woodOf(cm, ca) === c ? 'on' : ''}" data-p="a:${c}" style="--c:${c}"></button>`).join('')}</div>` : '');
     } else if (s.kind === 'roof') {
       const r = e.roofs[s.i];
       mats = `<div class="style-grid">${CATALOG.roofMats.map((x) => tile(r.m === x.id, `m:${x.id}`, sw(x.id, r.m === x.id ? r.c : x.c), x.name)).join('')}</div>`;
@@ -2640,10 +2652,12 @@ export function house(stage) {
     if (!s) return;
     const dflt = (list, id) => list.find((x) => x.id === id)?.c;
     if (s.kind === 'face') {
-      const own = { ...(home.wallp ?? {}) }, cur = own[s.key] ?? '', cm = cur.startsWith('ext:') ? cur.split(':')[1] : null;
+      const own = { ...(home.wallp ?? {}) }, cur = own[s.key] ?? '', [, cm, cc, ca] = cur.startsWith('ext:') ? cur.split(':') : [];
+      const id = (m, c, a) => `ext:${m}:${c}${woodOf(m, a) ? `:${woodOf(m, a)}` : ''}`;
       if (op === 'reset') delete own[s.key];
-      else if (op === 'm') own[s.key] = v.startsWith('ext:') ? `${v}:${dflt(CATALOG.extWalls, v.slice(4))}` : v;
-      else own[s.key] = `ext:${cm ?? 'paint'}:${v}`; // (a colour on a wallpapered wall makes it a painted one)
+      else if (op === 'm') own[s.key] = v.startsWith('ext:') ? id(v.slice(4), dflt(CATALOG.extWalls, v.slice(4))) : v;
+      else if (op === 'a') { if (!cm) return; own[s.key] = id(cm, cc, v); } // (the wood colour)
+      else own[s.key] = id(cm ?? 'paint', v, ca); // (a colour on a wallpapered wall makes it a painted one)
       home.wallp = own;
       commit('paint');
     } else if (s.kind === 'roof') {

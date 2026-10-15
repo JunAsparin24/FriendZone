@@ -554,7 +554,7 @@ class Stage {
       // (a solid with a height span, y0..y1, is only in the way of someone whose feet are in it: walls up on
       // a floor don't stop people walking about underneath)
       const py = me.y ?? 0;
-      return solids.some((s) => (s.y0 == null || (py > s.y0 - 0.6 && py < s.y1 - 0.3)) && (s.r != null ? Math.hypot(x - s.x, z - s.z) < s.r + R
+      return solids.some((s) => !s.off && (s.y0 == null || (py > s.y0 - 0.6 && py < s.y1 - 0.3)) && (s.r != null ? Math.hypot(x - s.x, z - s.z) < s.r + R
         : Math.abs(x - s.x) < s.w / 2 + R && Math.abs(z - s.z) < s.d / 2 + R));
     };
     this.walkTo = (it) => { target = { x: it.x, z: it.z, stopAt: it.r * 0.7, use: it.use }; };

@@ -152,15 +152,18 @@ function panels(c, col, x0, y0, w, h, n) {
     c.fillStyle = shade(col, 0.62); c.fillRect(x, y, iw, 2); c.fillRect(x, y, 2, ih);
   }
 }
+/** Upright posts every half repeat, each straddling its line (so a wall cut at a repeat ends in half a post
+ *  at each end, and two walls meeting make one whole post at the join). */
+function posts(c, col, w) { c.fillStyle = col; for (const x of [0, 128, 256]) c.fillRect(x - w / 2, 0, w, S); }
 export const TWO_TONE = {
   wafu(c, rnd, main, wood) {
     // plaster between timber posts, a beam across it and a skirting board, all in plain flat colour
     c.fillStyle = main; c.fillRect(0, 0, S, S);
-    c.fillStyle = wood; for (const x of [0, 128]) c.fillRect(x, 0, 16, S); c.fillRect(0, 40, S, 12); c.fillRect(0, 226, S, 30);
+    posts(c, wood, 16); c.fillStyle = wood; c.fillRect(0, 40, S, 12); c.fillRect(0, 226, S, 30);
   },
   tudor(c, rnd, main, wood) {
     c.fillStyle = main; c.fillRect(0, 0, S, S);
-    c.fillStyle = wood; for (const x of [0, 128]) c.fillRect(x, 0, 14, S); for (const y of [0, 128]) c.fillRect(0, y, S, 14);
+    posts(c, wood, 14); c.fillStyle = wood; for (const y of [0, 128]) c.fillRect(0, y, S, 14);
     c.lineWidth = 12; c.strokeStyle = wood; c.beginPath(); c.moveTo(14, 128); c.lineTo(128, 14); c.moveTo(142, 14); c.lineTo(256, 128); c.stroke();
   },
   shoji_wall(c, rnd, main, wood) {
@@ -172,14 +175,14 @@ export const TWO_TONE = {
     for (let y = 0; y < 186; y += 46) c.fillRect(0, y, S, 4);
     panels(c, wood, 0, 186, 128, 70, 3); panels(c, wood, 128, 186, 128, 70, 3);
     c.fillStyle = wood; c.fillRect(0, 182, S, 8);
-    for (const x of [0, 128]) c.fillRect(x, 0, 10, S);
+    posts(c, wood, 10);
   },
   koshiita(c, rnd, main, wood) {
     // plaster above, a wainscot of solid wooden boards below, a beam between, posts at the panels' edges
     c.fillStyle = main; c.fillRect(0, 0, S, 150);
     boards(c, wood, 0, 160, S, 96, 20);
     c.fillStyle = shade(wood, 0.8); c.fillRect(0, 148, S, 14);
-    c.fillStyle = wood; for (const x of [0, 128]) c.fillRect(x, 0, 14, S);
+    posts(c, wood, 14);
   },
   yakisugi(c, rnd, main, wood) {
     // charred cedar: wide black-brown planks, scorched a little darker here and there, battens over the joins

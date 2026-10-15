@@ -2415,12 +2415,15 @@ function archBand(r, rise, inner, outer, depth) {
 }
 /** A papered face: the wallpaper repeats every 2 tiles across, and is pinned to the floor going up
  *  (y0: how high its bottom edge is), so it lines up with the room's own walls. */
-function papered(w, h, y0 = 0, x0 = 0) {
-  return geo(`paper${w},${h},${y0},${x0}`, () => {
+function papered(w, h, y0 = 0, x0 = 0, fit = 0) {
+  return geo(`paper${w},${h},${y0},${x0},${fit}`, () => {
     const pg = new THREE.PlaneGeometry(w, h);
     const uv = pg.attributes.uv;
-    // (x0: how far along the wall this piece starts, so the pattern carries on across doors and windows)
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, (x0 + uv.getX(i) * w) / 2, (y0 + uv.getY(i) * h) / 2);
+    // (x0: how far along the wall this piece starts, so the pattern carries on across doors and windows.
+    // fit: the whole wall's length: the pattern is stretched a touch so a whole number of repeats fits it,
+    // and every wall starts and ends at the same point of the pattern, whatever its length)
+    const k = fit ? Math.max(1, Math.round(fit / 2)) / fit : 1 / 2;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (x0 + uv.getX(i) * w) * k, (y0 + uv.getY(i) * h) / 2);
     return pg;
   });
 }
@@ -2442,7 +2445,7 @@ function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = 
     if (pw < 0.01) return;
     add(g, box(pw, ph, ROOM_T - 0.004), core, { p: [cx, cy, 0], outline: false });
     for (const s of [-1, 1]) {
-      paperAt(papered(pw, ph, y0, s > 0 ? x0 + w / 2 : w / 2 - x1), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI, s > 0 ? 0 : 2);
+      paperAt(papered(pw, ph, y0, s > 0 ? x0 + w / 2 : w / 2 - x1, w), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI, s > 0 ? 0 : 2);
       if (y0 === 0) add(g, box(pw, 0.16, 0.05), trim, { p: [cx, 0.08, s * (ROOM_T / 2 + 0.02)], outline: false });
     }
   };
@@ -2706,8 +2709,9 @@ function handrail(g, { x, d, rise, mat, posts = 5, glass = false }) {
   add(g, box(0.05, 0.05, len), mat, { p: [x, rise / 2 + 0.9, 0], r: [ang, 0, 0] });
 }
 /** A column a storey tall: a footing, a shaft and (for the classical ones) a capital. */
-function column(g, { shaft, cap = null, foot = null, round = true, r = 0.15, fluted = false }) {
+function column(g, { shaft, cap = null, foot = null, round = true, r = 0.15, fluted = false, bare = false }) {
   const H = ROOM_H;
+  if (bare) { cap = null; foot = null; } // (trim off: just the shaft, floor to top)
   if (foot) add(g, box(0.46, 0.12, 0.46), foot, { p: [0, 0.06, 0] });
   if (round) add(g, cyl(r, r * 1.12, H - (foot ? 0.12 : 0) - (cap ? 0.12 : 0), 20), shaft, { p: [0, (foot ? 0.12 : 0) + (H - (foot ? 0.12 : 0) - (cap ? 0.12 : 0)) / 2, 0] });
   else add(g, box(r * 1.8, H - (foot ? 0.12 : 0), r * 1.8), shaft, { p: [0, (foot ? 0.12 : 0) + (H - (foot ? 0.12 : 0)) / 2, 0] });
@@ -2750,16 +2754,16 @@ Object.assign(FURNITURE, {
   steps_tall(g, A, { rise = 1 } = {}) { flight(g, { w: 1.5, d: 2, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') }); },
   steps_brick(g, A, { rise = 0.5 } = {}) { flight(g, { w: 1.5, d: 1, rise, n: steps(rise), body: toon('#a5503c'), tread: toon('#d8d2c8') }); },
   // ---- columns (a storey tall: under a beam, round a porch, holding up a balcony) ----
-  col_wood(g) { column(g, { shaft: toon('#8a5a32'), foot: toon('#8c887f'), round: false, r: 0.19 }); }, // (a little thicker than a wall, so it stands proud of both faces)
-  col_round(g) {
-    column(g, { shaft: toon('#f4f1ea'), cap: toon('#e8e3d8'), foot: toon('#e8e3d8'), r: 0.18 });
-    for (const y of [0.16, ROOM_H - 0.16]) add(g, geo('colRing', () => new THREE.TorusGeometry(0.2, 0.025, 6, 24)), toon('#e8e3d8'), { p: [0, y, 0], r: [Math.PI / 2, 0, 0], outline: false });
+  col_wood(g, A, { bare = false } = {}) { column(g, { shaft: toon('#8a5a32'), foot: toon('#8c887f'), round: false, r: 0.19, bare }); }, // (a little thicker than a wall, so it stands proud of both faces)
+  col_round(g, A, { bare = false } = {}) {
+    column(g, { shaft: toon('#f4f1ea'), cap: toon('#e8e3d8'), foot: toon('#e8e3d8'), r: 0.18, bare });
+    if (!bare) for (const y of [0.16, ROOM_H - 0.16]) add(g, geo('colRing', () => new THREE.TorusGeometry(0.2, 0.025, 6, 24)), toon('#e8e3d8'), { p: [0, y, 0], r: [Math.PI / 2, 0, 0], outline: false });
   },
   col_stone(g) {
     const greys = ['#9a968e', '#aaa59c', '#8a867e'];
     for (let i = 0; i < 8; i++) add(g, box(0.4 - (i % 2) * 0.03, ROOM_H / 8 - 0.02, 0.4 - ((i + 1) % 2) * 0.03), toon(greys[i % 3]), { p: [0, (i + 0.5) * (ROOM_H / 8), 0] });
   },
-  col_marble(g) { column(g, { shaft: toon('#f6f3ec'), cap: shiny('#d4af37', { metalness: 0.6 }), foot: shiny('#d4af37', { metalness: 0.6 }), fluted: true, r: 0.19 }); },
+  col_marble(g, A, { bare = false } = {}) { column(g, { shaft: toon('#f6f3ec'), cap: shiny('#d4af37', { metalness: 0.6 }), foot: shiny('#d4af37', { metalness: 0.6 }), fluted: true, r: 0.19, bare }); },
   col_log(g) {
     add(g, cyl(0.16, 0.19, ROOM_H, 9), toon('#6b4a32'), { p: [0, ROOM_H / 2, 0] });
     add(g, cyl(0.15, 0.15, 0.02, 9), toon('#d9b98a'), { p: [0, ROOM_H + 0.005, 0], outline: false });
@@ -3713,9 +3717,9 @@ for (const [id, sp] of Object.entries(PLUSH)) FURNITURE[id] = (g, A) => plushie(
 export const PLUSH_IDS = Object.keys(PLUSH);
 export const plushEmoji = (id) => PLUSH_EMOJI[PLUSH[id]?.kind] ?? '🧸';
 
-export function buildFurniture(id, { drop = 0, len = 0, rise = 0, openings = [], caps = [true, true], color = null, text = null, parts = null } = {}) {
+export function buildFurniture(id, { drop = 0, len = 0, rise = 0, bare = false, openings = [], caps = [true, true], color = null, text = null, parts = null } = {}) {
   const data = FURN_DATA[id];
-  if (data?.base) return buildFurniture(data.base, { drop, len, rise, openings, caps, color: color ?? data.color, text, parts });
+  if (data?.base) return buildFurniture(data.base, { drop, len, rise, bare, openings, caps, color: color ?? data.color, text, parts });
   const group = new THREE.Group();
   const A = { anim: [], text }; // (text: what's written on it, for the chalkboard menu)
   let target = group;
@@ -3725,7 +3729,7 @@ export function buildFurniture(id, { drop = 0, len = 0, rise = 0, openings = [],
     group.add(target);
     add(group, cyl(0.012, 0.012, drop, 5), toon('#3a3f5a'), { p: [0, -drop / 2, 0], outline: false });
   }
-  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps } : rise ? { rise } : undefined) ?? {}; // (rise: how high a flight of stairs climbs)
+  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps } : rise || bare ? { rise, bare } : undefined) ?? {}; // (rise: how high a flight of stairs climbs; bare: a column without its trim)
   if (parts && Object.keys(parts).length) applyParts(group, parts); // (each part its own colour)
   else if (color) recolor(group, color, data?.recolorFrom ?? null); // (recolorFrom: which colour is the one to change)
   return { group, use: res.use ?? null, anim: A.anim, A };

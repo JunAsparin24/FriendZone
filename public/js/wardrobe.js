@@ -5,6 +5,7 @@ import { CATALOG, ITEMS, RARITY, owns, howToGet } from './catalog.js';
 import { paintPortrait, portraitInto } from './avatar.js';
 import { $, listen, hiDpiCanvas, loop, confetti } from './games/util.js';
 import { sfx } from './sfx.js';
+import { pickerHtml, wirePickers } from './colorpick.js';
 
 const TABS = [
   { id: 'body', icon: '🧍', label: 'Body' },
@@ -145,6 +146,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
   function swatches(label, field, colors, { original = false } = {}) {
     const cur = draft[field] ?? '';
     return `<div class="wd2-card"><div class="wd-label">${label} ${cur ? `<i class="wd2-chip" style="--c:${cur}"></i>` : ''}</div><div class="swatches palette">${
+      pickerHtml({ 'data-field': field }, 'data-color', '', cur)}${
       original ? `<button type="button" class="swatch orig ${cur ? '' : 'on'}" data-field="${field}" data-color="" title="Original colour">↺</button>` : ''}${colors.map((c) =>
       `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-field="${field}" data-color="${c}" style="--c:${c}" title="${c}"></button>`).join('')}</div></div>`;
   }
@@ -277,6 +279,7 @@ export function wardrobe(body, { mode = 'wardrobe', tab: startTab = null, onSave
     if (it.slot === 'top' || it.slot === 'bottom') draft.outfit = 'outfit_none';
   }
 
+  wirePickers(content); // (the colour wheel, the eyedropper and the recent colours in every colour row)
   content.addEventListener('click', (e) => {
     const clear = e.target.closest('[data-clear]');
     if (clear) { draft[clear.dataset.clear] = `${tab}_none`; sfx('pop'); renderContent(); return; }

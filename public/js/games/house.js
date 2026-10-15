@@ -21,6 +21,7 @@ import { PLOT, extSwatch, extMaterial, buildYardItem, buildRoofs, woodOf, TALL_F
 import { mountSpeed, MOUNT_SOUND } from '../three/mounts.js';
 import { timeOfDay } from '../three/daynight.js';
 import { touch, setTouchButtons } from '../touch.js';
+import { pickerHtml, wirePickers } from '../colorpick.js';
 
 let NX = PLOT.w, NZ = PLOT.d;  // the plot in tiles (width x depth): you can build anywhere on it
 const T = 1.6;        // world units per tile, so furniture is people-sized
@@ -198,6 +199,8 @@ const isStairs = (id) => !!FURN[id]?.stairs; // a flight up to the next storey
 /** Drawn out by dragging: walls along a line, floors as a rectangle. */
 const isDrawn = (id) => isDragWall(id) || isSlab(id);
 const isColumn = (id) => id.startsWith('col_');
+/** Columns with a trim (a base, a cap, rings) that can be taken off (it.nt). */
+const TRIMMED_COLUMNS = new Set(['col_wood', 'col_round', 'col_marble']);
 /** How high a flight of stairs (or steps) climbs. */
 const stairRise = (it) => it.h ?? FURN[it.id]?.rise ?? WALL_H;
 // ---- anything at any height: a floor you lay has its top at h; everything else stands at e, the top of
@@ -499,6 +502,7 @@ function shellOf(h, items) {
       // floors you've laid and the stairs: seen from the street too (a balcony, steps up to a porch…)
       try {
         const b = isSlab(it.id) ? slabGroup(it, h.floor ?? 'floor_wood') : buildFurniture(it.id, { rise: stairRise(it) }).group, [w, d] = footprint(it);
+        if (isStairs(it.id) && it.mf) matchFloor(b, h.floor ?? 'floor_wood');
         b.position.set(it.x + w / 2, isSlab(it.id) ? baseY(lvOf(it)) : base, it.y + d / 2);
         b.rotation.y = angleOf(it);
         b.traverse((o) => { if (o.isMesh && !o.userData.outline) o.castShadow = true; });
@@ -539,6 +543,25 @@ function shellOf(h, items) {
   return g;
 }
 
+/** Stairs that match the floor (it.mf): every tread, riser and side takes the house's floor boards, laid the
+ *  same size as on the floor itself (thin rails, posts and stringers keep their own look). */
+function matchFloor(group, floorId) {
+  const mat = surfMat(floorTexture(floorId), true);
+  group.traverse((o) => {
+    if (!o.isMesh || o.userData.outline || o.geometry.type !== 'BoxGeometry') return;
+    const { width, height, depth } = o.geometry.parameters, dims = [width, height, depth].sort((a, b) => a - b);
+    if (dims[1] < 0.1) return; // (rails and stringers)
+    const g = o.geometry.clone(), pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) + o.position.x, y = pos.getY(i) + o.position.y, z = pos.getZ(i) + o.position.z;
+      if (Math.abs(nor.getY(i)) > 0.5) uv.setXY(i, x / 2, -z / 2); else if (Math.abs(nor.getX(i)) > 0.5) uv.setXY(i, z / 2, y / 2); else uv.setXY(i, x / 2, y / 2);
+    }
+    o.geometry = g;
+    o.material = mat;
+  });
+}
+/** Stairs and steps that start out matching the floor (the wooden ones: stone, brick and white keep their look). */
+const MATCHES_FLOOR = new Set(['house_stairs', 'house_steps', 'steps_wide', 'steps_tall', 'stairs_open', 'stairs_spiral']);
 const slabEdge = new THREE.MeshToonMaterial({ color: '#e6dfd2' }), slabSkirt = new THREE.MeshToonMaterial({ color: '#9c6b43' }); // (a raised floor's sides: wood)
 /** A floor you've laid: a slab with the house's floor on top, its top just above the storey's floor
  *  (in its own frame, centred; the caller puts it in place). */
@@ -555,7 +578,7 @@ function slabGroup(it, floorId) {
   const g = new THREE.Group(), [w, d] = footprint(it), raise = it.h ?? 0, st = it.st ?? 0, thick = 0.14 + (st ? 0 : raise);
   const top = new THREE.PlaneGeometry(w, d), uv = top.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * w) / 2, (uv.getY(i) * d) / 2);
-  const face = new THREE.Mesh(top, surfMat(floorTexture(floorId), true));
+  const face = new THREE.Mesh(top, surfMat(floorTexture(it.f ?? floorId), true)); // (f: a floor of its own)
   face.rotation.x = -Math.PI / 2;
   face.position.y = raise + 0.014;
   face.receiveShadow = true;
@@ -696,7 +719,7 @@ export function house(stage) {
   const payload = () => ({
     k: viewKey,
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
-    items: home.items.map(({ id, x, y, r, h, l, m, lv, e, st, iw, dg, c, t, cp, lk }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(m == null ? {} : { m }), ...(lv ? { lv } : {}), ...(e == null ? {} : { e }), ...(st ? { st } : {}), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}), ...(lk && isDoor(id) ? { lk: 1 } : {}) })),
+    items: home.items.map(({ id, x, y, r, h, l, m, lv, e, st, mf, nt, f, iw, dg, c, t, cp, lk }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(m == null ? {} : { m }), ...(lv ? { lv } : {}), ...(e == null ? {} : { e }), ...(st ? { st } : {}), ...(mf ? { mf: 1 } : {}), ...(nt ? { nt: 1 } : {}), ...(f ? { f } : {}), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}), ...(lk && isDoor(id) ? { lk: 1 } : {}) })),
     areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT, trimp: home.trimp ?? {},
     ext: home.ext,
   });
@@ -770,7 +793,8 @@ export function house(stage) {
     {
       const layout = isDragWall(it.id) ? wallLayout(it, movingWindow() ? home.items.filter((_, i) => i !== placing.from) : home.items) : null;
       const built = isSlab(it.id) ? { group: slabGroup(it, preview.floor ?? home.floor), use: null, anim: [], A: { anim: [] } }
-        : buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, rise: isStairs(it.id) ? stairRise(it) : 0, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null, text: it.t ?? null, parts: it.cp ?? null });
+        : buildFurniture(it.id, { drop: kindOf(it.id) === 'ceiling' && !isDragWall(it.id) ? heightOf(it) : 0, len: isDragWall(it.id) || isDoor(it.id) ? lenOf(it) : 0, rise: isStairs(it.id) ? stairRise(it) : 0, bare: isColumn(it.id) && !!it.nt, openings: layout?.openings, caps: layout?.caps, color: it.c ?? null, text: it.t ?? null, parts: it.cp ?? null });
+      if (isStairs(it.id) && it.mf) matchFloor(built.group, preview.floor ?? home.floor); // (in the floor's own boards)
       built.group.userData.index = index;
       placeGroup(built.group, it);
       built.group.visible = !(placing && placing.from === index);
@@ -786,20 +810,22 @@ export function house(stage) {
         // a door in a wall: you walk through it (it opens for you); an archway's curve is papered like the wall
         built.group.traverse((o) => { if (o.userData.wallpaper) o.material = room.wallMat; });
         if (built.A.open !== undefined) {
-          // a door with a leaf can be locked by the owner and anyone they let build: then it only opens
-          // for them, and everyone else finds it shut
+          // a door with a leaf: shut (and solid) until someone opens it with E. A locked one stays shut for
+          // everybody: the owner (or someone they let build) unlocks it first, then it opens like any other.
+          if (it.lk) built.group.add(padlock());
+          entry.doorSolid = { x: cx * T, z: cz * T, w: w * T + 0.1, d: d * T + 0.1 };
+          solids.push(entry.doorSolid);
           const mayLock = canEdit();
-          if (it.lk) {
-            built.group.add(padlock());
-            if (!mayLock) solids.push({ x: cx * T, z: cz * T, w: w * T + 0.1, d: d * T + 0.1 });
-          }
-          if (mayLock || it.lk) {
-            entry.inter = stage.interactable({
-              x: cx * T, z: cz * T, r: 1.9, label: mayLock ? (it.lk ? '🔓 unlock this door' : '🔒 lock this door') : '🔒 locked',
-              use: () => { if (edit) return; if (mayLock) toggleLock(index); else { sfx('error'); toast('🔒 That door is locked.'); } },
-            });
-            entry.inter.house = true;
-          }
+          entry.inter = stage.interactable({
+            x: cx * T, z: cz * T, r: 1.9, label: doorLabel(it, index, mayLock),
+            use: () => {
+              if (edit) return;
+              if (home.items[index]?.lk) { if (mayLock) toggleLock(index); else { sfx('error'); toast('🔒 That door is locked.'); } return; }
+              const p = walker.me, h = it.r * (Math.PI / 2);
+              setDoor(index, !doorState(index)?.open, (p.x - cx * T) * Math.sin(h) + (p.z - cz * T) * Math.cos(h) > 0 ? 1 : -1);
+            },
+          });
+          entry.inter.house = true;
         }
       } else if (f0.room) {
         // walls you build inside: papered like the room, and solid right up to their ends (but not
@@ -848,10 +874,29 @@ export function house(stage) {
   function toggleLock(index) {
     const it = { ...home.items[index] };
     if (!canEdit() || !isDoor(it.id)) return;
-    if (it.lk) delete it.lk; else it.lk = 1;
+    if (it.lk) delete it.lk; else { it.lk = 1; if (doorState(index)?.open) setDoor(index, false); } // (locking it shuts it)
     home.items[index] = it;
-    toast(it.lk ? '🔒 Locked: only you and the people you let build can get through.' : '🔓 Unlocked: anyone can walk in.');
+    toast(it.lk ? '🔒 Locked: it stays shut until you (or someone you let build) unlock it.' : '🔓 Unlocked: anyone can open it.');
     commit('click');
+  }
+  // ---- doors, opened and shut by hand (E), the same for everyone on the street ----
+  const doorsOpen = new Map(); // "owner:item" -> { open, side }
+  const doorState = (index) => doorsOpen.get(`${viewKey}:${index}`);
+  function doorLabel(it, index, mayLock) {
+    if (it.lk) return mayLock ? '🔓 unlock the door' : '🔒 locked';
+    return doorState(index)?.open ? 'close the door' : 'open the door';
+  }
+  function setDoor(index, open, side = 1) {
+    const key = `${viewKey}:${index}`;
+    if (open) doorsOpen.set(key, { open: true, side }); else doorsOpen.delete(key);
+    net.send('house_door', { k: viewKey, i: index, open: open ? 1 : 0, s: side });
+    refreshDoorLabel(index);
+  }
+  function refreshDoorLabel(index) {
+    const e = entries[index];
+    if (!e?.inter) return;
+    e.inter.label = doorLabel(e.it, index, canEdit());
+    if (stage.near === e.inter) stage.near = null; // (the prompt shows the new label)
   }
   function afterBuild() {
     // keep the light count sane: only the first few lamps really light the room
@@ -936,6 +981,17 @@ export function house(stage) {
     const hit = stage.raycaster.intersectObjects(slabs.map((e) => e.group), true).find((h) => !h.object.userData.outline);
     for (let o = hit?.object; o; o = o.parent) if (o.userData.index != null) return elevOf(home.items[o.userData.index]);
     return 0;
+  }
+  /** Stairs placed with their top end against a floor climb exactly up to it: the nearest floor above
+   *  their foot, just past their top end (nothing there: their usual height). */
+  function autoRise() {
+    const [w, d] = footprint(placing), a = angleOf(placing), run = FURN[placing.id].d / 2 + 0.3;
+    const px = placing.x + w / 2 - Math.sin(a) * run, pz = placing.y + d / 2 - Math.cos(a) * run, base = pe();
+    let top = null;
+    const take = (t) => { if (t > base + 0.2 && (top == null || t < top)) top = t; };
+    for (const o of home.items) if (isSlab(o.id) && px >= o.x && pz >= o.y && px <= o.x + (o.l ?? 1) && pz <= o.y + (o.m ?? 1)) take(elevOf(o));
+    for (const [k, gr] of grids) if (k > 0 && gr.covered(Math.floor(px * SNAP), Math.floor(pz * SNAP))) take(k / HSTEP);
+    placing.h = top != null ? clampHeight(placing, top - base) : FURN[placing.id].rise ?? WALL_H;
   }
   /** The top of whatever stands under a rectangle (walls, columns), for a floor laid over it: 0 if nothing does. */
   function topUnder(x, y, l, m) {
@@ -1206,6 +1262,7 @@ export function house(stage) {
       room.marker.visible = false;
       return;
     }
+    if (isStairs(placing.id) && !placing.hSet && !FURN[placing.id].spiral) autoRise();
     const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r, h: placing.h, l: placing.l, m: placing.m, lv: placing.lv ?? 0, e: isSlab(placing.id) ? undefined : placing.e ?? 0, st: placing.st, iw: placing.iw, dg: placing.dg };
     if (kindOf(placing.id) === 'ceiling' && ghost.userData.drop !== heightOf(placing)) { buildGhost(); return updateGhost(); }
     if (isDragWall(placing.id) && ghost.userData.len !== lenOf(placing)) { buildGhost(); return updateGhost(); }
@@ -1371,7 +1428,20 @@ export function house(stage) {
   function floorPoint() {
     const p = stage.pointerOnPlane(pe() * T);
     if (!p) return null;
-    return { x: Math.max(0, Math.min(NX, snapQ(p.x / T))), y: Math.max(0, Math.min(NZ, snapQ(p.z / T))) };
+    const pt = { x: Math.max(0, Math.min(NX, snapQ(p.x / T))), y: Math.max(0, Math.min(NZ, snapQ(p.z / T))) };
+    return placing && isDragWall(placing.id) ? cornerMagnet(pt) : pt;
+  }
+  /** Drawing a wall near the end of one that's up: it snaps onto that wall's corner post, so the two share
+   *  it and meet flush (a quarter tile out, they'd stand side by side with a sliver of gap between them). */
+  function cornerMagnet(pt) {
+    const q = 0.25, K = Math.round(pe() * HSTEP);
+    let best = null, bd = 0.4;
+    home.items.forEach((o, i) => {
+      if (i === placing.from || !isDragWall(o.id) || FURN[o.id].wallH || ek(o) !== K) return;
+      const l = lenOf(o), ends = o.r % 2 === 0 ? [[o.x, o.y], [o.x + l - q, o.y]] : [[o.x, o.y], [o.x, o.y + l - q]];
+      for (const [x, y] of ends) { const dd = Math.hypot(pt.x - x, pt.y - y); if (dd < bd) { bd = dd; best = { x, y }; } }
+    });
+    return best ?? pt;
   }
   /** Every occupied cell, leaving out one item (the one being moved). */
   function takenCells(skip = -1) {
@@ -1458,8 +1528,10 @@ export function house(stage) {
     const it = { id: placing.id, x: placing.x, y: placing.y, r: placing.r, ...(placing.dg ? { dg: 1 } : {}), ...(placing.lv ? { lv: placing.lv } : {}), ...(isSlab(placing.id) ? {} : { e: placing.e ?? 0 }) };
     if (kindOf(placing.id) !== 'floor' && kindOf(placing.id) !== 'rug' && !isSlab(placing.id)) it.h = placing.h;
     if (isStairs(placing.id) && placing.h !== (FURN[placing.id].rise ?? WALL_H)) it.h = placing.h;
+    if (isStairs(placing.id) && (placing.from >= 0 ? home.items[placing.from].mf : MATCHES_FLOOR.has(placing.id))) it.mf = 1; // (new wooden ones match the floor)
+    if (placing.from >= 0 && home.items[placing.from].nt) it.nt = 1; // (a column moved keeps its trim off)
     if (isDragWall(placing.id)) it.l = placing.l;
-    if (isSlab(placing.id)) { it.l = placing.l; it.m = placing.m; if (placing.h) it.h = placing.h; if (placing.st) it.st = placing.st; }
+    if (isSlab(placing.id)) { it.l = placing.l; it.m = placing.m; if (placing.h) it.h = placing.h; if (placing.st) it.st = placing.st; if (placing.from >= 0 && home.items[placing.from].f) it.f = home.items[placing.from].f; }
     if (placing.iw) it.iw = 1;
     if (placing.from >= 0 && home.items[placing.from].c) it.c = home.items[placing.from].c;
     if (placing.from >= 0 && home.items[placing.from].lk) it.lk = 1;
@@ -1656,8 +1728,10 @@ export function house(stage) {
     });
   }
 
+  let pickedFace = null; // (the side of a wall the last click landed on)
   function pickItem() {
     const hit = stage.pick(room.items.children.filter((g) => g.visible)).find((h) => h.object.visible && !h.object.userData.outline && !h.object.isSprite); // (not the storeys you've hidden)
+    pickedFace = hit?.object.userData.face ?? null;
     for (let o = hit?.object; o; o = o.parent) if (o.userData.index != null) return o.userData.index;
     return -1;
   }
@@ -1741,6 +1815,9 @@ export function house(stage) {
     if (placing) { aimPlacement(); updateGhost(); place(); return; }
     const idx = pickItem();
     selected = idx === selected ? -1 : idx;
+    if (selected >= 0) wallSide = pickedFace === 2 ? 2 : 0; // (a wall: the side you clicked on is the one you change)
+    floorSel = idx < 0 ? roomFloorUnderPointer() : null; // (nothing there but a room's floor: that's what you've picked)
+    if (floorSel) sfx('pickup', { vol: 0.5 });
     partSel = null;
     if (idx >= 0) { sfx('pickup', { vol: 0.5 }); entries[idx].bounce = 0; }
     renderSelection();
@@ -1803,7 +1880,7 @@ export function house(stage) {
       : placing ? `Click to place · <kbd>R</kbd>/right-click to rotate · <kbd>Esc</kbd> to cancel${kindOf(placing.id) === 'wall' ? ' · point anywhere on a wall (the house\'s or either side of one you\'ve built), as high or low as you like' : kindOf(placing.id) === 'ceiling' ? ' · it hangs above the green square · <kbd>[</kbd> <kbd>]</kbd> lower / raise it' : ''}`
         : edit ? 'Click furniture to select it · <kbd>R</kbd> rotate · <kbd>Del</kbd> put away · drag to turn the camera'
           : mine() && !home.items.length ? '🏗️ This is your plot. Press <b>Build mode</b> and draw some walls to start your house!'
-            : 'Walk around with <kbd>WASD</kbd> · doors open as you walk up · <kbd>E</kbd> uses furniture · <kbd>G</kbd> rides your mount · stroll down the street to visit the neighbours';
+            : 'Walk around with <kbd>WASD</kbd> · <kbd>E</kbd> opens doors and uses furniture · <kbd>G</kbd> rides your mount · stroll down the street to visit the neighbours';
     if (touch.enabled && home) hint.innerHTML = touchHint();
     const said = hint.textContent.trim(); // (before the ✕ goes on: a touchscreen hides the bar when there's nothing to say)
     // the tips bar can be closed (✕) and brought back with the ❔ button up top; it stays how you left it
@@ -1824,6 +1901,7 @@ export function house(stage) {
   let hintOff = false;
   try { hintOff = localStorage.getItem('fz.houseHint') === 'off'; } catch { /* no storage */ }
   stage.hud.addEventListener('click', (ev) => { if (ev.target.closest('[data-undo]')) undo(); });
+  wirePickers(stage.hud); // (the colour wheel, the eyedropper and the recent colours in every colour row)
   stage.hud.addEventListener('click', (ev) => { const b = ev.target.closest('[data-lv]'); if (b) setStorey(+b.dataset.lv); });
   stage.hud.addEventListener('click', (ev) => {
     const t = ev.target.closest('[data-hint]');
@@ -1924,6 +2002,50 @@ export function house(stage) {
     return itemSet === 'all' && !q ? shelves(list, setOf, itemTile, label) : `<div class="furni-grid">${list.map(itemTile).join('')}</div>`; // (the set buttons above are the shortcuts)
   }
 
+  let wallSide = 0; // (which side of the picked wall you're changing: 0 or 2)
+  let floorSel = null; // (a room's floor you've clicked on: { cx, cz, E }, the spot in it and its height)
+  /** The room floor under the pointer: a spot in it and how high it is, or null. */
+  function roomFloorUnderPointer() {
+    stage.raycaster.setFromCamera(stage.mouse, stage.camera);
+    const hit = stage.raycaster.intersectObjects(areaGroup.children, false)[0];
+    if (!hit) return null;
+    const local = room.group.worldToLocal(hit.point.clone()), E = snapH(local.y - 0.006);
+    const sel = { cx: Math.floor(local.x * SNAP), cz: Math.floor(local.z * SNAP), E };
+    return roomCellsOf(sel) ? sel : null;
+  }
+  /** Every cell of the room a picked floor spot is in (null: it isn't in a room). */
+  function roomCellsOf(sel) {
+    const k = Math.round(sel.E * HSTEP);
+    return fillArea(sel.cx, sel.cz, roomWallCells(home.items, -1, k), grids.get(k) ?? null);
+  }
+  /** The floors you own as a grid to pick from (attr: what a pick sends, cur: the one on it now). */
+  function floorGrid(attr, cur) {
+    return `<div class="style-grid">${CATALOG.floors.filter(ownsDeco).map((d) => `<button class="style-opt ${cur === d.id ? 'on' : ''}" data-floorpick="${attr}:${d.id}" title="${esc(d.name)}"><span class="style-sw" style="${decoBg(d.id)}"></span><span>${esc(d.name)}</span></button>`).join('')}</div>`;
+  }
+  /** A room's floor you've clicked: what it's in, and the other floors you own. */
+  function roomFloorHtml() {
+    const here = roomCellsOf(floorSel), k = Math.round(floorSel.E * HSTEP);
+    const own = here && (home.areas ?? []).find((a) => Math.round((a.e ?? baseY(a.lv ?? 0)) * HSTEP) === k && here.has(`${Math.round(a.x * SNAP)}:${Math.round(a.y * SNAP)}`));
+    return `<div class="sel-box"><b>🟫 This room's floor</b>
+      <div class="row">${own ? '<button class="btn small" data-floorpick="room:reset">↺ Like the rest of the house</button>' : ''}<button class="btn small" data-floorpick="room:all" title="Every floor in the house gets this one">🏠 Every floor like this</button></div>
+      ${floorGrid('room', own?.f ?? home.floor)}<p class="muted small">More floors in the 🛒 Shop.</p></div>`;
+  }
+  /** A wall you've picked: the finish on the side you clicked (any outside finish or wallpaper you own),
+   *  its colours, the other side, and the house-wide choices. */
+  function wallFinishHtml(sel) {
+    const own = home.wallp?.[faceKey(sel, wallSide)], ext = home.ext?.wall ?? { m: 'siding', c: '#f2ead8' };
+    const [, cm, cc, ca] = own?.startsWith('ext:') ? own.split(':') : [];
+    const sw = (m, c, a) => `background:url(${extSwatch(m, c, a)}) center/cover`;
+    const tile = (on, attr, style, name) => `<button class="style-opt ${on ? 'on' : ''}" data-wface="${attr}" title="${esc(name)}"><span class="style-sw" style="${style}"></span><span>${esc(name)}</span></button>`;
+    const pal = (op, cur) => `<div class="swatches palette">${pickerHtml({}, 'data-wface', `${op}:`, cur)}${CATALOG.extColors.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-wface="${op}:${c}" style="--c:${c}"></button>`).join('')}</div>`;
+    return `<div class="wd-label">🧱 This side of the wall ${own ? '' : '<small class="muted">(as the rest of the house)</small>'}</div>
+      <div class="row"><button class="btn small" data-wface="side" title="Change the wall's other face">↔ Other side</button>${own ? '<button class="btn small" data-wface="reset">↺ Like the rest of the house</button>' : ''}<button class="btn small ${ext.in ? 'primary' : ''}" data-wface="in" title="Every wall's inside in its outside finish, so both sides match">🪟 Inside like outside${ext.in ? ': on' : ''}</button></div>
+      <div class="style-grid">${CATALOG.extWalls.map((w) => tile(cm === w.id, `m:ext:${w.id}`, sw(w.id, cm === w.id ? cc : w.c, cm === w.id ? ca : w.a), w.name)).join('')}${CATALOG.walls.filter(ownsDeco).map((w) => tile(own === w.id, `m:${w.id}`, decoBg(w.id), w.name)).join('')}</div>
+      <div class="wd-label">${cm && woodOf(cm) ? 'Main colour' : 'Colour'}</div>${pal('c', cc)}
+      ${cm && woodOf(cm) ? `<div class="wd-label">Wood colour <small class="muted">(posts, beams, lattice)</small></div>${pal('a', woodOf(cm, ca))}` : ''}
+      ${own ? '<button class="btn small" data-wface="all" title="Every wall in the house, both sides, gets this">🏠 Every wall like this side</button>' : ''}`;
+  }
+
   function renderItems() {
     const sel = selected >= 0 ? home?.items[selected] : null;
     // the sets you own something from, for the quick filter chips
@@ -1935,12 +2057,28 @@ export function house(stage) {
         ${kindOf(sel.id) === 'wall' || kindOf(sel.id) === 'ceiling' ? '<button class="btn small" data-act="up" title="[ ]">▲ Up</button><button class="btn small" data-act="down" title="[ ]">▼ Down</button>' : ''}
         ${isSlab(sel.id) ? `<div class="row"><span class="muted small">Underneath:</span>${[['Solid', 0], ['Posts', 1], ['Open', 2]].map(([n, v]) => `<button class="btn small ${(sel.st ?? 0) === v ? 'primary' : ''}" data-act="st:${v}">${n}</button>`).join('')}</div>` : ''}
         ${isSlab(sel.id) ? `<button class="btn small" data-act="up" title="] raises it a quarter tile">▲ Raise</button><button class="btn small" data-act="down" title="[ lowers it">▼ Lower</button><button class="btn small" data-act="up3" title="Up a wall's height">⇈</button><button class="btn small" data-act="down3" title="Down a wall's height">⇊</button><span class="muted small">${sel.h ? `${sel.h} up` : 'on the ground'}</span>` : ''}
+        ${isDragWall(sel.id) ? wallFinishHtml(sel) : ''}
+        ${isSlab(sel.id) ? `<div class="wd-label">🟫 Its floor ${sel.f ? '' : '<small class="muted">(as the rest of the house)</small>'}</div>
+          <div class="row">${sel.f ? '<button class="btn small" data-floorpick="slab:reset">↺ Like the rest of the house</button>' : ''}<button class="btn small" data-floorpick="slab:all" title="Every floor in the house gets this one">🏠 Every floor like this</button></div>
+          ${floorGrid('slab', sel.f ?? home.floor)}` : ''}
+        ${FURN[sel.id].room && !isDoor(sel.id) ? (() => {
+          // this wall's trim (the baseboards, the tops of half walls): a colour, none, or the same as the rest
+          const own = home.trimp?.[trimKeyOf(sel)], cur = own ?? home.trim ?? TRIM_DEFAULT;
+          return `<div class="wd-label">🪵 Trim <small class="muted">(this wall)</small></div>
+            <div class="swatches palette">${pickerHtml({}, 'data-wtrim', '', cur)}</div>
+            <div class="trim-grid"><button class="trim-opt ${cur === 'none' ? 'on' : ''}" data-wtrim="none" title="No trim at all"><span class="no-trim"></span>No trim</button>${CATALOG.trimColors.map((t) => `<button class="trim-opt ${cur === t.c ? 'on' : ''}" data-wtrim="${t.c}" title="${esc(t.name)}"><span style="--c:${t.c}"></span>${esc(t.name)}</button>`).join('')}</div>
+            <div class="row">${own != null ? '<button class="btn small" data-wtrim="reset">↺ Like the other walls</button>' : ''}<button class="btn small" data-wtrim="all" title="Give every wall this trim">🏠 Every wall like this one</button></div>`;
+        })() : ''}
+        ${isDoor(sel.id) && entries[selected]?.A.open !== undefined ? `<button class="btn small ${sel.lk ? 'primary' : ''}" data-act="lock" title="Locked, it stays shut for everyone until it's unlocked">${sel.lk ? '🔒 Locked' : '🔓 Unlocked'}</button>` : ''}
+        ${TRIMMED_COLUMNS.has(sel.id) ? `<button class="btn small ${sel.nt ? '' : 'primary'}" data-act="nt" title="The base, the cap and the rings">✂ Trim: ${sel.nt ? 'off' : 'on'}</button>` : ''}
+        ${isStairs(sel.id) ? `<button class="btn small ${sel.mf ? 'primary' : ''}" data-act="mf" title="Treads and sides in the same boards as your floors">🪵 Match the floor${sel.mf ? ': on' : ''}</button>` : ''}
         ${isStairs(sel.id) ? `<button class="btn small" data-act="up" title="] makes it climb higher">▲ Higher</button><button class="btn small" data-act="down" title="[ lower">▼ Lower</button><button class="btn small" data-act="up3" title="Up a wall's height">⇈</button><button class="btn small" data-act="down3" title="Down a wall's height">⇊</button><span class="muted small">climbs ${stairRise(sel)}</span>` : ''}
         ${isDragWall(sel.id) ? `<button class="btn small" data-act="shorter">− Shorter</button><button class="btn small" data-act="longer">＋ Longer</button><span class="muted small">${lenOf(sel)} tiles</span>` : ''}
         <button class="btn small" data-act="move">✥ Move</button><button class="btn small" data-act="store">⬇ Put away</button></div>
         ${FURN[sel.id].text ? `<div class="wd-label">✏️ What it says <small class="muted">(new line or | for each line)</small></div><textarea class="menu-text" maxlength="90" rows="3" placeholder="MENU|Pizza 12|Pasta 10">${esc(sel.t ?? '')}</textarea>` : ''}
         ${canRecolor(FURN[sel.id]) && furnitureParts(sel.id).length > 1 ? `<div class="wd-label">🧩 Colour a part <small class="muted">(pick one, then a colour)</small></div><div class="part-chips"><button type="button" class="part-chip ${partSel ? '' : 'on'}" data-part="">Whole thing</button>${furnitureParts(sel.id).map((p, i) => `<button type="button" class="part-chip ${partSel === p.key ? 'on' : ''}" data-part="${p.key}" title="Part ${i + 1}"><span style="--c:${sel.cp?.[p.key] ?? p.color}"></span>Part ${i + 1}</button>`).join('')}</div>` : ''}
-        ${canRecolor(FURN[sel.id]) ? `<div class="wd-label">🎨 Colour</div><div class="swatches palette"><button type="button" class="swatch orig ${sel.c ? '' : 'on'}" data-recolor="" title="Original colour">↺</button>${CATALOG.clothColors.map((c) => `<button type="button" class="swatch ${sel.c === c ? 'on' : ''}" data-recolor="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}</div>` : ''}
+        ${canRecolor(FURN[sel.id]) ? `<div class="wd-label">🎨 Colour</div><div class="swatches palette">${pickerHtml({}, 'data-recolor', '', partSel ? sel.cp?.[partSel] : sel.c)}<button type="button" class="swatch orig ${sel.c ? '' : 'on'}" data-recolor="" title="Original colour">↺</button>${CATALOG.clothColors.map((c) => `<button type="button" class="swatch ${sel.c === c ? 'on' : ''}" data-recolor="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}</div>` : ''}
+      ${!sel && floorSel && roomCellsOf(floorSel) ? roomFloorHtml() : ''}
       ${pageStrip(ITEM_FILTERS, itemFilter, 'item-filter')}
       <input class="item-search" type="search" placeholder="🔍 Search your items…" value="${esc(itemSearch)}">
       ${sets.length > 1 ? `<div class="shelf-jump item-sets"><button class="${itemSet === 'all' ? 'on' : ''}" data-item-set="all">Everything</button>${sets.map((g) => `<button class="${itemSet === g ? 'on' : ''}" data-item-set="${esc(g)}">${SET_LABEL[g] ?? esc(g)}</button>`).join('')}</div>` : ''}
@@ -1971,7 +2109,7 @@ export function house(stage) {
   // The shop and the style picker are split into pages (a strip of buttons along the top). Furniture is
   // shelved by matching set; floors, wallpapers and ceilings by kind (solid colours, wood, tiles…).
   const SHOP_PAGES = [['furniture', '🛋️ Furniture'], ['rooms', '🧱 Walls & doors'], ['wall', '🖼️ Wallpaper'], ['floor', '🟫 Floors'], ['ceiling', '☁️ Ceilings'], ['earn', '🏆 Earn']];
-  const STYLE_PAGES = [['wall', '🖼️ Wall finishes'], ['floor', '🟫 Floors'], ['ceiling', '☁️ Ceilings'], ['trim', '🪵 Trim']];
+  const STYLE_PAGES = [['ceiling', '☁️ Ceilings']]; // (a wall's or a floor's finish: pick it in 🛋️ Build)
   const ITEM_FILTERS = [['all', 'All'], ['furniture', '🛋️ Furniture'], ['top', '🍽️ On tables'], ['decor', '🖼️ Wall decor'], ['ceiling', '💡 Ceiling'], ['rooms', '🧱 Walls & doors']];
   const itemMatches = (f) => itemFilter === 'all' || (itemFilter === 'rooms' ? f.set === 'Rooms'
     : f.set !== 'Rooms' && (itemFilter === 'decor' ? kindOf(f.id) === 'wall' : itemFilter === 'ceiling' ? kindOf(f.id) === 'ceiling' : itemFilter === 'top' ? kindOf(f.id) === 'top' : kindOf(f.id) === 'floor'));
@@ -1981,7 +2119,7 @@ export function house(stage) {
     Plushies: '🧸 Claw machine plushies', Tabletop: '🍽️ Plates, food & tabletop', Curtains: '🪟 Curtains', Restaurant: '🍷 Restaurant', Rugs: '🟫 Rugs & carpets', Desks: '🖥️ Desks', Beds: '🛏️ Beds', Kitchen: '🍽️ Kitchen & dining', 'Kitchen white': '🗄️ Kitchen cabinets', 'Kitchen oak': '🪵 Oak kitchen', 'Kitchen mint': '🌿 Mint kitchen', 'Kitchen black': '🖤 Black & gold kitchen', Ocean: '🌊 Ocean set', Sunshine: '🌻 Sunshine set', Midnight: '🌙 Midnight set', Mint: '🌿 Mint set',
   };
   const DECO_LISTS = { floor: CATALOG.floors, wall: CATALOG.walls, ceiling: CATALOG.ceilings, door: CATALOG.doors };
-  let shopPage = 'furniture', stylePage = 'wall', itemFilter = 'all', itemSet = 'all', itemSearch = '';
+  let shopPage = 'furniture', stylePage = 'ceiling', itemFilter = 'all', itemSet = 'all', itemSearch = '';
   const shelfId = (g) => `shelf-${String(g).replace(/\W+/g, '')}`;
   /** Items grouped into labelled shelves, in the order the groups first appear. */
   function shelves(list, groupOf, tile, label = (g) => esc(g), grid = 'furni-grid') {
@@ -2060,7 +2198,7 @@ export function house(stage) {
       const painted = walls ? Object.keys(home?.wallp ?? {}).length : (home?.[stylePage === 'ceiling' ? 'careas' : 'areas'] ?? []).length;
       const brushName = esc(list.find((x) => x.id === brush)?.name ?? '');
       const paintBar = !PAINTABLE.has(stylePage) ? '' : `<div class="shop-pages paint-bar">
-          <button data-paint="off" class="${painting ? '' : 'on'}">🏠 Whole house</button><button data-paint="on" class="${painting ? 'on' : ''}">🪣 ${walls ? 'Paint one wall' : 'Paint a room'}</button>
+          <button data-paint="off" class="${painting ? '' : 'on'}">🏠 Whole house</button><button data-paint="on" class="${painting ? 'on' : ''}">🪣 ${walls ? 'Paint one wall' : `Paint one ${what}`}</button>
           ${painted ? `<button data-paint="clear">✕ Clear painted ${walls ? 'walls' : 'rooms'}</button>` : ''}</div>
         <p class="muted small">${painting
     ? (brush ? `Click ${walls ? 'a wall (either side of the ones you built, or the house walls)' : 'inside a room'} to give it the <b>${brushName}</b> ${what}. Pick the main one to paint it back.`
@@ -2074,7 +2212,7 @@ export function house(stage) {
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-slot-save],[data-slot-load],[data-slot-del],[data-builder],[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-part],[data-recolor],[data-trim-mode],[data-trim],[data-item-filter],[data-item-set]');
+    const t = e.target.closest('[data-slot-save],[data-slot-load],[data-slot-del],[data-builder],[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-part],[data-recolor],[data-trim-mode],[data-trim],[data-wtrim],[data-wface],[data-floorpick],[data-item-filter],[data-item-set]');
     if (!t) return;
     const ds = t.dataset;
     if (ds.slotSave) {
@@ -2091,6 +2229,74 @@ export function house(stage) {
       return;
     }
     if (ds.slotDel) { if (confirm(`Delete “${slots?.[+ds.slotDel]?.name}” for good?`)) net.send('house_slot', { op: 'delete', i: +ds.slotDel }); return; }
+    if (ds.floorpick != null) {
+      // a floor, picked like a wall: a Floor piece you've laid, or a room's floor
+      const [what, id] = ds.floorpick.split(':');
+      const everyFloor = (f) => { // (one floor for the whole house: no piece or room keeps its own)
+        home.floor = f;
+        home.items = home.items.map((o) => { if (!o.f) return o; const n = { ...o }; delete n.f; return n; });
+        home.areas = [];
+      };
+      if (what === 'slab' && selected >= 0 && isSlab(home.items[selected]?.id)) {
+        const it = { ...home.items[selected] };
+        if (id === 'all') everyFloor(it.f ?? home.floor);
+        else { if (id === 'reset' || id === home.floor) delete it.f; else it.f = id; home.items[selected] = it; }
+        commit('paint');
+      } else if (what === 'room' && floorSel) {
+        const here = roomCellsOf(floorSel), k = Math.round(floorSel.E * HSTEP);
+        if (!here) return;
+        const mine = (a) => Math.round((a.e ?? baseY(a.lv ?? 0)) * HSTEP) === k && here.has(`${Math.round(a.x * SNAP)}:${Math.round(a.y * SNAP)}`);
+        if (id === 'all') everyFloor((home.areas ?? []).find(mine)?.f ?? home.floor);
+        else {
+          home.areas = (home.areas ?? []).filter((a) => !mine(a)); // (whatever this room had goes)
+          if (id !== 'reset' && id !== home.floor) {
+            if (home.areas.length >= MAX_AREAS) { toast(`You can give up to ${MAX_AREAS} rooms their own floor.`, 'error'); return; }
+            home.areas.push({ f: id, x: floorSel.cx / SNAP, y: floorSel.cz / SNAP, ...(floorSel.E ? { e: floorSel.E } : {}) });
+          }
+        }
+        commit('paint');
+      }
+      return;
+    }
+    if (ds.wface != null && selected >= 0 && home.items[selected]) {
+      // the finish on the side of the picked wall (or the whole house's walls)
+      const [op, ...rest] = ds.wface.split(':'), v = rest.join(':'), key = faceKey(home.items[selected], wallSide);
+      const own = { ...(home.wallp ?? {}) }, cur = own[key] ?? '', [, cm, cc, ca] = cur.startsWith('ext:') ? cur.split(':') : [];
+      const id = (m, c, a) => `ext:${m}:${c}${woodOf(m, a) ? `:${woodOf(m, a)}` : ''}`;
+      const dflt = (m) => CATALOG.extWalls.find((w) => w.id === m)?.c;
+      if (op === 'side') { wallSide = wallSide ? 0 : 2; sfx('click'); renderPanel(); return; }
+      if (op === 'in') { const w = { ...home.ext.wall }; if (w.in) delete w.in; else w.in = 1; setExt({ wall: w }); return; }
+      if (op === 'all') {
+        // this side's finish on every wall, inside and out (painted walls are let go too, so it really is all)
+        const w = { ...home.ext.wall };
+        if (cm) Object.assign(w, { m: cm, c: cc, in: 1 }, ca ? { a: ca } : {});
+        else { home.wall = cur; delete w.in; }
+        if (!ca) delete w.a;
+        home.wallp = Object.fromEntries(Object.entries(own).filter(([k]) => !k.startsWith('w:')));
+        setExt({ wall: w });
+        return;
+      }
+      if (op === 'reset') delete own[key];
+      else if (op === 'm') own[key] = v.startsWith('ext:') ? id(v.slice(4), dflt(v.slice(4))) : v;
+      else if (op === 'c') own[key] = id(cm ?? 'paint', v, ca);
+      else if (op === 'a') { if (!cm) return; own[key] = id(cm, cc, v); }
+      if (Object.keys(own).length > 400) { toast('That\'s a lot of painted walls! Clear some first.', 'error'); return; }
+      home.wallp = own;
+      commit('paint');
+      return;
+    }
+    if (ds.wtrim != null && selected >= 0 && home.items[selected]) {
+      // the trim on the wall you've picked (or, "all": this wall's trim on every wall)
+      const key = trimKeyOf(home.items[selected]), own = { ...(home.trimp ?? {}) }, cur = own[key] ?? home.trim ?? TRIM_DEFAULT;
+      if (ds.wtrim === 'all') { home.trim = cur; home.trimp = {}; }
+      else {
+        if (ds.wtrim === 'reset' || ds.wtrim === (home.trim ?? TRIM_DEFAULT)) delete own[key]; else own[key] = ds.wtrim;
+        if (Object.keys(own).length > 400) { toast("That's a lot of trims! Clear some first.", 'error'); return; }
+        home.trimp = own;
+      }
+      commit('paint');
+      return;
+    }
     if (ds.trimMode) {
       if (ds.trimMode === 'clear') { home.trimp = {}; commit('paint'); return; }
       trimMode = ds.trimMode === 'wall'; trimBrush = null; renderPanel(); return;
@@ -2180,6 +2386,9 @@ export function house(stage) {
       if (ds.act === 'up') nudgeHeight(1);
       if (ds.act === 'down') nudgeHeight(-1);
       if (ds.act === 'up3') nudgeHeight(1, true);
+      if (ds.act === 'lock' && selected >= 0) toggleLock(selected);
+      if (ds.act === 'nt' && selected >= 0) { const it = { ...home.items[selected] }; if (it.nt) delete it.nt; else it.nt = 1; home.items[selected] = it; commit('paint'); }
+      if (ds.act === 'mf' && selected >= 0) { const it = { ...home.items[selected] }; if (it.mf) delete it.mf; else it.mf = 1; home.items[selected] = it; commit('paint'); }
       if (ds.act === 'down3') nudgeHeight(-1, true);
       if (ds.act === 'store') storeSelected();
       if (ds.act.startsWith('st:')) setSlabStyle(+ds.act.slice(3));
@@ -2208,11 +2417,11 @@ export function house(stage) {
 
   // ---- the outside: each wall's finish, the roof, the trim, paths and driveways, the yard -----------
 
-  const EXT_PAGES = [['walls', '🧱 Outside walls'], ['roof', '🏠 Roofs'], ['paths', '🛣️ Paths & driveways'], ['yard', '🌳 Yard']];
+  const EXT_PAGES = [['roof', '🏠 Roofs'], ['paths', '🛣️ Paths & driveways'], ['yard', '🌳 Yard']]; // (walls: pick one in 🛋️ Build to change it)
   const MAX_ROOFS = 48;
   let roofBrush = { s: 'gable', m: 'shingle', c: '#b3403a', ch: 0, r: 0, p: 1 }, roofSel = -1; // (roofSel: the piece you've clicked to change)
   const MAX_GROUND = 300, MAX_YARD = 600; // (as on the server)
-  let extPage = 'walls', extOne = false, extBrush = { m: 'brick', c: '#b5533c' };
+  let extPage = 'roof', extOne = false, extBrush = { m: 'brick', c: '#b5533c' };
   let pathBrush = { m: 'concrete', c: '#c9c9c9' }, pathErase = false, pathDrag = null, pathGhost = null;
   let yardPick = null, yardErase = false, yardTurn = 0, yardGhost = null;
   const half = (v) => Math.round(v * 2) / 2;
@@ -2448,7 +2657,7 @@ export function house(stage) {
   function renderOutside() {
     const e = home?.ext;
     if (!e) { panel.innerHTML = '<p class="muted">Loading…</p>'; return; }
-    const cols = (cur, attr) => `<div class="swatches palette">${CATALOG.extColors.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-x="${attr}:${c}" style="--c:${c}"></button>`).join('')}</div>`;
+    const cols = (cur, attr) => `<div class="swatches palette">${pickerHtml({}, 'data-x', `${attr}:`, cur)}${CATALOG.extColors.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-x="${attr}:${c}" style="--c:${c}"></button>`).join('')}</div>`;
     const tile = (on, attr, style, name, inner = '') => `<button class="style-opt ${on ? 'on' : ''}" data-x="${attr}" title="${esc(name)}"><span class="style-sw" style="${style}">${inner}</span><span>${esc(name)}</span></button>`;
     const sw = (m, c, a) => `background:url(${extSwatch(m, c, a)}) center/cover`;
     const bar = (...btns) => `<div class="shop-pages paint-bar">${btns.filter(Boolean).map(([attr, label, on]) => `<button data-x="${attr}" class="${on ? 'on' : ''}">${label}</button>`).join('')}</div>`;
@@ -2624,7 +2833,7 @@ export function house(stage) {
     if (!what) { paintSel = null; panel.innerHTML = `${tabs}<p class="muted">🎨 <b>Click anything</b> on your plot to paint it: a wall (each side on its own), a piece of roof, a path or driveway, or a piece of furniture. Then pick a material or a colour here.</p>`; return; }
     const sw = (m, c, a) => `background:url(${extSwatch(m, c, a)}) center/cover`;
     const tile = (on, attr, style, name) => `<button class="style-opt ${on ? 'on' : ''}" data-p="${attr}" title="${esc(name)}"><span class="style-sw" style="${style}"></span><span>${esc(name)}</span></button>`;
-    const cols = (list, cur) => `<div class="swatches palette">${list.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-p="c:${c}" style="--c:${c}"></button>`).join('')}</div>`;
+    const cols = (list, cur) => `<div class="swatches palette">${pickerHtml({}, 'data-p', 'c:', cur)}${list.map((c) => `<button type="button" class="swatch ${cur === c ? 'on' : ''}" data-p="c:${c}" style="--c:${c}"></button>`).join('')}</div>`;
     let mats, colours;
     if (s.kind === 'face') {
       const cur = home.wallp?.[s.key] ?? '', [, cm, cc, ca] = cur.startsWith('ext:') ? cur.split(':') : [];
@@ -2793,7 +3002,12 @@ export function house(stage) {
     net.on('player', () => { hood.sync(); restreet(); for (const k of hood.missing()) net.send('house_get', { k }); }),
     net.on('houses', (m) => { for (const [k, h] of Object.entries(m.houses)) if (k !== viewKey || !home) hood.setHouse(k, h); }),
     net.on('area_pose', (m) => showRide(m.k, m.pose)),
+    net.on('house_door', (m) => {
+      if (m.open) doorsOpen.set(`${m.k}:${m.i}`, { open: true, side: m.s ?? 1 }); else doorsOpen.delete(`${m.k}:${m.i}`);
+    }),
     net.on('area', (m) => {
+      doorsOpen.clear();
+      for (const [k, i, side] of m.doors ?? []) doorsOpen.set(`${k}:${i}`, { open: true, side });
       seatsTaken.clear();
       building.clear();
       for (const q of m.others) if (q.seat) seatsTaken.set(q.k, q.seat);
@@ -2934,19 +3148,20 @@ export function house(stage) {
     // upstairs and down: stand on whatever floor is under you, and the camera follows you up
     if (!edit && !seated && home) climb(p, dt);
     if (!edit) orbit.target.y = seated ? elevOf(seated.it) * T : p.y;
-    // doors open for whoever walks up to them (swinging away from them) and shut behind them
-    const walkers = [walker.me, ...stage.people.values()];
-    for (const e of entries) {
-      if (e.A.open === undefined) continue;
-      const [w, d] = footprint(e.it);
-      const cx = (e.it.x + w / 2) * T, cz = (e.it.y + d / 2) * T, h = e.it.r * (Math.PI / 2);
-      // (a locked door only opens for the owner and their builders)
-      const near = walkers.find((q) => q && Math.abs((q.y ?? 0) - elevOf(e.it) * T) < WALL_H * T * 0.7 && Math.hypot(q.x - cx, q.z - cz) < 2.2 && (!e.it.lk || q.k === viewKey || (home.builders ?? []).includes(q.k)));
-      const open = near ? 1 : 0;
-      if (near) e.A.side = (near.x - cx) * Math.sin(h) + (near.z - cz) * Math.cos(h) > 0 ? 1 : -1;
-      if (open !== e.A.open) sfx(open ? 'open' : 'close', { vol: Math.hypot(walker.me.x - cx, walker.me.z - cz) < 6 ? 0.5 : 0.15 });
-      e.A.open = open;
-    }
+    // doors stand open or shut as someone left them (E), swung away from whoever opened them; a locked
+    // one is always shut. An open door isn't in anybody's way.
+    entries.forEach((e, index) => {
+      if (e.A.open === undefined) return;
+      const st = doorState(index), open = st?.open && !e.it.lk ? 1 : 0;
+      if (st) e.A.side = st.side;
+      if (open !== e.A.open) {
+        const [w, d] = footprint(e.it), cx = (e.it.x + w / 2) * T, cz = (e.it.y + d / 2) * T;
+        sfx(open ? 'open' : 'close', { vol: Math.hypot(walker.me.x - cx, walker.me.z - cz) < 6 ? 0.5 : 0.15 });
+        e.A.open = open;
+        refreshDoorLabel(index);
+      }
+      if (e.doorSolid) e.doorSolid.off = !!open;
+    });
     for (const e of entries) {
       e.A.anim = e.A.anim.filter((fn) => !fn(t, dt));
       if (e.bounce < 1) {

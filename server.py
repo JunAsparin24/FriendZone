@@ -446,7 +446,7 @@ def clean_parts(cp):
     """Colours for the parts of a piece: "m:#rrggbb" or "t:#rrggbb" -> a palette colour (up to 6)."""
     out = {}
     for k, v in list(cp.items())[:6]:
-        if isinstance(k, str) and re.fullmatch(r"[mt]:#[0-9a-f]{6}", k) and v in CATALOG["clothColors"]:
+        if isinstance(k, str) and re.fullmatch(r"[mt]:#[0-9a-f]{6}", k) and isinstance(v, str) and HEX_RE.match(v):  # (any colour)
             out[k] = v
     return out
 
@@ -1014,8 +1014,8 @@ def clean_house(p, data):
         if kind != "floor" and cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth, **({"st": it["st"]} if it.get("st") in (1, 2) else {})} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"e": e} if e is not None else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
-                            **({"c": it["c"]} if can_recolor(f) and it.get("c") in CATALOG["clothColors"] else {}),
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth, **({"st": it["st"]} if it.get("st") in (1, 2) else {}), **({"f": it["f"]} if it.get("f") in FLOORS and owns_deco(p, it["f"]) else {})} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"e": e} if e is not None else {}), **({"mf": 1} if f.get("stairs") and it.get("mf") else {}), **({"nt": 1} if f["id"].startswith("col_") and it.get("nt") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
+                            **({"c": it["c"].lower()} if can_recolor(f) and isinstance(it.get("c"), str) and HEX_RE.match(it["c"]) else {}),  # (any colour)
                             **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {}),
                             **({"cp": clean_parts(it["cp"])} if can_recolor(f) and isinstance(it.get("cp"), dict) and clean_parts(it["cp"]) else {}),
                             **({"lk": 1} if kind == "door" and it.get("lk") else {})})  # (lk: a locked door, only the owner and their builders get through)
@@ -1063,10 +1063,11 @@ def clean_house(p, data):
         if not isinstance(k, str) or len(k) > 40 or v not in WALLS or not owns_deco(p, v):
             raise GameError("You don't own that wallpaper yet.")
         clean_wallp[k] = v
-    trim = data.get("trim") if data.get("trim") in TRIM_COLORS or data.get("trim") == "none" else "#f4f0ff"  # ("none": no trim at all)
+    is_trim = lambda v: v == "none" or (isinstance(v, str) and HEX_RE.match(v))  # (any colour, or "none": no trim at all)
+    trim = data.get("trim") if is_trim(data.get("trim")) else "#f4f0ff"
     # single walls with a trim colour of their own (per room)
     trimp = data.get("trimp") or {}
-    clean_trimp = {k: v for k, v in trimp.items() if isinstance(k, str) and len(k) <= 40 and (v in TRIM_COLORS or v == "none")} if isinstance(trimp, dict) else {}
+    clean_trimp = {k: v for k, v in trimp.items() if isinstance(k, str) and len(k) <= 40 and is_trim(v)} if isinstance(trimp, dict) else {}
     if len(clean_trimp) > 400:
         raise GameError("That's too many wall trims.")
     return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items,
@@ -1286,6 +1287,7 @@ class Room:
     """Live state for one FriendZone. The persisted part lives in `zone`."""
 
     def __init__(self, zone):
+        self.house_doors = {}  # the doors standing open in the houses on the street: "owner:item" -> which way they swung
         self.zone = zone
         self.clients = {}  # player key -> Client
         self.chat = []
@@ -1788,16 +1790,17 @@ class Game:
             raise GameError("That outfit didn't come through.")
         new = {}
         for field, palette in LOOK_COLORS.items():
-            if look.get(field) not in CATALOG[palette]:
+            v = look.get(field)
+            if v not in CATALOG[palette] and not (isinstance(v, str) and HEX_RE.match(v)):  # (a preset, or any colour from the wheel)
                 raise GameError("Unknown color.")
-            new[field] = look[field]
+            new[field] = v.lower()
         for field, options in LOOK_CHOICES.items():
             if look.get(field) not in {o["id"] for o in CATALOG[options]}:
                 raise GameError("Unknown body option.")
             new[field] = look[field]
         for field in LOOK_TINTS:
             col = look.get(field) or ""
-            if col and col not in CATALOG["clothColors"]:
+            if col and not (isinstance(col, str) and HEX_RE.match(col)):  # (any colour from the colour wheel)
                 raise GameError("Unknown color.")
             if col:
                 new[field] = col
@@ -1948,7 +1951,8 @@ class Game:
             self.beach_join(c)
         if is_area(scene):
             c.ws.send({"t": "area", "others": [{"k": o.key, "x": o.ax, "z": o.az, "h": o.ah, "y": getattr(o, "ay", 0) or 0, "seat": o.aseat, "pose": o.apose} for o in room.clients.values()
-                                                if o.scene == scene and o is not c and o.ax is not None]})
+                                                if o.scene == scene and o is not c and o.ax is not None],
+                         **({"doors": [[*key.split(":"), side] for key, side in room.house_doors.items()]} if scene == "hood" else {})})  # (the doors that are open)
         elif scene == "race":
             c.ws.send({"t": "race", "race": self.race_view(room)})
         self.push_player(room, c.key)
@@ -2212,6 +2216,27 @@ class Game:
         except (KeyError, TypeError, ValueError):
             return
         c.room.broadcast({"t": "boat", "id": bid, **b}, scene="beach", exclude=c)
+
+    def on_house_door(self, c, m):
+        """Opening or shutting a door in a house (by hand: E): everyone on the street sees it. A locked door
+        stays shut for everybody until it's unlocked."""
+        if c.scene != "hood" or not c.ready("hdoor", 0.12):
+            return
+        k, i = str(m.get("k", "")).lower(), m.get("i")
+        p = c.room.zone["players"].get(k)
+        if not p or not isinstance(i, int) or not 0 <= i < HOUSE_MAX_ITEMS:
+            return
+        items = (p.get("house") or {}).get("items") or []
+        is_open = bool(m.get("open"))
+        if is_open and (i >= len(items) or items[i].get("lk")):
+            return
+        side = -1 if m.get("s") == -1 else 1
+        doors = c.room.house_doors
+        if is_open:
+            doors[f"{k}:{i}"] = side
+        else:
+            doors.pop(f"{k}:{i}", None)
+        c.room.broadcast({"t": "house_door", "k": k, "i": i, "open": 1 if is_open else 0, "s": side}, scene="hood", exclude=c)
 
     def on_area_sit(self, c, m):
         """Sitting on a seat in a house (a sofa has two); one person per seat. seat: [item, seat, owner] or None."""
@@ -2931,7 +2956,7 @@ class Game:
         if not c.ready("race_vehicle", 0.2):
             return
         kind, color, accent = m.get("type"), m.get("color"), m.get("accent")
-        if kind not in VEHICLE_TYPES or color not in CATALOG["clothColors"] or accent not in CATALOG["clothColors"]:
+        if kind not in VEHICLE_TYPES or not all(isinstance(v, str) and HEX_RE.match(v) for v in (color, accent)):
             raise GameError("That isn't something the garage can build.")
         c.player["vehicle"] = {"type": kind, "color": color, "accent": accent}
         self.store.mark()
@@ -4789,6 +4814,8 @@ class Game:
             c.ws.send({"t": "house", "k": key, "house": house_view(p), "sync": 1})
             raise e if isinstance(e, GameError) else GameError("That couldn't be saved, so it's been undone.")
         self.store.mark()
+        for d in [d for d in c.room.house_doors if d.startswith(f"{key}:")]:  # (the house has changed: its doors are all shut again)
+            del c.room.house_doors[d]
         c.room.broadcast({"t": "house", "k": key, "house": house_view(p), "by": c.key})
         self.push_player(c.room, key)
 

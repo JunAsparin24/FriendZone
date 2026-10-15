@@ -1988,3 +1988,16 @@ html:not(.touch) body.house-menu .house-hint { max-width: min(760px, calc(100vw 
 .storeys small { align-self: center; padding: 0 4px 0 6px; font-weight: 800; font-size: 12px; color: var(--muted); }
 .storeys .btn { padding-left: 10px; padding-right: 10px; min-width: 32px; }
 .house-bar.building .house-title { display: none; }
+
+/* any colour: the colour wheel, the eyedropper and the colours picked lately, at the front of every row of swatches */
+.cpick { display: contents; }
+.swatch.cp-wheel { position: relative; overflow: hidden; cursor: pointer; background: conic-gradient(#ff3b3b, #ffd84d, #4be08a, #39c6ff, #7c6bff, #ff4fd8, #ff3b3b); }
+.swatch.cp-wheel::after { content: ''; position: absolute; inset: 30%; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px #0003; pointer-events: none; }
+.swatch.cp-wheel input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.swatch.cp-drop { background: #0d1f4a; color: #fff; font-size: 14px; display: grid; place-items: center; }
+.swatch.cp-recent { box-shadow: inset 0 0 0 2px #ffffff55; }
+/* a picked piece's own options (a wall's finish and trim, a floor's supports…) each take a full line under its buttons */
+.sel-box .row { flex-wrap: wrap; }
+.sel-box .row > .wd-label, .sel-box .row > .style-grid, .sel-box .row > .swatches, .sel-box .row > .trim-grid, .sel-box .row > .row { flex-basis: 100%; }
+.sel-box .row > .wd-label { margin-top: 6px; }
+.sel-box .row > .wd-label, .sel-box .row > .style-grid, .sel-box .row > .swatches, .sel-box .row > .trim-grid, .sel-box .row > .row { order: 1; } /* (after the buttons) */

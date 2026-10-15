@@ -260,7 +260,7 @@ function raiseOf(it, items, skip = -1) {
   });
   return top;
 }
-const MAX_AREAS = 24;
+const MAX_AREAS = 100;
 /**
  * A painted floor area: every quarter-tile cell you can reach from (cx, cz) without crossing a wall you've
  * built (or leaving the house). Returns the cells as "x:z" keys, or null if the spot is inside a wall.
@@ -1067,7 +1067,7 @@ export function house(stage) {
     if (!w) { sfx('error'); return; }
     const key = trimKeyOf(w.it), own = { ...(home.trimp ?? {}) };
     if (trimBrush === (home.trim ?? TRIM_DEFAULT)) delete own[key]; else own[key] = trimBrush;
-    if (Object.keys(own).length > 400) { toast('That\'s a lot of trims! Clear some first.', 'error'); return; }
+    if (Object.keys(own).length > 3000) { toast('That\'s a lot of trims! Clear some first.', 'error'); return; }
     home.trimp = own;
     commit('paint');
   }
@@ -1077,7 +1077,7 @@ export function house(stage) {
     if (!w || w.face == null) { sfx('error'); return; }
     const key = faceKey(w.it, w.face), own = { ...(home.wallp ?? {}) };
     if (id == null) delete own[key]; else own[key] = id;
-    if (Object.keys(own).length > 400) { toast('That\'s a lot of painted walls! Clear some first.', 'error'); return; }
+    if (Object.keys(own).length > 3000) { toast('That\'s a lot of painted walls! Clear some first.', 'error'); return; }
     home.wallp = own;
     commit('paint');
   }
@@ -2132,7 +2132,7 @@ export function house(stage) {
   function shopTile(item, kind) {
     const have = owned(item.id);
     const deco = kind !== 'furni';
-    const max = deco ? 1 : item.max ?? 10;
+    const max = deco ? 1 : item.max ?? 50; // (HOUSE_BUY_MAX on the server)
     let foot;
     if (item.exclusive) foot = have ? 'Owned ✓' : '∞ · admins only';
     else if (item.claw) foot = have ? `Owned ${have}` : '🕹️ Win it from the claw!';
@@ -2319,7 +2319,7 @@ export function house(stage) {
       else if (op === 'm') own[key] = v.startsWith('ext:') ? id(v.slice(4), dflt(v.slice(4))) : v;
       else if (op === 'c') own[key] = id(cm ?? 'paint', v, ca);
       else if (op === 'a') { if (!cm) return; own[key] = id(cm, cc, v); }
-      if (Object.keys(own).length > 400) { toast('That\'s a lot of painted walls! Clear some first.', 'error'); return; }
+      if (Object.keys(own).length > 3000) { toast('That\'s a lot of painted walls! Clear some first.', 'error'); return; }
       home.wallp = own;
       commit('paint');
       return;
@@ -2330,7 +2330,7 @@ export function house(stage) {
       if (ds.wtrim === 'all') { home.trim = cur; home.trimp = {}; }
       else {
         if (ds.wtrim === 'reset' || ds.wtrim === (home.trim ?? TRIM_DEFAULT)) delete own[key]; else own[key] = ds.wtrim;
-        if (Object.keys(own).length > 400) { toast("That's a lot of trims! Clear some first.", 'error'); return; }
+        if (Object.keys(own).length > 3000) { toast("That's a lot of trims! Clear some first.", 'error'); return; }
         home.trimp = own;
       }
       commit('paint');
@@ -2465,9 +2465,9 @@ export function house(stage) {
   // ---- the outside: each wall's finish, the roof, the trim, paths and driveways, the yard -----------
 
   const EXT_PAGES = [['roof', '🏠 Roofs'], ['paths', '🛣️ Paths & driveways'], ['yard', '🌳 Yard']]; // (walls: pick one in 🛋️ Build to change it)
-  const MAX_ROOFS = 48;
+  const MAX_ROOFS = 120;
   let roofBrush = { s: 'gable', m: 'shingle', c: '#b3403a', ch: 0, r: 0, p: 1 }, roofSel = -1; // (roofSel: the piece you've clicked to change)
-  const MAX_GROUND = 300, MAX_YARD = 600; // (as on the server)
+  const MAX_GROUND = 800, MAX_YARD = 1500; // (as on the server)
   let extPage = 'roof', extOne = false, extBrush = { m: 'brick', c: '#b5533c' };
   let pathBrush = { m: 'concrete', c: '#c9c9c9' }, pathErase = false, pathDrag = null, pathGhost = null;
   let yardPick = null, yardErase = false, yardTurn = 0, yardGhost = null;

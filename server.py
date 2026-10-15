@@ -34,7 +34,7 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-MAX_MESSAGE = 64 * 1024
+MAX_MESSAGE = 1024 * 1024  # (a big house, saved in one go, runs to a few hundred KB)
 IDLE_TIMEOUT = 90  # clients ping every 25s
 
 MIME = {
@@ -331,7 +331,8 @@ HOUSE_WALL_H = 3.2  # wall height, tiles
 HOUSE_WALL_Y = 1.75  # default height of a wall decoration's middle
 HOUSE_DOOR_H = 2.2  # the front door's height (things can hang on the wall above it)
 HOUSE_MAX_DROP = 2.4  # how far below the ceiling a hanging thing can go
-HOUSE_MAX_ITEMS = 1000  # (walls count too: a house is whatever you draw on your plot)
+HOUSE_BUY_MAX = 50  # how many of one thing you can buy (unless it says otherwise)
+HOUSE_MAX_ITEMS = 3000  # (walls count too: a house is whatever you draw on your plot)
 
 # Cosmetics and fish are shared with the client through one catalog file.
 CATALOG = json.loads((PUBLIC / "cosmetics.json").read_text("utf-8"))
@@ -1035,11 +1036,11 @@ def clean_house(p, data):
             raise GameError(f"The {name} has to hang on a wall.")
     # rooms with their own floor: a floor you own and a spot in the room (it fills out to the walls)
     areas = data.get("areas") or []
-    if not isinstance(areas, list) or len(areas) > 24:
+    if not isinstance(areas, list) or len(areas) > 100:
         raise GameError("That's too many painted rooms.")
     def painted(spots, kinds, what):
         """Rooms painted with their own floor / ceiling: one you own, and a spot in the room (it fills out to the walls)."""
-        if not isinstance(spots, list) or len(spots) > 24:
+        if not isinstance(spots, list) or len(spots) > 100:
             raise GameError("That's too many painted rooms.")
         out = []
         for a in spots:
@@ -1061,7 +1062,7 @@ def clean_house(p, data):
     clean_careas = painted(data.get("careas") or [], CEILINGS, "ceiling")
     # single walls with their own wallpaper: which face -> which wallpaper
     wallp = data.get("wallp") or {}
-    if not isinstance(wallp, dict) or len(wallp) > 400:
+    if not isinstance(wallp, dict) or len(wallp) > 3000:
         raise GameError("That's too many painted walls.")
     clean_wallp = {}
     for k, v in wallp.items():
@@ -1076,7 +1077,7 @@ def clean_house(p, data):
     # single walls with a trim colour of their own (per room)
     trimp = data.get("trimp") or {}
     clean_trimp = {k: v for k, v in trimp.items() if isinstance(k, str) and len(k) <= 40 and is_trim(v)} if isinstance(trimp, dict) else {}
-    if len(clean_trimp) > 400:
+    if len(clean_trimp) > 3000:
         raise GameError("That's too many wall trims.")
     return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items,
             "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp, "trim": trim, "trimp": clean_trimp,
@@ -1091,11 +1092,11 @@ GROUND_MATS = {g["id"]: g for g in CATALOG["groundMats"]}
 EXT_TRIMS = {t["id"] for t in CATALOG["extTrims"]}
 YARD_ITEMS = {y["id"]: y for y in CATALOG["yardItems"]}
 PLOT = CATALOG["plot"]  # every house stands on a plot this big (tiles), its front wall `front` tiles from the street
-MAX_GROUND, MAX_YARD = 300, 600  # (room for a big garden: paths everywhere, fences all the way round)
+MAX_GROUND, MAX_YARD = 800, 1500  # (room for a big garden: paths everywhere, fences all the way round)
 
 
 EXT_FACE_RE = re.compile(r"^ext:[a-z_]+:#[0-9a-fA-F]{6}(:#[0-9a-fA-F]{6})?$")  # (the last: a two-colour finish's wood)
-MAX_ROOFS = 48
+MAX_ROOFS = 120
 ROOF_PITCHES = (0.6, 1, 1.4)  # a piece of roof can be made shallower or steeper
 
 
@@ -2427,7 +2428,7 @@ class Game:
             inv = c.room.zone["players"][k]["furni"]
             for i in ids:
                 # (an admin gift can go past the usual limit, so you can hand out lots, or unlimited)
-                limit = (FURN[i].get("max", 10) if i in FURN else 1) if fid == "all" else HOUSE_INFINITE
+                limit = (FURN[i].get("max", HOUSE_BUY_MAX) if i in FURN else 1) if fid == "all" else HOUSE_INFINITE
                 inv[i] = min(limit, inv.get(i, 0) + count) if count < HOUSE_INFINITE else HOUSE_INFINITE
         self._adm_touch(c, keys)
         amount = "unlimited" if count >= HOUSE_INFINITE else f"{count}×"
@@ -4919,7 +4920,7 @@ class Game:
         if not item or "price" not in item:
             raise GameError("That isn't for sale.")
         have = p["furni"].get(item_id, 0)
-        limit = 1 if item_id not in FURN else item.get("max", 10)
+        limit = 1 if item_id not in FURN else item.get("max", HOUSE_BUY_MAX)
         if have >= limit:
             raise GameError("You already have that." if limit == 1 else f"You can own up to {limit} of those.")
         if p["coins"] < item["price"]:
@@ -4935,7 +4936,7 @@ class Game:
         if not item or "price" not in item:
             raise GameError("That isn't for sale.")
         have = owner["furni"].get(item_id, 0)
-        limit = 1 if item_id not in FURN else item.get("max", 10)
+        limit = 1 if item_id not in FURN else item.get("max", HOUSE_BUY_MAX)
         if have >= limit:
             raise GameError("They already have that." if limit == 1 else f"They can have up to {limit} of those.")
         if c.player["coins"] < item["price"]:

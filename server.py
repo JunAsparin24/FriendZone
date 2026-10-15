@@ -973,6 +973,14 @@ def clean_house(p, data):
                 if not (0.25 <= length <= max(W, D)):
                     raise GameError("That wall is the wrong length.")
             w, d = (length, f["d"]) if r % 2 == 0 else (f["d"], length)
+            ht = None
+            if (f.get("drag") and not f.get("wallH") or f["id"].startswith("col_")) and it.get("ht") is not None:  # (a wall or column built taller or shorter)
+                try:
+                    ht = snap_h(it["ht"])
+                except (TypeError, ValueError):
+                    ht = -1
+                if not 0.5 <= ht <= 9.6:
+                    raise GameError("A wall can't be that tall.")
             if f.get("slab"):  # a floor you lay yourself: a rectangle l across by m deep
                 length, depth = snap_q(it.get("l", 1)), snap_q(it.get("m", 1))
                 if not (0.25 <= length <= W and 0.25 <= depth <= D):
@@ -1005,7 +1013,7 @@ def clean_house(p, data):
                 cells = {(l, a, b) for l in layers for a, b in spots}
                 if {(hk, l, a, b) for l in check for a, b in spots} & taken:
                     raise GameError("Things can't overlap.")
-            if f.get("drag") and not f.get("wallH"):  # (doors and wall decorations go on full-height walls)
+            if f.get("drag") and not f.get("wallH") and (ht is None or ht >= 2.4):  # (doors and wall decorations go on walls tall enough for them)
                 wall_cells |= {(hk, c[1], c[2]) for c in cells}
                 drawn.append((hk, r % 2, x if r % 2 == 0 else y, length, y if r % 2 == 0 else x))
             if kind == "door":
@@ -1014,7 +1022,7 @@ def clean_house(p, data):
         if kind != "floor" and cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth, **({"st": it["st"]} if it.get("st") in (1, 2) else {}), **({"f": it["f"]} if it.get("f") in FLOORS and owns_deco(p, it["f"]) else {})} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"e": e} if e is not None else {}), **({"mf": 1} if f.get("stairs") and it.get("mf") else {}), **({"nt": 1} if f["id"].startswith("col_") and it.get("nt") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth, **({"st": it["st"]} if it.get("st") in (1, 2) else {}), **({"f": it["f"]} if it.get("f") in FLOORS and owns_deco(p, it["f"]) else {})} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"e": e} if e is not None else {}), **({"mf": 1} if f.get("stairs") and it.get("mf") else {}), **({"nt": 1} if f["id"].startswith("col_") and it.get("nt") else {}), **({"ht": ht} if kind != "wall" and (f.get("drag") or f["id"].startswith("col_")) and ht is not None and ht != HOUSE_WALL_H else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
                             **({"c": it["c"].lower()} if can_recolor(f) and isinstance(it.get("c"), str) and HEX_RE.match(it["c"]) else {}),  # (any colour)
                             **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {}),
                             **({"cp": clean_parts(it["cp"])} if can_recolor(f) and isinstance(it.get("cp"), dict) and clean_parts(it["cp"]) else {}),

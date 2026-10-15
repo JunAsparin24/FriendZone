@@ -511,9 +511,11 @@ function renderChat() {
   for (const m of S.chat) m.seenAt ??= (m.ts && !m.sys ? Math.min(now, m.ts * 1000) : now);
   const html = S.chat.slice(-8).map((m) => {
     const old = now - m.seenAt > CHAT_SHOW_MS ? ' old' : '';
+    // (when it was said, on your own clock: 9:54 pm)
+    const at = `<small class="chat-time">${new Date(m.ts ? m.ts * 1000 : m.seenAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small>`;
     return m.sys
-      ? `<li class="sys ${m.sys}${old}">${esc(m.text).replace(/\n/g, '<br>')}</li>`
-      : `<li class="${old}"><b style="color:${colorOf(m.k)}">${esc(nameOf(m.k))}</b> ${esc(m.text)}</li>`;
+      ? `<li class="sys ${m.sys}${old}">${at}${esc(m.text).replace(/\n/g, '<br>')}</li>`
+      : `<li class="${old}">${at}<b style="color:${colorOf(m.k)}">${esc(nameOf(m.k))}</b> ${esc(m.text)}</li>`;
   }).join('');
   if (html !== lastChatHtml) { lastChatHtml = html; $('#chatLog').innerHTML = html; }
 }

@@ -408,6 +408,95 @@ const ROOFS = {
 };
 
 // ---------------------------------------------------------------------------
+// roofs that overlap merge: each piece is cut off where it runs inside another (its surface and the gable
+// walls under it), so two pieces meet in a clean valley or hip instead of poking through each other
+// ---------------------------------------------------------------------------
+
+/** A piece of roof as a solid: below every face of its surface, inside its footprint, above its eaves.
+ *  Planes face outwards ({ n, d }: a point p is outside when n·p > d). */
+function roofSolid(piece) {
+  const planes = [], box = new THREE.Box3();
+  piece.traverse((o) => {
+    if (!o.userData.roofSurface) return;
+    const pos = o.geometry.attributes.position, idx = o.geometry.index, m = o.matrixWorld;
+    const tri = (i, j, k) => {
+      const A = V().fromBufferAttribute(pos, i).applyMatrix4(m), B = V().fromBufferAttribute(pos, j).applyMatrix4(m), C = V().fromBufferAttribute(pos, k).applyMatrix4(m);
+      box.expandByPoint(A).expandByPoint(B).expandByPoint(C);
+      const n = V().subVectors(B, A).cross(V().subVectors(C, A));
+      if (n.lengthSq() < 1e-10) return;
+      n.normalize();
+      if (n.y < 0) n.negate();
+      if (n.y < 0.05) return; // (a vertical bit, a parapet: not part of the slope)
+      const d = n.dot(A);
+      if (!planes.some((q) => q.n.distanceTo(n) < 1e-3 && Math.abs(q.d - d) < 1e-3)) planes.push({ n, d });
+    };
+    for (let t = 0; t < (idx ? idx.count : pos.count); t += 3) idx ? tri(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)) : tri(t, t + 1, t + 2);
+  });
+  if (!planes.length) return null;
+  planes.push({ n: V(-1, 0, 0), d: -box.min.x }, { n: V(1, 0, 0), d: box.max.x }, { n: V(0, 0, -1), d: -box.min.z }, { n: V(0, 0, 1), d: box.max.z }, { n: V(0, -1, 0), d: -box.min.y });
+  return { planes, box };
+}
+/** Split a polygon (points with uvs) by a plane: [the part outside, the part inside]. */
+function splitPoly(poly, { n, d }) {
+  const out = [], ins = [], EPS = 1e-4;
+  for (let i = 0; i < poly.length; i++) {
+    const P = poly[i], Q = poly[(i + 1) % poly.length], dp = n.dot(P.p) - d, dq = n.dot(Q.p) - d;
+    if (dp >= -EPS) out.push(P);
+    if (dp <= EPS) ins.push(P);
+    if ((dp > EPS && dq < -EPS) || (dp < -EPS && dq > EPS)) {
+      const t = dp / (dp - dq), X = { p: P.p.clone().lerp(Q.p, t), uv: P.uv.clone().lerp(Q.uv, t) };
+      out.push(X); ins.push(X);
+    }
+  }
+  return [out.length >= 3 ? out : null, ins.length >= 3 ? ins : null];
+}
+/** What's left of a polygon once a solid's been taken out of it (a few convex pieces). */
+function subtractSolid(poly, solid) {
+  const kept = [];
+  let cur = poly;
+  for (const pl of solid.planes) {
+    const [o, i] = splitPoly(cur, pl);
+    if (o) kept.push(o);
+    if (!i) return kept;
+    cur = i;
+  }
+  return kept; // (what's still in hand is inside the solid: it goes)
+}
+/** Cut one mesh down to what's outside the given solids. */
+function cutMesh(o, solids) {
+  const g0 = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry, pos = g0.attributes.position, uv = g0.attributes.uv;
+  const m = o.matrixWorld, inv = m.clone().invert(), outPos = [], outUv = [];
+  let changed = false;
+  for (let t = 0; t < pos.count; t += 3) {
+    let polys = [[0, 1, 2].map((k) => ({ p: V().fromBufferAttribute(pos, t + k).applyMatrix4(m), uv: new THREE.Vector2().fromBufferAttribute(uv, t + k) }))];
+    const tb = new THREE.Box3().setFromPoints(polys[0].map((q) => q.p));
+    for (const sol of solids) {
+      if (!sol.box.intersectsBox(tb)) continue;
+      const next = polys.flatMap((pl) => subtractSolid(pl, sol));
+      if (next.length !== 1 || next[0].length !== polys[0]?.length) changed = true;
+      polys = next;
+      if (!polys.length) break;
+    }
+    for (const pl of polys) for (let k = 1; k < pl.length - 1; k++) for (const q of [pl[0], pl[k], pl[k + 1]]) { const lp = q.p.clone().applyMatrix4(inv); outPos.push(lp.x, lp.y, lp.z); outUv.push(q.uv.x, q.uv.y); }
+  }
+  if (!changed) return;
+  const ng = new THREE.BufferGeometry();
+  ng.setAttribute('position', new THREE.Float32BufferAttribute(outPos, 3));
+  ng.setAttribute('uv', new THREE.Float32BufferAttribute(outUv, 2));
+  ng.computeVertexNormals();
+  o.geometry = ng;
+}
+function mergeRoofs(g) {
+  g.updateMatrixWorld(true);
+  const pieces = g.children, solids = pieces.map(roofSolid);
+  pieces.forEach((piece, i) => {
+    const others = solids.filter((sol, j) => j !== i && sol && solids[i] && sol.box.intersectsBox(solids[i].box));
+    if (!others.length) return;
+    piece.traverse((o) => { if (o.isMesh && (o.userData.roofSurface || o.userData.roofWall)) cutMesh(o, others); });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // roofs: pieces you lay over the house, each a rectangle with its own shape, material and colour
 // ---------------------------------------------------------------------------
 
@@ -431,8 +520,10 @@ export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
     body.scale.y = pitch;
     body.position.y = WALL_H * (1 - pitch);
     piece.add(body);
-    body.add(mesh(shape.roof, extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a')));
-    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, wallMat); m.receiveShadow = false; body.add(m); }
+    const surface = mesh(shape.roof, extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a'));
+    surface.userData.roofSurface = true;
+    body.add(surface);
+    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, wallMat); m.receiveShadow = false; m.userData.roofWall = true; body.add(m); }
     if (r.ch) {
       // a brick chimney, standing through the roof towards one end
       const cx = x1 - Math.max(1.4, (x1 - x0) * 0.22), cz = z0 + (z1 - z0) * 0.3, top = WALL_H + (shape.top - WALL_H) * pitch + 0.9;
@@ -441,6 +532,7 @@ export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
     piece.traverse((o) => { o.userData.roof = i; });
     g.add(piece);
   });
+  if (list.length > 1) mergeRoofs(g);
   return g;
 }
 

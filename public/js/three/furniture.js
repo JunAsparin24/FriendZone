@@ -2664,6 +2664,44 @@ Object.assign(FURNITURE, {
     const paper = new THREE.MeshToonMaterial({ color: '#fbf5e6', emissive: '#3a3020', transparent: true, opacity: 0.86, side: THREE.DoubleSide });
     add(g, plane(1.5, 1.0), paper, { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
   },
+  window_koshi(g) {
+    // koshi-mado: a dark frame closed by close-set upright slats (you see out between them), paper behind
+    windowFrame(g, 1.5, 1.0, { frame: '#3a2618', bars: [0, 0], sill: false });
+    const wood = toon('#4a3020');
+    for (const z of [0.04, -ROOM_T - 0.04]) for (let i = 0; i < 13; i++) add(g, box(0.035, 1.0, 0.04), wood, { p: [-0.69 + i * 0.115, 0, z], outline: false });
+    add(g, plane(1.5, 1.0), shojiPaper(), { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+  },
+  window_shoji_tall(g) {
+    // a tall narrow shoji: fine squares of lattice over paper
+    windowFrame(g, 0.8, 1.7, { frame: '#4a3020', bars: [2, 6], sill: false });
+    add(g, plane(0.8, 1.7), shojiPaper(), { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+  },
+  window_ranma(g) {
+    // ranma: a long low transom up near the ceiling, open slats letting the air through between rooms
+    windowFrame(g, 1.7, 0.45, { frame: '#4a3020', bars: [0, 0], sill: false });
+    const wood = toon('#5a3a22');
+    for (const z of [0.03, -ROOM_T - 0.03]) {
+      for (let i = 0; i < 15; i++) add(g, box(0.03, 0.45, 0.03), wood, { p: [-0.79 + i * 0.113, 0, z], outline: false });
+      add(g, box(1.7, 0.03, 0.035), wood, { p: [0, 0, z], outline: false });
+    }
+  },
+  window_marumado(g) {
+    // marumado: a round window, papered, with a fine lattice inside the circle
+    windowFrame(g, 1.1, 1.1, { round: true, frame: '#3a2618' });
+    const wood = toon('#4a3020');
+    for (const z of [0.045, -ROOM_T - 0.045]) {
+      for (const x of [-0.27, 0, 0.27]) add(g, box(0.03, Math.sqrt(0.3 - x * x) * 2 * 0.98, 0.03), wood, { p: [x, 0, z], outline: false });
+      for (const y of [-0.27, 0, 0.27]) add(g, box(Math.sqrt(0.3 - y * y) * 2 * 0.98, 0.03, 0.03), wood, { p: [0, y, z], outline: false });
+    }
+    add(g, geo('maruPaper', () => new THREE.CircleGeometry(0.55, 40)), shojiPaper(), { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+  },
+  window_hanging(g) {
+    // a hinged shutter window: the lower half lattice and paper, a wooden top panel propped half open
+    windowFrame(g, 1.5, 1.0, { frame: '#3a2618', bars: [3, 1], sill: true });
+    add(g, plane(1.5, 1.0), shojiPaper(), { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+    add(g, box(1.56, 0.5, 0.05), toon('#5a3a22'), { p: [0, 0.48, 0.24], r: [-0.9, 0, 0] });
+    for (const x of [-0.65, 0.65]) add(g, cyl(0.015, 0.015, 0.36, 6), toon('#3a2618'), { p: [x, 0.33, 0.18], r: [0.6, 0, 0], outline: false });
+  },
   screen_shoji(g) {
     // a folding screen: three paper panels in dark frames, standing in a zigzag
     const wood = toon('#4a3020'), paper = toon('#fbf5e6');
@@ -2904,6 +2942,9 @@ Object.assign(FURNITURE, {
   },
 });
 
+let shojiPaperMat = null;
+/** Paper that glows softly with the light behind it (shared by the shoji windows). */
+function shojiPaper() { return (shojiPaperMat ??= new THREE.MeshToonMaterial({ color: '#fbf5e6', emissive: '#3a3020', transparent: true, opacity: 0.86, side: THREE.DoubleSide })); }
 const OWN_DROP = new Set(['hanging_plant', 'hanging_plant_short', 'hanging_plant_long', 'hanging_vines']);
 
 /** Build a piece of furniture. Returns { group, use, anim }. `drop`: how far below the ceiling a
@@ -3259,7 +3300,7 @@ export function outdoorPanorama() {
   return panoTex;
 }
 /** How big each window's pane is (width, height): the hole it makes in the wall it hangs on. */
-export const WINDOW_PANES = { window: [1.5, 0.95], window_big: [2.6, 1.3], window_tall: [0.8, 1.7], window_round: [0.8, 0.8], window_wood: [1.5, 1.0], window_shoji: [1.5, 1.0] };
+export const WINDOW_PANES = { window: [1.5, 0.95], window_big: [2.6, 1.3], window_tall: [0.8, 1.7], window_round: [0.8, 0.8], window_wood: [1.5, 1.0], window_shoji: [1.5, 1.0], window_koshi: [1.5, 1.0], window_shoji_tall: [0.8, 1.7], window_ranma: [1.7, 0.45], window_marumado: [1.1, 1.1], window_hanging: [1.5, 1.0] };
 const clearGlass = new THREE.MeshBasicMaterial({ color: '#d6efff', transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide });
 /**
  * A window is a real hole through the wall it hangs on (house.js cuts it): this is what sits in the

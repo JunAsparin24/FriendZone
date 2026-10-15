@@ -575,6 +575,8 @@ function slabPosts(it) {
   for (const x of along(w)) for (const z of along(d)) if (x <= 0.16 || x >= w - 0.16 || z <= 0.16 || z >= d - 0.16) out.push([x, z]);
   return out;
 }
+const sideMatCache = new Map();
+const sideMats = (c) => { if (!sideMatCache.has(c)) sideMatCache.set(c, new THREE.MeshToonMaterial({ color: c })); return sideMatCache.get(c); };
 const postWood = new THREE.MeshToonMaterial({ color: '#6b4a32' }), postFoot = new THREE.MeshToonMaterial({ color: '#8c887f' });
 function slabGroup(it, floorId) {
   // underneath (st): 0 solid down to what it stands on, 1 on posts (down to the ground, even from upstairs), 2 nothing
@@ -585,14 +587,16 @@ function slabGroup(it, floorId) {
   face.rotation.x = -Math.PI / 2;
   face.position.y = raise + 0.014;
   face.receiveShadow = true;
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, thick, d), raise || st ? slabSkirt : slabEdge);
+  // (sc: the colour of its sides and underside, and of the posts under it; otherwise wood when raised)
+  const sideMat = it.sc ? sideMats(it.sc) : raise || st ? slabSkirt : slabEdge;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, thick, d), sideMat);
   body.position.y = raise + 0.012 - thick / 2;
   body.castShadow = body.receiveShadow = true;
   g.add(body, face);
   const drop = raise - 0.13 + baseY(it.lv ?? 0); // (from under the floor to the ground)
   if (st === 1 && drop > 0.05) {
     for (const [px, pz] of slabPosts(it)) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, drop, 0.2), postWood);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, drop, 0.2), it.sc ? sideMat : postWood);
       post.position.set(px - w / 2, raise - 0.13 - drop / 2, pz - d / 2);
       const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.3), postFoot);
       foot.position.set(px - w / 2, raise - 0.13 - drop + 0.06, pz - d / 2);
@@ -722,7 +726,7 @@ export function house(stage) {
   const payload = () => ({
     k: viewKey,
     floor: home.floor, wall: home.wall, ceiling: home.ceiling ?? 'ceil_plain', door: home.door ?? 'door_classic', size: home.size ?? [14, 14],
-    items: home.items.map(({ id, x, y, r, h, l, m, lv, e, st, mf, nt, f, ht, iw, dg, c, t, cp, lk }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(m == null ? {} : { m }), ...(lv ? { lv } : {}), ...(e == null ? {} : { e }), ...(st ? { st } : {}), ...(mf ? { mf: 1 } : {}), ...(nt ? { nt: 1 } : {}), ...(f ? { f } : {}), ...(ht ? { ht } : {}), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}), ...(lk && isDoor(id) ? { lk: 1 } : {}) })),
+    items: home.items.map(({ id, x, y, r, h, l, m, lv, e, st, mf, nt, f, ht, sc, iw, dg, c, t, cp, lk }) => ({ id, x, y, r, ...(h == null ? {} : { h }), ...(l == null ? {} : { l }), ...(m == null ? {} : { m }), ...(lv ? { lv } : {}), ...(e == null ? {} : { e }), ...(st ? { st } : {}), ...(mf ? { mf: 1 } : {}), ...(nt ? { nt: 1 } : {}), ...(f ? { f } : {}), ...(ht ? { ht } : {}), ...(sc ? { sc } : {}), ...(iw ? { iw: 1 } : {}), ...(dg ? { dg: 1 } : {}), ...(c ? { c } : {}), ...(t ? { t } : {}), ...(cp && Object.keys(cp).length ? { cp } : {}), ...(lk && isDoor(id) ? { lk: 1 } : {}) })),
     areas: home.areas ?? [], careas: home.careas ?? [], wallp: home.wallp ?? {}, trim: home.trim ?? TRIM_DEFAULT, trimp: home.trimp ?? {},
     ext: home.ext,
   });
@@ -1541,7 +1545,7 @@ export function house(stage) {
     if (placing.from >= 0 && home.items[placing.from].nt) it.nt = 1; // (a column moved keeps its trim off)
     if (placing.from >= 0 && home.items[placing.from].ht) it.ht = home.items[placing.from].ht; // (a wall moved keeps its height)
     if (isDragWall(placing.id)) it.l = placing.l;
-    if (isSlab(placing.id)) { it.l = placing.l; it.m = placing.m; if (placing.h) it.h = placing.h; if (placing.st) it.st = placing.st; if (placing.from >= 0 && home.items[placing.from].f) it.f = home.items[placing.from].f; }
+    if (isSlab(placing.id)) { it.l = placing.l; it.m = placing.m; if (placing.h) it.h = placing.h; if (placing.st) it.st = placing.st; if (placing.from >= 0 && home.items[placing.from].f) it.f = home.items[placing.from].f; if (placing.from >= 0 && home.items[placing.from].sc) it.sc = home.items[placing.from].sc; }
     if (placing.iw) it.iw = 1;
     if (placing.from >= 0 && home.items[placing.from].c) it.c = home.items[placing.from].c;
     if (placing.from >= 0 && home.items[placing.from].lk) it.lk = 1;
@@ -2095,6 +2099,8 @@ export function house(stage) {
         ${isSlab(sel.id) ? `<div class="row"><span class="muted small">Underneath:</span>${[['Solid', 0], ['Posts', 1], ['Open', 2]].map(([n, v]) => `<button class="btn small ${(sel.st ?? 0) === v ? 'primary' : ''}" data-act="st:${v}">${n}</button>`).join('')}</div>` : ''}
         ${isSlab(sel.id) ? `<button class="btn small" data-act="up" title="] raises it a quarter tile">▲ Raise</button><button class="btn small" data-act="down" title="[ lowers it">▼ Lower</button><button class="btn small" data-act="up3" title="Up a wall's height">⇈</button><button class="btn small" data-act="down3" title="Down a wall's height">⇊</button><span class="muted small">${sel.h ? `${sel.h} up` : 'on the ground'}</span>` : ''}
         ${isDragWall(sel.id) ? wallFinishHtml(sel) : ''}
+        ${isSlab(sel.id) ? `<div class="wd-label">🎨 Sides & underside <small class="muted">(and the posts under it)</small></div>
+          <div class="swatches palette">${pickerHtml({}, 'data-slabc', '', sel.sc)}<button type="button" class="swatch orig ${sel.sc ? '' : 'on'}" data-slabc="" title="Original colour">↺</button>${['#9c6b43', '#6b4a32', '#3a2618', '#c99a62', '#f4f1ea', '#e6dfd2', '#8c887f', '#2b2f3a', '#7a1f2b', '#2f5a3a'].map((c) => `<button type="button" class="swatch ${sel.sc === c ? 'on' : ''}" data-slabc="${c}" style="--c:${c}"></button>`).join('')}</div>` : ''}
         ${isSlab(sel.id) ? `<div class="wd-label">🟫 Its floor ${sel.f ? '' : '<small class="muted">(as the rest of the house)</small>'}</div>
           <div class="row">${sel.f ? '<button class="btn small" data-floorpick="slab:reset">↺ Like the rest of the house</button>' : ''}<button class="btn small" data-floorpick="slab:all" title="Every floor in the house gets this one">🏠 Every floor like this</button></div>
           ${floorGrid('slab', sel.f ?? home.floor)}` : ''}
@@ -2251,7 +2257,7 @@ export function house(stage) {
   }
 
   stage.hud.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-slot-save],[data-slot-load],[data-slot-del],[data-builder],[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-part],[data-recolor],[data-trim-mode],[data-trim],[data-wtrim],[data-wface],[data-floorpick],[data-item-filter],[data-item-set]');
+    const t = e.target.closest('[data-slot-save],[data-slot-load],[data-slot-del],[data-builder],[data-tab],[data-visit],[data-visits],[data-menu],[data-like],[data-edit],[data-home],[data-act],[data-place],[data-buy],[data-style],[data-preview-buy],[data-preview-stop],[data-size],[data-shop-page],[data-style-page],[data-jump],[data-paint],[data-part],[data-recolor],[data-trim-mode],[data-trim],[data-wtrim],[data-wface],[data-floorpick],[data-slabc],[data-item-filter],[data-item-set]');
     if (!t) return;
     const ds = t.dataset;
     if (ds.slotSave) {
@@ -2268,6 +2274,13 @@ export function house(stage) {
       return;
     }
     if (ds.slotDel) { if (confirm(`Delete “${slots?.[+ds.slotDel]?.name}” for good?`)) net.send('house_slot', { op: 'delete', i: +ds.slotDel }); return; }
+    if (ds.slabc != null && selected >= 0 && isSlab(home.items[selected]?.id)) {
+      const it = { ...home.items[selected] };
+      if (ds.slabc) it.sc = ds.slabc; else delete it.sc;
+      home.items[selected] = it;
+      commit('paint');
+      return;
+    }
     if (ds.floorpick != null) {
       // a floor, picked like a wall: a Floor piece you've laid, or a room's floor
       const [what, id] = ds.floorpick.split(':');
@@ -2638,7 +2651,7 @@ export function house(stage) {
   const roofPiece = (st, at) => {
     // (a new piece sits on the tallest walls under it; one that's up stays at its height)
     const e = at.s ? (at.e ?? 0) : roofBase(at), L = at.s ? at.lv ?? 0 : 0;
-    return { s: st.s, m: st.m, c: st.c, ch: st.ch ? 1 : 0, x: at.x, y: at.y, w: at.w, d: at.d, r: st.r ?? 0, p: st.p ?? 1, ...(L ? { lv: L } : {}), ...(e ? { e } : {}) };
+    return { s: st.s, m: st.m, c: st.c, ch: st.ch ? 1 : 0, x: at.x, y: at.y, w: at.w, d: at.d, r: st.r ?? 0, p: st.p ?? 1, ...(L ? { lv: L } : {}), ...(e ? { e } : {}), ...(st.gw ? { gw: st.gw } : {}) };
   };
   /** Where the walls under a roof stand (their bottom): the highest of them. */
   function roofBase(at) {
@@ -2857,7 +2870,7 @@ export function house(stage) {
     const hit = stage.raycaster.intersectObjects([room.items, ...(roofs ? [roofs] : [])], true).find((h) => h.object.visible && !h.object.userData.outline && !h.object.isSprite);
     paintSel = null;
     selected = -1;
-    if (hit?.object.userData.roof != null) paintSel = { kind: 'roof', i: hit.object.userData.roof };
+    if (hit?.object.userData.roof != null) paintSel = { kind: hit.object.userData.roofWall ? 'gable' : 'roof', i: hit.object.userData.roof };
     else if (hit) {
       let index = -1;
       for (let o = hit.object; o; o = o.parent) if (o.userData.index != null) { index = o.userData.index; break; }
@@ -2877,7 +2890,7 @@ export function house(stage) {
   function renderPaint() {
     const s = paintSel, e = home?.ext;
     const tabs = `<div class="shop-pages paint-bar"><button data-p="page:material" class="${paintPage === 'material' ? 'on' : ''}">🧱 Material</button><button data-p="page:color" class="${paintPage === 'color' ? 'on' : ''}">🎨 Colour</button>${s ? '<button data-p="reset">↺ Back to how it was</button>' : ''}</div>`;
-    const what = s && e ? (s.kind === 'face' ? { name: 'This side of the wall' } : s.kind === 'roof' ? e.roofs?.[s.i] && { name: 'This piece of roof' } : s.kind === 'ground' ? e.ground?.[s.i] && { name: 'This path' } : home.items[s.index] && { name: FURN[home.items[s.index].id].name }) : null;
+    const what = s && e ? (s.kind === 'face' ? { name: 'This side of the wall' } : s.kind === 'roof' ? e.roofs?.[s.i] && { name: 'This piece of roof' } : s.kind === 'gable' ? e.roofs?.[s.i] && { name: 'The wall under this roof' } : s.kind === 'ground' ? e.ground?.[s.i] && { name: 'This path' } : home.items[s.index] && { name: FURN[home.items[s.index].id].name }) : null;
     if (!what) { paintSel = null; panel.innerHTML = `${tabs}<p class="muted">🎨 <b>Click anything</b> on your plot to paint it: a wall (each side on its own), a piece of roof, a path or driveway, or a piece of furniture. Then pick a material or a colour here.</p>`; return; }
     const sw = (m, c, a) => `background:url(${extSwatch(m, c, a)}) center/cover`;
     const tile = (on, attr, style, name) => `<button class="style-opt ${on ? 'on' : ''}" data-p="${attr}" title="${esc(name)}"><span class="style-sw" style="${style}"></span><span>${esc(name)}</span></button>`;
@@ -2887,6 +2900,11 @@ export function house(stage) {
       const cur = home.wallp?.[s.key] ?? '', [, cm, cc, ca] = cur.startsWith('ext:') ? cur.split(':') : [];
       mats = `<div class="style-grid">${CATALOG.extWalls.map((w) => tile(cm === w.id, `m:ext:${w.id}`, sw(w.id, cm === w.id ? cc : w.c, cm === w.id ? ca : w.a), w.name)).join('')}${CATALOG.walls.filter(ownsDeco).map((w) => tile(cur === w.id, `m:${w.id}`, decoBg(w.id), w.name)).join('')}</div>`;
       colours = cols(CATALOG.extColors, cc) + (cm && woodOf(cm) ? `<div class="wd-label">Wood colour</div><div class="swatches palette">${CATALOG.extColors.map((c) => `<button type="button" class="swatch ${woodOf(cm, ca) === c ? 'on' : ''}" data-p="a:${c}" style="--c:${c}"></button>`).join('')}</div>` : '');
+    } else if (s.kind === 'gable') {
+      // the wall part of a roof (its gable ends): its own outside finish, or the house's
+      const w = e.roofs[s.i].gw ?? e.wall;
+      mats = `<div class="style-grid">${CATALOG.extWalls.map((x) => tile(w.m === x.id, `m:${x.id}`, sw(x.id, w.m === x.id ? w.c : x.c, w.m === x.id ? w.a : x.a), x.name)).join('')}</div>`;
+      colours = cols(CATALOG.extColors, w.c) + (woodOf(w.m) ? `<div class="wd-label">Wood colour</div><div class="swatches palette">${pickerHtml({}, 'data-p', 'a:', woodOf(w.m, w.a))}${CATALOG.extColors.map((c) => `<button type="button" class="swatch ${woodOf(w.m, w.a) === c ? 'on' : ''}" data-p="a:${c}" style="--c:${c}"></button>`).join('')}</div>` : '');
     } else if (s.kind === 'roof') {
       const r = e.roofs[s.i];
       mats = `<div class="style-grid">${CATALOG.roofMats.map((x) => tile(r.m === x.id, `m:${x.id}`, sw(x.id, r.m === x.id ? r.c : x.c), x.name)).join('')}</div>`;
@@ -2917,6 +2935,14 @@ export function house(stage) {
       else own[s.key] = id(cm ?? 'paint', v, ca); // (a colour on a wallpapered wall makes it a painted one)
       home.wallp = own;
       commit('paint');
+    } else if (s.kind === 'gable') {
+      setExt({ roofs: e.roofs.map((r, k) => {
+        if (k !== s.i) return r;
+        const w = r.gw ?? e.wall, n = { ...r };
+        if (op === 'reset') delete n.gw;
+        else n.gw = op === 'm' ? { m: v, c: dflt(CATALOG.extWalls, v) } : op === 'a' ? { m: w.m, c: w.c, a: v } : { m: w.m, c: v, ...(w.a ? { a: w.a } : {}) };
+        return n;
+      }) });
     } else if (s.kind === 'roof') {
       setExt({ roofs: e.roofs.map((r, k) => (k !== s.i ? r : roofPiece({ ...r, ...(op === 'reset' ? { m: 'shingle', c: '#b3403a' } : op === 'm' ? { m: v, c: dflt(CATALOG.roofMats, v) } : { c: v }) }, r))) });
     } else if (s.kind === 'ground') {

@@ -1023,7 +1023,7 @@ def clean_house(p, data):
         if kind != "floor" and cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth, **({"st": it["st"]} if it.get("st") in (1, 2) else {}), **({"f": it["f"]} if it.get("f") in FLOORS and owns_deco(p, it["f"]) else {})} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"e": e} if e is not None else {}), **({"mf": 1} if f.get("stairs") and it.get("mf") else {}), **({"nt": 1} if f["id"].startswith("col_") and it.get("nt") else {}), **({"ht": ht} if kind != "wall" and (f.get("drag") or f["id"].startswith("col_")) and ht is not None and ht != HOUSE_WALL_H else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth, **({"st": it["st"]} if it.get("st") in (1, 2) else {}), **({"f": it["f"]} if it.get("f") in FLOORS and owns_deco(p, it["f"]) else {}), **({"sc": it["sc"].lower()} if isinstance(it.get("sc"), str) and HEX_RE.match(it["sc"]) else {})} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"e": e} if e is not None else {}), **({"mf": 1} if f.get("stairs") and it.get("mf") else {}), **({"nt": 1} if f["id"].startswith("col_") and it.get("nt") else {}), **({"ht": ht} if kind != "wall" and (f.get("drag") or f["id"].startswith("col_")) and ht is not None and ht != HOUSE_WALL_H else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
                             **({"c": it["c"].lower()} if can_recolor(f) and isinstance(it.get("c"), str) and HEX_RE.match(it["c"]) else {}),  # (any colour)
                             **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {}),
                             **({"cp": clean_parts(it["cp"])} if can_recolor(f) and isinstance(it.get("cp"), dict) and clean_parts(it["cp"]) else {}),
@@ -1143,7 +1143,10 @@ def clean_ext(data):
                                  "x": grid(r["x"], -0.5, PLOT["w"] + 0.5 - w, 4), "y": grid(r["y"], -0.5, PLOT["d"] + 0.5 - d, 4), "w": w, "d": d,
                                  "r": int(r.get("r", 0)) % 4, "p": r.get("p") if r.get("p") in ROOF_PITCHES else 1,
                                  **({"lv": r["lv"]} if r.get("lv") in range(1, HOUSE_STOREYS) else {}),  # (on top of an upper storey)
-                                 **({"e": snap_h(r["e"])} if isinstance(r.get("e"), (int, float)) and 0 < r["e"] <= HOUSE_TOP else {})})  # (on top of walls standing that high)
+                                 **({"e": snap_h(r["e"])} if isinstance(r.get("e"), (int, float)) and 0 < r["e"] <= HOUSE_TOP else {}),
+                                 # (the wall under it, the gable ends, in a finish of its own)
+                                 **({"gw": {"m": r["gw"]["m"], "c": colour(r["gw"].get("c"), EXT_WALLS[r["gw"]["m"]]["c"]), **({"a": colour(r["gw"].get("a"), "#3a2618")} if r["gw"].get("a") else {})}}
+                                    if isinstance(r.get("gw"), dict) and r["gw"].get("m") in EXT_WALLS else {})})  # (on top of walls standing that high)
         for g in ground:
             if g.get("m") not in GROUND_MATS:
                 raise GameError("That isn't a path material.")

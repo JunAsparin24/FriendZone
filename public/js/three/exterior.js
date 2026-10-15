@@ -523,7 +523,9 @@ export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
     const surface = mesh(shape.roof, extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a'));
     surface.userData.roofSurface = true;
     body.add(surface);
-    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, wallMat); m.receiveShadow = false; m.userData.roofWall = true; body.add(m); }
+    // the wall under the roof (gable ends…): the house's outside finish, or one of its own (gw)
+    const gw = r.gw && r.gw.m in EXT_WALLS ? extMaterial(r.gw.m, r.gw.c, r.gw.a) : wallMat;
+    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, gw); m.receiveShadow = false; m.userData.roofWall = true; body.add(m); }
     if (r.ch) {
       // a brick chimney, standing through the roof towards one end
       const cx = x1 - Math.max(1.4, (x1 - x0) * 0.22), cz = z0 + (z1 - z0) * 0.3, top = WALL_H + (shape.top - WALL_H) * pitch + 0.9;

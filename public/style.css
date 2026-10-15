@@ -2001,3 +2001,7 @@ html:not(.touch) body.house-menu .house-hint { max-width: min(760px, calc(100vw 
 .sel-box .row > .wd-label, .sel-box .row > .style-grid, .sel-box .row > .swatches, .sel-box .row > .trim-grid, .sel-box .row > .row { flex-basis: 100%; }
 .sel-box .row > .wd-label { margin-top: 6px; }
 .sel-box .row > .wd-label, .sel-box .row > .style-grid, .sel-box .row > .swatches, .sel-box .row > .trim-grid, .sel-box .row > .row { order: 1; } /* (after the buttons) */
+/* the Neighbours list: who's on the street now, who's online elsewhere, who's away */
+.vstat { display: block; font-size: 11px; font-weight: 700; color: var(--muted); }
+.vstat.on { color: #6ee7a0; }
+.vstat.away { color: #ffd84d; }

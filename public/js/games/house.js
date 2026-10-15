@@ -1923,6 +1923,7 @@ export function house(stage) {
     actions.innerHTML = [
       !edit ? `<span class="pill" data-clock title="The same clock as the town: night falls here too">${clockText()}</span>` : '', // (building: room for the storey buttons)
       `<span class="pill">❤️ ${likes.length}</span>`,
+      (() => { const on = Object.values(S.players).filter((q) => q.key !== S.me && q.online && q.scene === 'hood'); return on.length ? `<span class="pill" data-visits title="${esc(on.map((q) => q.name).join(', '))}">👥 ${on.length} here</span>` : ''; })(),
       !mine() ? `<button class="btn small ${liked ? '' : 'primary'}" data-like ${liked ? 'disabled' : ''}>${liked ? '❤️ Liked' : '🤍 Like'}</button>` : '',
       canEdit() ? `<button class="btn small ${edit ? 'primary' : ''}" data-edit>${edit ? '✅ Done' : mine() ? '🔨 Build mode' : '🔨 Build here'}</button>` : '',
       edit ? `<button class="btn small" data-undo title="Undo (Ctrl+Z)" ${undoStack.length ? '' : 'disabled'}>↶ Undo</button>` : '',
@@ -1967,13 +1968,17 @@ export function house(stage) {
   }
 
   function renderVisit() {
-    const list = Object.values(S.players).sort((a, b) => (b.key === S.me) - (a.key === S.me) || (b.house?.likes ?? 0) - (a.house?.likes ?? 0) || a.name.localeCompare(b.name));
+    // who's about: on the street first, then everyone else who's online, then the rest
+    const rank = (p) => (p.key === S.me ? 3 : p.online && p.scene === 'hood' ? 2 : p.online ? 1 : 0);
+    const list = Object.values(S.players).sort((a, b) => rank(b) - rank(a) || (b.house?.likes ?? 0) - (a.house?.likes ?? 0) || a.name.localeCompare(b.name));
+    const status = (p) => (p.key === S.me ? '' : p.online && p.scene === 'hood' ? '<span class="vstat on">● On the street</span>' : p.online ? `<span class="vstat away">● Online${p.scene === 'world' ? ' · in town' : ''}</span>` : '<span class="vstat">○ Offline</span>');
+    const onStreet = list.filter((p) => p.key !== S.me && p.online && p.scene === 'hood').length;
     // (who's at whose house: everyone on the street whose feet are on that plot)
     const here = (k) => [...stage.people.values()].filter((q) => { const h = view.toHood(q.x, q.z); return hood.ownerAt(h.x, h.z) === k; }).length;
-    panel.innerHTML = `<div class="visit-list">${list.map((p) => `
+    panel.innerHTML = `<p class="muted small">🏘️ ${onStreet ? `<b>${onStreet}</b> ${onStreet > 1 ? 'neighbours are' : 'neighbour is'} on the street now` : 'Nobody else is on the street right now'}</p><div class="visit-list">${list.map((p) => `
       <button class="visit-row ${p.key === viewKey ? 'on' : ''}" data-visit="${esc(p.key)}">
         <span class="vav"></span>
-        <span class="vname"><b>${esc(p.name)}${p.key === S.me ? ' <small>(you)</small>' : ''}</b>
+        <span class="vname"><b>${esc(p.name)}${p.key === S.me ? ' <small>(you)</small>' : ''}</b>${status(p)}
           <small>🛋️ ${p.house?.n ?? 0} · ❤️ ${p.house?.likes ?? 0}${here(p.key) ? ` · <span class="win">${here(p.key)} there</span>` : ''}</small></span>
         ${mine() && viewKey === S.me && p.key !== S.me ? `<span class="vbuild ${(home?.builders ?? []).includes(p.key.toLowerCase()) ? 'on' : ''}" data-builder="${esc(p.key)}" title="Tap to let them build in your house, tap again to stop them">🔨 ${(home?.builders ?? []).includes(p.key.toLowerCase()) ? 'Can build ✓' : 'Let build'}</span>` : ''}
         <span class="vgo">${p.key === viewKey ? 'Here' : 'Go →'}</span>
@@ -3068,6 +3073,7 @@ export function house(stage) {
       toast(`🛒 Bought ${item?.name ?? 'it'}!${FURN[m.id] ? ' Find it in 🛋️ Items.' : ' Pick it in 🎨 Style.'}`);
     }),
     net.on('player', (m) => {
+      renderHeader();
       if (!sideOpen) return;
       if (tab === 'visit') renderVisit();
       else if (m.p.key === S.me) renderPanel();

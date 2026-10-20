@@ -827,3 +827,6 @@ renderAccount();
 $('#conn').classList.remove('hidden');
 net.connect();
 setInterval(() => { if (screen === 'lobby') renderProfile(); }, 60000); // keep the daily-bonus timer fresh
+
+// (a backstop for the CSS: a double click or a drag never starts a text selection outside a text box)
+document.addEventListener('selectstart', (e) => { const el = e.target.nodeType === 3 ? e.target.parentElement : e.target; if (!el?.closest?.('input, textarea, [contenteditable], .selectable, #lobbyCode')) e.preventDefault(); });

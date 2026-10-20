@@ -2011,3 +2011,10 @@ html:not(.touch) body.house-menu .house-hint { max-width: min(760px, calc(100vw 
 .place-bar .pb-ht b { color: #3a3a44; font: 800 13px var(--body); margin-left: 4px; white-space: nowrap; }
 /* the time each chat line was said */
 .chat-time { font-size: 10px; font-weight: 700; opacity: .6; margin-right: 6px; font-variant-numeric: tabular-nums; }
+
+/* nothing on the page gets highlighted by a quick double tap or a drag (only boxes you type in, and the
+   invite code, can be selected) */
+html { -webkit-tap-highlight-color: transparent; }
+body, body * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body input, body textarea, body [contenteditable], body .selectable, #lobbyCode { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+body { touch-action: manipulation; } /* (no double-tap zoom either) */

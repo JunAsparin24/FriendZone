@@ -6,8 +6,13 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>FriendZone</title>
-  <link rel="icon" type="image/svg+xml" href="icon.svg">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
+  <link rel="shortcut icon" href="favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="application-name" content="FriendZone">
+  <meta name="apple-mobile-web-app-title" content="FriendZone">
   <meta name="theme-color" content="#2463cc">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,24 +31,33 @@
   </div>
 
   <!-- Home: pick one of your zones or make a new one -->
-  <section id="home" class="screen">
-    <img class="logo-mark" src="icon.svg" alt="" width="84" height="84">
-    <h1 class="logo" aria-label="FRIEND ZONE"><span data-text="FRIEND">FRIEND</span><span data-text="ZONE">ZONE</span></h1>
-    <div class="card narrow online-card">
-      <h2>🌍 FriendZone Online</h2>
-      <p class="muted small">Play with everyone on the game: up to 20 people per server. Your progress here is saved to your account.</p>
-      <button class="btn primary wide" id="playOnline">Play online</button>
+  <section id="home" class="screen home">
+    <!-- a few bright bubbles drifting up behind everything -->
+    <div class="home-sky" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="home-hero">
+      <img class="logo-mark" src="img/icon-512.png" alt="" width="256" height="256">
+      <h1 class="logo" aria-label="FRIEND ZONE"><span data-text="FRIEND">FRIEND</span><span data-text="ZONE">ZONE</span></h1>
+      <p class="home-tag">Hang out, build, race and play with your friends</p>
     </div>
-    <div class="card narrow">
-      <div class="account-bar" id="accountBar"></div>
-      <h2>Your private FriendZones</h2>
-      <ul id="myZones" class="zone-list"></ul>
-      <p id="noZones" class="muted">You're not in any zones yet. Create one for your group, or join a friend's with their code.</p>
-      <div id="deviceZonesWrap" hidden><h3 class="muted small">Also on this device</h3><ul id="deviceZones" class="zone-list"></ul></div>
-    </div>
-    <div class="row">
-      <button class="btn primary" data-go="create">＋ Create a FriendZone</button>
-      <button class="btn" data-go="join">Join with a code</button>
+    <div class="home-panel">
+      <div class="card online-card">
+        <h2>🌍 FriendZone Online</h2>
+        <p class="muted small online-blurb">Play with everyone on the game: up to 20 people per server. Your progress here is saved to your account.</p>
+        <button class="btn primary wide" id="playOnline">Play online</button>
+      </div>
+      <div class="card zones-card">
+        <div class="account-bar" id="accountBar"></div>
+        <h2>Your private FriendZones</h2>
+        <div class="zones-scroll">
+          <ul id="myZones" class="zone-list"></ul>
+          <p id="noZones" class="muted">You're not in any zones yet. Create one for your group, or join a friend's with their code.</p>
+          <div id="deviceZonesWrap" hidden><h3 class="muted small">Also on this device</h3><ul id="deviceZones" class="zone-list"></ul></div>
+        </div>
+      </div>
+      <div class="row home-actions">
+        <button class="btn primary" data-go="create">＋ Create a FriendZone</button>
+        <button class="btn" data-go="join">Join with a code</button>
+      </div>
     </div>
   </section>
 

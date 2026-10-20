@@ -44,6 +44,7 @@ MIME = {
     ".json": "application/json",
     ".svg": "image/svg+xml",
     ".png": "image/png",
+    ".webmanifest": "application/manifest+json",
     ".mp3": "audio/mpeg",
     ".ico": "image/x-icon",
 }

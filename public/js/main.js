@@ -157,7 +157,31 @@ net.on('signed_out', () => {});
 // ---------------------------------------------------------------------------
 
 // the version (year.commit, bumped by the git hook in scripts/) in the lobby's corner
-fetch('/version.json', { cache: 'no-store' }).then((r) => r.json()).then((v) => { $('#versionTag').textContent = `v${v.version}`; }).catch(() => {});
+// ---- updates: every commit bumps the version, so a game left open on an older one finds out and says so
+let myVersion = null, updateShown = false, updateLater = 0;
+async function checkVersion() {
+  try {
+    const v = (await (await fetch('/version.json', { cache: 'no-store' })).json()).version;
+    if (myVersion == null) { myVersion = v; $('#versionTag').textContent = `v${v}`; return; }
+    if (v !== myVersion && !updateShown && Date.now() > updateLater) showUpdate(v);
+  } catch { /* offline, or the server's restarting: try again later */ }
+}
+function showUpdate(v) {
+  updateShown = true;
+  let bar = $('#updateBar');
+  if (!bar) { bar = document.createElement('div'); bar.id = 'updateBar'; bar.className = 'update-bar'; document.body.append(bar); }
+  bar.innerHTML = `<span>🔄 <b>FriendZone was updated</b> (v${esc(v)}). Refresh to get the newest version.</span><button class="btn small primary" data-update="now">Refresh now</button><button class="btn small" data-update="later">Later</button>`;
+  bar.classList.remove('hidden');
+  sfx('pop');
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('[data-update]');
+  if (!b) return;
+  if (b.dataset.update === 'now') location.reload();
+  else { $('#updateBar')?.classList.add('hidden'); updateShown = false; updateLater = Date.now() + 10 * 60000; } // (asks again in 10 minutes)
+});
+checkVersion();
+setInterval(checkVersion, 60000);
 
 function show(id) {
   screen = id;
@@ -805,13 +829,15 @@ net.on('error', (m) => {
 
 net.onOpen = () => {
   $('#conn').classList.add('hidden');
+  checkVersion(); // (back after the server restarted: it may have been an update)
   refreshAccount(); // (first, so a zone you open after is linked to your account)
   if (session) net.send('resume', session);
   askOnline();
 };
 
 net.onClose = () => {
-  $('#conn').textContent = 'Connection lost, reconnecting…';
+  // (the server going away is usually an update going out)
+  $('#conn').textContent = myVersion ? '🔄 Updating the game… hang on, reconnecting' : 'Connection lost, reconnecting…';
   $('#conn').classList.remove('hidden');
   closeModal(true);
   closeArea();

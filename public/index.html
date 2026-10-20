@@ -33,9 +33,83 @@
   <!-- Home: pick one of your zones or make a new one -->
   <section id="home" class="screen home">
     <!-- a few bright bubbles drifting up behind everything -->
+    <!-- the background is the icon as a whole scene: a world rising out of the clouds, three friends peeking
+         over it, bursts, rays and sparkles round them -->
+    <svg class="home-scene" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <defs>
+        <radialGradient id="hsSky" cx="50%" cy="62%" r="75%"><stop offset="0" stop-color="#5fb4ff"/><stop offset=".6" stop-color="#2f7be6"/><stop offset="1" stop-color="#2a6fd8"/></radialGradient>
+        <radialGradient id="hsSea" cx="42%" cy="30%" r="80%"><stop offset="0" stop-color="#6fd0ff"/><stop offset=".55" stop-color="#2a8de8"/><stop offset="1" stop-color="#1557c4"/></radialGradient>
+        <linearGradient id="hsLand" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8ef6a"/><stop offset="1" stop-color="#43b83a"/></linearGradient>
+        <radialGradient id="hsBlue" cx="38%" cy="30%" r="75%"><stop offset="0" stop-color="#7cc4ff"/><stop offset="1" stop-color="#2f6fe0"/></radialGradient>
+        <radialGradient id="hsYellow" cx="38%" cy="30%" r="75%"><stop offset="0" stop-color="#ffe680"/><stop offset="1" stop-color="#ffb52e"/></radialGradient>
+        <radialGradient id="hsGreen" cx="38%" cy="30%" r="75%"><stop offset="0" stop-color="#b6f27a"/><stop offset="1" stop-color="#4fc03c"/></radialGradient>
+        <radialGradient id="hsGlow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff" stop-opacity=".5"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+        <linearGradient id="hsCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#bfe6ff"/></linearGradient>
+        <path id="hsSpark" d="M0 -22 C3 -6 6 -3 22 0 C6 3 3 6 0 22 C-3 6 -6 3 -22 0 C-6 -3 -3 -6 0 -22 Z"/>
+      </defs>
+      <rect x="-3000" y="-3000" width="7600" height="5000" fill="#2a6fd8"/><rect width="1600" height="1000" fill="url(#hsSky)"/>
+      <g class="hs-rays" fill="#ffffff" opacity=".07">
+        <path d="M800 700 L620 -200 L760 -200 Z"/><path d="M800 700 L980 -200 L1120 -200 Z"/><path d="M800 700 L-200 120 L-200 340 Z"/>
+        <path d="M800 700 L1800 120 L1800 340 Z"/><path d="M800 700 L200 -200 L360 -200 Z"/><path d="M800 700 L1240 -200 L1400 -200 Z"/>
+        <path d="M800 700 L-200 560 L-200 700 Z"/><path d="M800 700 L1800 560 L1800 700 Z"/>
+      </g>
+      <circle cx="800" cy="700" r="560" fill="url(#hsGlow)"/>
+      <g stroke="#14285c" stroke-width="10" stroke-linejoin="round">
+        <g class="hs-friend hs-f1">
+          <path d="M520 760 C520 700 560 655 615 655 C670 655 710 700 710 760 Z" fill="#fff" stroke="#fff" stroke-width="26"/>
+          <circle cx="615" cy="590" r="78" fill="#fff" stroke="#fff" stroke-width="26"/>
+          <path d="M520 760 C520 700 560 655 615 655 C670 655 710 700 710 760 Z" fill="url(#hsBlue)"/>
+          <circle cx="615" cy="590" r="78" fill="url(#hsBlue)"/>
+          <path d="M580 592 q12 -16 24 0 M628 592 q12 -16 24 0" fill="none" stroke-width="9" stroke-linecap="round"/>
+          <ellipse cx="590" cy="555" rx="20" ry="12" fill="#fff" opacity=".5" stroke="none"/>
+        </g>
+        <g class="hs-friend hs-f3">
+          <path d="M890 760 C890 700 930 655 985 655 C1040 655 1080 700 1080 760 Z" fill="#fff" stroke="#fff" stroke-width="26"/>
+          <circle cx="985" cy="590" r="78" fill="#fff" stroke="#fff" stroke-width="26"/>
+          <path d="M890 760 C890 700 930 655 985 655 C1040 655 1080 700 1080 760 Z" fill="url(#hsGreen)"/>
+          <circle cx="985" cy="590" r="78" fill="url(#hsGreen)"/>
+          <path d="M950 592 q12 -16 24 0 M998 592 q12 -16 24 0" fill="none" stroke-width="9" stroke-linecap="round"/>
+          <ellipse cx="960" cy="555" rx="20" ry="12" fill="#fff" opacity=".5" stroke="none"/>
+        </g>
+        <g class="hs-friend hs-f2">
+          <path d="M680 720 C680 640 735 590 800 590 C865 590 920 640 920 720 Z" fill="#fff" stroke="#fff" stroke-width="26"/>
+          <circle cx="800" cy="500" r="96" fill="#fff" stroke="#fff" stroke-width="26"/>
+          <path d="M680 720 C680 640 735 590 800 590 C865 590 920 640 920 720 Z" fill="url(#hsYellow)"/>
+          <circle cx="800" cy="500" r="96" fill="url(#hsYellow)"/>
+          <path d="M756 502 q15 -20 30 0 M814 502 q15 -20 30 0" fill="none" stroke-width="10" stroke-linecap="round"/>
+          <ellipse cx="770" cy="458" rx="24" ry="14" fill="#fff" opacity=".55" stroke="none"/>
+          <ellipse cx="722" cy="700" rx="40" ry="26" fill="url(#hsYellow)"/><ellipse cx="878" cy="700" rx="40" ry="26" fill="url(#hsYellow)"/>
+        </g>
+      </g>
+      <g class="hs-world">
+        <circle cx="800" cy="1220" r="540" fill="#fff"/>
+        <circle cx="800" cy="1220" r="524" fill="url(#hsSea)" stroke="#14285c" stroke-width="10"/>
+        <g fill="url(#hsLand)" stroke="#2c8a2e" stroke-width="4">
+          <path d="M470 800 c40 -40 120 -50 170 -20 c40 24 20 70 -30 80 c-40 8 -60 50 -110 40 c-50 -10 -70 -60 -30 -100 z"/>
+          <path d="M760 730 c50 -20 120 -10 140 30 c16 34 -30 50 -70 50 c-30 0 -40 30 -80 20 c-40 -10 -40 -80 10 -100 z"/>
+          <path d="M1000 800 c50 -30 140 -10 160 40 c14 40 -40 60 -90 50 c-40 -8 -60 20 -90 0 c-30 -20 -20 -70 20 -90 z"/>
+          <path d="M650 900 c30 -10 70 0 70 30 c0 30 -40 40 -70 30 c-30 -10 -30 -50 0 -60 z"/>
+        </g>
+        <ellipse cx="640" cy="800" rx="150" ry="50" fill="#fff" opacity=".18" transform="rotate(-18 640 800)"/>
+      </g>
+      <g class="hs-bursts" fill="#ffd23f" stroke="#e89a10" stroke-width="5" stroke-linejoin="round">
+        <path d="M430 420 l40 -10 l-6 90 z"/><path d="M380 520 l40 6 l-60 50 z"/>
+        <path d="M1170 420 l-40 -10 l6 90 z"/><path d="M1220 520 l-40 6 l60 50 z"/>
+      </g>
+      <g class="hs-sparks" fill="#fff">
+        <use href="#hsSpark" x="260" y="300"/><use href="#hsSpark" x="1340" y="260"/>
+        <use href="#hsSpark" x="160" y="620"/><use href="#hsSpark" x="1450" y="600"/>
+        <use href="#hsSpark" x="560" y="200"/><use href="#hsSpark" x="1080" y="160"/>
+        <circle cx="330" cy="460" r="8"/><circle cx="1280" cy="420" r="9"/><circle cx="1500" cy="420" r="6"/><circle cx="100" cy="420" r="6"/><circle cx="720" cy="140" r="6"/>
+      </g>
+      <g class="hs-clouds" fill="url(#hsCloud)">
+        <path d="M-60 1000 L-60 900 C-20 830 80 820 130 860 C170 790 290 790 330 860 C380 830 460 850 470 910 C520 900 560 940 560 1000 Z"/>
+        <path d="M1660 1000 L1660 890 C1620 820 1520 810 1470 850 C1430 780 1310 780 1270 850 C1220 820 1140 840 1130 900 C1080 890 1040 930 1040 1000 Z"/>
+        <path d="M420 1000 C430 950 500 930 540 960 C580 910 680 910 710 960 C750 930 830 940 850 990 C900 960 980 970 990 1000 Z" opacity=".9"/>
+      </g>
+    </svg>
     <div class="home-sky" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div class="home-hero">
-      <img class="logo-mark" src="img/icon-512.png" alt="" width="256" height="256">
       <h1 class="logo" aria-label="FRIEND ZONE"><span data-text="FRIEND">FRIEND</span><span data-text="ZONE">ZONE</span></h1>
       <p class="home-tag">Hang out, build, race and play with your friends</p>
     </div>

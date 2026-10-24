@@ -74,7 +74,26 @@ const PATTERNS = {
   panel(c) { fill(c, 235); c.fillStyle = grey(120); for (const p of [0, 128]) { c.fillRect(p, 0, 3, S); c.fillRect(0, p, S, 3); } c.fillStyle = grey(250); for (const p of [3, 131]) { c.fillRect(p, 0, 2, S); c.fillRect(0, p, S, 2); } },
   logs(c) { for (let y = 0; y < S; y += 64) { const g = c.createLinearGradient(0, y, 0, y + 64); g.addColorStop(0, grey(120)); g.addColorStop(0.3, grey(250)); g.addColorStop(0.75, grey(190)); g.addColorStop(1, grey(95)); c.fillStyle = g; c.fillRect(0, y, S, 64); c.fillStyle = 'rgba(0,0,0,.12)'; for (const k of [18, 30, 44]) c.fillRect(0, y + k, S, 1); } },
   tudor(c, rnd) { fill(c, 240); speckle(c, rnd, 900, 215, 255, 2, 0.4); c.fillStyle = '#2e2018'; for (const x of [0, 128]) c.fillRect(x, 0, 14, S); for (const y of [0, 128]) c.fillRect(0, y, S, 14); c.lineWidth = 12; c.strokeStyle = '#2e2018'; c.beginPath(); c.moveTo(14, 128); c.lineTo(128, 14); c.moveTo(142, 256); c.lineTo(256, 142); c.stroke(); },
+  // Japanese: white plaster between dark timber posts, a beam across it and a dark skirting board
+  wafu(c, rnd) {
+    fill(c, 242); speckle(c, rnd, 900, 220, 255, 2, 0.35);
+    c.fillStyle = '#3a2618';
+    for (const x of [0, 128]) c.fillRect(x, 0, 16, S);
+    c.fillRect(0, 40, S, 12);
+    c.fillRect(0, 226, S, 30);
+    c.fillStyle = 'rgba(255,255,255,.12)'; for (const x of [3, 131]) c.fillRect(x, 0, 2, S);
+  },
   // ---- roofs
+  // Japanese kawara: rows of rounded clay tiles running down the slope, a shadow under each course
+  kawara(c) {
+    fill(c, 110);
+    for (let x = 0; x < S; x += 32) {
+      const g = c.createLinearGradient(x, 0, x + 32, 0);
+      g.addColorStop(0, grey(120)); g.addColorStop(0.45, grey(245)); g.addColorStop(0.75, grey(200)); g.addColorStop(1, grey(110));
+      c.fillStyle = g; c.fillRect(x + 2, 0, 28, S);
+    }
+    for (let y = 0; y < S; y += 64) { c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(0, y + 56, S, 8); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(0, y, S, 3); }
+  },
   shingle(c, rnd) { courses(c, rnd, { rows: 8, cols: 6, gap: 2, mortar: 110, lo: 190, hi: 245 }); c.fillStyle = 'rgba(0,0,0,.25)'; for (let y = 0; y < S; y += 32) c.fillRect(0, y + 28, S, 4); },
   tile(c) { fill(c, 130); for (let r = 0; r < 8; r++) for (let k = -1; k < 8; k++) { const x = (k + (r % 2) * 0.5) * 32, y = r * 32; const g = c.createLinearGradient(x, 0, x + 32, 0); g.addColorStop(0, grey(150)); g.addColorStop(0.5, grey(250)); g.addColorStop(1, grey(150)); c.fillStyle = g; c.beginPath(); c.roundRect(x + 1, y - 6, 30, 36, [0, 0, 15, 15]); c.fill(); } },
   metal(c) { fill(c, 228); for (let x = 0; x < S; x += 64) { c.fillStyle = grey(250); c.fillRect(x + 28, 0, 8, S); c.fillStyle = grey(150); c.fillRect(x + 36, 0, 3, S); c.fillStyle = grey(190); c.fillRect(x + 25, 0, 3, S); } },
@@ -90,6 +109,16 @@ const PATTERNS = {
   flag(c, rnd) { fill(c, 130); for (let r = 0; r < 4; r++) { let x = -rnd() * 50; while (x < S) { const w = 50 + rnd() * 60; c.fillStyle = grey(180 + Math.floor(rnd() * 65)); for (const dx of [0, -S]) { c.beginPath(); c.roundRect(x + dx + 3, r * 64 + 3, w - 6, 58, 12); c.fill(); } x += w; } } },
   sand(c, rnd) { fill(c, 240); speckle(c, rnd, 2200, 205, 255, 1.6, 0.5); },
   // stepping stones: separate slabs with the lawn showing between them (the rest of the picture is clear)
+  // pond water: soft ripples and glints (it drifts slowly: see the water in buildGround)
+  water(c, rnd) {
+    fill(c, 205);
+    for (let i = 0; i < 70; i++) {
+      c.strokeStyle = `rgba(255,255,255,${0.15 + rnd() * 0.25})`; c.lineWidth = 1 + rnd() * 2;
+      const x = rnd() * S, y = rnd() * S, w = 14 + rnd() * 40;
+      for (const dx of [0, -S, S]) for (const dy of [0, -S, S]) { c.beginPath(); c.ellipse(x + dx, y + dy, w, w * 0.22, 0, Math.PI * 1.1, Math.PI * 1.9); c.stroke(); }
+    }
+    for (let i = 0; i < 40; i++) { c.fillStyle = 'rgba(0,30,60,.12)'; c.beginPath(); c.ellipse(rnd() * S, rnd() * S, 20 + rnd() * 30, 6 + rnd() * 8, 0, 0, Math.PI * 2); c.fill(); }
+  },
   stepping(c, rnd) {
     c.clearRect(0, 0, S, S);
     for (let r = 0; r < 2; r++) for (let k = 0; k < 2; k++) {
@@ -104,6 +133,99 @@ const PATTERNS = {
   mulch(c, rnd) { fill(c, 190); for (let i = 0; i < 1100; i++) { c.fillStyle = grey(120 + Math.floor(rnd() * 130)); c.save(); c.translate(rnd() * S, rnd() * S); c.rotate(rnd() * 3); c.fillRect(-4, -1, 8, 2.4); c.restore(); } },
 };
 
+// ---- finishes in two colours: a main one (plaster, paper, boards) and a second for the wood (posts, beams,
+// lattices, battens). Drawn in their real colours rather than tinted, so each can be picked on its own.
+const shade = (hex, k) => { const col = new THREE.Color(hex); if (k < 1) col.multiplyScalar(k); else col.lerp(new THREE.Color('#ffffff'), k - 1); return `#${col.getHexString()}`; };
+/** Vertical boards in solid wood, only thin dark joints between them (no streaks or shine). */
+function boards(c, col, x0, y0, w, h, width = 22) {
+  c.fillStyle = col; c.fillRect(x0, y0, w, h);
+  c.fillStyle = shade(col, 0.68);
+  for (let x = x0; x < x0 + w; x += width) c.fillRect(x, y0, 2, h);
+}
+/** Framed wooden panels in a row (a door's kick panels): solid wood, each panel a shade darker, set in its frame. */
+function panels(c, col, x0, y0, w, h, n) {
+  c.fillStyle = col; c.fillRect(x0, y0, w, h);
+  const pw = w / n;
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * pw + 6, y = y0 + 8, iw = pw - 12, ih = h - 16;
+    c.fillStyle = shade(col, 0.86); c.fillRect(x, y, iw, ih);
+    c.fillStyle = shade(col, 0.62); c.fillRect(x, y, iw, 2); c.fillRect(x, y, 2, ih);
+  }
+}
+/** Upright posts every half repeat, each straddling its line (so a wall cut at a repeat ends in half a post
+ *  at each end, and two walls meeting make one whole post at the join). */
+function posts(c, col, w) { c.fillStyle = col; for (const x of [0, 128, 256]) c.fillRect(x - w / 2, 0, w, S); }
+export const TWO_TONE = {
+  wafu(c, rnd, main, wood) {
+    // plaster between timber posts, a beam across it and a skirting board, all in plain flat colour
+    c.fillStyle = main; c.fillRect(0, 0, S, S);
+    posts(c, wood, 16); c.fillStyle = wood; c.fillRect(0, 40, S, 12); c.fillRect(0, 226, S, 30);
+  },
+  tudor(c, rnd, main, wood) {
+    c.fillStyle = main; c.fillRect(0, 0, S, S);
+    posts(c, wood, 14); c.fillStyle = wood; for (const y of [0, 128]) c.fillRect(0, y, S, 14);
+    c.lineWidth = 12; c.strokeStyle = wood; c.beginPath(); c.moveTo(14, 128); c.lineTo(128, 14); c.moveTo(142, 14); c.lineTo(256, 128); c.stroke();
+  },
+  shoji_wall(c, rnd, main, wood) {
+    // the sliding screens: plain paper panes in a wooden lattice, solid wooden kick panels along the bottom
+    // and a stout frame round each screen
+    c.fillStyle = main; c.fillRect(0, 0, S, S);
+    c.fillStyle = wood;
+    for (let x = 0; x < S; x += 32) c.fillRect(x, 0, 4, 186);
+    for (let y = 0; y < 186; y += 46) c.fillRect(0, y, S, 4);
+    panels(c, wood, 0, 186, 128, 70, 3); panels(c, wood, 128, 186, 128, 70, 3);
+    c.fillStyle = wood; c.fillRect(0, 182, S, 8);
+    posts(c, wood, 10);
+  },
+  koshiita(c, rnd, main, wood) {
+    // plaster above, a wainscot of solid wooden boards below, a beam between, posts at the panels' edges
+    c.fillStyle = main; c.fillRect(0, 0, S, 150);
+    boards(c, wood, 0, 160, S, 96, 20);
+    c.fillStyle = shade(wood, 0.8); c.fillRect(0, 148, S, 14);
+    posts(c, wood, 14);
+  },
+  yakisugi(c, rnd, main, wood) {
+    // charred cedar: wide black-brown planks, scorched a little darker here and there, battens over the joins
+    for (let x = 0; x < S; x += 32) {
+      c.fillStyle = shade(main, 0.88 + rnd() * 0.12); c.fillRect(x, 0, 32, S);
+      c.fillStyle = shade(main, 0.65); for (let y = rnd() * 12; y < S; y += 10 + rnd() * 12) c.fillRect(x + 2 + rnd() * 6, y, 10 + rnd() * 16, 1.5);
+    }
+    c.fillStyle = wood; for (let x = 0; x < S; x += 32) c.fillRect(x - 3, 0, 6, S);
+  },
+  itabari(c, rnd, main, wood) {
+    // cedar boards running up and down, a batten over every other join
+    boards(c, main, 0, 0, S, S, 32);
+    c.fillStyle = wood; for (let x = 0; x < S; x += 64) c.fillRect(x - 4, 0, 8, S);
+  },
+  namako(c, rnd, main, wood) {
+    // namako: dark square tiles set on the diagonal, joined by raised rounded lines of white plaster
+    c.fillStyle = main; c.fillRect(0, 0, S, S);
+    c.save(); c.lineCap = 'round';
+    for (const [w, col] of [[14, shade(wood, 0.8)], [9, wood]]) {
+      c.lineWidth = w; c.strokeStyle = col; c.beginPath();
+      for (let k = -S; k <= S * 2; k += 64) { c.moveTo(k, 0); c.lineTo(k + S, S); c.moveTo(k, S); c.lineTo(k + S, 0); }
+      c.stroke();
+    }
+    c.restore();
+  },
+};
+const toneCache = new Map();
+/** A two-colour finish as a repeating texture. */
+export function toneTexture(id, main, wood) {
+  const key = `${id}|${main}|${wood}`;
+  if (!toneCache.has(key)) {
+    const seed = [...id].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) | 0;
+    const tex = canvasTexture(S, S, (c) => TWO_TONE[id](c, prng(seed), main, wood));
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    toneCache.set(key, tex);
+  }
+  return toneCache.get(key);
+}
+/** Finishes drawn as one wall's height (a skirting board at the bottom, a beam near the top), not a repeat. */
+export const TALL_FINISH = new Set(['wafu', 'shoji_wall', 'koshiita']);
+/** The wood colour of a two-colour finish (yours, or its own). */
+export const woodOf = (id, a) => (TWO_TONE[id] ? a || EXT_WALLS[id]?.a || '#3a2618' : null);
+
 const texCache = new Map();
 /** A pattern as a repeating texture (it covers 2 tiles, like the wallpapers). */
 export function extTexture(id) {
@@ -117,22 +239,25 @@ export function extTexture(id) {
 }
 const matCache = new Map();
 /** A finish in a colour: one shared material per (pattern, colour). */
-export function extMaterial(id, color) {
-  const key = `${id}|${color}`;
-  if (!matCache.has(key)) matCache.set(key, new THREE.MeshToonMaterial({ map: extTexture(id), color, side: THREE.DoubleSide, gradientMap: toon('#ffffff').gradientMap, alphaTest: id === 'stepping' ? 0.5 : 0 }));
+export function extMaterial(id, color, accent = null) {
+  const wood = woodOf(id, accent), key = `${id}|${color}|${wood}`;
+  if (!matCache.has(key)) matCache.set(key, new THREE.MeshToonMaterial({ map: wood ? toneTexture(id, color, wood) : extTexture(id), color: wood ? '#ffffff' : color, side: THREE.DoubleSide, gradientMap: toon('#ffffff').gradientMap, alphaTest: id === 'stepping' ? 0.5 : 0 }));
   return matCache.get(key);
 }
 const swatches = new Map();
 /** A little picture of a finish in a colour, for the build menu. */
-export function extSwatch(id, color) {
-  const key = `${id}|${color}`;
+export function extSwatch(id, color, accent = null) {
+  const wood = woodOf(id, accent), key = `${id}|${color}|${wood}`;
   if (!swatches.has(key)) {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 96;
     const c = cv.getContext('2d');
-    c.drawImage(extTexture(id).image, 0, 0, S, S, 0, 0, 96, 96);
-    c.globalCompositeOperation = 'multiply';
-    c.fillStyle = color; c.fillRect(0, 0, 96, 96);
+    if (wood) c.drawImage(toneTexture(id, color, wood).image, 0, 0, S, S, 0, 0, 96, 96);
+    else {
+      c.drawImage(extTexture(id).image, 0, 0, S, S, 0, 0, 96, 96);
+      c.globalCompositeOperation = 'multiply';
+      c.fillStyle = color; c.fillRect(0, 0, 96, 96);
+    }
     swatches.set(key, cv.toDataURL());
   }
   return swatches.get(key);
@@ -283,6 +408,95 @@ const ROOFS = {
 };
 
 // ---------------------------------------------------------------------------
+// roofs that overlap merge: each piece is cut off where it runs inside another (its surface and the gable
+// walls under it), so two pieces meet in a clean valley or hip instead of poking through each other
+// ---------------------------------------------------------------------------
+
+/** A piece of roof as a solid: below every face of its surface, inside its footprint, above its eaves.
+ *  Planes face outwards ({ n, d }: a point p is outside when n·p > d). */
+function roofSolid(piece) {
+  const planes = [], box = new THREE.Box3();
+  piece.traverse((o) => {
+    if (!o.userData.roofSurface) return;
+    const pos = o.geometry.attributes.position, idx = o.geometry.index, m = o.matrixWorld;
+    const tri = (i, j, k) => {
+      const A = V().fromBufferAttribute(pos, i).applyMatrix4(m), B = V().fromBufferAttribute(pos, j).applyMatrix4(m), C = V().fromBufferAttribute(pos, k).applyMatrix4(m);
+      box.expandByPoint(A).expandByPoint(B).expandByPoint(C);
+      const n = V().subVectors(B, A).cross(V().subVectors(C, A));
+      if (n.lengthSq() < 1e-10) return;
+      n.normalize();
+      if (n.y < 0) n.negate();
+      if (n.y < 0.05) return; // (a vertical bit, a parapet: not part of the slope)
+      const d = n.dot(A);
+      if (!planes.some((q) => q.n.distanceTo(n) < 1e-3 && Math.abs(q.d - d) < 1e-3)) planes.push({ n, d });
+    };
+    for (let t = 0; t < (idx ? idx.count : pos.count); t += 3) idx ? tri(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)) : tri(t, t + 1, t + 2);
+  });
+  if (!planes.length) return null;
+  planes.push({ n: V(-1, 0, 0), d: -box.min.x }, { n: V(1, 0, 0), d: box.max.x }, { n: V(0, 0, -1), d: -box.min.z }, { n: V(0, 0, 1), d: box.max.z }, { n: V(0, -1, 0), d: -box.min.y });
+  return { planes, box };
+}
+/** Split a polygon (points with uvs) by a plane: [the part outside, the part inside]. */
+function splitPoly(poly, { n, d }) {
+  const out = [], ins = [], EPS = 1e-4;
+  for (let i = 0; i < poly.length; i++) {
+    const P = poly[i], Q = poly[(i + 1) % poly.length], dp = n.dot(P.p) - d, dq = n.dot(Q.p) - d;
+    if (dp >= -EPS) out.push(P);
+    if (dp <= EPS) ins.push(P);
+    if ((dp > EPS && dq < -EPS) || (dp < -EPS && dq > EPS)) {
+      const t = dp / (dp - dq), X = { p: P.p.clone().lerp(Q.p, t), uv: P.uv.clone().lerp(Q.uv, t) };
+      out.push(X); ins.push(X);
+    }
+  }
+  return [out.length >= 3 ? out : null, ins.length >= 3 ? ins : null];
+}
+/** What's left of a polygon once a solid's been taken out of it (a few convex pieces). */
+function subtractSolid(poly, solid) {
+  const kept = [];
+  let cur = poly;
+  for (const pl of solid.planes) {
+    const [o, i] = splitPoly(cur, pl);
+    if (o) kept.push(o);
+    if (!i) return kept;
+    cur = i;
+  }
+  return kept; // (what's still in hand is inside the solid: it goes)
+}
+/** Cut one mesh down to what's outside the given solids. */
+function cutMesh(o, solids) {
+  const g0 = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry, pos = g0.attributes.position, uv = g0.attributes.uv;
+  const m = o.matrixWorld, inv = m.clone().invert(), outPos = [], outUv = [];
+  let changed = false;
+  for (let t = 0; t < pos.count; t += 3) {
+    let polys = [[0, 1, 2].map((k) => ({ p: V().fromBufferAttribute(pos, t + k).applyMatrix4(m), uv: new THREE.Vector2().fromBufferAttribute(uv, t + k) }))];
+    const tb = new THREE.Box3().setFromPoints(polys[0].map((q) => q.p));
+    for (const sol of solids) {
+      if (!sol.box.intersectsBox(tb)) continue;
+      const next = polys.flatMap((pl) => subtractSolid(pl, sol));
+      if (next.length !== 1 || next[0].length !== polys[0]?.length) changed = true;
+      polys = next;
+      if (!polys.length) break;
+    }
+    for (const pl of polys) for (let k = 1; k < pl.length - 1; k++) for (const q of [pl[0], pl[k], pl[k + 1]]) { const lp = q.p.clone().applyMatrix4(inv); outPos.push(lp.x, lp.y, lp.z); outUv.push(q.uv.x, q.uv.y); }
+  }
+  if (!changed) return;
+  const ng = new THREE.BufferGeometry();
+  ng.setAttribute('position', new THREE.Float32BufferAttribute(outPos, 3));
+  ng.setAttribute('uv', new THREE.Float32BufferAttribute(outUv, 2));
+  ng.computeVertexNormals();
+  o.geometry = ng;
+}
+function mergeRoofs(g) {
+  g.updateMatrixWorld(true);
+  const pieces = g.children, solids = pieces.map(roofSolid);
+  pieces.forEach((piece, i) => {
+    const others = solids.filter((sol, j) => j !== i && sol && solids[i] && sol.box.intersectsBox(solids[i].box));
+    if (!others.length) return;
+    piece.traverse((o) => { if (o.isMesh && (o.userData.roofSurface || o.userData.roofWall)) cutMesh(o, others); });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // roofs: pieces you lay over the house, each a rectangle with its own shape, material and colour
 // ---------------------------------------------------------------------------
 
@@ -293,21 +507,25 @@ const ROOFS = {
  */
 export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
   const g = new THREE.Group();
-  const wallMat = extMaterial(finish.m in EXT_WALLS ? finish.m : 'paint', finish.c);
+  const wallMat = extMaterial(finish.m in EXT_WALLS ? finish.m : 'paint', finish.c, finish.a);
   list.forEach((r, i) => {
     // a piece is built round its own middle, so it can be turned (r.r quarter turns: which way a shed
     // roof slopes, which way a gable's ridge runs…) and made flatter or steeper (r.p)
     const piece = new THREE.Group(), turn = (r.r ?? 0) % 4, pitch = r.p ?? 1;
     const hw = (turn % 2 ? r.d : r.w) / 2, hd = (turn % 2 ? r.w : r.d) / 2, x0 = -hw, x1 = hw, z0 = -hd, z1 = hd;
-    piece.position.set(r.x + r.w / 2, 0, r.y + r.d / 2);
+    piece.position.set(r.x + r.w / 2, (r.lv ?? 0) * WALL_H + (r.e ?? 0), r.y + r.d / 2); // (e: on top of walls that stand that high)
     piece.rotation.y = turn * Math.PI / 2;
     const shape = (ROOFS[r.s] ?? ROOFS.gable)(x0, x1, z0, z1, WALL_H);
     const body = new THREE.Group();
     body.scale.y = pitch;
     body.position.y = WALL_H * (1 - pitch);
     piece.add(body);
-    body.add(mesh(shape.roof, extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a')));
-    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, wallMat); m.receiveShadow = false; body.add(m); }
+    const surface = mesh(shape.roof, extMaterial(r.m in ROOF_MATS ? r.m : 'shingle', r.c ?? '#b3403a'));
+    surface.userData.roofSurface = true;
+    body.add(surface);
+    // the wall under the roof (gable ends…): the house's outside finish, or one of its own (gw)
+    const gw = r.gw && r.gw.m in EXT_WALLS ? extMaterial(r.gw.m, r.gw.c, r.gw.a) : wallMat;
+    for (const faces of Object.values(shape.walls)) { const m = mesh(faces, gw); m.receiveShadow = false; m.userData.roofWall = true; body.add(m); }
     if (r.ch) {
       // a brick chimney, standing through the roof towards one end
       const cx = x1 - Math.max(1.4, (x1 - x0) * 0.22), cz = z0 + (z1 - z0) * 0.3, top = WALL_H + (shape.top - WALL_H) * pitch + 0.9;
@@ -316,6 +534,7 @@ export function buildRoofs(list = [], finish = { m: 'siding', c: '#f2ead8' }) {
     piece.traverse((o) => { o.userData.roof = i; });
     g.add(piece);
   });
+  if (list.length > 1) mergeRoofs(g);
   return g;
 }
 
@@ -331,9 +550,22 @@ export function buildGround(list = []) {
     const m = mesh([{ pts: [V(p.x, y, p.y), V(p.x + p.w, y, p.y), V(p.x + p.w, y, p.y + p.d), V(p.x, y, p.y + p.d)] }], extMaterial(p.m in GROUND_MATS ? p.m : 'concrete', p.c ?? GROUND_MATS[p.m]?.c ?? '#c9c9c9'));
     m.castShadow = false;
     m.userData.ground = i;
+    if (p.m === 'water') ripple(m); // (the water moves)
     g.add(m);
   });
   return g;
+}
+
+// ---- water: one rippling texture for every pond, drifting slowly so the water looks alive ----
+const waterMats = new Map();
+function waterMat(color = '#3f8fb8', opacity = 0.82) {
+  const key = `${color}|${opacity}`;
+  if (!waterMats.has(key)) waterMats.set(key, new THREE.MeshToonMaterial({ map: extTexture('water'), color, transparent: true, opacity, depthWrite: false, gradientMap: toon('#ffffff').gradientMap }));
+  return waterMats.get(key);
+}
+/** Keep a water surface's ripples drifting (every pond shares the texture, so they all move together). */
+function ripple(m) {
+  m.onBeforeRender = () => { const t = performance.now() / 1000; m.material.map.offset.set((t * 0.018) % 1, (t * 0.011) % 1); };
 }
 
 const cyl = (rt, rb, h, n = 10) => new THREE.CylinderGeometry(rt, rb, h, n);
@@ -365,15 +597,147 @@ const YARD = {
   pebbles(g) { for (let i = 0; i < 8; i++) put(g, new THREE.DodecahedronGeometry(0.07 + (i % 3) * 0.04, 0), toon(['#9a968e', '#b0aca4', '#c4c0b6'][i % 3]), Math.sin(i * 2.1) * 0.36, 0.04, Math.cos(i * 1.3) * 0.36, [1.2, 0.6, 1]); },
   log(g) { const bark = toon('#6b4a32'); put(g, cyl(0.2, 0.22, 1.4, 9), bark, 0, 0.21, 0, null, [0, 0, Math.PI / 2]); for (const s of [-1, 1]) put(g, cyl(0.17, 0.17, 0.02, 9), toon('#d9b98a'), s * 0.71, 0.21, 0, null, [0, 0, Math.PI / 2]); put(g, cyl(0.06, 0.08, 0.3, 6), bark, 0.2, 0.42, 0.05, null, [0.5, 0, 0.3]); },
   stump(g) { put(g, cyl(0.3, 0.36, 0.36, 10), toon('#6b4a32'), 0, 0.18, 0); put(g, cyl(0.28, 0.28, 0.02, 10), toon('#d9b98a'), 0, 0.37, 0); },
+  // ---- a Japanese garden ----
+  stone_lantern(g) {
+    // a tōrō: a stone post with a little firebox lit up inside it, under a wide six-sided cap
+    const s = toon('#a19d94'), d = toon('#8c887f'), glow = new THREE.MeshBasicMaterial({ color: '#ffd27a' });
+    put(g, cyl(0.32, 0.36, 0.12, 6), d, 0, 0.06, 0);
+    put(g, cyl(0.1, 0.13, 0.55, 8), s, 0, 0.395, 0);
+    put(g, cyl(0.26, 0.2, 0.1, 6), d, 0, 0.72, 0);
+    put(g, new THREE.BoxGeometry(0.3, 0.26, 0.3), s, 0, 0.9, 0);
+    put(g, new THREE.BoxGeometry(0.16, 0.14, 0.32), glow, 0, 0.9, 0);
+    put(g, new THREE.BoxGeometry(0.32, 0.14, 0.16), glow, 0, 0.9, 0);
+    put(g, new THREE.ConeGeometry(0.44, 0.24, 6), d, 0, 1.15, 0);
+    put(g, ball(0.07), s, 0, 1.3, 0);
+  },
+  pine_japanese(g) {
+    // a garden pine: a trunk that leans and twists, and flat clouds of needles at the ends of its branches
+    const bark = toon('#5a4232'), needles = [toon('#2f6b3a'), toon('#3a7d43'), toon('#2a5e35')], up = new THREE.Vector3(0, 1, 0);
+    const limb = (a, b, r0, r1) => {
+      const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), dir = B.clone().sub(A);
+      const m = put(g, cyl(r1, r0, dir.length(), 7), bark, (A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+      m.quaternion.setFromUnitVectors(up, dir.normalize());
+    };
+    const trunk = [[0, 0, 0], [0.28, 0.8, 0.05], [-0.12, 1.6, 0], [0.22, 2.3, -0.05], [0.05, 2.85, 0]];
+    for (let i = 0; i < trunk.length - 1; i++) limb(trunk[i], trunk[i + 1], 0.2 - i * 0.035, 0.2 - (i + 1) * 0.035);
+    limb(trunk[2], [-1.0, 1.75, 0.2], 0.08, 0.04);
+    limb(trunk[3], [0.95, 2.45, -0.1], 0.07, 0.035);
+    limb(trunk[1], [0.75, 1.25, 0.35], 0.06, 0.03);
+    [[-1.05, 1.85, 0.2, 1.25], [0.98, 2.55, -0.1, 1.05], [0.05, 3.0, 0, 1.0], [0.78, 1.35, 0.35, 0.7], [-0.35, 2.4, -0.2, 0.75]].forEach(([x, y, z, s], i) => {
+      put(g, ball(0.55 * s), needles[i % 3], x, y, z, [1.3, 0.42, 1.05]);
+      put(g, ball(0.38 * s), needles[(i + 1) % 3], x + 0.12 * s, y + 0.1, z - 0.1 * s, [1.2, 0.4, 1]);
+    });
+  },
+  fence_japanese(g) {
+    // a white plaster garden wall on a stone footing, with a little tiled roof along its top
+    const plaster = toon('#f1ece0'), tiles = toon('#5d6670'), stone = toon('#8c887f');
+    put(g, new THREE.BoxGeometry(1.0, 0.3, 0.34), stone, 0, 0.15, 0);
+    put(g, new THREE.BoxGeometry(1.0, 1.25, 0.28), plaster, 0, 0.92, 0);
+    for (const s of [-1, 1]) put(g, new THREE.BoxGeometry(1.02, 0.05, 0.3), tiles, 0, 1.6, s * 0.12, null, [s * 0.45, 0, 0]);
+    put(g, new THREE.BoxGeometry(1.04, 0.08, 0.08), toon('#4a525b'), 0, 1.68, 0);
+  },
+  bridge_red(g) {
+    // a little arched bridge in red lacquer, with gold caps on its posts
+    const red = toon('#c0392b'), wood = toon('#8a5a32'), gold = toon('#e0b23c'), L = 2.6, n = 13;
+    const yAt = (x) => 0.1 + 0.32 * Math.cos((Math.PI * x) / L), slope = (x) => -0.32 * (Math.PI / L) * Math.sin((Math.PI * x) / L);
+    for (let i = 0; i < n; i++) { const x = -L / 2 + ((i + 0.5) * L) / n; put(g, new THREE.BoxGeometry(L / n + 0.01, 0.06, 0.9), wood, x, yAt(x), 0, null, [0, 0, Math.atan(slope(x))]); }
+    for (const z of [-0.45, 0.45]) {
+      for (const x of [-1.2, -0.45, 0.45, 1.2]) { put(g, cyl(0.04, 0.04, 0.62, 8), red, x, yAt(x) + 0.31, z); put(g, ball(0.055), gold, x, yAt(x) + 0.65, z); }
+      for (let i = 0; i < n; i++) { const x = -L / 2 + 0.1 + ((i + 0.5) * (L - 0.2)) / n; put(g, new THREE.BoxGeometry((L - 0.2) / n + 0.02, 0.05, 0.05), red, x, yAt(x) + 0.55, z, null, [0, 0, Math.atan(slope(x))]); }
+    }
+  },
+  shrub_round(g) {
+    // azaleas clipped into soft mounds, the way they're kept in a Japanese garden
+    put(g, ball(0.42), toon('#356e3c'), 0, 0.27, 0, [1.25, 0.7, 1.1]);
+    put(g, ball(0.3), toon('#3f7d45'), 0.48, 0.2, 0.2, [1.2, 0.7, 1.1]);
+    put(g, ball(0.26), toon('#4a8a4a'), -0.42, 0.18, 0.25, [1.2, 0.7, 1.1]);
+  },
+  post_wood(g) {
+    // a square timber post on a stone, as tall as a storey: for holding up a veranda's roof
+    put(g, new THREE.BoxGeometry(0.34, 0.12, 0.34), toon('#8c887f'), 0, 0.06, 0);
+    put(g, new THREE.BoxGeometry(0.22, WALL_H - 0.12, 0.22), toon('#8a5a32'), 0, (WALL_H + 0.12) / 2, 0);
+  },
+  // ---- ponds ----
+  pond(g) {
+    // a round pond sunk in the lawn: a dark bed, rippling water, a ring of stones and a couple of lily pads
+    put(g, new THREE.CircleGeometry(1.15, 32), toon('#1f4f5f'), 0, 0.008, 0, null, [-Math.PI / 2, 0, 0]).castShadow = false;
+    const w = put(g, new THREE.CircleGeometry(1.15, 32), waterMat(), 0, 0.03, 0, null, [-Math.PI / 2, 0, 0]);
+    w.castShadow = false; ripple(w);
+    const greys = ['#9a968e', '#aaa59c', '#8a867e', '#b5b1a8'];
+    for (let i = 0; i < 18; i++) { const a = (i / 18) * Math.PI * 2; put(g, new THREE.DodecahedronGeometry(0.17, 0), toon(greys[i % 4]), Math.cos(a) * 1.24, 0.07, Math.sin(a) * 1.24, [1.25, 0.55, 1], [0, a * 3, 0]); }
+    lily(g, 0.45, 0.3, 0.17, '#ff9fd0'); lily(g, -0.4, -0.35, 0.14); lily(g, 0.1, -0.6, 0.12);
+  },
+  koi_pond(g) {
+    // a Japanese koi pond: a curving kidney shape edged with grey rocks (a couple of big ones at the end),
+    // water lilies, and koi gliding round under the surface
+    const r = (a) => 1 + 0.22 * Math.sin(2 * a) + 0.08 * Math.cos(3 * a);
+    const pt = (a, k = 1) => [Math.cos(a) * 1.7 * r(a) * k, Math.sin(a) * 1.05 * r(a) * k];
+    const shape = new THREE.Shape();
+    for (let i = 0; i <= 48; i++) { const [x, z] = pt((i / 48) * Math.PI * 2); if (i) shape.lineTo(x, -z); else shape.moveTo(x, -z); }
+    put(g, new THREE.ShapeGeometry(shape, 24), toon('#1d4652'), 0, 0.006, 0, null, [-Math.PI / 2, 0, 0]).castShadow = false;
+    const w = put(g, new THREE.ShapeGeometry(shape, 24), waterMat('#3a8aa8', 0.72), 0, 0.034, 0, null, [-Math.PI / 2, 0, 0]);
+    w.castShadow = false; ripple(w);
+    const greys = ['#8f8b83', '#a19d94', '#7d7a73', '#b0aca3'];
+    for (let i = 0; i < 30; i++) {
+      const a = (i / 30) * Math.PI * 2, [x, z] = pt(a, 1.06), s = 0.14 + ((i * 7) % 5) * 0.03;
+      put(g, new THREE.DodecahedronGeometry(s, 0), toon(i % 7 === 3 ? '#5f7a4a' : greys[i % 4]), x, s * 0.45, z, [1.3, 0.7, 1.1], [0, i * 1.7, 0]);
+    }
+    for (const [a, s] of [[0.15, 0.42], [-0.35, 0.3], [3.3, 0.28]]) { const [x, z] = pt(a, 1.12); put(g, new THREE.DodecahedronGeometry(s, 0), toon('#8a867e'), x, s * 0.6, z, [1.2, 0.9, 1], [0.3, a, 0]); }
+    lily(g, -0.9, 0.25, 0.18, '#ffffff'); lily(g, -0.6, 0.45, 0.13); lily(g, 0.7, -0.4, 0.15, '#ff9fd0'); lily(g, 0.95, -0.15, 0.11);
+    // the koi, each swimming its own loop just under the water
+    [['#ff7a2e', '#ffffff'], ['#ffffff', '#e0463c'], ['#ffc53d', '#ff7a2e'], ['#f4f1ea', '#2a2d36'], ['#ff5d2e', '#ffd84d']].forEach(([body, spot], i) => {
+      const fish = new THREE.Group();
+      const b = put(fish, new THREE.SphereGeometry(0.09, 10, 8), toon(body), 0, 0, 0, [0.7, 0.45, 1.6]);
+      put(fish, new THREE.SphereGeometry(0.05, 8, 6), toon(spot), 0.01, 0.025, 0.04, [0.8, 0.5, 1]);
+      put(fish, new THREE.ConeGeometry(0.06, 0.12, 6), toon(body), 0, 0, -0.17, [1, 1, 0.3], [-Math.PI / 2, 0, 0]);
+      fish.position.y = 0.018;
+      g.add(fish);
+      const rx = 0.55 + (i % 3) * 0.3, rz = 0.35 + (i % 2) * 0.2, cx = (i - 2) * 0.12, sp = (0.35 + i * 0.07) * (i % 2 ? 1 : -1), ph = i * 1.3;
+      b.onBeforeRender = () => {
+        const t = performance.now() / 1000 * sp + ph;
+        fish.position.x = cx + Math.cos(t) * rx; fish.position.z = Math.sin(t) * rz;
+        fish.rotation.y = Math.atan2(-Math.sin(t) * rx * sp, Math.cos(t) * rz * sp);
+        fish.children[2].rotation.y = Math.sin(t * 9) * 0.4; // (the tail swishes)
+      };
+    });
+  },
+  shishi_odoshi(g) {
+    // a deer-scarer: a bamboo spout trickles into a bamboo tube on a pivot; it fills, tips, empties into a
+    // stone basin with a clack and rocks back to fill again
+    const bamboo = toon('#9cb04a'), node = toon('#7a8a38'), stone = toon('#9a968e');
+    put(g, cyl(0.42, 0.48, 0.28, 14), stone, 0, 0.14, 0.45);
+    const w = put(g, new THREE.CircleGeometry(0.34, 20), waterMat(), 0, 0.29, 0.45, null, [-Math.PI / 2, 0, 0]); w.castShadow = false; ripple(w);
+    for (const x of [-0.13, 0.13]) { put(g, cyl(0.035, 0.035, 0.6, 8), bamboo, x, 0.3, -0.25); put(g, cyl(0.04, 0.04, 0.03, 8), node, x, 0.42, -0.25); }
+    const pivot = new THREE.Group();
+    pivot.position.set(0, 0.52, -0.25);
+    g.add(pivot);
+    const tube = put(pivot, cyl(0.05, 0.05, 0.78, 10), bamboo, 0, 0, 0.12, null, [Math.PI / 2, 0, 0]);
+    put(pivot, cyl(0.055, 0.055, 0.03, 10), node, 0, 0, -0.08, null, [Math.PI / 2, 0, 0]);
+    put(pivot, new THREE.CircleGeometry(0.045, 10), toon('#3a4a1e'), 0, 0, 0.515, null, [0, 0, 0]);
+    // the spout: a bamboo post at the side, a thin pipe leaning over to drip into the tube's open end
+    put(g, cyl(0.035, 0.035, 1.0, 8), bamboo, 0.42, 0.5, 0.28);
+    put(g, cyl(0.04, 0.04, 0.03, 8), node, 0.42, 0.62, 0.28);
+    put(g, cyl(0.022, 0.022, 0.42, 8), bamboo, 0.22, 0.93, 0.28, null, [0, 0, Math.PI / 2 - 0.25]);
+    tube.onBeforeRender = () => {
+      // fills slowly (its mouth rising as the water in it gets heavier), tips quickly, rocks back
+      const t = (performance.now() / 1000) % 6;
+      pivot.rotation.x = t < 5 ? -0.3 + (t / 5) * 0.18 : t < 5.25 ? 0.55 : -0.3 + Math.cos((t - 5.25) * 6) * 0.85 * Math.exp(-(t - 5.25) * 5);
+    };
+  },
   planter(g) { put(g, new THREE.BoxGeometry(0.9, 0.42, 0.42), toon('#7a4a28'), 0, 0.21, 0); for (let i = 0; i < 3; i++) put(g, ball(0.2), toon(i % 2 ? '#5fae55' : '#4f9a45'), -0.28 + i * 0.28, 0.5, 0); for (const [x, c] of [[-0.14, '#ff8fc7'], [0.14, '#ffd84d']]) put(g, new THREE.SphereGeometry(0.07, 8, 6), toon(c), x, 0.66, 0.08); },
 };
+/** A lily pad (with a flower on some) floating on a pond. */
+function lily(g, x, z, r, flower = null) {
+  put(g, new THREE.CircleGeometry(r, 14, 0.4, Math.PI * 2 - 0.5), toon('#4f9a45'), x, 0.04, z, null, [-Math.PI / 2, 0, x * 7]).castShadow = false;
+  if (flower) { put(g, new THREE.ConeGeometry(r * 0.45, r * 0.5, 6), toon(flower), x, 0.08, z); put(g, new THREE.SphereGeometry(r * 0.15, 6, 4), toon('#ffd84d'), x, 0.12, z); }
+}
 /** One yard decoration, standing on its own spot (tiles). */
 export function buildYardItem(id) {
   const g = new THREE.Group();
   (YARD[id] ?? YARD.bush)(g);
   return g;
 }
-const ORGANIC = /^(tree|bush|flowers|rock|grass|wild|pebbles|fern|log|stump)/;
+const ORGANIC = /^(tree|bush|flowers|rock|grass|wild|pebbles|fern|log|stump|pine|shrub)/;
 /** Everything in a yard (plot tiles). */
 export function buildYard(list = []) {
   const g = new THREE.Group();

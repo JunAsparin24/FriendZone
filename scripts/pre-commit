@@ -2,7 +2,13 @@
 # Bumps the game's version on every commit: <year>.<commit number>, e.g. 26.27 for the 27th commit
 # made in 2026. Shown in the bottom left of the lobby. Install with: sh scripts/install-hooks.sh
 root=$(git rev-parse --show-toplevel)
-count=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+# (finishing a merge: count the commits from both sides, or a merge with another computer's work would
+# go backwards to a lower number than the one it already had)
+if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+  count=$(git rev-list --count HEAD MERGE_HEAD 2>/dev/null || echo 0)
+else
+  count=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+fi
 next=$((count + 1))
 year=$(date +%y)
 printf '{ "version": "%s.%s" }\n' "$year" "$next" > "$root/public/version.json"

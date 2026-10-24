@@ -92,6 +92,48 @@ function bake(group) {
   m.castShadow = m.receiveShadow = true;
   return m;
 }
+/** A little animal for the street, facing +z and standing on y = 0 (the caller bakes it into one mesh). */
+function critterModel(kind, i) {
+  const g = new THREE.Group();
+  const add = (geo, color, x, y, z, sc = [1, 1, 1], rx = 0) => { const m = new THREE.Mesh(geo, toon(color)); m.position.set(x, y, z); m.scale.set(...sc); m.rotation.x = rx; g.add(m); };
+  const ball = (r) => new THREE.SphereGeometry(r, 10, 8), eye = '#1d1b2e';
+  if (kind === 'rabbit') {
+    const fur = ['#f4f1ea', '#b98b5e', '#8e8f96', '#e6c9a2'][i % 4];
+    add(ball(0.3), fur, 0, 0.3, 0, [0.85, 0.85, 1.2]);
+    add(ball(0.2), fur, 0, 0.56, 0.3);
+    for (const sd of [-1, 1]) { add(new THREE.CapsuleGeometry(0.05, 0.3, 3, 6), fur, sd * 0.08, 0.9, 0.26, [1, 1, 0.6], -0.15); add(ball(0.035), eye, sd * 0.11, 0.6, 0.46); }
+    add(ball(0.04), '#ff9fb4', 0, 0.54, 0.49);
+    add(ball(0.11), '#ffffff', 0, 0.34, -0.36); // a cotton tail
+  } else if (kind === 'squirrel') {
+    const fur = i % 2 ? '#b5651d' : '#8a8f98';
+    add(ball(0.2), fur, 0, 0.24, 0, [0.85, 1, 1.15]);
+    add(ball(0.15), fur, 0, 0.46, 0.2);
+    for (const sd of [-1, 1]) { add(new THREE.ConeGeometry(0.05, 0.12, 5), fur, sd * 0.08, 0.62, 0.17); add(ball(0.028), eye, sd * 0.085, 0.49, 0.32); }
+    add(ball(0.2), fur, 0, 0.5, -0.3, [0.7, 1.5, 0.75], -0.35); // the big tail, curled up behind
+    add(ball(0.1), '#f4ecd8', 0, 0.2, 0.14, [0.9, 1, 0.6]);
+  } else if (kind === 'cat') {
+    const fur = ['#f08a3c', '#2b2b33', '#d8d4cc', '#8a6a4c'][i % 4];
+    add(ball(0.26), fur, 0, 0.36, 0, [0.8, 0.85, 1.5]);
+    add(ball(0.2), fur, 0, 0.62, 0.38);
+    for (const sd of [-1, 1]) {
+      add(new THREE.ConeGeometry(0.07, 0.14, 4), fur, sd * 0.11, 0.82, 0.36);
+      add(ball(0.03), '#b6ff6a', sd * 0.08, 0.65, 0.555);
+      for (const fz of [-0.24, 0.24]) add(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 6), fur, sd * 0.12, 0.15, fz);
+    }
+    add(new THREE.CapsuleGeometry(0.04, 0.42, 3, 6), fur, 0, 0.6, -0.42, [1, 1, 1], -0.5); // tail in the air
+    add(ball(0.03), '#ff9fb4', 0, 0.6, 0.575);
+  } else {
+    // a songbird: robin red, bluebird, goldfinch, sparrow…
+    const col = ['#e0463c', '#3b82f6', '#ffd84d', '#8a5a2b', '#39c6ff'][i % 5], wing = `#${new THREE.Color(col).multiplyScalar(0.72).getHexString()}`;
+    add(ball(0.17), col, 0, 0.2, 0, [0.9, 0.95, 1.2]);
+    add(ball(0.12), col, 0, 0.38, 0.12);
+    add(new THREE.ConeGeometry(0.04, 0.12, 5), '#ffb02e', 0, 0.37, 0.27, [1, 1, 1], Math.PI / 2);
+    for (const sd of [-1, 1]) { add(ball(0.022), eye, sd * 0.07, 0.41, 0.2); add(ball(0.12), wing, sd * 0.13, 0.22, -0.02, [0.35, 0.8, 1.1]); }
+    add(new THREE.BoxGeometry(0.12, 0.03, 0.22), wing, 0, 0.2, -0.26, [1, 1, 1], 0.4);
+    add(ball(0.1), '#fff3e0', 0, 0.15, 0.08, [0.8, 0.8, 0.9]);
+  }
+  return g;
+}
 let signTex = null;
 /** The street's name, white on green like a real street sign. */
 function streetSign() {
@@ -127,7 +169,7 @@ export function createHood() {
   const group = new THREE.Group();
   const plots = new Map(); // plot number -> { i, key, frame, group, house (what's built on it), roofs, active }
   const houses = {};       // member key -> their house data (from the server, or as it's being built here)
-  let count = 0, street = null, clouds = [], lamps = [], solids = [], butterflies = [], dayLevel = 1, myMail = null; // (solids: the street's trees, bushes, posts… { x, z, r })
+  let count = 0, street = null, clouds = [], lamps = [], solids = [], butterflies = [], critters = [], fireflies = [], roam = null, dayLevel = 1, myMail = null; // (solids: the street's trees, bushes, posts… { x, z, r })
   // ---- day and night (the same clock as the town, so it's evening here when it's evening there)
   const cloudMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, fog: false });
   const bulbMat = new THREE.MeshToonMaterial({ color: '#fff3b8', emissive: '#ffd27a', emissiveIntensity: 0.2, gradientMap: toon('#fff').gradientMap });
@@ -264,6 +306,9 @@ export function createHood() {
     const box = (w, h, d, x, y, z, color) => shape(new THREE.BoxGeometry(w, h, d), x, y, z, color);
     const paint = (w, d, x, z, color) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), toon(color)); m.rotation.x = -Math.PI / 2; m.position.set(x, -0.016, z); decor.add(m); };
     const ends = len / 2, beds = [];
+    // (where the street's name signs stand, so no bush or hydrant is planted on top of them)
+    const signAt = [-1, 1].map((e) => [e * (ends - 22), -(ROAD / 2 + VERGE / 2) * e]);
+    const nearSign = (x, z) => signAt.some(([ax, az]) => Math.hypot(x - ax, z - az) < 3.4);
     // the road: a dashed line down the middle, white lines along the edges, a zebra crossing near each end
     for (let x = -ends + 18; x < ends - 18; x += 6) paint(3, 0.28, x, 0, '#f2c94c');
     for (const s of [-1, 1]) paint(len - 30, 0.2, 0, s * (ROAD / 2 - 0.7), '#eef0f2');
@@ -280,8 +325,8 @@ export function createHood() {
       yardAt('flowers', 2 * mid - treeX, z, T * 1.35, s > 0 ? 0 : Math.PI);
       yardAt('flowers', mid, z, T * 1.35, s > 0 ? Math.PI : 0);
       beds.push([2 * mid - treeX, z], [mid, z]);
-      for (const bx of [mid - 17, mid + 17]) { yardAt('bush', bx, z, T * 1.4, rnd() * 6); solids.push({ x: bx, z, r: 0.8 }); }
-      if ((c + (s > 0 ? 1 : 0)) % 2 === 0) {
+      for (const bx of [mid - 17, mid + 17]) { if (nearSign(bx, z)) continue; yardAt('bush', bx, z, T * 1.4, rnd() * 6); solids.push({ x: bx, z, r: 0.8 }); }
+      if ((c + (s > 0 ? 1 : 0)) % 2 === 0 && !nearSign(mid + (s > 0 ? -21 : 21), z)) {
         const hx = mid + (s > 0 ? -21 : 21), hz = z + s * 0.6, red = '#d6342c';
         shape(new THREE.CylinderGeometry(0.24, 0.28, 0.9, 10), hx, 0.45, hz, red);
         shape(new THREE.SphereGeometry(0.27, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), hx, 0.9, hz, red);
@@ -298,13 +343,17 @@ export function createHood() {
       for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; yardAt('flowers', cx + Math.cos(a) * 3.3, Math.sin(a) * 3.3, T * 0.95, -a + Math.PI / 2, 0.26); }
       solids.push({ x: cx, z: 0, r: 5 });
       // the street's name on a sign at each end
-      const sx = e * (ends - 22), sz = -(ROAD / 2 + VERGE / 2) * e;
-      box(0.14, 3.4, 0.14, sx, 1.7, sz, '#2a2d36');
+      const [sx, sz] = signAt[e < 0 ? 0 : 1];
+      // the post stops under the board (it used to run up through the middle of the lettering), with a
+      // little cap on top; the board is a solid slab, its name on both faces
+      box(0.16, 2.72, 0.16, sx, 1.36, sz, '#2a2d36');
+      box(0.1, 0.96, 3.66, sx, 3.18, sz, '#f4f4f4');
+      box(0.2, 0.1, 0.2, sx, 3.71, sz, '#2a2d36');
       solids.push({ x: sx, z: sz, r: 0.25 });
       // (two faces back to back, so it reads the right way round from both directions)
       for (const f of [1, -1]) {
         const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.9), new THREE.MeshBasicMaterial({ map: streetSign(), fog: true }));
-        sign.position.set(sx + f * 0.02, 3.15, sz); sign.rotation.y = f * Math.PI / 2;
+        sign.position.set(sx + f * 0.056, 3.18, sz); sign.rotation.y = f * Math.PI / 2;
         street.add(sign);
       }
     }
@@ -318,10 +367,36 @@ export function createHood() {
     const wingCols = ['#ff8fc7', '#ffd84d', '#7fc8ff', '#ffffff', '#b77bff', '#ff9f43'];
     beds.filter((_, i) => i % (lowGfx() ? 4 : 2) === 0).slice(0, 18).forEach(([bx, bz], i) => {
       const b = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: wingCols[i % wingCols.length], side: THREE.DoubleSide });
-      const wings = [-1, 1].map((sd) => { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.2).translate(sd * 0.12, 0, 0), mat); w.rotation.x = -Math.PI / 2; b.add(w); return w; });
+      const wings = [-1, 1].map((sd) => { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.36).translate(sd * 0.22, 0, 0), mat); w.rotation.x = -Math.PI / 2; b.add(w); return w; });
       b.userData = { bx, bz, ph: rnd() * 10, wings };
       street.add(b);
       butterflies.push(b);
+    });
+    // ---- animals on the ground: rabbits and squirrels on the grass, songbirds pecking about the pavement,
+    // a cat or two out for a stroll. They potter up and down between the road and the gardens and scatter
+    // if you walk up to them. Each one is baked into a single mesh, so a street of them stays cheap.
+    roam = { lo: ROAD / 2 + 0.6, hi: EDGE - 0.4, span: ends - 20 };
+    critters = [];
+    const kinds = ['rabbit', 'bird', 'squirrel', 'bird', 'cat', 'rabbit', 'bird', 'squirrel', 'bird', 'rabbit', 'cat', 'bird', 'squirrel', 'rabbit', 'bird', 'bird'];
+    const herd = lowGfx() ? 4 : 7; // (just a few: the odd rabbit or bird to come across, not a zoo)
+    for (let i = 0; i < herd; i++) {
+      const kind = kinds[i % kinds.length], m = bake(critterModel(kind, Math.floor(i / 2))), side = i % 2 ? 1 : -1;
+      m.scale.setScalar(kind === 'bird' ? 1.5 : 1.35); // (a little larger than life, so you can spot them from across the road)
+      const x = (rnd() * 2 - 1) * roam.span, z = side * (roam.lo + rnd() * (roam.hi - roam.lo));
+      m.userData = { kind, side, x, z, tx: x, tz: z, wait: rnd() * 3, ph: rnd() * 10, yaw: rnd() * 6, scare: 0, fly: 0, flyLen: 1 };
+      m.position.set(x, 0, z);
+      street.add(m);
+      critters.push(m);
+    }
+    // and fireflies drifting over the flower beds once it's dark
+    fireflies = [];
+    const flyMat = new THREE.SpriteMaterial({ map: glowTexture, color: '#e6ff7a', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    beds.filter((_, i) => i % (lowGfx() ? 3 : 1) === 0).slice(0, 24).forEach(([bx, bz]) => {
+      const f = new THREE.Sprite(flyMat);
+      f.userData = { bx, bz, ph: rnd() * 20 };
+      f.visible = false;
+      street.add(f);
+      fireflies.push(f);
     });
     const hillCols = ['#6fae6a', '#7fb878', '#8fc48a', '#9cc7a8'];
     for (let i = 0; i < 26; i++) {
@@ -476,7 +551,7 @@ export function createHood() {
     body.scale.set(0.9, 0.7, 1.9);
     b.add(body);
     const wings = [-1, 1].map((sd) => { const w = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.04, 0.34).translate(sd * 0.5, 0, 0), birdMat); b.add(w); return w; });
-    b.userData = { r: 22 + i * 6, h: 17 + (i % 3) * 3.5, sp: (0.1 + (i % 4) * 0.03) * (i % 2 ? 1 : -1), ph: i * 1.7, cx: (i - 3) * 14, wings };
+    b.userData = { r: 22 + i * 6, h: 10 + (i % 3) * 3, sp: (0.1 + (i % 4) * 0.03) * (i % 2 ? 1 : -1), ph: i * 1.7, cx: (i - 3) * 14, wings };
     group.add(b);
     birds.push(b);
   }
@@ -498,11 +573,59 @@ export function createHood() {
     for (const b of butterflies) {
       b.visible = awake;
       if (!awake) continue;
-      const u = b.userData, x = u.bx + Math.sin(t * 0.8 + u.ph) * 1.3, z = u.bz + Math.cos(t * 1.1 + u.ph * 2) * 0.55;
+      const u = b.userData, x = u.bx + Math.sin(t * 0.8 + u.ph) * 2.2, z = u.bz + Math.cos(t * 1.1 + u.ph * 2) * 0.9;
       b.rotation.y = Math.atan2(x - b.position.x, z - b.position.z);
-      b.position.set(x, 0.75 + Math.sin(t * 2.1 + u.ph) * 0.35, z);
+      b.position.set(x, 1.1 + Math.sin(t * 2.1 + u.ph) * 0.45, z);
       const flap = 0.25 + Math.abs(Math.sin(t * 16 + u.ph)) * 1.1;
       u.wings[0].rotation.z = flap; u.wings[1].rotation.z = -flap;
+    }
+    // the animals: stop and look about, then hop (or stroll) to somewhere new; anyone walking up sends
+    // them running, and the birds take off and land further down the street
+    for (const c of critters) {
+      const u = c.userData, bird = u.kind === 'bird', cat = u.kind === 'cat';
+      c.visible = awake || !bird; // (the birds roost at night; the rest are still out)
+      if (!c.visible || !roam) continue;
+      const pick = (reach, awayX = 0) => {
+        u.tx = Math.max(-roam.span, Math.min(roam.span, u.x + (awayX || (Math.random() < 0.5 ? -1 : 1)) * (reach * 0.4 + Math.random() * reach)));
+        u.tz = u.side * (roam.lo + Math.random() * (roam.hi - roam.lo));
+      };
+      u.scare -= dt;
+      if (me && u.scare <= 0 && u.fly <= 0) {
+        const dx = u.x - me.x, dz = u.z - me.z;
+        if (Math.hypot(dx, dz) < (bird ? 5 : cat ? 2.2 : 3.6)) {
+          pick(bird ? 16 : 9, dx >= 0 ? 1 : -1);
+          u.wait = 0; u.scare = 1.6;
+          if (bird) { u.flyLen = Math.hypot(u.tx - u.x, u.tz - u.z) / 7; u.fly = u.flyLen; }
+        }
+      }
+      let lift = 0, tilt = 0;
+      if (u.wait > 0) {
+        u.wait -= dt;
+        if (bird) tilt = Math.max(0, Math.sin(t * 7 + u.ph)) * 0.7 * (Math.sin(t * 0.9 + u.ph) > 0 ? 1 : 0); // pecking at the ground
+        else if (!cat) tilt = -Math.max(0, Math.sin(t * 0.7 + u.ph) - 0.6) * 0.9;                           // sitting up to look round
+        if (u.wait <= 0) pick(cat ? 12 : 6);
+      } else {
+        const dx = u.tx - u.x, dz = u.tz - u.z, d = Math.hypot(dx, dz);
+        const sp = u.fly > 0 ? 7 : (u.scare > 0 ? 2.2 : 1) * (cat ? 1.1 : bird ? 1.3 : 2.2);
+        if (d < 0.2) { u.wait = 1 + Math.random() * (cat ? 6 : 4); u.fly = 0; } else {
+          const step = Math.min(d, sp * dt);
+          u.x += (dx / d) * step; u.z += (dz / d) * step;
+          const want = Math.atan2(dx, dz);
+          u.yaw += Math.atan2(Math.sin(want - u.yaw), Math.cos(want - u.yaw)) * Math.min(1, dt * 8);
+          if (u.fly > 0) { u.fly -= dt; lift = Math.sin(Math.PI * Math.max(0, Math.min(1, 1 - u.fly / u.flyLen))) * 3.2; tilt = -0.3; }
+          else lift = cat ? Math.abs(Math.sin(t * 9 + u.ph)) * 0.03 : Math.abs(Math.sin(t * (bird ? 14 : 8) + u.ph)) * (bird ? 0.14 : 0.3); // hop, hop
+        }
+      }
+      c.position.set(u.x, lift, u.z);
+      c.rotation.set(tilt, u.yaw, 0, 'YXZ');
+    }
+    const dark = dayLevel < 0.35;
+    for (const f of fireflies) {
+      f.visible = dark;
+      if (!dark) continue;
+      const u = f.userData;
+      f.position.set(u.bx + Math.sin(t * 0.5 + u.ph) * 2.4, 0.9 + Math.sin(t * 0.8 + u.ph * 2) * 0.5, u.bz + Math.cos(t * 0.37 + u.ph) * 1.6);
+      f.scale.setScalar(0.18 + Math.max(0, Math.sin(t * 2.3 + u.ph * 3)) * 0.3); // (each one blinks at its own pace)
     }
     // your mailbox
     if (myMail) {

@@ -208,9 +208,9 @@ const numberTexture = (() => {
     return cache.get(color);
   };
 })();
-const FRINGE_HIDING_HATS = new Set(['hat_durag', 'hat_beanie', 'hat_helmet', 'hat_viking', 'hat_bucket', 'hat_cap']);
+const FRINGE_HIDING_HATS = new Set(['hat_durag', 'hat_beanie', 'hat_helmet', 'hat_viking', 'hat_bucket', 'hat_cap', 'hat_pirate', 'hat_pirate_bandana']);
 const COVERING_HATS = new Set(['hat_durag', 'hat_cap', 'hat_beanie', 'hat_cowboy', 'hat_bucket', 'hat_tophat', 'hat_viking',
-  'hat_wizard', 'hat_helmet', 'hat_robin', 'hat_party', 'hat_crown', 'hat_sunhat', 'hat_bandana']);
+  'hat_wizard', 'hat_helmet', 'hat_robin', 'hat_party', 'hat_crown', 'hat_sunhat', 'hat_bandana', 'hat_pirate']);
 
 // ---------------------------------------------------------------------------
 // geometry cache + helpers
@@ -319,6 +319,7 @@ Object.assign(TOPS, {
   astro_top: { sleeve: 'long', puffy: true, color: '#f4f4f2', accent: '#39c6ff' },
   cheer_top: { sleeve: 'none', accent: '#ffffff' },
   school_top: { sleeve: 'long', shirt: '#f6f4ee', blazer: true, color: '#2b3a6b', accent: '#e0463c' },
+  pirate_coat: { sleeve: 'long', shirt: '#efe8da', blazer: true, coat: true, color: '#3d3128', accent: '#8a7650' },
 });
 // more bottoms (and the outfits' own). skirt.len can be 'midi', 'ankle' or 'floor' as well as a length
 Object.assign(BOTTOMS, {
@@ -352,9 +353,11 @@ Object.assign(BOTTOMS, {
   skirt_cheer: { legs: 'skin', socks: true, skirt: { len: 0.18, flare: 0.42, pleats: 14, hem: true } },
   skirt_school: { legs: 'skin', socks: true, skirt: { len: 0.25, flare: 0.42, pleats: 16, pattern: 'plaid' } },
   skirt_kimono: { legs: 'skin', skirt: { len: 'ankle', flare: 0.3, pattern: 'floral', wrap: true } },
+  piratepants: { legs: 'pants', baggy: 1.1 },
 });
 // full outfits: a top and a bottom (worn instead of yours), in the outfit's colour + accent
 const OUTFITS = {
+  outfit_pirate: { top: 'pirate_coat', bottom: 'piratepants', color: '#3d3128', accent: '#8a7650', pants: '#3a332d', pantsAccent: '#2b2f4a' },
   outfit_sundress: { top: 'dress_strap', bottom: 'skirt_sun', color: '#ffd84d', accent: '#ffffff' },
   outfit_pajamas: { top: 'pj_top', bottom: 'pjpants', color: '#8fd3ff', accent: '#ffffff' },
   outfit_pinafore: { top: 'dress_pinafore', bottom: 'skirt_pinafore', color: '#c2185b', accent: '#ffd84d' },
@@ -614,29 +617,116 @@ function blobs(head, mat, { dist, size, step, front = 1.0, side = 1.55, back = 2
 }
 
 const bigEyes = (style) => style === 'eyes_sparkle';
-/** An anime-style iris: darker at the top, brighter towards the bottom, a dark rim, soft streaks and a
- *  pupil (one texture per eye colour). */
-const irisCache = new Map();
-function irisMaterial(color, pupil = '#15131f') {
-  const key = `${color}|${pupil}`;
-  if (!irisCache.has(key)) {
-    const c = new THREE.Color(color), shade = (k) => `#${c.clone().multiplyScalar(k).getHexString()}`;
+// Eyes are painted on: a patch of the head's own surface with the eye drawn on it, so they sit flush
+// with the face instead of bulging out of it.
+const EYE_SIZE = 0.23, EYE_LIFT = 0.004;
+const eyePatch = () => geo('eyePatch', () => {
+  const g = new THREE.PlaneGeometry(EYE_SIZE, EYE_SIZE, 10, 10), pos = g.attributes.position, r = R + EYE_LIFT;
+  for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sqrt(r * r - pos.getX(i) ** 2 - pos.getY(i) ** 2) - r);
+  return g;
+});
+const eyeDecal = (tex) => new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+/** One eye, drawn flat: a soft white with a thick upper lid, a big shaded iris, a pupil and a glint
+ *  (one texture per style, colours and side; `side` is +1 / -1, the outer corner is drawn on that side). */
+const eyeCache = new Map();
+function eyeMaterial(style, color, pupil, side) {
+  const key = `${style}|${color}|${pupil}|${side}`;
+  if (!eyeCache.has(key)) {
     // (pale colours are deepened, so no eye ends up a washed-out stare)
-    const hsl = c.getHSL({}), deep = new THREE.Color().setHSL(hsl.h, hsl.s, Math.min(hsl.l, 0.55));
+    const hsl = new THREE.Color(color).getHSL({}), deep = new THREE.Color().setHSL(hsl.h, hsl.s, Math.min(hsl.l, 0.55));
     const tone = (k) => `#${deep.clone().multiplyScalar(k).getHexString()}`;
-    const tex = canvasTexture(128, 128, (x) => {
-      const g = x.createLinearGradient(0, 4, 0, 124);
-      g.addColorStop(0, tone(0.3)); g.addColorStop(0.5, tone(0.75)); g.addColorStop(1, tone(1));
-      x.fillStyle = g; x.beginPath(); x.arc(64, 64, 62, 0, TAU); x.fill();
-      x.strokeStyle = 'rgba(255,255,255,.1)'; x.lineWidth = 2;
-      for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU; x.beginPath(); x.moveTo(64 + Math.cos(a) * 30, 64 + Math.sin(a) * 30); x.lineTo(64 + Math.cos(a) * 52, 64 + Math.sin(a) * 52); x.stroke(); }
-      x.fillStyle = 'rgba(255,255,255,.14)'; x.beginPath(); x.ellipse(64, 100, 30, 12, 0, 0, TAU); x.fill();
-      x.fillStyle = pupil; x.beginPath(); x.ellipse(64, 60, 27, 31, 0, 0, TAU); x.fill();
-      x.strokeStyle = '#15131f'; x.lineWidth = 10; x.beginPath(); x.arc(64, 64, 58, 0, TAU); x.stroke();
+    const tex = canvasTexture(256, 256, (x) => {
+      x.scale(2, 2);
+      if (side < 0) { x.translate(128, 0); x.scale(-1, 1); } // (drawn with the outer corner on the right)
+      const big = style === 'eyes_sparkle', cx = 64, cy = 66, rx = big ? 44 : 40, ry = big ? 53 : 48;
+      // the Animal Crossing shape, not an oval: a full round inner side, a lid that arches over and comes
+      // down to a raised outer corner, and a soft rounded bottom. Traced as a polygon so the same outline
+      // fills, clips, strokes and tells what's inside it.
+      const P = (u, v) => [cx + u * rx, cy + v * ry];
+      const segs = [
+        [P(-1, 0.05), P(-0.98, -1.08), P(0.72, -1.12), P(1, -0.28)],  // over the top to the outer corner
+        [P(1, -0.28), P(1.1, 0.5), P(0.55, 1), P(-0.05, 0.98)],       // down the outer side, round the bottom
+        [P(-0.05, 0.98), P(-0.7, 0.96), P(-1.02, 0.6), P(-1, 0.05)],  // and back up the inner side
+      ];
+      const bez = ([a, b, c, d], t) => { const m = 1 - t; return [0, 1].map((k) => m * m * m * a[k] + 3 * m * m * t * b[k] + 3 * m * t * t * c[k] + t * t * t * d[k]); };
+      const trace = (seg) => Array.from({ length: 25 }, (_, i) => bez(seg, i / 24));
+      const outline = segs.flatMap(trace), top = trace(segs[0]);
+      const inside = (px, py) => {
+        let hit = false;
+        for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+          const [xi, yi] = outline[i], [xj, yj] = outline[j];
+          if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) hit = !hit;
+        }
+        return hit;
+      };
+      // a heavy lid cuts straight across the top of some eyes: its height at the inner and the outer corner
+      const cut = { eyes_sleepy: [58, 58], eyes_angry: [62, 36], eyes_sad: [38, 60] }[style];
+      const lidY = (px) => cut[0] + ((cut[1] - cut[0]) * (px - (cx - rx))) / (2 * rx);
+      const shape = () => { x.beginPath(); outline.forEach(([px, py], i) => (i ? x.lineTo(px, py) : x.moveTo(px, py))); x.closePath(); };
+      const underLid = () => {
+        if (!cut) return;
+        x.beginPath(); x.moveTo(0, lidY(0)); x.lineTo(128, lidY(128)); x.lineTo(128, 128); x.lineTo(0, 128); x.closePath(); x.clip();
+      };
+      x.save();
+      shape(); x.clip(); underLid();
+      x.fillStyle = style === 'eyes_cat' ? '#ffe066' : '#fbf7f2'; x.fillRect(0, 0, 128, 128);
+      if (style === 'eyes_cat') {
+        x.fillStyle = '#15131f'; x.beginPath(); x.ellipse(cx - 2, cy + 2, 8, 34, 0, 0, TAU); x.fill();
+        x.fillStyle = '#ffffff'; x.beginPath(); x.arc(cx - 2 + side * 13, cy - 16, 6, 0, TAU); x.fill();
+      } else {
+        // a big iris sitting a little towards the nose, its top tucked under the lid, white showing round
+        // the outer side and below: the soft Animal Crossing look
+        const sup = style === 'eyes_surprised';
+        const ir = big ? 41 : sup ? 16 : 37, ix = sup ? cx : cx - rx * 0.07, iy = sup ? cy : cy + (cut ? 9 : 3);
+        const g = x.createLinearGradient(0, iy - ir, 0, iy + ir);
+        g.addColorStop(0, tone(0.35)); g.addColorStop(0.55, tone(0.8)); g.addColorStop(1, tone(1));
+        x.fillStyle = g; x.beginPath(); x.arc(ix, iy, ir, 0, TAU); x.fill();
+        x.fillStyle = 'rgba(255,255,255,.16)'; x.beginPath(); x.ellipse(ix, iy + ir * 0.6, ir * 0.5, ir * 0.2, 0, 0, TAU); x.fill();
+        x.fillStyle = pupil; x.beginPath(); x.arc(ix, iy, ir * 0.52, 0, TAU); x.fill();
+        x.strokeStyle = tone(0.25); x.lineWidth = 3; x.beginPath(); x.arc(ix, iy, ir - 1.5, 0, TAU); x.stroke();
+        // the glint sits on the same side in both eyes, as if lit from one place
+        x.fillStyle = '#ffffff';
+        x.beginPath(); x.arc(ix + side * ir * 0.34, iy - ir * 0.36, ir * 0.22, 0, TAU); x.fill();
+        if (big) { x.beginPath(); x.arc(ix - side * ir * 0.4, iy + ir * 0.42, ir * 0.12, 0, TAU); x.fill(); }
+      }
+      x.restore();
+      // a fine line round the eye, and a thick dark upper lid (with a little flick at the outer corner) so it
+      // looks soft, not staring
+      x.save(); underLid(); shape(); x.strokeStyle = '#3a2a26'; x.lineWidth = 2.5; x.stroke(); x.restore();
+      x.strokeStyle = '#15131f'; x.lineWidth = 11; x.lineCap = 'round'; x.lineJoin = 'round';
+      x.beginPath();
+      if (cut) {
+        let a = cx - rx, b = cx + rx;
+        while (a < cx && !inside(a, lidY(a))) a++;
+        while (b > cx && !inside(b, lidY(b))) b--;
+        x.moveTo(a, lidY(a)); x.lineTo(b + 4, lidY(b + 4));
+      } else {
+        top.slice(3).forEach(([px, py], i) => (i ? x.lineTo(px, py) : x.moveTo(px, py)));
+        const [ox, oy] = top[top.length - 1];
+        x.quadraticCurveTo(ox + 5, oy - 2, ox + 9, oy - 7);
+      }
+      x.stroke();
+      if (style === 'eyes_lashes') {
+        x.lineWidth = 5;
+        for (const [k, len] of [[14, 13], [19, 14], [24, 12]]) {
+          const [px, py] = top[k], [qx, qy] = top[Math.min(24, k + 1)], d = Math.hypot(qx - px, qy - py) || 1;
+          const nx = (qy - py) / d, ny = -(qx - px) / d; // (outwards from the lid)
+          x.beginPath(); x.moveTo(px, py); x.lineTo(px + (nx + 0.5) * len * 0.8, py + ny * len * 0.8); x.stroke();
+        }
+      }
     });
-    irisCache.set(key, new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    eyeCache.set(key, eyeDecal(tex));
   }
-  return irisCache.get(key);
+  return eyeCache.get(key);
+}
+/** The closed lid shown for a blink: one soft curved line. */
+let lidMat = null;
+function lidMaterial() {
+  lidMat ??= eyeDecal(canvasTexture(128, 128, (x) => {
+    x.strokeStyle = '#15131f'; x.lineWidth = 9; x.lineCap = 'round';
+    x.beginPath(); x.ellipse(64, 60, 38, 16, 0, Math.PI * 0.08, Math.PI * 0.92); x.stroke();
+  }));
+  return lidMat;
 }
 function heartShape(r) {
   const s = new THREE.Shape();
@@ -1822,33 +1912,39 @@ const HAIR_VOLUME = { hair_curly: 1.14, hair_curlybob: 1.16, hair_ringlets: 1.14
 // hats and back items that take your chosen accessory colour (full palette), else their own default
 const hatCol = (L, def) => L.hatColor || def;
 const backCol = (L, def) => L.backColor || def;
+// their smaller parts (a beanie's cuff and pom-pom, a cape's clasps) can each have a colour of their own:
+// n is '' for the first of an item's "accents" in the catalog, 2 for the second
+const hatAcc = (L, def, n = '') => L[`hatAccent${n}`] || def;
+const backAcc = (L, def, n = '') => L[`backAccent${n}`] || def;
 
 const HATS = {
   hat_cap(head, L) {
     const c = hatCol(L, L.topColor), m = toon(c);
-    part(head, dome(R + 0.05), m, { p: [0, 0.04, 0], s: [1, 0.85, 1] });
-    part(head, cyl(0.3, 0.3, 0.035, 28), toon(tint(c, 0.8)), { p: [0, 0.14, 0.36], s: [1, 1, 0.85], r: [0.12, 0, 0] });
-    part(head, sphere(0.045), toon(tint(c, 1.3)), { p: [0, R + 0.02, 0] });
+    // (the crown stops above the eyebrows and the brim sticks straight out, so a cap never hides the eyes)
+    part(head, dome(R + 0.05, 1.1), m, { p: [0, 0.04, 0], s: [1, 0.85, 1] });
+    part(head, cyl(0.3, 0.3, 0.035, 28), toon(hatAcc(L, tint(c, 0.8))), { p: [0, 0.235, 0.36], s: [1, 1, 0.85], r: [0.04, 0, 0] });
+    part(head, sphere(0.045), toon(hatAcc(L, tint(c, 1.3), 2)), { p: [0, R + 0.02, 0] });
   },
   hat_beanie(head, L) {
     const base = hatCol(L, L.topColor), c = tint(base, 0.85);
-    part(head, dome(R + 0.06, Math.PI / 2 + 0.1), toon(c), { s: [1, 1.12, 1] });
-    part(head, torus(R + 0.05, 0.06), toon(tint(base, 1.25)), { p: [0, 0.02, 0], r: [Math.PI / 2, 0, 0] });
-    part(head, sphere(0.11), toon('#ffffff'), { p: [0, R + 0.2, 0] });
+    // pulled down to just above the eyebrows, its cuff rolled up round the forehead
+    part(head, dome(R + 0.035, 1.094), toon(c), { s: [1, 1.15, 1] });
+    part(head, torus(0.39, 0.058), toon(hatAcc(L, tint(base, 1.25))), { p: [0, 0.25, 0], r: [Math.PI / 2, 0, 0] });
+    part(head, sphere(0.11), toon(hatAcc(L, '#ffffff', 2)), { p: [0, 0.6, 0] });
   },
   hat_headphones(head, L) {
-    part(head, torus(R + 0.07, 0.035, Math.PI), toon('#2b2f4a'), { outline: OUT_THIN });
+    part(head, torus(R + 0.07, 0.035, Math.PI), toon(hatAcc(L, '#2b2f4a')), { outline: OUT_THIN });
     for (const s of [-1, 1]) part(head, cyl(0.13, 0.13, 0.1), toon(hatCol(L, '#ff5d73')), { p: [s * (R + 0.04), 0, 0], r: [0, 0, Math.PI / 2] });
   },
-  hat_party(head) {
+  hat_party(head, L) {
     const m = new THREE.MeshToonMaterial({ map: stripeTexture, gradientMap: toon('#fff').gradientMap });
     part(head, cone(0.2, 0.58, 24), m, { p: [0.05, R + 0.26, 0], r: [0, 0, -0.18] });
-    part(head, sphere(0.08), toon('#ffd84d'), { p: [0.14, R + 0.56, 0] });
+    part(head, sphere(0.08), toon(hatAcc(L, '#ffd84d')), { p: [0.14, R + 0.56, 0] });
   },
   hat_cat(head, L) {
     for (const s of [-1, 1]) {
       part(head, cone(0.13, 0.28, 16), toon(L.hairColor), { p: [s * 0.24, R - 0.02, 0.02], r: [0, 0, -s * 0.4] });
-      part(head, cone(0.07, 0.18, 12), toon('#ff9fb4'), { p: [s * 0.23, R - 0.03, 0.07], r: [0, 0, -s * 0.4], outline: null });
+      part(head, cone(0.07, 0.18, 12), toon(hatAcc(L, '#ff9fb4')), { p: [s * 0.23, R - 0.03, 0.07], r: [0, 0, -s * 0.4], outline: null });
     }
   },
   hat_cowboy(head, L) {
@@ -1857,7 +1953,7 @@ const HATS = {
     const brim = geo('cowboyBrim', () => new THREE.LatheGeometry([0.28, 0.62, 0.72, 0.78].map((x, i) => new THREE.Vector2(x, [0, 0, 0.06, 0.14][i])), 40));
     part(head, brim, brown, { p: [0, 0.27, 0], outline: OUT_THIN });
     part(head, cyl(0.26, 0.31, 0.32), toon(col), { p: [0, 0.43, 0] });
-    part(head, cyl(0.315, 0.315, 0.06), toon(tint(col, 0.55)), { p: [0, 0.31, 0], outline: null });
+    part(head, cyl(0.315, 0.315, 0.06), toon(hatAcc(L, tint(col, 0.55))), { p: [0, 0.31, 0], outline: null });
   },
   hat_bucket(head, L) {
     const kc = hatCol(L, '#c9b27a');
@@ -1865,18 +1961,18 @@ const HATS = {
     const brim = geo('bucketBrim', () => new THREE.LatheGeometry([0.36, 0.5, 0.58].map((x, i) => new THREE.Vector2(x, [0, -0.07, -0.13][i])), 40));
     part(head, brim, khaki, { p: [0, 0.28, 0], outline: OUT_THIN });
     part(head, cyl(0.3, 0.38, 0.3), toon(kc), { p: [0, 0.43, 0] });
-    part(head, sphere(0.05), toon('#ff9f43'), { p: [0, 0.43, 0.35], s: [1.5, 0.8, 0.5], outline: null });
+    part(head, sphere(0.05), toon(hatAcc(L, '#ff9f43')), { p: [0, 0.43, 0.35], s: [1.5, 0.8, 0.5], outline: null });
   },
-  hat_robin(head) {
+  hat_robin(head, L) {
     part(head, cone(0.36, 0.8, 20), toon('#2f9e44'), { p: [0, 0.3, -0.12], r: [-1.2, 0, 0], s: [1, 1, 0.55] });
     const pts = [new THREE.Vector3(-0.2, 0.42, -0.05), new THREE.Vector3(-0.28, 0.62, -0.2), new THREE.Vector3(-0.3, 0.8, -0.42), new THREE.Vector3(-0.26, 0.9, -0.62)];
-    taper(head, pts, 0.04, 0.01, toon('#e0463c'));
+    taper(head, pts, 0.04, 0.01, toon(hatAcc(L, '#e0463c')));
   },
   hat_helmet(head, L) {
     part(head, geo('helmetShell', () => new THREE.SphereGeometry(R + 0.09, 32, 20, 0, TAU, 0, 2.05)), toon(hatCol(L, '#e0463c')));
-    part(head, torus(R + 0.095, 0.035, Math.PI), toon('#ffffff'), { r: [0, Math.PI / 2, 0], outline: null });
+    part(head, torus(R + 0.095, 0.035, Math.PI), toon(hatAcc(L, '#ffffff')), { r: [0, Math.PI / 2, 0], outline: null });
     const visor = geo('visor', () => new THREE.SphereGeometry(R + 0.1, 24, 10, Math.PI / 2 + 0.95, -1.9, 1.2, 0.62));
-    part(head, visor, shiny('#1a2a4a', { transparent: true, opacity: 0.88, side: THREE.DoubleSide }), { outline: null });
+    part(head, visor, shiny(hatAcc(L, '#1a2a4a', 2), { transparent: true, opacity: 0.88, side: THREE.DoubleSide }), { outline: null });
   },
   hat_durag(head, L) {
     // a satin du-rag: fitted over the top of the head from the forehead to the back, clear of the ears,
@@ -1900,7 +1996,7 @@ const HATS = {
       for (let i = 0; i <= 12; i++) pts.push(onHead(0, -1.75 + (i / 12) * 2.72, R + 0.06));
       return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.01, 5);
     });
-    part(head, seam, toon(tint(c, 0.7)), { outline: null });
+    part(head, seam, toon(hatAcc(L, tint(c, 0.7))), { outline: null });
     // knot and tails at the back
     const knot = onHead(Math.PI, 1.72, R + 0.07);
     part(head, sphere(0.07, 12, 10), satin, { p: knot.toArray(), s: [1.2, 0.9, 0.8], outline: OUT_THIN });
@@ -1910,12 +2006,13 @@ const HATS = {
       part(head, g, toon(c, { side: THREE.DoubleSide }), { p: [knot.x + sx * 0.05, knot.y - 0.04, knot.z - 0.02], r: [0.18, 0, sx * 0.12], outline: OUT_THIN });
     }
   },
-  hat_viking(head) {
-    part(head, dome(R + 0.05), toon('#9aa3b5'));
-    part(head, torus(R + 0.05, 0.045), toon('#b8860b'), { p: [0, 0.03, 0], r: [Math.PI / 2, 0, 0] });
+  hat_viking(head, L) {
+    // (worn above the eyebrows, like the other helmets you can still see out of)
+    part(head, dome(R + 0.05, 1.08), toon('#9aa3b5'));
+    part(head, torus(0.405, 0.045), toon(hatAcc(L, '#b8860b')), { p: [0, 0.235, 0], r: [Math.PI / 2, 0, 0] });
     for (const s of [-1, 1]) {
-      const pts = [[0.36, 0.18, 0], [0.55, 0.28, 0], [0.68, 0.48, 0], [0.7, 0.68, 0]].map(([x, y, z]) => new THREE.Vector3(s * x, y, z));
-      taper(head, pts, 0.08, 0.012, toon('#f4ecd8'));
+      const pts = [[0.36, 0.3, 0], [0.55, 0.4, 0], [0.68, 0.6, 0], [0.7, 0.8, 0]].map(([x, y, z]) => new THREE.Vector3(s * x, y, z));
+      taper(head, pts, 0.08, 0.012, toon(hatAcc(L, '#f4ecd8', 2)));
     }
   },
   hat_chef(head, L) {
@@ -1931,16 +2028,16 @@ const HATS = {
     const tc = hatCol(L, '#1d1b2e');
     part(head, cyl(0.44, 0.44, 0.035, 36), toon(tc), { p: [0, 0.32, 0] });
     part(head, cyl(0.27, 0.29, 0.56, 32), toon(tc), { p: [0, 0.62, 0] });
-    part(head, cyl(0.295, 0.295, 0.09, 32), toon('#e0463c'), { p: [0, 0.4, 0], outline: null });
+    part(head, cyl(0.295, 0.295, 0.09, 32), toon(hatAcc(L, '#e0463c')), { p: [0, 0.4, 0], outline: null });
   },
   hat_wizard(head, L) {
     const wc = hatCol(L, '#5b3fb5');
     const purple = toon(wc);
-    part(head, cyl(0.58, 0.58, 0.03, 40), toon(tint(wc, 0.8)), { p: [0, 0.3, 0] });
+    part(head, cyl(0.58, 0.58, 0.03, 40), toon(hatAcc(L, tint(wc, 0.8))), { p: [0, 0.3, 0] });
     part(head, cyl(0.2, 0.36, 0.42, 28), purple, { p: [0, 0.52, 0] });
     part(head, cyl(0.09, 0.2, 0.34, 24), purple, { p: [-0.06, 0.86, -0.03], r: [0.2, 0, 0.3] });
     part(head, cone(0.09, 0.3, 20), purple, { p: [-0.2, 1.08, -0.1], r: [0.5, 0, 0.9] });
-    const star = part(head, geo('star', () => new THREE.OctahedronGeometry(0.07)), basic('#ffe066'), { p: [0.02, 0.6, 0.33], outline: null });
+    const star = part(head, geo('star', () => new THREE.OctahedronGeometry(0.07)), basic(hatAcc(L, '#ffe066', 2)), { p: [0.02, 0.6, 0.33], outline: null });
     star.userData.spin = true;
   },
   hat_halo(head, L, anim) {
@@ -1969,7 +2066,7 @@ const HATS = {
   },
   hat_pixelcrown(head, L) {
     // an 8-bit crown built out of little cubes, with glowing pixel gems
-    const gold = toon('#ffc53d'), dark = toon('#c98a12'), gem = basic('#ff4fd8');
+    const gold = toon('#ffc53d'), dark = toon('#c98a12'), gem = basic(hatAcc(L, '#ff4fd8'));
     const n = 16;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * TAU, x = Math.sin(a) * 0.3, z = Math.cos(a) * 0.3;
@@ -1994,6 +2091,61 @@ const HATS = {
     });
   },
 
+  hat_pirate(head, L) {
+    // a captain's tricorn: a low crown and a brim cocked up into three panels (one over the face) with
+    // points between them, gold braid round the edge and a skull and crossbones on the front
+    const c = hatCol(L, '#1d1b22'), felt = toon(c, { side: THREE.DoubleSide });
+    part(head, dome(R + 0.05, 1.1), toon(c), { p: [0, 0.04, 0], s: [1, 0.95, 1] });
+    const prof = [[0.38, 0], [0.5, 0.03], [0.58, 0.14], [0.6, 0.26]];
+    const brimAt = (t, a) => {
+      // t: 0 (inner edge) .. 3 (outer edge); the panels rise at the front and the two back sides
+      const i = Math.min(2, Math.floor(t)), f = t - i, k = (1 + Math.cos(3 * a)) / 2, u = t / 3;
+      const r = prof[i][0] + (prof[i + 1][0] - prof[i][0]) * f, y = prof[i][1] + (prof[i + 1][1] - prof[i][1]) * f;
+      const rr = r * (1 + 0.13 * (1 - k) * u), yy = y * (0.45 + 0.95 * k);
+      return new THREE.Vector3(Math.sin(a) * rr, 0.24 + yy, Math.cos(a) * rr);
+    };
+    const brim = geo('pirateBrim', () => {
+      const A = 72, U = 12, pos = [], idx = [];
+      for (let j = 0; j <= A; j++) for (let i = 0; i <= U; i++) pos.push(...brimAt((i / U) * 3, (j / A) * TAU).toArray());
+      for (let j = 0; j < A; j++) for (let i = 0; i < U; i++) { const a = j * (U + 1) + i, b = a + U + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      return g;
+    });
+    part(head, brim, felt, { outline: OUT_THIN });
+    const braid = geo('pirateBraid', () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(Array.from({ length: 72 }, (_, j) => brimAt(3, (j / 72) * TAU)), true), 144, 0.016, 6, true));
+    part(head, braid, shiny(hatAcc(L, '#e0b23c'), { metalness: 0.6, roughness: 0.3 }), { outline: null });
+    // the skull and crossbones, on the front panel
+    const bone = toon(hatAcc(L, '#f4f1ea', 2)), em = new THREE.Group();
+    em.position.copy(brimAt(2.3, 0)).add(new THREE.Vector3(0, 0, 0.035));
+    em.rotation.x = -0.25;
+    head.add(em);
+    for (const r of [0.75, -0.75]) part(em, box(0.2, 0.026, 0.012), bone, { r: [0, 0, r], outline: null });
+    part(em, circle(0.055), bone, { p: [0, 0.012, 0.008], outline: null });
+    part(em, box(0.06, 0.035, 0.01), bone, { p: [0, -0.04, 0.008], outline: null });
+    for (const sx of [-1, 1]) part(em, circle(0.016), basic('#1d1b22'), { p: [sx * 0.022, 0.016, 0.012], outline: null, shadow: false });
+  },
+
+  hat_pirate_bandana(head, L) {
+    // a red cloth tied round the forehead (it sits under a pirate hat too), knotted at the back with its
+    // ends hanging down, and a string of beads dangling by one temple
+    const c = hatCol(L, '#c62828'), cloth = toon(c, { side: THREE.DoubleSide });
+    const band = geo('pirateBand', () => new THREE.LatheGeometry([0.205, 0.25, 0.3, 0.35, 0.375].map((y) => new THREE.Vector2(Math.sqrt(0.47 * 0.47 - y * y), y)), 40));
+    part(head, band, cloth, { outline: OUT_THIN });
+    part(head, torus(Math.sqrt(0.47 * 0.47 - 0.29 * 0.29) + 0.004, 0.008, TAU, 6, 40), toon(tint(c, 0.75)), { p: [0, 0.29, 0], r: [Math.PI / 2, 0, 0], outline: null });
+    const knot = new THREE.Vector3(0.08, 0.3, -0.4);
+    part(head, sphere(0.065, 10, 8), cloth, { p: knot.toArray(), s: [1.2, 0.9, 0.8], outline: OUT_THIN });
+    for (const [sx, len] of [[-1, 0.42], [1, 0.34]]) {
+      const g = geo(`bandTail${len}`, () => { const pg = new THREE.PlaneGeometry(0.11, len, 1, 4); pg.translate(0, -len / 2, 0); return pg; });
+      part(head, g, cloth, { p: [knot.x + sx * 0.04, knot.y - 0.02, knot.z - 0.03], r: [0.3, 0, sx * 0.25], outline: OUT_THIN });
+    }
+    const t = onHead(1.15, 1.12, 0.475), gold = hatAcc(L, '#e0b23c');
+    part(head, cyl(0.006, 0.006, 0.27, 5), toon('#3a2a1e'), { p: [t.x, t.y - 0.135, t.z], outline: null, shadow: false });
+    [gold, '#2fa58a', gold, '#c62828', '#f4ecd8'].forEach((bc, i) => part(head, sphere(0.024, 8, 6), toon(bc), { p: [t.x, t.y - 0.05 - i * 0.05, t.z], outline: null }));
+  },
+
   // ---- hair accessories ----
   hat_bow(head, L) {
     // a big bow on top of the head, tilted to one side
@@ -2003,7 +2155,7 @@ const HATS = {
       part(g, sphere(0.11, 16, 12), m, { p: [s * 0.12, 0.01, 0], s: [1.25, 0.9, 0.42], r: [0, 0, s * 0.3], outline: OUT_THIN });
       part(g, box(0.05, 0.14, 0.02), m, { p: [s * 0.05, -0.1, 0.01], r: [0, 0, s * 0.35], outline: OUT_THIN });
     }
-    part(g, sphere(0.05, 12, 10), toon(tint(c, 0.8)), { p: [0, 0, 0.02], s: [1, 1.1, 0.7], outline: OUT_THIN });
+    part(g, sphere(0.05, 12, 10), toon(hatAcc(L, tint(c, 0.8))), { p: [0, 0, 0.02], s: [1, 1.1, 0.7], outline: OUT_THIN });
   },
   hat_headband(head, L) {
     // a padded headband over the top of the head, from ear to ear
@@ -2013,8 +2165,8 @@ const HATS = {
   hat_flower(head, L) {
     // a big flower tucked behind one ear, with a smaller bud beside it
     const c = hatCol(L, '#ff9fe0');
-    flower(head, 'flowerBig', onSurface(head, 1.0, 0.72, R + 0.08), c, 0.095);
-    flower(head, 'flowerSmall', onSurface(head, 1.3, 0.55, R + 0.08), tint(c, 1.35), 0.06);
+    flower(head, 'flowerBig', onSurface(head, 1.0, 0.72, R + 0.08), c, 0.095, hatAcc(L, '#ffc93d'));
+    flower(head, 'flowerSmall', onSurface(head, 1.3, 0.55, R + 0.08), tint(c, 1.35), 0.06, hatAcc(L, '#ffc93d'));
   },
   hat_flowercrown(head) {
     // a ring of little flowers and leaves all the way round
@@ -2030,7 +2182,7 @@ const HATS = {
   hat_clips(head, L) {
     // a row of bright hair clips above one ear
     const c = hatCol(L, '#ffd84d');
-    [c, '#ff5d8f', '#6ee7a0'].forEach((col, k) => {
+    [c, hatAcc(L, '#ff5d8f'), hatAcc(L, '#6ee7a0', 2)].forEach((col, k) => {
       const g = onSurface(head, 0.75 + k * 0.1, 0.45 + k * 0.19, R + 0.09, 0.5);
       part(g, box(0.22, 0.055, 0.04), toon(col), { outline: OUT_THIN });
       part(g, sphere(0.04, 10, 8), toon(tint(col, 1.3)), { p: [0.11, 0, 0.015], outline: null });
@@ -2039,27 +2191,27 @@ const HATS = {
   hat_beret(head, L) {
     const c = hatCol(L, '#d6334a');
     part(head, sphere(0.4, 28, 16), toon(c), { p: [-0.06, R + 0.04, -0.02], s: [1, 0.3, 1], r: [0.12, 0, 0.22] });
-    part(head, torus(0.33, 0.025, TAU, 8, 32), toon(tint(c, 0.75)), { p: [-0.04, R - 0.02, -0.01], r: [Math.PI / 2 + 0.12, 0, 0.18], outline: null });
-    part(head, cyl(0.018, 0.022, 0.07, 8), toon(tint(c, 0.7)), { p: [-0.1, R + 0.16, -0.02], r: [0.1, 0, 0.25], outline: null });
+    part(head, torus(0.33, 0.025, TAU, 8, 32), toon(hatAcc(L, tint(c, 0.75))), { p: [-0.04, R - 0.02, -0.01], r: [Math.PI / 2 + 0.12, 0, 0.18], outline: null });
+    part(head, cyl(0.018, 0.022, 0.07, 8), toon(hatAcc(L, tint(c, 0.7))), { p: [-0.1, R + 0.16, -0.02], r: [0.1, 0, 0.25], outline: null });
   },
   hat_sunhat(head, L) {
     // a wide, floppy straw sun hat with a ribbon round the crown
     const c = hatCol(L, '#f2d9a0');
     const straw = toon(c, { side: THREE.DoubleSide });
-    const brim = geo('sunBrim2', () => {
-      // floppy: the brim droops and ripples gently all the way round
-      const g = new THREE.LatheGeometry([0.3, 0.5, 0.68, 0.84].map((x, i) => new THREE.Vector2(x, [0, -0.04, -0.12, -0.22][i])), 64);
+    const brim = geo('sunBrim3', () => {
+      // floppy: the brim dips and ripples gently all the way round (but not so far that it hides your eyes)
+      const g = new THREE.LatheGeometry([0.3, 0.5, 0.68, 0.84].map((x, i) => new THREE.Vector2(x, [0, -0.02, -0.05, -0.09][i])), 64);
       const p = g.attributes.position;
       for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), r = Math.hypot(x, z); p.setY(i, p.getY(i) + Math.sin(Math.atan2(z, x) * 6) * 0.025 * Math.max(0, r - 0.4)); }
       g.computeVertexNormals();
       return g;
     });
-    part(head, brim, straw, { p: [0, 0.3, 0], r: [0.08, 0, 0], outline: OUT_THIN });
+    part(head, brim, straw, { p: [0, 0.3, 0], r: [-0.06, 0, 0], outline: OUT_THIN });
     part(head, cyl(0.28, 0.33, 0.24, 32), toon(c), { p: [0, 0.42, 0.01] });
-    part(head, cyl(0.335, 0.335, 0.06, 32), toon('#ff7aa8'), { p: [0, 0.34, 0.01], outline: null });
+    part(head, cyl(0.335, 0.335, 0.06, 32), toon(hatAcc(L, '#ff7aa8')), { p: [0, 0.34, 0.01], outline: null });
     const bow = onSurface(head, -0.9, 1.05, 0.34);
     bow.position.y = 0.35;
-    for (const s of [-1, 1]) part(bow, sphere(0.05, 10, 8), toon('#ff7aa8'), { p: [s * 0.05, 0, 0], s: [1.3, 0.8, 0.4], outline: OUT_THIN });
+    for (const s of [-1, 1]) part(bow, sphere(0.05, 10, 8), toon(hatAcc(L, '#ff7aa8')), { p: [s * 0.05, 0, 0], s: [1.3, 0.8, 0.4], outline: OUT_THIN });
   },
   hat_bandana(head, L) {
     // a polka-dot bandana tied over the hair, knotted at the back
@@ -2085,11 +2237,11 @@ function onSurface(head, phi, th, r, roll = 0) {
   return g;
 }
 /** A five-petal flower (one mesh for the petals) facing out of `g`. */
-function flower(head, key, g, color, size) {
+function flower(head, key, g, color, size, centre = '#ffc93d') {
   const petals = [];
   for (let k = 0; k < 5; k++) { const a = (k / 5) * TAU + 0.3; petals.push([Math.cos(a) * size, Math.sin(a) * size, 0, size * 0.8]); }
   part(g, bubbleGeo(`petals${size}`, petals), toon(color), { s: [1, 1, 0.45], outline: OUT_THIN });
-  part(g, sphere(size * 0.55, 10, 8), toon('#ffc93d'), { p: [0, 0, size * 0.35], s: [1, 1, 0.6], outline: null });
+  part(g, sphere(size * 0.55, 10, 8), toon(centre), { p: [0, 0, size * 0.35], s: [1, 1, 0.6], outline: null });
 }
 function dotsMaterial(color) {
   const key = `dots${color}`;
@@ -2113,6 +2265,7 @@ function dotsMaterial(color) {
 const EYE_X = 0.16, EYE_Y = 0.0;
 // face items marked "tint" take the colour picked for their slot, otherwise their own
 const faceCol = (L, def) => L.faceColor || def;
+const faceAcc = (L, def, n = '') => L[`faceAccent${n}`] || def;
 
 /** The full beard: one thick, soft piece along the jaw from sideburn to sideburn, full at the chin,
  *  stopping under the bottom lip so the mouth still shows. */
@@ -2225,7 +2378,7 @@ const FACES = {
       }
       return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 64, 0.013, 6, true);
     });
-    part(head, strap, m, { outline: null });
+    part(head, strap, toon(faceAcc(L, faceCol(L, '#15131f'))), { outline: null });
   },
   face_heartshades(head, L) {
     const c = faceCol(L, '#ff4f8b');
@@ -2250,7 +2403,7 @@ const FACES = {
     });
   },
   face_goggles(head, L) {
-    const strap = toon(faceCol(L, '#5a3a1e')), lens = shiny('#8fd3ff', { roughness: 0.1 }), rim = shiny('#c9a44a', { metalness: 0.6 });
+    const strap = toon(faceCol(L, '#5a3a1e')), lens = shiny(faceAcc(L, '#8fd3ff'), { roughness: 0.1 }), rim = shiny(faceAcc(L, '#c9a44a', 2), { metalness: 0.6 });
     part(head, torus(R + 0.02, 0.028, TAU, 6, 48), strap, { p: [0, EYE_Y + 0.1, 0], r: [Math.PI / 2 - 0.12, 0, 0], outline: null });
     for (const s of [-1, 1]) {
       const p = onFace(s * EYE_X, EYE_Y + 0.02, 0.05);
@@ -2264,10 +2417,10 @@ const FACES = {
     const c = faceCol(L, '#d6334a');
     const cloth = dotsMaterial(hex(c)).clone();
     cloth.side = THREE.DoubleSide;
-    const band = geo('bandanaBand2', () => new THREE.SphereGeometry(R + 0.022, 40, 14, 0, TAU, Math.PI / 2 + 0.08, 0.7));
+    const band = geo('bandanaBand3', () => new THREE.SphereGeometry(R + 0.022, 40, 14, 0, TAU, Math.PI / 2 + 0.24, 0.54));
     part(head, band, cloth, { outline: OUT_THIN });
     // a rolled top edge, just under the eyes
-    part(head, torus(Math.sin(Math.PI / 2 + 0.08) * (R + 0.024), 0.014, TAU, 6, 48), toon(tint(c, 0.8)), { p: [0, Math.cos(Math.PI / 2 + 0.08) * (R + 0.024), 0], r: [Math.PI / 2, 0, 0], outline: null });
+    part(head, torus(Math.sin(Math.PI / 2 + 0.24) * (R + 0.024), 0.014, TAU, 6, 48), toon(faceAcc(L, tint(c, 0.8))), { p: [0, Math.cos(Math.PI / 2 + 0.24) * (R + 0.024), 0], r: [Math.PI / 2, 0, 0], outline: null });
     // the point: a triangle of the same cloth hanging off the front, tucked against the chin
     const tri = geo('bandanaPoint', () => {
       const sh = new THREE.Shape();
@@ -2319,9 +2472,9 @@ const FACES = {
     const c = faceCol(L, '#23213a');
     const m = toon(c, { side: THREE.DoubleSide });
     // a band of cloth wrapped round the lower face: part of a sphere shell, so it hugs the cheeks and chin
-    const band = geo('ninjaBand', () => new THREE.SphereGeometry(R + 0.018, 36, 16, 0, TAU, Math.PI / 2 + 0.12, 0.62));
+    const band = geo('ninjaBand2', () => new THREE.SphereGeometry(R + 0.018, 36, 16, 0, TAU, Math.PI / 2 + 0.24, 0.5)); // (its top edge runs just under the eyes)
     part(head, band, m, { outline: OUT_THIN });
-    part(head, torus(R + 0.02, 0.02, TAU, 8, 48), toon(tint(c, 1.3)), { p: [0, -0.05, 0], r: [Math.PI / 2, 0, 0], outline: null });
+    part(head, torus(0.428, 0.02, TAU, 8, 48), toon(faceAcc(L, tint(c, 1.3))), { p: [0, -0.1, 0], r: [Math.PI / 2, 0, 0], outline: null });
     part(head, sphere(0.06, 12, 10), m, { p: [0, -0.07, -R - 0.03], s: [1.2, 1, 0.7] });
     for (const s of [-1, 1]) part(head, box(0.07, 0.24, 0.02), m, { p: [s * 0.06, -0.2, -R - 0.05], r: [0.3, 0, s * 0.35], outline: OUT_THIN });
   },
@@ -2368,8 +2521,8 @@ const BACKS = {
   back_backpack(back, anim, state, L) {
     const c = backCol(L, '#c96b2c');
     part(back, box(0.44, 0.5, 0.22), toon(c), { p: [0, -0.02, -0.1] });
-    part(back, box(0.46, 0.17, 0.25), toon(tint(c, 1.2)), { p: [0, 0.18, -0.1] });
-    part(back, box(0.26, 0.16, 0.06), toon(tint(c, 0.8)), { p: [0, -0.14, -0.23], outline: OUT_THIN });
+    part(back, box(0.46, 0.17, 0.25), toon(backAcc(L, tint(c, 1.2))), { p: [0, 0.18, -0.1] });
+    part(back, box(0.26, 0.16, 0.06), toon(backAcc(L, tint(c, 0.8), 2)), { p: [0, -0.14, -0.23], outline: OUT_THIN });
   },
   back_arcade(back, anim, state, L) {
     // a little arcade cabinet worn as a backpack, its screen playing a tiny game
@@ -2403,7 +2556,7 @@ const BACKS = {
     const cape = new THREE.Mesh(g, toon(backCol(L, '#d6334a'), { side: THREE.DoubleSide }));
     cape.position.set(0, 0.22, -0.08);
     // a gold clasp at each shoulder
-    for (const sx of [-1, 1]) part(back, sphere(0.05, 12, 10), shiny('#ffc53d'), { p: [sx * 0.24, 0.2, 0.0], outline: null });
+    for (const sx of [-1, 1]) part(back, sphere(0.05, 12, 10), shiny(backAcc(L, '#ffc53d')), { p: [sx * 0.24, 0.2, 0.0], outline: null });
     cape.castShadow = true;
     back.add(cape);
     state.disposables.push(g);
@@ -2470,14 +2623,14 @@ const BACKS = {
     // a fishing pack: basket, rod poking up, and today's catch dangling off the side
     const c = backCol(L, '#6b8e23');
     part(back, box(0.42, 0.44, 0.22), toon(c), { p: [0, -0.04, -0.1] });
-    part(back, box(0.44, 0.08, 0.24), toon(tint(c, 0.75)), { p: [0, 0.2, -0.1] });
+    part(back, box(0.44, 0.08, 0.24), toon(backAcc(L, tint(c, 0.75))), { p: [0, 0.2, -0.1] });
     part(back, cyl(0.012, 0.018, 1.2, 6), toon('#8b5a2b'), { p: [-0.15, 0.45, -0.2], r: [0.1, 0, 0.25], outline: null });
     part(back, cyl(0.04, 0.04, 0.05, 10), shiny('#c0c6d4'), { p: [-0.12, 0.05, -0.23], r: [0, 0, Math.PI / 2], outline: null });
     const fish = new THREE.Group();
     fish.position.set(0.24, -0.05, -0.08);
     back.add(fish);
-    part(fish, sphere(0.07, 12, 8), toon('#6fa8dc'), { p: [0, -0.1, 0], s: [0.6, 1.6, 0.5], outline: OUT_THIN });
-    part(fish, cone(0.05, 0.08, 4), toon('#6fa8dc'), { p: [0, -0.24, 0], r: [Math.PI, 0, 0], s: [1, 1, 0.3], outline: null });
+    part(fish, sphere(0.07, 12, 8), toon(backAcc(L, '#6fa8dc', 2)), { p: [0, -0.1, 0], s: [0.6, 1.6, 0.5], outline: OUT_THIN });
+    part(fish, cone(0.05, 0.08, 4), toon(backAcc(L, '#6fa8dc', 2)), { p: [0, -0.24, 0], r: [Math.PI, 0, 0], s: [1, 1, 0.3], outline: null });
     anim.push((t, dt, moving) => { fish.rotation.z = Math.sin(t * (moving ? 10 : 2)) * (moving ? 0.35 : 0.1); });
   },
   back_flag(back, anim) {
@@ -2501,9 +2654,9 @@ const BACKS = {
     // a round arena shield with a gold rim and boss
     const c = backCol(L, '#b3261e');
     part(back, cyl(0.3, 0.3, 0.05, 28), toon(c), { p: [0, 0, -0.17], r: [Math.PI / 2, 0, 0] });
-    part(back, torus(0.3, 0.025, TAU, 6, 32), shiny('#ffc53d', { metalness: 0.7 }), { p: [0, 0, -0.2], outline: null });
-    part(back, sphere(0.07, 12, 10), shiny('#ffc53d', { metalness: 0.7 }), { p: [0, 0, -0.21], s: [1, 1, 0.6], outline: null });
-    for (const r of [0.8, -0.8]) part(back, box(0.04, 0.5, 0.01), shiny('#e8e0d0', { metalness: 0.5 }), { p: [0, 0, -0.2], r: [0, 0, r], outline: null });
+    part(back, torus(0.3, 0.025, TAU, 6, 32), shiny(backAcc(L, '#ffc53d'), { metalness: 0.7 }), { p: [0, 0, -0.2], outline: null });
+    part(back, sphere(0.07, 12, 10), shiny(backAcc(L, '#ffc53d'), { metalness: 0.7 }), { p: [0, 0, -0.21], s: [1, 1, 0.6], outline: null });
+    for (const r of [0.8, -0.8]) part(back, box(0.04, 0.5, 0.01), shiny(backAcc(L, '#e8e0d0', 2), { metalness: 0.5 }), { p: [0, 0, -0.2], r: [0, 0, r], outline: null });
   },
   back_guitar(back, anim, state, L) {
     // an electric guitar slung across the back: a glossy double-cutaway body with a sunburst edge, white
@@ -3752,6 +3905,12 @@ export class Character {
       part(torso, hemGeo, doubleSided(topMat), { s: [1.02, 1, 0.82], outline: OUT_THIN });
       part(torso, torus(0.3, 0.014, TAU, 6, 32), toon(accent), { p: [0, -0.62, 0], r: [Math.PI / 2, 0, 0], s: [1.02, 0.82, 1], outline: null });
     }
+    if (top.coat) {
+      // a long coat: its skirts carry on down past the hips to the knees, open at the front, edged in braid
+      const tails = geo('coatTails', () => new THREE.LatheGeometry([new THREE.Vector2(0.33, -0.74), new THREE.Vector2(0.3, -0.45), new THREE.Vector2(0.27, -0.24), new THREE.Vector2(0.258, -0.08)], 32, 0.55, TAU - 1.1));
+      part(torso, tails, doubleSided(topMat), { s: [1.02, 1, 0.82], outline: OUT_THIN });
+      part(torso, torus(0.33, 0.014, TAU - 1.1, 6, 32), toon(accent), { p: [0, -0.74, 0], r: [Math.PI / 2, 0, Math.PI / 2 + 0.55], s: [1.02, 0.82, 1], outline: null });
+    }
     const sewnOn = torso.children.length;
     this.decorateTop(torso, L, top, topColor, accent);
     if (bottom.overalls || top.bib) {
@@ -3876,14 +4035,14 @@ export class Character {
     // that have texture coordinates and are the hair's own colour)
 
     // each face item in its own colour (face -> faceColor, face2 -> face2Color…)
-    for (const [k, id] of faces) FACES[id](head, { ...L, faceColor: L[`${k}Color`] }, anim);
+    for (const [k, id] of faces) FACES[id](head, { ...L, faceColor: L[`${k}Color`], faceAccent: L[`${k}Accent`], faceAccent2: L[`${k}Accent2`] }, anim);
     for (const [k, id] of hats) {
       // hats sit over the puffier hair, so they're a size up (held from the head's centre)
       const hatGroup = new THREE.Group();
       hatGroup.scale.setScalar(id === 'hat_headphones' ? 1 : COVERING_HATS.has(id) ? 1.04 : 1.12);
       hatGroup.position.y = id === 'hat_halo' || id === 'hat_horns' ? 0 : 0.012;
       head.add(hatGroup);
-      HATS[id](hatGroup, { ...L, hatColor: L[`${k}Color`] }, anim);
+      HATS[id](hatGroup, { ...L, hatColor: L[`${k}Color`], hatAccent: L[`${k}Accent`], hatAccent2: L[`${k}Accent2`] }, anim);
       // big curly hair: hats and accessories ride on top of the curls instead of sinking into them
       const vol = COVERING_HATS.has(id) || id === 'hat_halo' ? 1 : HAIR_VOLUME[hair] ?? 1;
       if (vol > 1) for (const o of hatGroup.children) { if (o.position.length() > 0.15) o.position.multiplyScalar(vol); else o.scale.multiplyScalar(vol); }
@@ -3985,35 +4144,15 @@ export class Character {
         d.userData.sy = 1.1;
         eyes.push(d);
       } else {
-        const big = style === 'eyes_sparkle' || style === 'eyes_surprised';
-        const sy = style === 'eyes_sleepy' ? 0.8 : style === 'eyes_angry' ? 0.95 : style === 'eyes_surprised' ? 1.25 : 1.3;
-        // surprised and cat eyes are pale with a small / slit pupil; the rest are big dark (or coloured) eyes
-        const pale = style === 'eyes_surprised' || style === 'eyes_cat';
-        const eye = part(head, sphere(big ? 0.08 : 0.071, 18, 14), basic(pale ? (style === 'eyes_cat' ? '#ffe066' : '#ffffff') : '#15131f'), { p: p.toArray(), q, s: [0.85, sy, 0.5], outline: pale ? OUT_THIN : null, shadow: false });
-        eye.userData.sy = sy;
-        if (style === 'eyes_surprised') part(eye, sphere(0.026, 10, 8), basic(iris), { p: [0, 0, 0.05], outline: null, shadow: false });
-        else if (style === 'eyes_cat') part(eye, sphere(0.03, 10, 8), dark, { p: [0, 0, 0.05], s: [0.3, 1.5, 0.6], outline: null, shadow: false });
-        else {
-          part(eye, circle(big ? 0.078 : 0.069), irisMaterial(hex(iris), L.pupilColor ?? '#15131f'), { p: [0, 0, big ? 0.081 : 0.072], outline: null, shadow: false }); // (the shaded iris on the front)
-          // an upper eyelid: a thick dark line curving over the top of the eye, so it looks soft, not staring
-          part(eye, torus(big ? 0.077 : 0.068, 0.016, Math.PI * 0.82, 6, 20), dark, { p: [0, 0, big ? 0.083 : 0.074], r: [0, 0, Math.PI * 0.09], outline: null, shadow: false });
-        }
-        part(eye, sphere(big ? 0.026 : 0.022, 10, 8), white, { p: [0.022, 0.024, 0.06], outline: null, shadow: false });
-        if (big) part(eye, sphere(0.013, 8, 6), white, { p: [-0.024, -0.026, 0.06], outline: null, shadow: false });
+        // the eye is painted onto the head (lid, lashes and all), with a closed lid to swap in for a blink
+        const pe = onFace(s * EYE_X, EYE_Y, EYE_LIFT), flat = { p: pe.toArray(), q: faceTo(pe), outline: null, shadow: false };
+        const eye = part(head, eyePatch(), eyeMaterial(style, hex(iris), L.pupilColor ?? '#15131f', s), flat);
+        eye.userData.lid = part(head, eyePatch(), lidMaterial(), flat);
+        eye.userData.lid.visible = false;
         eyes.push(eye);
         if (style === 'eyes_sad' && s < 0) {
           // a single tear
-          part(head, sphere(0.022, 10, 8), basic('#8fd3ff'), { p: onFace(s * (EYE_X + 0.02), EYE_Y - 0.11, 0.01).toArray(), s: [0.8, 1.3, 0.6], outline: null, shadow: false });
-        }
-        if (style === 'eyes_sleepy') {
-          const lp = onFace(s * EYE_X, EYE_Y + 0.045, 0.006);
-          part(head, capsule(0.014, 0.1), dark, { p: lp.toArray(), r: [0, 0, Math.PI / 2 - s * 0.08], outline: null, shadow: false });
-        }
-        if (style === 'eyes_lashes') {
-          for (let i = 0; i < 2; i++) {
-            const lp = onFace(s * (EYE_X + 0.05 + i * 0.022), EYE_Y + 0.07 - i * 0.03, 0.006);
-            part(head, capsule(0.009, 0.045), dark, { p: lp.toArray(), r: [0, 0, -s * (0.7 + i * 0.4)], outline: null, shadow: false });
-          }
+          part(head, sphere(0.022, 10, 8), basic('#8fd3ff'), { p: onFace(s * (EYE_X + 0.02), EYE_Y - 0.11, 0.004).toArray(), s: [0.8, 1.3, 0.3], outline: null, shadow: false });
         }
       }
       // eyebrows set the mood: angry ones slope down to the middle, sad ones up
@@ -4253,6 +4392,32 @@ export class Character {
         }
         break;
       }
+      case 'pirate_coat': {
+        // a captain's long coat, weathered, hanging open over a loose white shirt and a brown waistcoat: a
+        // leather baldric slung across the chest, a wide belt with a big buckle, a faded sash knotted at the
+        // hip and a flintlock pistol tucked in the belt
+        const metal = shiny(accent, { metalness: 0.55, roughness: 0.45 }), leather = toon('#3a2a1e'), vest = toon('#74523a'), cloth = toon('#d9cdb4');
+        vneck(white, 0.22, 0.13); // (the shirt's open at the neck)
+        collar(white);
+        for (const sx of [-1, 1]) part(torso, box(0.09, 0.38, 0.014), vest, { p: front(sx * 0.105, -0.03, 0.014), r: [0, sx * 0.35, 0], outline: OUT_THIN });
+        buttons(metal, [0.07, 0, -0.07], 0.07);
+        lapels(toon(tint(color, 0.75)), 0.095);
+        // the baldric: a strap from the right shoulder down to the left hip, with a buckle on the chest
+        const strap = [new THREE.Vector3(...front(0.16, 0.27, 0.03)), new THREE.Vector3(...front(0.02, 0.03, 0.04)), new THREE.Vector3(...front(-0.17, -0.22, 0.04))];
+        taper(torso, strap, 0.024, 0.024, leather);
+        part(torso, box(0.05, 0.05, 0.02), metal, { p: front(0.06, 0.1, 0.06), r: [0, 0, 0.7], outline: null });
+        // the belt, its buckle, and the sash under it, knotted at one hip with the ends hanging
+        ring(-0.24, leather, 0.036);
+        part(torso, box(0.12, 0.1, 0.02), metal, { p: front(0, -0.24, 0.05), outline: OUT_THIN });
+        part(torso, box(0.07, 0.05, 0.025), leather, { p: front(0, -0.24, 0.055), outline: null });
+        ring(-0.17, cloth, 0.028);
+        part(torso, sphere(0.05, 10, 8), cloth, { p: around(-1.15, -0.18, 0.035), outline: OUT_THIN });
+        for (const k of [0, 1]) part(torso, box(0.06, 0.3, 0.015), cloth, { p: around(-1.15 - k * 0.22, -0.36, 0.04), r: [0, -1.15, k ? 0.12 : -0.08], outline: OUT_THIN });
+        // the pistol: a dark wooden grip and a brass-capped butt sticking up out of the belt
+        part(torso, box(0.04, 0.14, 0.03), toon('#2a1a12'), { p: front(-0.09, -0.17, 0.08), r: [0, 0, 0.45], outline: OUT_THIN });
+        part(torso, sphere(0.025, 8, 6), metal, { p: front(-0.12, -0.11, 0.08), outline: null });
+        break;
+      }
       case 'top_corset':
         // criss-cross lacing down the front, boning lines and a bow at the top
         for (let i = 0; i < 5; i++) for (const sx of [-1, 1]) part(torso, box(0.075, 0.008, 0.008), acc, { p: front(0, 0.1 - i * 0.07, 0.018), r: [0, 0, sx * 0.55], outline: null, shadow: false });
@@ -4408,6 +4573,15 @@ export class Character {
         part(knee, cyl(0.104, 0.11, 0.2, 16), shoe, { p: [0, -0.1 + fy, 0.005], outline: OUT_THIN });
         part(knee, torus(0.104, 0.016, TAU, 6, 18), dark, { p: [0, 0.0 + fy, 0.005], r: [Math.PI / 2, 0, 0], outline: null });
         part(knee, box(0.12, 0.012, 0.01), dark, { p: [0, -0.2 + fy, 0.14], outline: null, shadow: false });
+        break;
+      case 'shoes_pirate':
+        // tall leather boots with a wide cuff folded down at the top, a buckled strap round the ankle and a heel
+        foot(shoe, [1, 0.62, 1.45]); soleUnder(dark, 0.32);
+        part(knee, cyl(0.11, 0.114, 0.28, 18), shoe, { p: [0, -0.06 + fy, 0.005], outline: OUT_THIN });
+        part(knee, cyl(0.15, 0.124, 0.11, 18), dark, { p: [0, 0.1 + fy, 0.005], outline: OUT_THIN });
+        part(knee, torus(0.116, 0.014, TAU, 6, 18), dark, { p: [0, -0.16 + fy, 0.005], r: [Math.PI / 2, 0, 0], outline: null });
+        part(knee, box(0.045, 0.04, 0.015), shiny('#b8a070', { metalness: 0.6 }), { p: [0.04, -0.16 + fy, 0.118], outline: null, shadow: false });
+        part(knee, box(0.14, 0.06, 0.09), dark, { p: [0, G + 0.03, -0.06], outline: null });
         break;
       case 'shoes_rainboots':
         // tall glossy wellies with a chunky sole and a band at the top
@@ -4782,7 +4956,10 @@ export class Character {
     this.blinkAt -= dt;
     const blink = this.blinkAt < 0.12 && this.blinkAt > 0;
     if (this.blinkAt <= 0) this.blinkAt = 2 + Math.random() * 4;
-    for (const e of eyes) e.scale.y = blink ? 0.12 : e.userData.sy;
+    for (const e of eyes) {
+      if (e.userData.lid) { e.visible = !blink; e.userData.lid.visible = blink; } // (painted eyes swap to a closed lid)
+      else e.scale.y = blink ? 0.12 : e.userData.sy;
+    }
 
     for (const fn of anim) fn(time, dt, walking);
     if (this.bow) this.updateBow();

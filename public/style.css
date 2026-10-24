@@ -1910,3 +1910,219 @@ html:not(.touch) .look-strip { display: none; }
 
 /* the arena on a phone: hearts and the slide meter along the bottom middle, clear of the joystick */
 html.touch .area-hud > .ar-bottom { left: 50%; transform: translateX(-50%); bottom: max(8px, env(safe-area-inset-bottom)); }
+
+/* ======================================================================================================
+   the chat keeps clear of the build menu, and phones get everything a size smaller
+   ====================================================================================================== */
+/* building on a computer: the chat sits just above the dock (or above what you're holding), never on top
+   of the dock's own buttons, and the tips strip makes room for it */
+html:not(.touch) body.house-menu .chat.chat-float { bottom: calc(min(292px, 40vh) + 22px); width: min(280px, calc(100% - 24px)); }
+html:not(.touch) body:has(.place-bar:not(.hidden)) .chat.chat-float { bottom: 104px; }
+html:not(.touch) body.house-menu .house-hint { max-width: min(760px, calc(100vw - 640px)); }
+@media (max-width: 1100px) { html:not(.touch) body.house-menu .house-hint { display: none; } }
+
+/* how much of a phone the build menu takes: a narrower panel down the side (landscape), a shorter sheet
+   up from the bottom (portrait) */
+:root { --menu-w: min(54vw, 560px); --menu-h: 50dvh; }
+@media (max-height: 560px), (max-width: 560px) { :root { --menu-w: min(40vw, 380px); --menu-h: 40dvh; } }
+@media (orientation: portrait) {
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { height: var(--menu-h); }
+  body.house-menu .stick-pad { bottom: calc(var(--menu-h) + 18px); }
+  body.house-menu .touch-buttons { bottom: calc(var(--menu-h) + 18px); max-height: calc(100dvh - var(--menu-h) - 140px); }
+}
+@media (orientation: landscape) {
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { width: var(--menu-w); }
+  body.house-menu .touch-buttons { right: calc(var(--menu-w) + 18px); }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  body.house-menu .area-hud > .house-bar { max-width: calc(100vw - var(--menu-w) - 40px); }
+  html.touch .area-hud > .house-hint { max-width: calc(100vw - var(--menu-w) - 40px); }
+}
+/* small screens: the game comes first, so every panel, button and menu is drawn smaller (still big
+   enough for a thumb: nothing you tap goes under about 34px) */
+@media (max-height: 560px), (max-width: 560px) {
+  html.touch .area-hud > .hud-panel, html.touch .area-hud > .race-item, html.touch .area-hud > .race-map, html.touch .area-hud > .race-count,
+  html.touch #world .hud-panel, html.touch .area-title, html.touch .top-ctl { zoom: .76; }
+  html.touch .hud-me, html.touch #hud .minimap:not(.big), html.touch .hud-clock, html.touch .hud-town, html.touch .toasts { zoom: .76; }
+  html.touch .area-hud > .house-side, html.touch .area-hud > .house-bar { zoom: 1; } /* (sized by hand below) */
+  html.touch .modal-box { zoom: .9; }
+  html.touch .btn { min-height: 38px; }
+  html.touch .btn.small { min-height: 34px; padding: 5px 10px; font-size: 12px; }
+  html.touch .touch-buttons button { width: 54px; height: 54px; }
+  html.touch .touch-buttons button span { font-size: 19px; }
+  html.touch .touch-buttons button small { font-size: 9px; }
+  html.touch .touch-buttons button.big { width: 66px; height: 66px; }
+  html.touch .touch-buttons button.big span { font-size: 26px; }
+  html.touch .stick-pad { width: 98px; height: 98px; }
+  html.touch .stick-knob { width: 42px; height: 42px; }
+  html.touch .area-prompt, html.touch .hud-prompt { font-size: 13px; padding: 7px 12px; }
+  html.touch .area-banner { font-size: 12px; padding: 6px 10px; }
+  html.touch .area-banner .big { font-size: 17px; }
+  /* the bar along the top of the neighbourhood */
+  html.touch .house-bar { gap: 4px; padding: 4px 6px; }
+  html.touch .house-bar .house-actions { gap: 4px; }
+  html.touch .house-bar .pill { font-size: 12px; padding: 3px 8px; }
+  /* the build menu */
+  html.touch .house-side.wide, html.touch .house-side.wide.slim { gap: 4px; padding: 5px; font-size: 12px; }
+  html.touch .house-side.wide .house-tabs { gap: 4px; }
+  html.touch .house-side.wide .house-tabs button { font-size: 12px; padding: 5px 9px; min-height: 34px; }
+  html.touch .house-side.wide .house-panel { padding: 6px; gap: 6px; }
+  html.touch .house-side .shop-pages { gap: 4px; padding: 4px 0 6px; }
+  html.touch .house-side .shop-pages button { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+  html.touch .house-side .shelf-jump button { min-height: 30px; padding: 3px 9px; font-size: 12px; }
+  html.touch .house-side .part-chip { min-height: 30px; padding: 3px 8px; font-size: 12px; }
+  html.touch .house-side .item-search { padding: 4px 8px; }
+  html.touch .house-side.wide .furni-grid { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 5px; }
+  html.touch .house-side .furni { min-height: 0; padding: 5px 3px; font-size: 11px; }
+  html.touch .house-side.wide .fem-img, html.touch .house-side.wide .furni .swatch-em { width: 40px; height: 40px; }
+  html.touch .house-side.wide .style-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; }
+  html.touch .house-side .style-opt { min-height: 38px; font-size: 12px; }
+  html.touch .house-side.wide .style-sw { height: 30px; }
+  html.touch .house-side h3, html.touch .house-side .shelf-label { font-size: 13px; margin: 2px 0; }
+  html.touch .place-bar { padding: 4px 6px 5px; }
+  html.touch .place-bar button { min-height: 34px; font-size: 12px; }
+}
+
+/* building: which storey you're working on (Ground / Floor 2 / Floor 3), in the bar along the top */
+.storeys { display: inline-flex; gap: 3px; padding: 2px; border-radius: 10px; background: #0003; }
+.storeys small { align-self: center; padding: 0 4px 0 6px; font-weight: 800; font-size: 12px; color: var(--muted); }
+.storeys .btn { padding-left: 10px; padding-right: 10px; min-width: 32px; }
+.house-bar.building .house-title { display: none; }
+
+/* any colour: the colour wheel, the eyedropper and the colours picked lately, at the front of every row of swatches */
+.cpick { display: contents; }
+.swatch.cp-wheel { position: relative; overflow: hidden; cursor: pointer; background: conic-gradient(#ff3b3b, #ffd84d, #4be08a, #39c6ff, #7c6bff, #ff4fd8, #ff3b3b); }
+.swatch.cp-wheel::after { content: ''; position: absolute; inset: 30%; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px #0003; pointer-events: none; }
+.swatch.cp-wheel input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.swatch.cp-drop { background: #0d1f4a; color: #fff; font-size: 14px; display: grid; place-items: center; }
+.swatch.cp-recent { box-shadow: inset 0 0 0 2px #ffffff55; }
+/* a picked piece's own options (a wall's finish and trim, a floor's supports…) each take a full line under its buttons */
+.sel-box .row { flex-wrap: wrap; }
+.sel-box .row > .wd-label, .sel-box .row > .style-grid, .sel-box .row > .swatches, .sel-box .row > .trim-grid, .sel-box .row > .row { flex-basis: 100%; }
+.sel-box .row > .wd-label { margin-top: 6px; }
+.sel-box .row > .wd-label, .sel-box .row > .style-grid, .sel-box .row > .swatches, .sel-box .row > .trim-grid, .sel-box .row > .row { order: 1; } /* (after the buttons) */
+/* the Neighbours list: who's on the street now, who's online elsewhere, who's away */
+.vstat { display: block; font-size: 11px; font-weight: 700; color: var(--muted); }
+.vstat.on { color: #6ee7a0; }
+.vstat.away { color: #ffd84d; }
+/* holding a floor or stairs: raise or lower it before it goes down */
+.place-bar .pb-ht { display: flex; gap: 4px; align-items: center; margin-left: 4px; }
+.place-bar .pb-ht .pb-chain { min-width: 34px; font-size: 16px; padding: 6px 8px; background: #12a0f5; box-shadow: inset 0 -3px 0 #0a78bd; }
+.place-bar .pb-ht b { color: #3a3a44; font: 800 13px var(--body); margin-left: 4px; white-space: nowrap; }
+/* the time each chat line was said */
+.chat-time { font-size: 10px; font-weight: 700; opacity: .6; margin-right: 6px; font-variant-numeric: tabular-nums; }
+
+/* nothing on the page gets highlighted by a quick double tap or a drag (only boxes you type in, and the
+   invite code, can be selected) */
+html { -webkit-tap-highlight-color: transparent; }
+body, body * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body input, body textarea, body [contenteditable], body .selectable, #lobbyCode { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+body { touch-action: manipulation; } /* (no double-tap zoom either) */
+
+/* ======================================================================================================
+   the front page: one screen, never scrolls. Side by side (the logo left, the cards right) wherever
+   there's the width; stacked and compact on an upright phone. A long list of zones scrolls in its card.
+   ====================================================================================================== */
+#home.home {
+  height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; flex-direction: row; justify-content: center; align-items: center;
+  gap: clamp(20px, 6vw, 90px); padding: max(64px, env(safe-area-inset-top)) 24px max(48px, env(safe-area-inset-bottom));
+}
+.home-hero { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; }
+/* a soft glow behind the logo */
+.home-hero::before { content: ''; position: absolute; inset: -12% -20%; z-index: -1; background: radial-gradient(closest-side, #8fd3ff66, transparent 70%); animation: glow-pulse 4s ease-in-out infinite; }
+@keyframes glow-pulse { 50% { opacity: .55; transform: scale(1.06); } }
+#home .logo-mark { width: clamp(110px, 30vh, 280px); height: auto; margin: 0; filter: drop-shadow(0 10px 18px #0a215066); animation: logo-bob 3.2s ease-in-out infinite; }
+@keyframes logo-bob { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-8px) rotate(2deg); } }
+#home .logo { --size: clamp(34px, 8vh, 78px); flex-direction: row; gap: .35em; }
+#home .logo span:nth-child(2) { margin-left: 0; }
+.home-tag { margin: 4px 0 0; color: #dbeaff; font-weight: 700; font-size: clamp(13px, 2vh, 17px); text-align: center; text-shadow: 0 2px 0 #0a215055; }
+.home-panel { width: min(440px, 100%); max-height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.home-panel .card { margin: 0; padding: 14px 18px; }
+.home-panel h2 { font-size: 21px; margin-bottom: 8px; }
+.home-panel .online-card #playOnline { padding: 10px; }
+.zones-card { min-height: 0; flex: 0 1 auto; display: flex; flex-direction: column; }
+.zones-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.home-actions { justify-content: center; flex-wrap: nowrap; gap: 10px; }
+.home-actions .btn { flex: 1; white-space: nowrap; }
+/* bubbles drifting up the background */
+.home-sky { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.home-sky i { position: absolute; bottom: -80px; width: var(--s, 40px); height: var(--s, 40px); border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffffaa, #8fd3ff33 45%, transparent 70%); animation: drift var(--t, 16s) linear infinite; animation-delay: var(--d, 0s); opacity: .7; }
+.home-sky i:nth-child(1) { left: 6%; --s: 46px; --t: 17s; }
+.home-sky i:nth-child(2) { left: 18%; --s: 22px; --t: 12s; --d: -6s; }
+.home-sky i:nth-child(3) { left: 33%; --s: 64px; --t: 22s; --d: -10s; }
+.home-sky i:nth-child(4) { left: 52%; --s: 30px; --t: 14s; --d: -3s; }
+.home-sky i:nth-child(5) { left: 66%; --s: 54px; --t: 19s; --d: -12s; }
+.home-sky i:nth-child(6) { left: 78%; --s: 18px; --t: 11s; --d: -7s; }
+.home-sky i:nth-child(7) { left: 88%; --s: 40px; --t: 16s; --d: -2s; }
+.home-sky i:nth-child(8) { left: 95%; --s: 26px; --t: 13s; --d: -9s; }
+@keyframes drift { to { transform: translateY(calc(-100dvh - 160px)) translateX(30px); } }
+#home ~ .version-tag { z-index: 1; }
+/* upright phones and narrow windows: stacked, everything a little smaller so it all fits */
+@media (max-width: 760px) and (orientation: portrait) {
+  #home.home { flex-direction: column; justify-content: center; gap: 10px; padding: max(58px, env(safe-area-inset-top)) 14px max(46px, env(safe-area-inset-bottom)); }
+  #home .logo-mark { width: clamp(70px, 15dvh, 150px); }
+  #home .logo { --size: clamp(26px, 5.2dvh, 48px); }
+  .home-tag { display: none; }
+  .home-panel { flex: 1 1 auto; gap: 10px; }
+  .home-panel .card { padding: 12px 14px; }
+  .home-panel h2 { font-size: 18px; margin-bottom: 6px; }
+  .online-blurb { display: none; }
+  .home-actions .btn { padding: 10px 8px; font-size: 14px; }
+}
+/* short screens held sideways (phones): side by side, squeezed down */
+@media (max-height: 500px) {
+  #home.home { padding: max(52px, env(safe-area-inset-top)) 20px max(12px, env(safe-area-inset-bottom)); gap: 20px; }
+  #home .logo-mark { width: clamp(70px, 34dvh, 150px); }
+  #home .logo { --size: clamp(22px, 8dvh, 40px); }
+  .home-tag, .online-blurb { display: none; }
+  .home-panel { gap: 8px; }
+  .home-panel .card { padding: 8px 12px; }
+  .home-panel h2 { font-size: 16px; margin-bottom: 4px; }
+  .home-actions .btn { padding: 8px; font-size: 13px; }
+  #home ~ .version-tag { display: none; }
+  .feedback-btn { top: max(10px, env(safe-area-inset-top)); bottom: auto; right: auto; left: 12px; padding: 6px 10px; font-size: 12px; } /* (the bottom corner is the cards') */
+}
+
+/* the front page's background: the icon as a whole scene (see index.html), filling the screen */
+.home-scene { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; pointer-events: none; }
+.hs-rays { animation: hs-spin 80s linear infinite; transform-origin: 800px 700px; }
+@keyframes hs-spin { to { transform: rotate(360deg); } }
+.hs-friend { animation: hs-bob 3.4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.hs-f2 { animation-delay: -1.1s; }
+.hs-f3 { animation-delay: -2.2s; }
+@keyframes hs-bob { 50% { transform: translateY(-14px) scale(1.02, .98); } }
+.hs-sparks use, .hs-sparks circle { animation: hs-twinkle 2.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.hs-sparks :nth-child(2n) { animation-delay: -1.3s; }
+.hs-sparks :nth-child(3n) { animation-delay: -.7s; }
+@keyframes hs-twinkle { 50% { opacity: .25; transform: scale(.6); } }
+.hs-bursts path { animation: hs-pop 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes hs-pop { 50% { transform: scale(1.12); } }
+.hs-clouds { animation: hs-cloud 9s ease-in-out infinite alternate; }
+@keyframes hs-cloud { to { transform: translateX(18px); } }
+#home .home-hero::before { display: none; } /* (the scene has its own glow) */
+#home .logo { --size: clamp(40px, 10vh, 96px); }
+/* the cards sit over the scene, a touch see-through so the world shows round them */
+#home .home-panel .card { background: linear-gradient(180deg, #1d3c86e6, #142d6ee6); backdrop-filter: blur(4px); }
+@media (prefers-reduced-motion: reduce) { .home-scene * { animation: none !important; } }
+/* side by side: the world rises under the title on the left; the title floats above the friends' heads */
+@media not ((max-width: 760px) and (orientation: portrait)) {
+  .home-scene { width: 130%; left: -30%; }
+  #home .home-hero { align-self: flex-start; margin-top: 4vh; }
+}
+@media (max-height: 500px) { #home .home-hero { margin-top: 0; } }
+/* upright phones: the title fits the width; the world and friends rise behind the cards */
+@media (max-width: 760px) and (orientation: portrait) {
+  #home .logo { --size: clamp(26px, 10vw, 52px); }
+}
+.home-scene { overflow: visible; }
+@media (max-width: 760px) and (orientation: portrait) { #home.home { padding-top: max(72px, env(safe-area-inset-top)); } }
+/* short screens held sideways: the whole scene, smaller, rising under the title */
+@media (max-height: 500px) { .home-scene { transform: scale(.62); transform-origin: 28% 100%; } }
+@media (min-height: 501px) and (max-height: 780px) and (min-aspect-ratio: 1/1) { .home-scene { transform: scale(.72); transform-origin: 28% 100%; } }
+
+/* a newer version of the game is out: a bar across the top to refresh */
+.update-bar { position: fixed; z-index: 60; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  width: max-content; max-width: calc(100vw - 24px); padding: 10px 14px; border-radius: 14px; background: #0d1f4af2; border: 2px solid #ffd27a; box-shadow: 0 6px 0 #0005, 0 0 24px #ffd27a55;
+  color: #fff; font-size: 14px; animation: update-in .35s ease-out; }
+.update-bar.hidden { display: none; }
+@keyframes update-in { from { transform: translate(-50%, -20px); opacity: 0; } }

@@ -34,7 +34,7 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-MAX_MESSAGE = 64 * 1024
+MAX_MESSAGE = 1024 * 1024  # (a big house, saved in one go, runs to a few hundred KB)
 IDLE_TIMEOUT = 90  # clients ping every 25s
 
 MIME = {
@@ -44,6 +44,7 @@ MIME = {
     ".json": "application/json",
     ".svg": "image/svg+xml",
     ".png": "image/png",
+    ".webmanifest": "application/manifest+json",
     ".mp3": "audio/mpeg",
     ".ico": "image/x-icon",
 }
@@ -331,7 +332,8 @@ HOUSE_WALL_H = 3.2  # wall height, tiles
 HOUSE_WALL_Y = 1.75  # default height of a wall decoration's middle
 HOUSE_DOOR_H = 2.2  # the front door's height (things can hang on the wall above it)
 HOUSE_MAX_DROP = 2.4  # how far below the ceiling a hanging thing can go
-HOUSE_MAX_ITEMS = 400  # (walls count too: a house is whatever you draw on your plot)
+HOUSE_BUY_MAX = 50  # how many of one thing you can buy (unless it says otherwise)
+HOUSE_MAX_ITEMS = 3000  # (walls count too: a house is whatever you draw on your plot)
 
 # Cosmetics and fish are shared with the client through one catalog file.
 CATALOG = json.loads((PUBLIC / "cosmetics.json").read_text("utf-8"))
@@ -397,7 +399,9 @@ LOOK_SLOTS = ("hair", "top", "bottom", "outfit", "hat", "face", "back", "hand", 
 EXTRA_SLOTS = {"hat2": "hat", "hat3": "hat", "face2": "face", "face3": "face", "hand2": "hand"}
 # optional recolours: a top's own colour + trim, hair ties, and each accessory slot's colour
 LOOK_TINTS = ("hatColor", "hat2Color", "hat3Color", "faceColor", "face2Color", "face3Color", "backColor", "handColor", "hand2Color",
-              "topTint", "topAccent", "outfitColor", "outfitAccent", "hairTie", "auraColor")
+              "topTint", "topAccent", "outfitColor", "outfitAccent", "hairTie", "auraColor",
+              # the smaller parts of an accessory (an item's "accents" in the catalog: a beanie's cuff and pom-pom…)
+              *(f"{slot}Accent{n}" for slot in ("hat", "hat2", "hat3", "face", "face2", "face3", "back") for n in ("", "2")))
 LOOK_COLORS = {"skin": "skins", "hairColor": "hairColors", "topColor": "clothColors", "bottomColor": "clothColors",
                "shoeColor": "clothColors", "eyeColor": "eyeColors", "sockColor": "clothColors", "pupilColor": "pupilColors"}
 LOOK_CHOICES = {"eyes": "eyeStyles", "height": "heights", "build": "builds", "shoes": "shoeStyles", "socks": "sockStyles"}
@@ -444,7 +448,7 @@ def clean_parts(cp):
     """Colours for the parts of a piece: "m:#rrggbb" or "t:#rrggbb" -> a palette colour (up to 6)."""
     out = {}
     for k, v in list(cp.items())[:6]:
-        if isinstance(k, str) and re.fullmatch(r"[mt]:#[0-9a-f]{6}", k) and v in CATALOG["clothColors"]:
+        if isinstance(k, str) and re.fullmatch(r"[mt]:#[0-9a-f]{6}", k) and isinstance(v, str) and HEX_RE.match(v):  # (any colour)
             out[k] = v
     return out
 
@@ -891,6 +895,9 @@ def met(p, cond):
 
 
 HOUSE_SNAP = 8  # furniture snaps to eighth tiles (room walls and doors stick to quarters on the client)
+HOUSE_STOREYS = 3  # (older houses were built a storey at a time: an item's "lv", 0 the ground floor, 1, 2)
+HOUSE_TOP = 12  # how high anything can stand (tiles): floors are laid at any height, everything else stands on them
+snap_h = lambda v: round(float(v) * 20) / 20  # (heights: twentieths of a tile, so a floor sits exactly on a wall's top)
 
 
 def snap_q(v):
@@ -924,7 +931,19 @@ def clean_house(p, data):
             raise GameError("Unknown furniture.")
         # positions snap to quarter tiles; overlaps are checked on that finer grid
         x, y, r = snap_q(it.get("x", -1)), snap_q(it.get("y", -1)), int(it.get("r", 0)) % 4
+        try:
+            lv = int(it.get("lv", 0) or 0)
+        except (TypeError, ValueError):
+            lv = -1
+        # e: how high it stands (the top of the floor it was put on); slabs have their height in h instead
+        try:
+            e = None if it.get("e") is None or f.get("slab") else snap_h(it["e"])
+        except (TypeError, ValueError):
+            e = -1
+        if not 0 <= lv < HOUSE_STOREYS or (e is not None and not 0 <= e <= HOUSE_TOP):
+            raise GameError("That's higher than a house can go.")
         used[f["id"]] = used.get(f["id"], 0) + 1
+        hk = None  # (worked out below, once a slab's height is known)
         # free things (plain walls) don't need buying, they just have a limit
         if used[f["id"]] > (f.get("max", 99) if f.get("free") else p["furni"].get(f["id"], 0)):
             raise GameError(f"You don't have another {f['name']}.")
@@ -942,7 +961,8 @@ def clean_house(p, data):
                 raise GameError("That doesn't fit on the wall.")
             rows = range(round((h - wh / 2) * HOUSE_SNAP), round((h + wh / 2) * HOUSE_SNAP))
             cells = {("wall", "iw", "over" if f.get("over") else "", round(face * HOUSE_SNAP), r, round(start * HOUSE_SNAP) + i, j) for i in range(round(f["w"] * HOUSE_SNAP)) for j in rows}
-            hanging.append((f["name"], r % 2, face, start, f["w"]))
+            hk = round((lv * HOUSE_WALL_H + (e or 0)) * 20)
+            hanging.append((f["name"], hk, r % 2, face, start, f["w"]))
         elif kind == "wall":
             raise GameError("That has to hang on a wall you've built.")
         else:
@@ -956,45 +976,73 @@ def clean_house(p, data):
                 if not (0.25 <= length <= max(W, D)):
                     raise GameError("That wall is the wrong length.")
             w, d = (length, f["d"]) if r % 2 == 0 else (f["d"], length)
+            ht = None
+            if (f.get("drag") and not f.get("wallH") or f["id"].startswith("col_")) and it.get("ht") is not None:  # (a wall or column built taller or shorter)
+                try:
+                    ht = snap_h(it["ht"])
+                except (TypeError, ValueError):
+                    ht = -1
+                if not 0.5 <= ht <= 9.6:
+                    raise GameError("A wall can't be that tall.")
+            if f.get("slab"):  # a floor you lay yourself: a rectangle l across by m deep
+                length, depth = snap_q(it.get("l", 1)), snap_q(it.get("m", 1))
+                if not (0.25 <= length <= W and 0.25 <= depth <= D):
+                    raise GameError("That floor is the wrong size.")
+                w, d, r = length, depth, 0
+                h = snap_h(it.get("h", 0))  # (how high its top is: a veranda, a balcony, a whole floor up)
+                if not (0 <= h <= HOUSE_TOP - 2.4):
+                    raise GameError("That floor can't be raised that high.")
+                h = h or None
+            if f.get("stairs") and it.get("h") is not None:  # (how high a flight climbs)
+                h = snap_h(it["h"])
+                if not (0.25 <= h <= HOUSE_TOP - 2.4):
+                    raise GameError("Stairs can't climb that high.")
             # furniture turned 45° takes up the square it fits in (walls and doors only turn in quarters)
             dg = bool(it.get("dg")) and not f.get("room") and kind != "door"
             if x < 0 or y < 0 or x + w > W or y + d > D:
                 raise GameError("That doesn't fit in the room.")
+            hk = round((lv * HOUSE_WALL_H + ((h or 0) if f.get("slab") else (e or 0))) * 20)
             x0, y0 = round(x * HOUSE_SNAP), round(y * HOUSE_SNAP)
             spots = [(x0 + i, y0 + j) for i in range(round(w * HOUSE_SNAP)) for j in range(round(d * HOUSE_SNAP))]
             cells = {(kind, a, b) for a, b in spots}
             if kind == "floor":
                 # chairs tuck in under tables and desks (the same rules as the house editor)
                 layers, check = (("chair",), ("chair", "solid")) if f.get("tuck") else (("floor",), ("floor",)) if f.get("desk") else (("floor", "solid"), ("floor", "chair"))
+                # (columns are set into walls: walls run through them, but they keep clear of furniture and each other)
+                if f["id"].startswith("col_"):
+                    layers, check = ("col",), ("col", "fur")
+                elif not f.get("room"):
+                    layers, check = layers + ("fur",), check + ("col",)
                 cells = {(l, a, b) for l in layers for a, b in spots}
-                if {(l, a, b) for l in check for a, b in spots} & taken:
+                if {(hk, l, a, b) for l in check for a, b in spots} & taken:
                     raise GameError("Things can't overlap.")
-            if f.get("drag") and not f.get("wallH"):  # (doors and wall decorations go on full-height walls)
-                wall_cells |= {(c[1], c[2]) for c in cells}
-                drawn.append((r % 2, x if r % 2 == 0 else y, length, y if r % 2 == 0 else x))
+            if f.get("drag") and not f.get("wallH") and (ht is None or ht >= 2.4):  # (doors and wall decorations go on walls tall enough for them)
+                wall_cells |= {(hk, c[1], c[2]) for c in cells}
+                drawn.append((hk, r % 2, x if r % 2 == 0 else y, length, y if r % 2 == 0 else x))
             if kind == "door":
-                door_cells.append((f["name"], {(c[1], c[2]) for c in cells}))
+                door_cells.append((f["name"], {(hk, c[1], c[2]) for c in cells}))
+        cells = {(hk, *c) for c in cells}  # (things at different heights never clash)
         if kind != "floor" and cells & taken:
             raise GameError("Things can't overlap.")
         taken |= cells
-        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
-                            **({"c": it["c"]} if can_recolor(f) and it.get("c") in CATALOG["clothColors"] else {}),
+        clean_items.append({"id": f["id"], "x": x, "y": y, "r": r, **({"h": h} if h is not None else {}), **({"l": length} if f.get("drag") and kind in ("floor", "ceiling") else {}), **({"l": length, "m": depth, **({"st": it["st"]} if it.get("st") in (1, 2) else {}), **({"f": it["f"]} if it.get("f") in FLOORS and owns_deco(p, it["f"]) else {}), **({"sc": it["sc"].lower()} if isinstance(it.get("sc"), str) and HEX_RE.match(it["sc"]) else {})} if f.get("slab") else {}), **({"lv": lv} if lv else {}), **({"e": e} if e is not None else {}), **({"mf": 1} if f.get("stairs") and it.get("mf") else {}), **({"nt": 1} if f["id"].startswith("col_") and it.get("nt") else {}), **({"ht": ht} if kind != "wall" and (f.get("drag") or f["id"].startswith("col_")) and ht is not None and ht != HOUSE_WALL_H else {}), **({"iw": 1} if iw else {}), **({"dg": 1} if kind != "wall" and dg else {}),
+                            **({"c": it["c"].lower()} if can_recolor(f) and isinstance(it.get("c"), str) and HEX_RE.match(it["c"]) else {}),  # (any colour)
                             **({"t": clean_board(it["t"])} if f.get("text") and isinstance(it.get("t"), str) and it["t"].strip() else {}),
                             **({"cp": clean_parts(it["cp"])} if can_recolor(f) and isinstance(it.get("cp"), dict) and clean_parts(it["cp"]) else {}),
                             **({"lk": 1} if kind == "door" and it.get("lk") else {})})  # (lk: a locked door, only the owner and their builders get through)
     for name, cells in door_cells:
         if not cells <= wall_cells:
             raise GameError(f"The {name} has to go in a wall.")
-    for name, axis, face, start, w in hanging:
-        if not any(a == axis and face in (perp, perp + 0.25) and ws <= start and start + w <= ws + l for a, ws, l, perp in drawn):
+    for name, hl, axis, face, start, w in hanging:
+        if not any(wl == hl and a == axis and face in (perp, perp + 0.25) and ws <= start and start + w <= ws + l for wl, a, ws, l, perp in drawn):
             raise GameError(f"The {name} has to hang on a wall.")
     # rooms with their own floor: a floor you own and a spot in the room (it fills out to the walls)
     areas = data.get("areas") or []
-    if not isinstance(areas, list) or len(areas) > 24:
+    if not isinstance(areas, list) or len(areas) > 100:
         raise GameError("That's too many painted rooms.")
     def painted(spots, kinds, what):
         """Rooms painted with their own floor / ceiling: one you own, and a spot in the room (it fills out to the walls)."""
-        if not isinstance(spots, list) or len(spots) > 24:
+        if not isinstance(spots, list) or len(spots) > 100:
             raise GameError("That's too many painted rooms.")
         out = []
         for a in spots:
@@ -1004,13 +1052,19 @@ def clean_house(p, data):
             ax, ay = snap_q(a.get("x", -1)), snap_q(a.get("y", -1))
             if not (0 <= ax < W and 0 <= ay < D):
                 raise GameError("That's outside the house.")
-            out.append({"f": fid, "x": ax, "y": ay})
+            alv = a.get("lv", 0) if a.get("lv", 0) in range(HOUSE_STOREYS) else 0
+            try:
+                ae = snap_h(a.get("e", 0) or 0)
+            except (TypeError, ValueError):
+                ae = 0
+            ae = ae if 0 < ae <= HOUSE_TOP else 0
+            out.append({"f": fid, "x": ax, "y": ay, **({"lv": alv} if alv else {}), **({"e": ae} if ae else {})})
         return out
     clean_areas = painted(areas, FLOORS, "floor")
     clean_careas = painted(data.get("careas") or [], CEILINGS, "ceiling")
     # single walls with their own wallpaper: which face -> which wallpaper
     wallp = data.get("wallp") or {}
-    if not isinstance(wallp, dict) or len(wallp) > 400:
+    if not isinstance(wallp, dict) or len(wallp) > 3000:
         raise GameError("That's too many painted walls.")
     clean_wallp = {}
     for k, v in wallp.items():
@@ -1020,11 +1074,12 @@ def clean_house(p, data):
         if not isinstance(k, str) or len(k) > 40 or v not in WALLS or not owns_deco(p, v):
             raise GameError("You don't own that wallpaper yet.")
         clean_wallp[k] = v
-    trim = data.get("trim") if data.get("trim") in TRIM_COLORS or data.get("trim") == "none" else "#f4f0ff"  # ("none": no trim at all)
+    is_trim = lambda v: v == "none" or (isinstance(v, str) and HEX_RE.match(v))  # (any colour, or "none": no trim at all)
+    trim = data.get("trim") if is_trim(data.get("trim")) else "#f4f0ff"
     # single walls with a trim colour of their own (per room)
     trimp = data.get("trimp") or {}
-    clean_trimp = {k: v for k, v in trimp.items() if isinstance(k, str) and len(k) <= 40 and (v in TRIM_COLORS or v == "none")} if isinstance(trimp, dict) else {}
-    if len(clean_trimp) > 400:
+    clean_trimp = {k: v for k, v in trimp.items() if isinstance(k, str) and len(k) <= 40 and is_trim(v)} if isinstance(trimp, dict) else {}
+    if len(clean_trimp) > 3000:
         raise GameError("That's too many wall trims.")
     return {"floor": floor, "wall": wall, "ceiling": ceiling, "door": door, "size": [W, D], "items": clean_items,
             "areas": clean_areas, "careas": clean_careas, "wallp": clean_wallp, "trim": trim, "trimp": clean_trimp,
@@ -1039,11 +1094,11 @@ GROUND_MATS = {g["id"]: g for g in CATALOG["groundMats"]}
 EXT_TRIMS = {t["id"] for t in CATALOG["extTrims"]}
 YARD_ITEMS = {y["id"]: y for y in CATALOG["yardItems"]}
 PLOT = CATALOG["plot"]  # every house stands on a plot this big (tiles), its front wall `front` tiles from the street
-MAX_GROUND, MAX_YARD = 48, 80
+MAX_GROUND, MAX_YARD = 800, 1500  # (room for a big garden: paths everywhere, fences all the way round)
 
 
-EXT_FACE_RE = re.compile(r"^ext:[a-z_]+:#[0-9a-fA-F]{6}$")
-MAX_ROOFS = 16
+EXT_FACE_RE = re.compile(r"^ext:[a-z_]+:#[0-9a-fA-F]{6}(:#[0-9a-fA-F]{6})?$")  # (the last: a two-colour finish's wood)
+MAX_ROOFS = 120
 ROOF_PITCHES = (0.6, 1, 1.4)  # a piece of roof can be made shallower or steeper
 
 
@@ -1071,7 +1126,10 @@ def clean_ext(data):
 
     wall = data.get("wall") if isinstance(data.get("wall"), dict) else {}
     m = wall.get("m") if wall.get("m") in EXT_WALLS else base["wall"]["m"]
-    out = {"wall": {"m": m, "c": colour(wall.get("c"), EXT_WALLS[m]["c"])}, "roofs": [], "ground": [], "yard": []}
+    out = {"wall": {"m": m, "c": colour(wall.get("c"), EXT_WALLS[m]["c"]),
+                    **({"a": colour(wall.get("a"), EXT_WALLS[m]["a"])} if EXT_WALLS[m].get("a") else {}),  # (the wood, on a two-colour finish)
+                    **({"in": 1} if wall.get("in") else {})},  # (the same finish on the inside of the walls too)
+           "roofs": [], "ground": [], "yard": []}
     roofs, ground, yard = data.get("roofs") or [], data.get("ground") or [], data.get("yard") or []
     if not isinstance(roofs, list) or len(roofs) > MAX_ROOFS:
         raise GameError(f"A house can have up to {MAX_ROOFS} pieces of roof.")
@@ -1085,7 +1143,12 @@ def clean_ext(data):
             out["roofs"].append({"s": r.get("s") if r.get("s") in ROOF_SHAPES else "gable", "m": r.get("m") if r.get("m") in ROOF_MATS else "shingle",
                                  "c": colour(r.get("c"), "#b3403a"), "ch": 1 if r.get("ch") else 0,
                                  "x": grid(r["x"], -0.5, PLOT["w"] + 0.5 - w, 4), "y": grid(r["y"], -0.5, PLOT["d"] + 0.5 - d, 4), "w": w, "d": d,
-                                 "r": int(r.get("r", 0)) % 4, "p": r.get("p") if r.get("p") in ROOF_PITCHES else 1})
+                                 "r": int(r.get("r", 0)) % 4, "p": r.get("p") if r.get("p") in ROOF_PITCHES else 1,
+                                 **({"lv": r["lv"]} if r.get("lv") in range(1, HOUSE_STOREYS) else {}),  # (on top of an upper storey)
+                                 **({"e": snap_h(r["e"])} if isinstance(r.get("e"), (int, float)) and 0 < r["e"] <= HOUSE_TOP else {}),
+                                 # (the wall under it, the gable ends, in a finish of its own)
+                                 **({"gw": {"m": r["gw"]["m"], "c": colour(r["gw"].get("c"), EXT_WALLS[r["gw"]["m"]]["c"]), **({"a": colour(r["gw"].get("a"), "#3a2618")} if r["gw"].get("a") else {})}}
+                                    if isinstance(r.get("gw"), dict) and r["gw"].get("m") in EXT_WALLS else {})})  # (on top of walls standing that high)
         for g in ground:
             if g.get("m") not in GROUND_MATS:
                 raise GameError("That isn't a path material.")
@@ -1238,6 +1301,7 @@ class Room:
     """Live state for one FriendZone. The persisted part lives in `zone`."""
 
     def __init__(self, zone):
+        self.house_doors = {}  # the doors standing open in the houses on the street: "owner:item" -> which way they swung
         self.zone = zone
         self.clients = {}  # player key -> Client
         self.chat = []
@@ -1740,16 +1804,17 @@ class Game:
             raise GameError("That outfit didn't come through.")
         new = {}
         for field, palette in LOOK_COLORS.items():
-            if look.get(field) not in CATALOG[palette]:
+            v = look.get(field)
+            if v not in CATALOG[palette] and not (isinstance(v, str) and HEX_RE.match(v)):  # (a preset, or any colour from the wheel)
                 raise GameError("Unknown color.")
-            new[field] = look[field]
+            new[field] = v.lower()
         for field, options in LOOK_CHOICES.items():
             if look.get(field) not in {o["id"] for o in CATALOG[options]}:
                 raise GameError("Unknown body option.")
             new[field] = look[field]
         for field in LOOK_TINTS:
             col = look.get(field) or ""
-            if col and col not in CATALOG["clothColors"]:
+            if col and not (isinstance(col, str) and HEX_RE.match(col)):  # (any colour from the colour wheel)
                 raise GameError("Unknown color.")
             if col:
                 new[field] = col
@@ -1899,8 +1964,9 @@ class Game:
         elif scene == "beach":
             self.beach_join(c)
         if is_area(scene):
-            c.ws.send({"t": "area", "others": [{"k": o.key, "x": o.ax, "z": o.az, "h": o.ah, "seat": o.aseat, "pose": o.apose} for o in room.clients.values()
-                                                if o.scene == scene and o is not c and o.ax is not None]})
+            c.ws.send({"t": "area", "others": [{"k": o.key, "x": o.ax, "z": o.az, "h": o.ah, "y": getattr(o, "ay", 0) or 0, "seat": o.aseat, "pose": o.apose} for o in room.clients.values()
+                                                if o.scene == scene and o is not c and o.ax is not None],
+                         **({"doors": [[*key.split(":"), side] for key, side in room.house_doors.items()]} if scene == "hood" else {})})  # (the doors that are open)
         elif scene == "race":
             c.ws.send({"t": "race", "race": self.race_view(room)})
         self.push_player(room, c.key)
@@ -1916,7 +1982,8 @@ class Game:
             return
         far = 2600 if c.scene == "hood" else 260  # (the neighbourhood street is long)
         c.ax, c.az, c.ah = num(m["x"], -far, far), num(m["z"], -far, far), num(m.get("h", 0), -7, 7)
-        c.room.broadcast({"t": "area_pos", "k": c.key, "x": round(c.ax, 2), "z": round(c.az, 2), "h": round(c.ah, 2)},
+        c.ay = num(m.get("y", 0), 0, 40) if c.scene == "hood" else 0  # (how high up: upstairs in a house)
+        c.room.broadcast({"t": "area_pos", "k": c.key, "x": round(c.ax, 2), "z": round(c.az, 2), "h": round(c.ah, 2), **({"y": round(c.ay, 2)} if c.ay else {})},
                          scene=c.scene, exclude=c)
 
     def on_area_pose(self, c, m):
@@ -2164,6 +2231,27 @@ class Game:
             return
         c.room.broadcast({"t": "boat", "id": bid, **b}, scene="beach", exclude=c)
 
+    def on_house_door(self, c, m):
+        """Opening or shutting a door in a house (by hand: E): everyone on the street sees it. A locked door
+        stays shut for everybody until it's unlocked."""
+        if c.scene != "hood" or not c.ready("hdoor", 0.12):
+            return
+        k, i = str(m.get("k", "")).lower(), m.get("i")
+        p = c.room.zone["players"].get(k)
+        if not p or not isinstance(i, int) or not 0 <= i < HOUSE_MAX_ITEMS:
+            return
+        items = (p.get("house") or {}).get("items") or []
+        is_open = bool(m.get("open"))
+        if is_open and (i >= len(items) or items[i].get("lk")):
+            return
+        side = -1 if m.get("s") == -1 else 1
+        doors = c.room.house_doors
+        if is_open:
+            doors[f"{k}:{i}"] = side
+        else:
+            doors.pop(f"{k}:{i}", None)
+        c.room.broadcast({"t": "house_door", "k": k, "i": i, "open": 1 if is_open else 0, "s": side}, scene="hood", exclude=c)
+
     def on_area_sit(self, c, m):
         """Sitting on a seat in a house (a sofa has two); one person per seat. seat: [item, seat, owner] or None."""
         if c.scene != "hood":
@@ -2364,7 +2452,7 @@ class Game:
             inv = c.room.zone["players"][k]["furni"]
             for i in ids:
                 # (an admin gift can go past the usual limit, so you can hand out lots, or unlimited)
-                limit = (FURN[i].get("max", 10) if i in FURN else 1) if fid == "all" else HOUSE_INFINITE
+                limit = (FURN[i].get("max", HOUSE_BUY_MAX) if i in FURN else 1) if fid == "all" else HOUSE_INFINITE
                 inv[i] = min(limit, inv.get(i, 0) + count) if count < HOUSE_INFINITE else HOUSE_INFINITE
         self._adm_touch(c, keys)
         amount = "unlimited" if count >= HOUSE_INFINITE else f"{count}×"
@@ -2901,7 +2989,7 @@ class Game:
         if not c.ready("race_vehicle", 0.2):
             return
         kind, color, accent = m.get("type"), m.get("color"), m.get("accent")
-        if kind not in VEHICLE_TYPES or color not in CATALOG["clothColors"] or accent not in CATALOG["clothColors"]:
+        if kind not in VEHICLE_TYPES or not all(isinstance(v, str) and HEX_RE.match(v) for v in (color, accent)):
             raise GameError("That isn't something the garage can build.")
         c.player["vehicle"] = {"type": kind, "color": color, "accent": accent}
         self.store.mark()
@@ -4759,6 +4847,8 @@ class Game:
             c.ws.send({"t": "house", "k": key, "house": house_view(p), "sync": 1})
             raise e if isinstance(e, GameError) else GameError("That couldn't be saved, so it's been undone.")
         self.store.mark()
+        for d in [d for d in c.room.house_doors if d.startswith(f"{key}:")]:  # (the house has changed: its doors are all shut again)
+            del c.room.house_doors[d]
         c.room.broadcast({"t": "house", "k": key, "house": house_view(p), "by": c.key})
         self.push_player(c.room, key)
 
@@ -4854,7 +4944,7 @@ class Game:
         if not item or "price" not in item:
             raise GameError("That isn't for sale.")
         have = p["furni"].get(item_id, 0)
-        limit = 1 if item_id not in FURN else item.get("max", 10)
+        limit = 1 if item_id not in FURN else item.get("max", HOUSE_BUY_MAX)
         if have >= limit:
             raise GameError("You already have that." if limit == 1 else f"You can own up to {limit} of those.")
         if p["coins"] < item["price"]:
@@ -4870,7 +4960,7 @@ class Game:
         if not item or "price" not in item:
             raise GameError("That isn't for sale.")
         have = owner["furni"].get(item_id, 0)
-        limit = 1 if item_id not in FURN else item.get("max", 10)
+        limit = 1 if item_id not in FURN else item.get("max", HOUSE_BUY_MAX)
         if have >= limit:
             raise GameError("They already have that." if limit == 1 else f"They can have up to {limit} of those.")
         if c.player["coins"] < item["price"]:

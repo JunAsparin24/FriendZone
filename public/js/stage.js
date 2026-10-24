@@ -536,7 +536,8 @@ class Stage {
    * Let the player walk around a room with WASD/click-to-walk, with others in the same scene
    * synced through area_move. solids: [{ x, z, w, d }] boxes (centre + size) or [{ x, z, r }] circles.
    */
-  walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {}, ceiling = 4.6, speedOf = null, frozen = null, blockedAt = null, wire = null }) {
+  walker({ spawn = { x: 0, z: 0 }, bounds, solids = [], speed = 5, orbit = {}, ceiling = 4.6, speedOf = null, frozen = null, blockedAt = null, wire = null, levelOf = null, syncY = false }) {
+    // (syncY: how high up you are goes over the network too, and everyone else's comes back)
     // (wire: { out, in } turn positions into the ones sent over the network and back, for a place whose
     // own coordinates move about, like the neighbourhood, which is always centred on the house you're at)
     const wOut = (x, z, h) => (wire ? wire.out(x, z, h) : { x, z, h }), wIn = (x, z, h) => (wire ? wire.in(x, z, h) : { x, z, h });
@@ -545,12 +546,15 @@ class Stage {
     const me = this.person(S.me);
     Object.assign(me, { x: spawn.x, z: spawn.z, heading: Math.PI });
     const o = this.useOrbit({ target: new THREE.Vector3(), yaw: 0, pitch: 0.62, dist: 11, minDist: 0.3, maxDist: 20, minPitch: -0.45, fpZoom: true, ...orbit });
-    let target = null, sent = { at: 0, x: 0, z: 0 };
+    let target = null, sent = { at: 0, x: 0, z: 0, y: 0 };
     const R = 0.4;
     const blocked = (x, z) => {
       if (bounds && (x < bounds.minX + R || x > bounds.maxX - R || z < bounds.minZ + R || z > bounds.maxZ - R)) return true;
       if (blockedAt?.(x, z)) return true;
-      return solids.some((s) => (s.r != null ? Math.hypot(x - s.x, z - s.z) < s.r + R
+      // (a solid with a height span, y0..y1, is only in the way of someone whose feet are in it: walls up on
+      // a floor don't stop people walking about underneath)
+      const py = me.y ?? 0;
+      return solids.some((s) => !s.off && (s.y0 == null || (py > s.y0 - 0.6 && py < s.y1 - 0.3)) && (s.r != null ? Math.hypot(x - s.x, z - s.z) < s.r + R
         : Math.abs(x - s.x) < s.w / 2 + R && Math.abs(z - s.z) < s.d / 2 + R));
     };
     this.walkTo = (it) => { target = { x: it.x, z: it.z, stopAt: it.r * 0.7, use: it.use }; };
@@ -565,12 +569,13 @@ class Stage {
     const offs = [
       net.on('area', (m) => {
         for (const k of [...this.people.keys()]) if (k !== S.me) this.removePerson(k);
-        for (const q of m.others) { const p = this.person(q.k), at = wIn(q.x ?? 0, q.z ?? 0, q.h ?? 0); Object.assign(p, { x: at.x, z: at.z, tx: at.x, tz: at.z, heading: at.h }); }
+        for (const q of m.others) { const p = this.person(q.k), at = wIn(q.x ?? 0, q.z ?? 0, q.h ?? 0); Object.assign(p, { x: at.x, z: at.z, tx: at.x, tz: at.z, heading: at.h }, syncY ? { y: q.y ?? 0, ty: q.y ?? 0 } : {}); }
       }),
       net.on('area_pos', (m) => {
         const p = this.person(m.k), at = wIn(m.x, m.z, m.h);
         if (p.tx == null) { p.x = at.x; p.z = at.z; }
         p.tx = at.x; p.tz = at.z; p.heading = at.h;
+        if (syncY) p.ty = m.y ?? 0;
       }),
       net.on('area_del', (m) => this.removePerson(m.k)),
     ];
@@ -613,10 +618,10 @@ class Stage {
         else target = null;
       }
       o.target.set(me.x, 0, me.z);
-      if (now - sent.at > 80 && (me.x !== sent.x || me.z !== sent.z)) {
-        sent = { at: now, x: me.x, z: me.z };
+      if (now - sent.at > 80 && (me.x !== sent.x || me.z !== sent.z || (syncY && Math.abs((me.y ?? 0) - sent.y) > 0.02))) {
+        sent = { at: now, x: me.x, z: me.z, y: me.y ?? 0 };
         const at = wOut(me.x, me.z, me.heading);
-        net.send('area_move', { x: +at.x.toFixed(2), z: +at.z.toFixed(2), h: +at.h.toFixed(2) });
+        net.send('area_move', { x: +at.x.toFixed(2), z: +at.z.toFixed(2), h: +at.h.toFixed(2), ...(syncY && me.y ? { y: +me.y.toFixed(2) } : {}) });
       }
       const lerp = 1 - Math.exp(-dt * 12);
       for (const p of this.people.values()) {
@@ -624,6 +629,7 @@ class Stage {
         const ox = p.tx - p.x, oz = p.tz - p.z;
         p.x += ox * lerp;
         p.z += oz * lerp;
+        if (syncY && !p.sitting && p.ty != null) p.y += (p.ty - p.y) * lerp; // (up and down stairs)
         p.moving = Math.hypot(ox, oz) > 0.05;
       }
     });

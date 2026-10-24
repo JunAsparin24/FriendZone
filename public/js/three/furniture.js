@@ -2061,7 +2061,19 @@ Object.assign(FURNITURE, {
   // plain walls are dragged out to any length (len, in tiles). openings: [from, to] gaps along the wall
   // (in its own frame, -len/2..len/2) where a door has been put in it; caps: [left end, right end]
   // papered (an open end), or left bare (it butts up against another wall)
-  room_wall(g, A, { len = 2, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps }); },
+  room_wall(g, A, { len = 2, openings = [], caps = [true, true], top = 0 } = {}) { roomWall(g, len, { openings, caps, top: top || ROOM_H, rail: false }); }, // (top: a wall built taller or shorter)
+  // a floor you lay yourself (the house draws the real thing at whatever size it's laid: this is its picture)
+  floor_slab(g) {
+    add(g, box(1, 0.14, 1), toon('#c99a62'), { p: [0, -0.05, 0] });
+    for (const x of [-0.25, 0.25]) add(g, box(0.02, 0.005, 1), toon('#a87b48'), { p: [x, 0.023, 0], outline: false });
+  },
+  // two wooden steps up onto a raised floor (half a tile high: a floor raised two notches)
+  house_steps(g, A, { rise = 0.5 } = {}) { flight(g, { w: 1.5, d: 1, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') }); },
+  // a straight flight of stairs up to the next storey: in from the front, climbing towards the back
+  house_stairs(g, A, { rise = 3.2 } = {}) {
+    flight(g, { w: 1.5, d: 4, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') });
+    handrail(g, { x: 0.7, d: 4, rise, mat: toon('#5a3a26') });
+  },
   room_wall_short(g, A, { len = 1, openings = [], caps = [true, true] } = {}) { roomWall(g, len, { openings, caps }); },
   // doors go into a wall like a picture goes on one: the wall opens up around them
   wdoor_arch(g, A, { len = 1.25 } = {}) { doorFrame(g, len); },
@@ -2403,12 +2415,15 @@ function archBand(r, rise, inner, outer, depth) {
 }
 /** A papered face: the wallpaper repeats every 2 tiles across, and is pinned to the floor going up
  *  (y0: how high its bottom edge is), so it lines up with the room's own walls. */
-function papered(w, h, y0 = 0, x0 = 0) {
-  return geo(`paper${w},${h},${y0},${x0}`, () => {
+function papered(w, h, y0 = 0, x0 = 0, fit = 0) {
+  return geo(`paper${w},${h},${y0},${x0},${fit}`, () => {
     const pg = new THREE.PlaneGeometry(w, h);
     const uv = pg.attributes.uv;
-    // (x0: how far along the wall this piece starts, so the pattern carries on across doors and windows)
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, (x0 + uv.getX(i) * w) / 2, (y0 + uv.getY(i) * h) / 2);
+    // (x0: how far along the wall this piece starts, so the pattern carries on across doors and windows.
+    // fit: the whole wall's length: the pattern is stretched a touch so a whole number of repeats fits it,
+    // and every wall starts and ends at the same point of the pattern, whatever its length)
+    const k = fit ? Math.max(1, Math.round(fit / 2)) / fit : 1 / 2;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (x0 + uv.getX(i) * w) * k, (y0 + uv.getY(i) * h) / 2);
     return pg;
   });
 }
@@ -2419,7 +2434,7 @@ function papered(w, h, y0 = 0, x0 = 0) {
 /** The house's trim colour (baseboards and the tops of half walls): shared by every wall, so a house
  *  recolours it all at once. */
 export const TRIM_MAT = toon('#f4f0ff').clone();
-function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = ROOM_H } = {}) {
+function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = ROOM_H, rail = true } = {}) {
   const core = toon('#e8d6b8'), trim = TRIM_MAT, paper = toon('#fff1d6', { side: THREE.DoubleSide });
   // (wallpaper doesn't take shadows: the wall's own core, a hair behind it, would darken it, and the
   // house's own walls don't either, so the two always match)
@@ -2430,7 +2445,7 @@ function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = 
     if (pw < 0.01) return;
     add(g, box(pw, ph, ROOM_T - 0.004), core, { p: [cx, cy, 0], outline: false });
     for (const s of [-1, 1]) {
-      paperAt(papered(pw, ph, y0, s > 0 ? x0 + w / 2 : w / 2 - x1), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI, s > 0 ? 0 : 2);
+      paperAt(papered(pw, ph, y0, s > 0 ? x0 + w / 2 : w / 2 - x1, w), [cx, cy, s * (ROOM_T / 2 - 0.001)], s > 0 ? 0 : Math.PI, s > 0 ? 0 : 2);
       if (y0 === 0) add(g, box(pw, 0.16, 0.05), trim, { p: [cx, 0.08, s * (ROOM_T / 2 + 0.02)], outline: false });
     }
   };
@@ -2449,7 +2464,7 @@ function roomWall(g, w, { openings = [], caps = [true, true], bottom = 0, top = 
   }
   // a half wall's open edge gets a cap in the trim colour (a top rail with a little lip under it)
   for (const [y, dir] of [[top, 1], [bottom, -1]]) {
-    if (dir > 0 ? top >= ROOM_H : bottom <= 0) continue;
+    if (dir > 0 ? top >= ROOM_H || !rail : bottom <= 0) continue; // (a wall built to its own height is just a plain top)
     add(g, box(w + 0.02, 0.05, ROOM_T + 0.07), trim, { p: [0, y + dir * 0.012, 0], outline: false });
     add(g, box(w, 0.03, ROOM_T + 0.025), trim, { p: [0, y - dir * 0.025, 0], outline: false });
   }
@@ -2613,6 +2628,323 @@ function gojoTex(back) {
 }
 
 // hanging things that make their own strings longer when let down (the rest get a cord to the ceiling)
+// ---- the Japanese set: a low table and floor cushions, a bronze lantern, shoji windows and a screen ----
+Object.assign(FURNITURE, {
+  chabudai(g) {
+    const wood = toon('#8a5a32'), dark = toon('#5a3a22');
+    add(g, cyl(0.46, 0.46, 0.05, 32), wood, { p: [0, 0.33, 0] });
+    add(g, cyl(0.42, 0.42, 0.04, 32), dark, { p: [0, 0.29, 0], outline: false });
+    for (const [x, z] of [[0.27, 0.27], [-0.27, 0.27], [0.27, -0.27], [-0.27, -0.27]]) add(g, box(0.06, 0.28, 0.06), dark, { p: [x, 0.14, z] });
+  },
+  zabuton(g) {
+    add(g, box(0.62, 0.09, 0.62), toon('#c2185b'), { p: [0, 0.055, 0] });
+    for (const [x, z] of [[0.31, 0.31], [-0.31, 0.31], [0.31, -0.31], [-0.31, -0.31]]) add(g, sph(0.035, 8, 6), toon('#f4d27a'), { p: [x, 0.06, z], outline: false });
+    add(g, sph(0.03, 8, 6), toon('#f4d27a'), { p: [0, 0.1, 0], s: [1, 0.5, 1], outline: false });
+  },
+  lantern_hanging(g) {
+    // a bronze bell lantern on a chain, glowing warm through its paper sides
+    const metal = toon('#4a3f35');
+    add(g, cyl(0.008, 0.008, 0.6, 4), metal, { p: [0, -0.3, 0], outline: false });
+    add(g, cone(0.27, 0.16, 16), metal, { p: [0, -0.68, 0] });
+    const glow = toon('#fff1c9').clone();
+    glow.emissive = new THREE.Color('#ffc66b');
+    glow.emissiveIntensity = 0.7;
+    add(g, cyl(0.15, 0.17, 0.26, 16), glow, { p: [0, -0.89, 0] });
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; add(g, box(0.02, 0.27, 0.02), metal, { p: [Math.sin(a) * 0.16, -0.89, Math.cos(a) * 0.16], outline: false }); }
+    add(g, cyl(0.19, 0.19, 0.03, 16), metal, { p: [0, -1.03, 0] });
+    const light = new THREE.PointLight(0xffc77a, 1.2, 5, 1.6);
+    light.position.y = -0.9;
+    g.add(light);
+    let on = true;
+    return { use: () => { on = !on; light.visible = on; glow.emissiveIntensity = on ? 0.7 : 0; } };
+  },
+  window_shoji(g) {
+    // a dark wooden lattice over paper that glows softly with the light behind it
+    windowFrame(g, 1.5, 1.0, { frame: '#4a3020', bars: [5, 3], sill: false });
+    const paper = new THREE.MeshToonMaterial({ color: '#fbf5e6', emissive: '#3a3020', transparent: true, opacity: 0.86, side: THREE.DoubleSide });
+    add(g, plane(1.5, 1.0), paper, { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+  },
+  window_koshi(g) {
+    // koshi-mado: a dark frame closed by close-set upright slats (you see out between them), paper behind
+    windowFrame(g, 1.5, 1.0, { frame: '#3a2618', bars: [0, 0], sill: false });
+    const wood = toon('#4a3020');
+    for (const z of [0.04, -ROOM_T - 0.04]) for (let i = 0; i < 13; i++) add(g, box(0.035, 1.0, 0.04), wood, { p: [-0.69 + i * 0.115, 0, z], outline: false });
+    add(g, plane(1.5, 1.0), shojiPaper(), { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+  },
+  window_shoji_tall(g) {
+    // a tall narrow shoji: fine squares of lattice over paper
+    windowFrame(g, 0.8, 1.7, { frame: '#4a3020', bars: [2, 6], sill: false });
+    add(g, plane(0.8, 1.7), shojiPaper(), { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+  },
+  window_ranma(g) {
+    // ranma: a long low transom up near the ceiling, open slats letting the air through between rooms
+    windowFrame(g, 1.7, 0.45, { frame: '#4a3020', bars: [0, 0], sill: false });
+    const wood = toon('#5a3a22');
+    for (const z of [0.03, -ROOM_T - 0.03]) {
+      for (let i = 0; i < 15; i++) add(g, box(0.03, 0.45, 0.03), wood, { p: [-0.79 + i * 0.113, 0, z], outline: false });
+      add(g, box(1.7, 0.03, 0.035), wood, { p: [0, 0, z], outline: false });
+    }
+  },
+  window_marumado(g) {
+    // marumado: a round window, papered, with a fine lattice inside the circle
+    windowFrame(g, 1.1, 1.1, { round: true, frame: '#3a2618' });
+    const wood = toon('#4a3020');
+    for (const z of [0.045, -ROOM_T - 0.045]) {
+      for (const x of [-0.27, 0, 0.27]) add(g, box(0.03, Math.sqrt(0.3 - x * x) * 2 * 0.98, 0.03), wood, { p: [x, 0, z], outline: false });
+      for (const y of [-0.27, 0, 0.27]) add(g, box(Math.sqrt(0.3 - y * y) * 2 * 0.98, 0.03, 0.03), wood, { p: [0, y, z], outline: false });
+    }
+    add(g, geo('maruPaper', () => new THREE.CircleGeometry(0.55, 40)), shojiPaper(), { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+  },
+  window_hanging(g) {
+    // a hinged shutter window: the lower half lattice and paper, a wooden top panel propped half open
+    windowFrame(g, 1.5, 1.0, { frame: '#3a2618', bars: [3, 1], sill: true });
+    add(g, plane(1.5, 1.0), shojiPaper(), { p: [0, 0, -ROOM_T / 2 + 0.012], outline: false, cast: false });
+    add(g, box(1.56, 0.5, 0.05), toon('#5a3a22'), { p: [0, 0.48, 0.24], r: [-0.9, 0, 0] });
+    for (const x of [-0.65, 0.65]) add(g, cyl(0.015, 0.015, 0.36, 6), toon('#3a2618'), { p: [x, 0.33, 0.18], r: [0.6, 0, 0], outline: false });
+  },
+  screen_shoji(g) {
+    // a folding screen: three paper panels in dark frames, standing in a zigzag
+    const wood = toon('#4a3020'), paper = toon('#fbf5e6');
+    for (let i = 0; i < 3; i++) {
+      const p = new THREE.Group();
+      p.position.set((i - 1) * 0.62, 0, 0);
+      p.rotation.y = i % 2 ? -0.35 : 0.35;
+      g.add(p);
+      add(p, box(0.62, 1.66, 0.02), paper, { p: [0, 0.91, 0] });
+      for (const y of [0.06, 1.76]) add(p, box(0.68, 0.05, 0.05), wood, { p: [0, y, 0] });
+      for (const x of [-0.32, 0.32]) add(p, box(0.05, 1.74, 0.05), wood, { p: [x, 0.9, 0] });
+      for (const x of [-0.105, 0.105]) add(p, box(0.02, 1.66, 0.03), wood, { p: [x, 0.91, 0], outline: false });
+      for (const y of [0.5, 0.9, 1.3]) add(p, box(0.62, 0.02, 0.03), wood, { p: [0, y, 0], outline: false });
+    }
+  },
+});
+
+// ---- stairs, steps and columns: building pieces ----
+/** How many steps a flight that climbs `rise` gets: about a fifth of a tile each. */
+const steps = (rise) => Math.max(1, Math.round(rise / 0.2));
+/** A flight of n steps rising `rise` over the depth d: in at the front (+z), climbing towards the back.
+ *  open: just the treads on two stringers (no risers), the modern floating kind. */
+function flight(g, { w, d, rise, n, body, tread, open = false, stringer = null }) {
+  const run = d / n, h = rise / n;
+  for (let i = 0; i < n; i++) {
+    const z = d / 2 - (i + 0.5) * run, top = (i + 1) * h;
+    if (open) add(g, box(w, 0.07, run * 0.9), tread, { p: [0, top - 0.035, z] });
+    else {
+      add(g, box(w, top, run), body, { p: [0, top / 2, z] });
+      if (tread) add(g, box(w + 0.02, 0.035, run + 0.02), tread, { p: [0, top, z], outline: false });
+    }
+  }
+  if (stringer) for (const x of [-w / 2 + 0.05, w / 2 - 0.05]) add(g, box(0.06, 0.16, Math.hypot(rise, d)), stringer, { p: [x, rise / 2 - 0.06, 0], r: [Math.atan2(rise, d), 0, 0] });
+}
+/** A handrail up one side of a flight (x): posts, and a rail along the slope. */
+function handrail(g, { x, d, rise, mat, posts = 5, glass = false }) {
+  for (let i = 0; i < posts; i++) {
+    const t = (i + 0.5) / posts, z = d / 2 - t * d, y = t * rise;
+    add(g, cyl(0.025, 0.025, 0.9, 6), mat, { p: [x, y + 0.45, z], outline: false });
+  }
+  const len = Math.hypot(rise, d), ang = Math.atan2(rise, d);
+  if (glass) add(g, box(0.02, 0.8, len), new THREE.MeshStandardMaterial({ color: '#cfeaff', transparent: true, opacity: 0.35, roughness: 0.05 }), { p: [x, rise / 2 + 0.45, 0], r: [ang, 0, 0], outline: false });
+  add(g, box(0.05, 0.05, len), mat, { p: [x, rise / 2 + 0.9, 0], r: [ang, 0, 0] });
+}
+/** A column a storey tall: a footing, a shaft and (for the classical ones) a capital. */
+function column(g, { shaft, cap = null, foot = null, round = true, r = 0.15, fluted = false, bare = false, H = ROOM_H }) {
+  if (bare) { cap = null; foot = null; } // (trim off: just the shaft, floor to top)
+  if (foot) add(g, box(0.46, 0.12, 0.46), foot, { p: [0, 0.06, 0] });
+  if (round) add(g, cyl(r, r * 1.12, H - (foot ? 0.12 : 0) - (cap ? 0.12 : 0), 20), shaft, { p: [0, (foot ? 0.12 : 0) + (H - (foot ? 0.12 : 0) - (cap ? 0.12 : 0)) / 2, 0] });
+  else add(g, box(r * 1.8, H - (foot ? 0.12 : 0), r * 1.8), shaft, { p: [0, (foot ? 0.12 : 0) + (H - (foot ? 0.12 : 0)) / 2, 0] });
+  if (fluted) for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; add(g, box(0.02, H - 0.4, 0.02), toon('#d9d4c8'), { p: [Math.sin(a) * r * 1.02, H / 2, Math.cos(a) * r * 1.02], outline: false }); }
+  if (cap) add(g, box(0.48, 0.12, 0.48), cap, { p: [0, H - 0.06, 0] });
+}
+Object.assign(FURNITURE, {
+  // ---- staircases (a whole storey up) ----
+  stairs_white(g, A, { rise = 3.2 } = {}) {
+    flight(g, { w: 1.5, d: 4, rise, n: steps(rise), body: toon('#f2f0ec'), tread: toon('#c9a77c') });
+    handrail(g, { x: 0.72, d: 4, rise, mat: toon('#2b2f4a'), glass: true });
+  },
+  stairs_stone(g, A, { rise = 3.2 } = {}) {
+    flight(g, { w: 1.5, d: 4, rise, n: steps(rise), body: toon('#9a968e'), tread: toon('#b5b1a8') });
+  },
+  stairs_open(g, A, { rise = 3.2 } = {}) {
+    // floating: thick dark treads on two black stringers, nothing between them
+    flight(g, { w: 1.5, d: 4, rise, n: steps(rise), tread: toon('#5a3a22'), open: true, stringer: toon('#23252d') });
+    handrail(g, { x: -0.72, d: 4, rise, mat: toon('#23252d'), posts: 4 });
+  },
+  stairs_spiral(g, A, { rise = 3.2 } = {}) {
+    // round and round a centre pole: each tread a wedge further round and a step higher (in at the front)
+    const n = Math.max(4, steps(rise)), sweep = TAU * 0.9, metal = toon('#2b2f4a'), wood = toon('#a0703c');
+    add(g, cyl(0.08, 0.08, rise + 0.3, 12), metal, { p: [0, (rise + 0.3) / 2, 0] });
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * sweep, y = (i + 1) * (rise / n);
+      const t = add(g, box(0.36, 0.06, 0.86), wood, { p: [Math.sin(a) * 0.5, y, Math.cos(a) * 0.5] });
+      t.rotation.y = a;
+      add(g, cyl(0.02, 0.02, 0.85, 6), metal, { p: [Math.sin(a) * 0.9, y + 0.45, Math.cos(a) * 0.9], outline: false });
+    }
+  },
+  // ---- steps (a little way up, onto a raised floor) ----
+  step_stone(g, A, { rise = 0.25 } = {}) {
+    // one big flat stone to step up on, like the ones in front of a Japanese veranda
+    add(g, box(1.4, rise, 0.68), toon('#a8a49a'), { p: [0, rise / 2, 0] });
+    add(g, box(1.3, 0.03, 0.6), toon('#bdb9af'), { p: [0, rise + 0.01, 0], outline: false });
+  },
+  steps_stone(g, A, { rise = 0.5 } = {}) { flight(g, { w: 1.5, d: 1, rise, n: steps(rise), body: toon('#9a968e'), tread: toon('#b5b1a8') }); },
+  steps_wide(g, A, { rise = 0.5 } = {}) { flight(g, { w: 3, d: 1, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') }); },
+  steps_tall(g, A, { rise = 1 } = {}) { flight(g, { w: 1.5, d: 2, rise, n: steps(rise), body: toon('#a0703c'), tread: toon('#c99a62') }); },
+  steps_brick(g, A, { rise = 0.5 } = {}) { flight(g, { w: 1.5, d: 1, rise, n: steps(rise), body: toon('#a5503c'), tread: toon('#d8d2c8') }); },
+  // ---- columns (a storey tall: under a beam, round a porch, holding up a balcony) ----
+  col_wood(g, A, { bare = false, top = 0 } = {}) { column(g, { shaft: toon('#8a5a32'), foot: toon('#8c887f'), round: false, r: 0.19, bare, H: top || ROOM_H }); }, // (a little thicker than a wall, so it stands proud of both faces)
+  col_round(g, A, { bare = false, top = 0 } = {}) {
+    const H = top || ROOM_H;
+    column(g, { shaft: toon('#f4f1ea'), cap: toon('#e8e3d8'), foot: toon('#e8e3d8'), r: 0.18, bare, H });
+    if (!bare) for (const y of [0.16, H - 0.16]) add(g, geo('colRing', () => new THREE.TorusGeometry(0.2, 0.025, 6, 24)), toon('#e8e3d8'), { p: [0, y, 0], r: [Math.PI / 2, 0, 0], outline: false });
+  },
+  col_stone(g, A, { top = 0 } = {}) {
+    const greys = ['#9a968e', '#aaa59c', '#8a867e'], H = top || ROOM_H, n = Math.max(1, Math.round(H / 0.4));
+    for (let i = 0; i < n; i++) add(g, box(0.4 - (i % 2) * 0.03, H / n - 0.02, 0.4 - ((i + 1) % 2) * 0.03), toon(greys[i % 3]), { p: [0, (i + 0.5) * (H / n), 0] });
+  },
+  col_marble(g, A, { bare = false, top = 0 } = {}) { column(g, { shaft: toon('#f6f3ec'), cap: shiny('#d4af37', { metalness: 0.6 }), foot: shiny('#d4af37', { metalness: 0.6 }), fluted: true, r: 0.19, bare, H: top || ROOM_H }); },
+  col_log(g, A, { top = 0 } = {}) {
+    const H = top || ROOM_H;
+    add(g, cyl(0.16, 0.19, H, 9), toon('#6b4a32'), { p: [0, H / 2, 0] });
+    add(g, cyl(0.15, 0.15, 0.02, 9), toon('#d9b98a'), { p: [0, H + 0.005, 0], outline: false });
+  },
+});
+
+// ---- household essentials: laundry, cleaning, small kitchen things, keeping warm and cool ----
+/** A front-loading machine: a white cabinet, a round door with a drum behind it that turns when it's on. */
+function laundryMachine(g, A, { dryer = false } = {}) {
+  const white = toon('#f4f4f2'), grey = toon('#c9ccd2'), dark = toon('#2b2f3a');
+  add(g, box(0.86, 0.9, 0.8), white, { p: [0, 0.45, -0.02] });
+  add(g, box(0.86, 0.14, 0.02), grey, { p: [0, 0.8, 0.385], outline: false });                        // the control panel
+  add(g, cyl(0.045, 0.045, 0.03, 16), toon('#e8eaee'), { p: [0.28, 0.8, 0.4], r: [Math.PI / 2, 0, 0], outline: false }); // the dial
+  for (const x of [-0.3, -0.2]) add(g, box(0.06, 0.025, 0.012), dark, { p: [x, 0.8, 0.4], outline: false });
+  const light = toon('#3a3f4a').clone();
+  add(g, sph(0.018, 8, 6), light, { p: [0.12, 0.8, 0.4], outline: false });
+  add(g, geo('mDoor', () => new THREE.TorusGeometry(0.25, 0.04, 8, 32)), toon('#d9dce2'), { p: [0, 0.4, 0.405] });
+  const drum = new THREE.Group();
+  drum.position.set(0, 0.4, 0.395);
+  g.add(drum);
+  add(drum, geo('mGlass', () => new THREE.CircleGeometry(0.23, 32)), new THREE.MeshToonMaterial({ color: dryer ? '#6a5a4a' : '#5f8fb8', transparent: true, opacity: 0.75 }), { outline: false, cast: false });
+  for (let i = 0; i < 3; i++) add(drum, box(0.05, 0.16, 0.02), toon(['#e0463c', '#ffd84d', '#39c6ff'][i]), { p: [Math.cos(i * 2.1) * 0.1, Math.sin(i * 2.1) * 0.1, -0.004], r: [0, 0, i * 2.1], outline: false }); // the clothes
+  for (const x of [-0.36, 0.36]) for (const z of [-0.36, 0.3]) add(g, cyl(0.03, 0.03, 0.02, 8), dark, { p: [x, 0.01, z], outline: false });
+  let on = false, t0 = 0;
+  A.anim.push((t, dt) => {
+    if (on) { drum.rotation.z += dt * (dryer ? 4 : 7); g.children[0].position.x = Math.sin(t * 40) * 0.006; t0 = t; }
+    return false;
+  });
+  return { use: () => { on = !on; light.color.set(on ? '#4be08a' : '#3a3f4a'); if (!on) g.children[0].position.x = 0; } };
+}
+Object.assign(FURNITURE, {
+  washer(g, A) { return laundryMachine(g, A); },
+  dryer(g, A) { return laundryMachine(g, A, { dryer: true }); },
+  laundry_sink(g) {
+    add(g, box(0.8, 0.7, 0.6), toon('#e8eaee'), { p: [0, 0.35, 0] });
+    add(g, box(0.84, 0.18, 0.64), toon('#f4f4f2'), { p: [0, 0.79, 0] });
+    add(g, box(0.66, 0.02, 0.48), toon('#b9c0cc'), { p: [0, 0.875, 0], outline: false });
+    add(g, cyl(0.02, 0.02, 0.25, 8), shiny('#c0c6d4', { metalness: 0.7 }), { p: [0, 1.0, -0.25] });
+    add(g, cyl(0.016, 0.016, 0.16, 8), shiny('#c0c6d4', { metalness: 0.7 }), { p: [0, 1.12, -0.18], r: [Math.PI / 2, 0, 0] });
+  },
+  ironing_board(g) {
+    const board = add(g, geo('ironTop', () => { const sh = new THREE.Shape(); sh.moveTo(-0.7, -0.17); sh.lineTo(0.45, -0.17); sh.quadraticCurveTo(0.8, 0, 0.45, 0.17); sh.lineTo(-0.7, 0.17); sh.closePath(); return new THREE.ExtrudeGeometry(sh, { depth: 0.04, bevelEnabled: false }); }), toon('#7fc8ff'), { p: [0, 0.8, 0], r: [Math.PI / 2, 0, 0] });
+    void board;
+    for (const s of [-1, 1]) add(g, box(0.03, 0.95, 0.03), toon('#b9c0cc'), { p: [s * 0.25, 0.4, 0], r: [0, 0, s * 0.45] });
+    add(g, box(0.22, 0.1, 0.12), toon('#e0463c'), { p: [0.35, 0.86, 0], outline: true }); // the iron
+    add(g, box(0.16, 0.05, 0.03), toon('#2b2f3a'), { p: [0.35, 0.94, 0], outline: false });
+  },
+  drying_rack(g) {
+    const m = toon('#e8eaee');
+    for (const s of [-1, 1]) add(g, box(0.03, 0.9, 0.03), m, { p: [s * 0.4, 0.45, 0], r: [s * 0.3, 0, 0] });
+    for (const s of [-1, 1]) add(g, box(0.03, 0.9, 0.03), m, { p: [s * 0.4, 0.45, 0], r: [-s * 0.3, 0, 0] });
+    for (let i = 0; i < 5; i++) add(g, cyl(0.008, 0.008, 0.82, 6), m, { p: [0, 0.86, -0.12 + i * 0.06], r: [0, 0, Math.PI / 2], outline: false });
+    [['#ff8fc7', -0.2], ['#39c6ff', 0.05], ['#ffd84d', 0.25]].forEach(([c, x], i) => add(g, box(0.2, 0.3, 0.01), toon(c), { p: [x, 0.71, -0.06 + i * 0.06], outline: false }));
+  },
+  vacuum(g) {
+    add(g, box(0.34, 0.12, 0.3), toon('#7c4dff'), { p: [0, 0.07, 0.05] });
+    add(g, box(0.22, 0.4, 0.16), toon('#9b7cff'), { p: [0, 0.38, -0.05] });
+    add(g, cyl(0.02, 0.02, 0.5, 8), toon('#c0c6d4'), { p: [0, 0.82, -0.08] });
+    add(g, box(0.16, 0.04, 0.04), toon('#2b2f3a'), { p: [0, 1.08, -0.08] });
+    for (const x of [-0.13, 0.13]) add(g, cyl(0.04, 0.04, 0.03, 10), toon('#2b2f3a'), { p: [x, 0.04, -0.1], r: [0, 0, Math.PI / 2], outline: false });
+  },
+  mop_bucket(g) {
+    add(g, cyl(0.2, 0.17, 0.3, 16), toon('#ffd84d'), { p: [0, 0.15, 0] });
+    add(g, cyl(0.17, 0.17, 0.01, 16), toon('#7fb8d8'), { p: [0, 0.27, 0], outline: false });
+    add(g, cyl(0.015, 0.015, 1.2, 6), toon('#b07a48'), { p: [0.05, 0.75, 0], r: [0, 0, 0.12] });
+    add(g, cyl(0.08, 0.1, 0.12, 10), toon('#f4f1ea'), { p: [0, 0.22, 0], outline: false });
+  },
+  shoe_rack(g) {
+    const wood = toon('#a8723f');
+    for (const y of [0.05, 0.3, 0.55]) add(g, box(0.9, 0.04, 0.32), wood, { p: [0, y, 0] });
+    for (const x of [-0.43, 0.43]) add(g, box(0.04, 0.6, 0.32), wood, { p: [x, 0.3, 0] });
+    [['#e0463c', -0.25, 0.09], ['#2b2f3a', 0.15, 0.09], ['#f4f4f2', -0.2, 0.34], ['#39c6ff', 0.22, 0.34], ['#b07a48', 0, 0.59]].forEach(([c, x, y]) => {
+      for (const d of [-0.05, 0.05]) add(g, sph(0.06, 10, 8), toon(c), { p: [x + d, y + 0.04, 0.02], s: [0.7, 0.55, 1.5], outline: false });
+    });
+  },
+  standing_fan(g, A) {
+    const white = toon('#f4f4f2');
+    add(g, cyl(0.2, 0.22, 0.04, 20), white, { p: [0, 0.02, 0] });
+    add(g, cyl(0.025, 0.025, 1.0, 8), white, { p: [0, 0.52, 0] });
+    add(g, cyl(0.07, 0.07, 0.14, 12), white, { p: [0, 1.08, -0.04], r: [Math.PI / 2, 0, 0] });
+    add(g, geo('fanCage', () => new THREE.TorusGeometry(0.24, 0.012, 6, 32)), toon('#d9dce2'), { p: [0, 1.08, 0.06], outline: false });
+    const blades = new THREE.Group();
+    blades.position.set(0, 1.08, 0.05);
+    g.add(blades);
+    for (let i = 0; i < 3; i++) add(blades, box(0.09, 0.2, 0.01), toon('#7fc8ff'), { p: [Math.sin(i * 2.094) * 0.11, Math.cos(i * 2.094) * 0.11, 0], r: [0, 0, -i * 2.094], outline: false });
+    let on = true;
+    A.anim.push((t, dt) => { if (on) blades.rotation.z += dt * 18; return false; });
+    return { use: () => { on = !on; } };
+  },
+  radiator(g) {
+    const m = toon('#f4f4f2');
+    for (let i = 0; i < 9; i++) add(g, box(0.07, 0.6, 0.12), m, { p: [-0.36 + i * 0.09, 0.38, 0] });
+    add(g, box(0.84, 0.04, 0.08), m, { p: [0, 0.1, 0], outline: false });
+    add(g, box(0.84, 0.04, 0.08), m, { p: [0, 0.66, 0], outline: false });
+    for (const x of [-0.38, 0.38]) add(g, box(0.05, 0.1, 0.05), toon('#c0c6d4'), { p: [x, 0.05, 0], outline: false });
+  },
+  wall_ac(g, A) {
+    add(g, box(1.6, 0.42, 0.26), toon('#f4f4f2'), { p: [0, 0, 0.13] });
+    add(g, box(1.5, 0.05, 0.02), toon('#c9ccd2'), { p: [0, -0.15, 0.265], outline: false });
+    const led = toon('#4be08a').clone();
+    add(g, sph(0.018, 8, 6), led, { p: [0.65, 0.12, 0.265], outline: false });
+    const flap = add(g, box(1.4, 0.04, 0.08), toon('#e8eaee'), { p: [0, -0.2, 0.22], outline: false });
+    let on = true;
+    A.anim.push((t) => { flap.rotation.x = on ? 0.4 + Math.sin(t * 0.8) * 0.25 : 0; return false; });
+    return { use: () => { on = !on; led.color.set(on ? '#4be08a' : '#3a3f4a'); } };
+  },
+  toaster(g) {
+    add(g, box(0.26, 0.17, 0.15), shiny('#c0c6d4', { metalness: 0.6, roughness: 0.3 }), { p: [0, 0.085, 0] });
+    for (const x of [-0.05, 0.05]) { add(g, box(0.035, 0.01, 0.1), toon('#2b2f3a'), { p: [x, 0.172, 0], outline: false }); add(g, box(0.03, 0.05, 0.08), toon('#d9a35a'), { p: [x, 0.19, 0], outline: false }); }
+    add(g, box(0.03, 0.02, 0.03), toon('#2b2f3a'), { p: [0.14, 0.12, 0], outline: false });
+  },
+  kettle(g) {
+    add(g, cyl(0.07, 0.09, 0.18, 16), toon('#e0463c'), { p: [0, 0.1, 0] });
+    add(g, cyl(0.03, 0.03, 0.02, 10), toon('#2b2f3a'), { p: [0, 0.2, 0], outline: false });
+    add(g, geo('kHandle', () => new THREE.TorusGeometry(0.06, 0.012, 6, 16, Math.PI)), toon('#2b2f3a'), { p: [0, 0.2, 0], r: [0, Math.PI / 2, 0], outline: false });
+    add(g, cyl(0.012, 0.02, 0.09, 8), toon('#e0463c'), { p: [0.09, 0.14, 0], r: [0, 0, -0.9], outline: false });
+    add(g, cyl(0.1, 0.1, 0.015, 16), toon('#2b2f3a'), { p: [0, 0.008, 0], outline: false });
+  },
+  microwave(g, A) {
+    add(g, box(0.55, 0.32, 0.38), toon('#2b2f3a'), { p: [0, 0.16, 0] });
+    const win = toon('#3a4050').clone();
+    add(g, box(0.36, 0.22, 0.01), win, { p: [-0.07, 0.16, 0.19], outline: false });
+    add(g, box(0.1, 0.24, 0.01), toon('#5a6070'), { p: [0.2, 0.16, 0.19], outline: false });
+    add(g, box(0.06, 0.03, 0.012), toon('#4be08a'), { p: [0.2, 0.25, 0.196], outline: false });
+    let on = false;
+    return { use: () => { on = !on; win.color.set(on ? '#ffd27a' : '#3a4050'); } };
+  },
+  pet_bed(g) {
+    add(g, geo('petBed', () => new THREE.TorusGeometry(0.33, 0.11, 10, 28)), toon('#b07a48'), { p: [0, 0.1, 0], r: [Math.PI / 2, 0, 0] });
+    add(g, cyl(0.33, 0.33, 0.06, 24), toon('#f4e3c8'), { p: [0, 0.05, 0] });
+    add(g, sph(0.06, 10, 8), toon('#ff8fc7'), { p: [0.12, 0.1, 0.08], outline: false }); // a toy ball
+  },
+  mirror_floor(g) {
+    add(g, box(0.62, 1.72, 0.05), toon('#c9a44a'), { p: [0, 0.9, -0.1], r: [-0.1, 0, 0] });
+    add(g, box(0.54, 1.62, 0.01), toon('#d8eaf4'), { p: [0, 0.9, -0.07], r: [-0.1, 0, 0], outline: false });
+    add(g, box(0.04, 0.9, 0.04), toon('#c9a44a'), { p: [0, 0.42, -0.36], r: [0.45, 0, 0], outline: false });
+  },
+});
+
+let shojiPaperMat = null;
+/** Paper that glows softly with the light behind it (shared by the shoji windows). */
+function shojiPaper() { return (shojiPaperMat ??= new THREE.MeshToonMaterial({ color: '#fbf5e6', emissive: '#3a3020', transparent: true, opacity: 0.86, side: THREE.DoubleSide })); }
 const OWN_DROP = new Set(['hanging_plant', 'hanging_plant_short', 'hanging_plant_long', 'hanging_vines']);
 
 /** Build a piece of furniture. Returns { group, use, anim }. `drop`: how far below the ceiling a
@@ -2968,7 +3300,7 @@ export function outdoorPanorama() {
   return panoTex;
 }
 /** How big each window's pane is (width, height): the hole it makes in the wall it hangs on. */
-export const WINDOW_PANES = { window: [1.5, 0.95], window_big: [2.6, 1.3], window_tall: [0.8, 1.7], window_round: [0.8, 0.8], window_wood: [1.5, 1.0] };
+export const WINDOW_PANES = { window: [1.5, 0.95], window_big: [2.6, 1.3], window_tall: [0.8, 1.7], window_round: [0.8, 0.8], window_wood: [1.5, 1.0], window_shoji: [1.5, 1.0], window_koshi: [1.5, 1.0], window_shoji_tall: [0.8, 1.7], window_ranma: [1.7, 0.45], window_marumado: [1.1, 1.1], window_hanging: [1.5, 1.0] };
 const clearGlass = new THREE.MeshBasicMaterial({ color: '#d6efff', transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide });
 /**
  * A window is a real hole through the wall it hangs on (house.js cuts it): this is what sits in the
@@ -3560,9 +3892,9 @@ for (const [id, sp] of Object.entries(PLUSH)) FURNITURE[id] = (g, A) => plushie(
 export const PLUSH_IDS = Object.keys(PLUSH);
 export const plushEmoji = (id) => PLUSH_EMOJI[PLUSH[id]?.kind] ?? '🧸';
 
-export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [true, true], color = null, text = null, parts = null } = {}) {
+export function buildFurniture(id, { drop = 0, len = 0, rise = 0, bare = false, top = 0, openings = [], caps = [true, true], color = null, text = null, parts = null } = {}) {
   const data = FURN_DATA[id];
-  if (data?.base) return buildFurniture(data.base, { drop, len, openings, caps, color: color ?? data.color, text, parts });
+  if (data?.base) return buildFurniture(data.base, { drop, len, rise, bare, top, openings, caps, color: color ?? data.color, text, parts });
   const group = new THREE.Group();
   const A = { anim: [], text }; // (text: what's written on it, for the chalkboard menu)
   let target = group;
@@ -3572,7 +3904,7 @@ export function buildFurniture(id, { drop = 0, len = 0, openings = [], caps = [t
     group.add(target);
     add(group, cyl(0.012, 0.012, drop, 5), toon('#3a3f5a'), { p: [0, -drop / 2, 0], outline: false });
   }
-  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps } : undefined) ?? {};
+  const res = FURNITURE[id]?.(target, A, OWN_DROP.has(id) ? { drop } : len ? { len, openings, caps, top } : rise || bare || top ? { rise, bare, top } : undefined) ?? {}; // (rise: how high a flight of stairs climbs; bare: a column without its trim)
   if (parts && Object.keys(parts).length) applyParts(group, parts); // (each part its own colour)
   else if (color) recolor(group, color, data?.recolorFrom ?? null); // (recolorFrom: which colour is the one to change)
   return { group, use: res.use ?? null, anim: A.anim, A };
@@ -3883,6 +4215,17 @@ const WALL_DRAW = {
     }
   },
   wall_cream(ctx) { plainWall(ctx, '#fff1d6'); },
+  wall_shoji(ctx) {
+    // paper screens in a dark wooden lattice, over a low wooden skirting
+    ctx.fillStyle = '#f6efdc'; ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = 'rgba(160,140,100,.12)';
+    for (let i = 0; i < 400; i++) ctx.fillRect((i * 97) % 256, (i * 57) % 256, 2, 2);
+    ctx.fillStyle = '#4a3020';
+    for (let x = 0; x < 256; x += 64) ctx.fillRect(x, 0, 6, 256);
+    for (let y = 0; y < 224; y += 48) ctx.fillRect(0, y, 256, 5);
+    ctx.fillStyle = '#6b4226'; ctx.fillRect(0, 224, 256, 32);
+    ctx.fillStyle = '#4a3020'; ctx.fillRect(0, 222, 256, 4);
+  },
   wall_mint(ctx) { plainWall(ctx, '#c9f5e3'); },
   wall_stripes(ctx) {
     for (let i = 0; i < 8; i++) {
@@ -4423,7 +4766,7 @@ export function furnitureThumb(id) {
 }
 /** Colour swatch for the style picker (CSS background). */
 export const SWATCH = {
-  floor_wood: '#c28a52', floor_checker: 'repeating-conic-gradient(#2b2f4a 0 25%, #f4f0ff 0 50%) 0 0/16px 16px',
+  wall_shoji: '#f6efdc', floor_wood: '#c28a52', floor_checker: 'repeating-conic-gradient(#2b2f4a 0 25%, #f4f0ff 0 50%) 0 0/16px 16px',
   floor_carpet: '#3b6fd0', floor_grass: '#5fae55', floor_marble: '#ece8e2',
   wall_cream: '#fff1d6', wall_mint: '#c9f5e3', wall_stripes: 'repeating-linear-gradient(90deg,#ffc2d6 0 8px,#fff 8px 16px)',
   wall_brick: '#b5654a', wall_stars: 'radial-gradient(#ffd84d 1px, #1a2456 1.5px) 0 0/10px 10px',

@@ -722,6 +722,7 @@ ADMIN_HELP = [
     "/rain <on|off|auto> — rain on or off",
     "/weather <sunny|cloudy|windy|rain|storm|auto> — change the weather",
     "/filter <on|off> — the chat filter for this zone (on by default)",
+    "/resetpw <username> <new password> — give an account a new password (for someone who forgot theirs; signs them out everywhere)",
     "/unadmin — turn admin mode off",
 ]
 
@@ -2280,6 +2281,25 @@ class Game:
     def names(self, c, keys):
         ps = c.room.zone["players"]
         return "everyone" if len(keys) > 1 else ps[keys[0]]["name"]
+
+    def admin_resetpw(self, c, args):
+        """Someone forgot their password: give their account a new one. (Passwords are only kept as salted
+        hashes, so the old one can't be looked up, only replaced.) Every device it was signed in on is
+        signed out, so the new password is the only way in."""
+        if len(args) < 2:
+            raise GameError("Use it like: /resetpw <username> <new password>")
+        user, pw = args[0].lower(), " ".join(args[1:])
+        acct = self.store.accounts.get(user)
+        if not acct:
+            raise GameError(f"There's no account called {args[0]}. (It's the username they sign in with, not their name in a zone.)")
+        if not PASSWORD_MIN <= len(pw) <= PASSWORD_MAX:
+            raise GameError(f"The new password needs to be {PASSWORD_MIN}–{PASSWORD_MAX} characters.")
+        acct["salt"] = secrets.token_hex(16)
+        acct["hash"] = hash_password(pw, acct["salt"])
+        acct["tokens"] = []
+        self.store.mark()
+        print(f"[admin] {c.player['name']} reset the password of account {acct['name']}", flush=True)  # (never the password itself)
+        self.sys(c, f"🔑 {acct['name']}'s password is reset. They can sign in with the new one now.", "ok")
 
     def admin_give(self, c, args):
         keys, amount = self._adm_amount(c, args)
